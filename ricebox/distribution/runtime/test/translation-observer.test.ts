@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFileSync} from 'node:fs';
-import {Kernel, loadFileScope, Vfs, type Image} from '../../../sods/runtime/linux.ts';
+import {Kernel, Vfs, mountTarget, type Image} from '../../../sods/runtime/linux.ts';
 import {TranslationObserver, type TranslationMessage} from '../translation-observer.ts';
 
 const enc = new TextEncoder(), name = enc.encode('sods.facts'), facts = enc.encode('{}');
@@ -78,16 +77,23 @@ test('same path old/new images stay independent; keeper seed and changed suppres
   assert.equal(seed.told,2); assert.equal(consolidated.mainTold,true); o.close();
 });
 
-test('observer close releases only observation, not a Rust-backed deferred source', {skip: !process.env.SODS_FILE_STORE_WASM}, async () => {
-  const scope = await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),32), vfs=scope.createVfs();
-  try {
-    let loads=0; const file=scope.lazyFile(vfs,'/image',()=>{loads++;return enc.encode('source');});
-    const k=new Kernel({vfs,translate(){throw Error('unused');},console:{write(){},read:()=>null}});
-    k.prebuilt(file,module); const im=k.images.get(file)!.image, o=new TranslationObserver();
-    extra(im,1); o.track('/image',im); k.images.delete(file); vfs.root.entries.delete('image'); k.ended();
-    o.publish([],()=>{}); assert.equal(loads,0); o.close();
-    assert.equal(new TextDecoder().decode(im.source!()),'source'); assert.equal(loads,1);
-  } finally {scope.dispose();}
+test('observer close leaves a deferred source available to its image', () => {
+  const vfs = new Vfs();
+  let loads = 0;
+  const file = mountTarget(vfs).file('/image', 0o755, 6, () => { loads++; return enc.encode('source'); }, 'root-image');
+  const kernel = new Kernel({vfs, translate(){throw Error('unused');}, console:{write(){},read:()=>null}});
+  kernel.prebuilt(file, module);
+  const image = kernel.images.get(file)!.image, observer = new TranslationObserver();
+  extra(image, 1);
+  observer.track('/image', image);
+  kernel.images.delete(file);
+  vfs.root.entries.delete('image');
+  kernel.ended();
+  observer.publish([], () => {});
+  assert.equal(loads, 0);
+  observer.close();
+  assert.equal(new TextDecoder().decode(image.source!()), 'source');
+  assert.equal(loads, 1);
 });
 
 test('rejected main preserves local bytes and root extras acknowledge only their captured end', () => {

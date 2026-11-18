@@ -2,16 +2,8 @@
 import type {Segment} from '../../sods/runtime/translate.ts';
 import type {About, Index} from '../format/manifest.ts';
 export type {Segment};
-export {requireFileStoreName} from '../format/manifest.ts';
-export type {Blob, About, Translation, FileStoreDescriptor, Index} from '../format/manifest.ts';
-/** Explicit artifact selection. Omission uses legacy storage; a supplied invalid
- * artifact fails preparation and never falls back to a different owner. */
-export interface FileStoreArtifact {
-  module: WebAssembly.Module | BufferSource;
-  maxFileBytes: number;
-}
+export type {Blob, About, Translation, Index} from '../format/manifest.ts';
 export interface RootContext {
-  fileStore?: FileStoreArtifact;
   about: About;
   index: Index;
   translator: WebAssembly.Module;

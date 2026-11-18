@@ -21,14 +21,7 @@ export interface Translation {
   /** Omitted by older trusted producers; malformed present metadata is never a legacy fallback. */
   association?: TranslationAssociation;
 }
-export interface FileStoreDescriptor extends Blob {
-  abi: 4;
-  wasm: string;
-  maxFileBytes: number;
-}
 export interface Index {
-  /** When present this release requires the matching Rust file owner. */
-  fileStore?: FileStoreDescriptor;
   name: string; version: string; sha256: string; codec: string;
   packs: {name: string; owner: string; bytes: number}[];
   dirs: {path: string; mode: number}[];
@@ -37,8 +30,12 @@ export interface Index {
   translator: Blob & {name: string; version: string; wasm: string};
   translations: Translation[];
 }
-/** Reject the unreleased old selection name before it can silently downgrade
- * a selected Rust store to the legacy payload path. Rebuild those distributions. */
-export function requireFileStoreName(input: object): void {
-  if ('fileCore' in input) throw new Error('fileCore is an obsolete selection name; use fileStore and regenerate the prepared distribution');
+/**
+ * An archive or API request for a different payload owner must not silently
+ * change ownership when it is loaded.
+ */
+export function requireStandardFileOwner(input: object): void {
+  if ('fileStore' in input || 'fileCore' in input) {
+    throw new Error('Unsupported file owner; use a distribution built for the standard VFS');
+  }
 }

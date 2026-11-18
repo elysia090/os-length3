@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {File, FsError, E, counted} from '../../runtime/linux/fs.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
-import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 const enc = new TextEncoder(), dec = new TextDecoder();
 const call = (p: Process, nr: number, ...args: number[]) => p.syscall(BigInt(nr), ...([...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]));
 const memory = () => Object.assign(new WebAssembly.Memory({initial: 2}), {users: 1, written: [], keeps: false, imageOf: null});
@@ -78,19 +76,6 @@ test('a later tail failure leaves all old mappings published and reserves no des
   assert.equal(p.bytes[8192], 7);
 });
 
-const wasm = process.env.SODS_FILE_STORE_WASM;
-test('real Rust pending read supplies mmap and mremap snapshots through the existing kernel', {skip: !wasm}, async () => {
-  const {p} = setup(), scope = await loadFileScope(readFileSync(wasm!), 16384);
-  const file = scope.writeFile(p.kernel.vfs, '/tmp/file', new Uint8Array(8192).fill(7));
-  const fd = open(p, file);
-  assert.equal(call(p, 9, 8192, 4096, 3, 0x11, fd, 0), 8192n);
-  p.bytes[8192] = 9;
-  const to = Number(call(p, 25, 8192, 4096, 8192));
-  assert.equal(to, 65536); assert.equal(p.bytes[to], 9); assert.equal(p.bytes[to + 4096], 7);
-  file.write(5000, Uint8Array.of(12)); assert.equal(p.bytes[to + 5000], 12);
-  assert.equal(call(p, 11, to, 8192), 0n); assert.equal(call(p, 3, fd), 0n);
-  scope.dispose();
-});
 
 test('snapshot replacement then throw is fatal without settling retired mappings from the new memory', () => {
   const {p} = setup(), old = new File(new Uint8Array(4096).fill(7)), oldFd = open(p, old);

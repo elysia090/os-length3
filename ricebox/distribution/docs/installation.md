@@ -14,9 +14,9 @@ install these prerequisites.
 
 Supply either integrity-pinned `tools` for the translator, native sods executable
 and muk, or an explicit source `toolchain` for development. Source builds require
-the corresponding Rust/C toolchains and Wasm target. An optional `fileStore`
-artifact is a separate pinned selection, not something inferred from the
-translator.
+the corresponding Rust/C toolchains and Wasm target. Translator and AOT artifacts
+provide executable code, not alternate file ownership; regular guest payloads
+remain in sods' TypeScript Vfs.
 
 ## Acquire, then compose
 

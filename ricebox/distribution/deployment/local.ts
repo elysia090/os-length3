@@ -4,7 +4,7 @@ import {openSync,readFileSync,readSync,closeSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
-import type {About,Index,Blob} from '../format/manifest.ts';
+import {requireStandardFileOwner,type About,type Index,type Blob} from '../format/manifest.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
@@ -15,6 +15,7 @@ export function openDistribution(dir: string) {
   const bytes = readFileSync(join(dir, about.index.path));
   if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index webroot.json names (sha256 ${sha256(bytes)})`);
   const index: Index = JSON.parse(bytes.toString('utf8'));
+  requireStandardFileOwner(index);
   const fds = new Map<string, number>();
   const fd = (name: string) => { let f = fds.get(name); if (f === undefined) { f = openSync(join(dir, 'packs', name), 'r'); fds.set(name, f); } return f; };
   /** Bytes [at, at+len) of the pack named `pack`, into `into` (as the browser's Range request gives them). */

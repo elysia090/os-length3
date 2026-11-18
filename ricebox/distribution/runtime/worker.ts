@@ -1,4 +1,4 @@
-import {requireFileStoreName} from './root-types.ts';
+import {requireStandardFileOwner} from '../format/manifest.ts';
 // The root run in a page's Worker: its layers mounted (mount.ts), the Linux that runs it (sods: the tree, the
 // kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes here
 // as it does on a Linux machine: the same program, run on this Linux with the bundle written for it (../src/bundle.rs,
@@ -95,7 +95,7 @@ import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxEr
   type Console, type File, type Image, type SourceBoundExecutable, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from '../format/mount.ts';
-import {prepareTree, type FileStoreArtifact, type PreparedTree} from './prepared-tree.ts';
+import {prepareTree, type PreparedTree} from './prepared-tree.ts';
 import {syncRange} from './pack-range.ts';
 import {TranslationObserver} from './translation-observer.ts';
 
@@ -106,7 +106,7 @@ interface Program extends Given { module?: WebAssembly.Module; segments?: Segmen
 /** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
 interface Box { config: string; words: string[] }
 /** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
-interface Ready { profile?: 'canonical-aot-v1'; generation?: string; executables?: PreparedExecutable[]; fileStore?: FileStoreArtifact; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
+interface Ready { profile?: 'canonical-aot-v1'; generation?: string; executables?: PreparedExecutable[]; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
 /** What 'start' brings of its own: the box to make, and where in the tree the repo's copy is. */
 interface Start extends Ready {
   type: 'start';
@@ -224,7 +224,6 @@ function followPrepared(r: Readied, attached: ReadonlyMap<string, Image>): void 
 }
 /** One finite prepared result, including a result arriving after freeze. This
  * root is explicit; weak observations must never stand in for ownership. */
-let preparedOwner: PreparedTree | null = null;
 const rehearsalTimers = new Set<ReturnType<typeof setTimeout>>();
 // Transport cache belongs to the root's worker, never the guest or a product.
 let packRange: ReturnType<typeof syncRange> | null = null;
@@ -256,9 +255,6 @@ function read(n: number): Uint8Array | null {
 function ready(data: Ready): Promise<Readied> {
   checkSelection(data, true);
   if (data.profile) ordinaryOverlays(data.files);
-  if (readied && data.fileStore !== undefined) {
-    throw new Error('File-store ownership was selected by the first preparation; omit fileStore when using that prepared root');
-  }
   readied ??= (async () => {
     const preparing = lifetime.enter('preparation');
     try {
@@ -268,30 +264,14 @@ function ready(data: Ready): Promise<Readied> {
       if (data.profile && (!index || !Array.isArray(index.translations))) throw new Error('Prepared root requires its complete canonical index');
       const captureSources = index ? canonicalHotSources(index) : undefined;
       if (index) for (const executable of data.executables ?? []) validateExecutable(index, data.generation!, executable);
-      const tree = await prepareTree({captureSources, fileStore: data.fileStore, muk: data.muk, files: data.files,
+      const tree = prepareTree({captureSources, muk: data.muk, files: data.files,
         root: data.root ? {index: data.root.index, reading: {
           range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
           decode: translate.unzstd, sha256: translate.sha256,
         }} : undefined,
       });
-      preparedOwner = tree;
-      const preparedObservation = lifetime.observe('prepared-tree', preparedOwner);
-      if (!lifetime.accepting) {
-        // No Readied result, rehearsal, kernel, Image or observer has received
-        // this tree. This is an unpublished preparation rollback, not disposal
-        // of a formerly running tree based on weak observations or host timeout.
-        const retired = new Error('Worker is retiring; unpublished preparation was cancelled');
-        try { tree.dispose(); }
-        catch (cleanup) {
-          lifetime.failures.push(cleanup); // Keep preparedOwner quarantined; do not retry disposal.
-          throw new AggregateError([retired, cleanup], 'Unpublished preparation cleanup failed');
-        }
-        preparedOwner = null;
-        preparedObservation.release();
-        throw retired;
-      }
-      // This owner survives rehearsal and ordinary kernel exit. Worker termination
-      // releases the realm; no per-run path may dispose a tree borrowed by another run.
+      // The prepared root stays reachable through this result and kernels that borrow it.
+      lifetime.observe('prepared-tree', tree);
       const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree,
         ...(index ? {prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}} : {})};
       if (r.prepared) addExecutables(r, data.executables);
@@ -540,14 +520,13 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     if (abandonedAfterBoundary) errors.push(new Error(`${abandonedAfterBoundary} output bytes were abandoned after the final boundary`));
     // Registered preparation/rehearsal/start/serve finally blocks may still be
     // pending. Drop only our redundant promise root after those operations settle.
-    // preparedOwner and Kernel/Image/source roots remain quarantined: neither
-    // this drain nor admission acknowledgement authorizes their disposal.
+    // A kernel, image or callback that still uses the tree retains its own reference.
     void lifetime.settledOperations().then(async () => {
       readied = null;
       const k = kernel, reference = foregroundReference;
       if (!k || errors.length || lifetime.failures.length) return;
       // This is only this private global reference, not every Image/source or
-      // a FileScope disposal barrier. Do not mutate shared Image objects.
+      // a Worker-stop or reference-release barrier. Do not mutate shared images.
       const inactive = (): boolean => k.current === null && k.tasks.size === 0 && k.procs.size === 0
         && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.vfs.loaded.keepers.has(k);
       if (!inactive()) return;
@@ -567,8 +546,8 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
   if (outputBoundarySent && data.type !== 'drained') { failed(new Error('Worker output boundary is closed; new work is not accepted')); return; }
   try {
-    requireFileStoreName(data);
-    if ('root' in data && data.root) requireFileStoreName(data.root.index);
+    requireStandardFileOwner(data);
+    if ('root' in data && data.root) requireStandardFileOwner(data.root.index);
   } catch (error) { failed(error); return; }
   const command = lifetime.enter(`command:${data.type}`);
   try {

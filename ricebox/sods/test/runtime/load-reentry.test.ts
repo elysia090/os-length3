@@ -65,16 +65,3 @@ test('ordinary loader throw resets the attempt for a later retry', () => {
   assert.throws(() => file.bytes(), io); fail = false;
   assert.equal(dec.decode(file.bytes()), 'ok');
 });
-test('lazy source can read an independent Rust inode without retaining its read lease', {skip: !process.env.SODS_FILE_STORE_WASM}, async () => {
-  const {readFileSync} = await import('node:fs');
-  const {loadFileScope} = await import('../../runtime/linux/file-scope.ts');
-  const {Vfs} = await import('../../runtime/linux/fs.ts');
-  const scope = await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!), 64);
-  try {
-    const core = scope.writeFile(new Vfs(), '/source', 'abc');
-    const lazy = new File(new Uint8Array(0), 0o644, () => core.bytes());
-    assert.equal(dec.decode(lazy.bytes()), 'abc');
-    core.write(0, enc.encode('xyz'));
-    assert.equal(dec.decode(core.bytes()), 'xyz'); assert.equal(dec.decode(lazy.bytes()), 'abc');
-  } finally { scope.dispose(); }
-});

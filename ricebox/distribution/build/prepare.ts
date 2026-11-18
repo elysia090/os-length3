@@ -4,17 +4,14 @@ import {mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlin
 import {resolve, join, dirname} from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {requireFileStoreName} from '../format/manifest.ts';
+import {requireStandardFileOwner} from '../format/manifest.ts';
 import {fileURLToPath} from 'node:url';
 
 export interface PinnedTool { path: string; size: number; sha256: string }
-export interface FileStoreTool extends PinnedTool { maxFileBytes: number }
 export interface PrepareOptions {
   packages: string[]; packageCache: string; output: string;
   toolchain?: string;
   tools?: Record<'translator' | 'sods' | 'muk', PinnedTool>;
-  /** Explicitly pinned file-store artifact; no implicit download/build. */
-  fileStore?: FileStoreTool;
   version?: string; cache?: string; hot?: string[];
 }
 function verifiedTool(tool: PinnedTool, name: string) {
@@ -53,15 +50,13 @@ function run(command: string, args: string[]) {
   });
 }
 export async function prepareDistribution(options: PrepareOptions) {
-  requireFileStoreName(options);
+  requireStandardFileOwner(options);
   // Do not silently accept the former network-acquiring API in JavaScript callers.
   if ('catalog' in options) throw new Error('ricebox: acquire catalog packages first, then pass packages, packageCache and tools');
-  const {packages, packageCache, toolchain, tools, fileStore, output, version = '0.0.1', cache, hot = []} = options;
+  const {packages, packageCache, toolchain, tools, output, version = '0.0.1', cache, hot = []} = options;
   if (!packageCache || !output) throw new Error('ricebox: packageCache and output are required for package composition');
   if (!toolchain && !tools) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
   if (!Array.isArray(hot) || hot.some(p => typeof p !== 'string' || !p.startsWith('/') || /[\s,]/.test(p))) throw new Error('ricebox: hot must contain absolute guest program paths');
-  const verifiedStore = fileStore === undefined ? null : verifiedTool(fileStore, 'fileStore');
-  if (fileStore && (!Number.isInteger(fileStore.maxFileBytes) || fileStore.maxFileBytes < 0 || fileStore.maxFileBytes > 0x7fffffff)) throw new Error('ricebox: invalid fileStore maxFileBytes');
   const target = resolve(output), source = toolchain ? resolve(toolchain) : fileURLToPath(new URL('../../../', import.meta.url));
   if (existsSync(target)) throw new Error(`ricebox: output already exists: ${target}`);
   mkdirSync(dirname(target), {recursive: true});
@@ -74,7 +69,6 @@ export async function prepareDistribution(options: PrepareOptions) {
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));
     const args = [join(source, verified ? 'ricebox/distribution/build/distribution.ts' : 'ricebox/distribution/build/distribution.sh'), join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
     if (verified) args.push('--translator', verified.translator.path, '--sods', verified.sods.path);
-    if (verifiedStore) args.push('--file-store', verifiedStore.path, '--file-store-limit', String(fileStore!.maxFileBytes));
     if (cache !== undefined) args.push('--cache', cache === '' ? '' : resolve(cache));
     if (hot.length) args.push('--hot', hot.join(','));
     await run(verified ? process.execPath : 'sh', args);

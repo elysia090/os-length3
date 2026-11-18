@@ -103,9 +103,7 @@ test('verification consumes production contracts without becoming a production d
 });
 
 
-test('build artifact validation uses only the public sods entry and compression is host-specific',()=>{
-  assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
-  assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
+test('compression workers use only their declared host facilities',()=>{
   assert.equal(allowed('ricebox/distribution/build/prepare.ts','../../sods/runtime/linux.ts'),false);
   assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:zlib'),true);
   assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:fs'),false);

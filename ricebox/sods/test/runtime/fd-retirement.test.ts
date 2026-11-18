@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Description, FdTable, Pipe} from '../../runtime/linux/fd.ts';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import '../../runtime/linux.ts';
 
 test('terminal Description release is reentry-safe and continues independent cleanup', () => {
@@ -30,18 +28,6 @@ for(const operation of ['closeAll','exec'] as const)test(`${operation} does not 
   table.closeAll();assert.equal(replacement.closed,true);
 });
 
-test('shared table and dup retain Rust inode access until the actual fd owners leave', {skip:!process.env.SODS_FILE_STORE_WASM},async()=>{
-  const scope=await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),8),vfs=scope.createVfs(),file=vfs.writeFile('/a','payload');
-  try{
-    const table=new FdTable(), d=new Description('file',{node:file});let calls=0;
-    d.gone=()=>{calls++;throw Error('last owner');};
-    table.install(d,{fd:3});table.install(d,{fd:4});table.share();
-    table.letGo();assert.equal(d.refs,2);assert.equal(d.closed,false);
-    table.close(3);assert.equal(d.refs,1);assert.equal(calls,0);
-    assert.throws(()=>table.letGo(),/last owner/);assert.equal(d.closed,true);assert.equal(calls,1);assert.equal(table.slots.size,0);
-    assert.equal(new TextDecoder().decode(file.bytes()),'payload'); // Namespace/raw owner, not fd-owned destruction.
-  }finally{scope.dispose();}
-});
 
 test('multiple independent cleanup failures remain visible without suppressing later cleanup',()=>{
   const d=new Description('socket').retain(), gone=Error('gone'), socket=Error('socket');let closed=0;

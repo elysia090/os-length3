@@ -59,6 +59,9 @@ other execution objects belong to `runtime/root-types.ts`, not the manifest.
 
 ## Prepared execution
 
+Regular guest file payloads belong to sods' TypeScript Vfs. Release and AOT
+artifacts authenticate sources and code; they do not select another file owner.
+
 `createRoot(config).execution` selects the `canonical-aot-v1` profile. Its
 `PreparedRoot` associates compiled artifacts with a release generation and exact
 canonical sources, rather than installing byte-bearing file overlays. The

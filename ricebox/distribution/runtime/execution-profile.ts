@@ -86,7 +86,7 @@ export function createExecutionProfile(services: ExecutionServices) {
     try {
       worker.postMessage({type: 'warm'});
       worker.postMessage({type: 'ready', profile: root.profile, generation: root.generation, executables,
-        fileStore: root.fileStore, translator: root.translator, root: {index: root.index, url: root.url}, muk: root.muk, rehearse});
+        translator: root.translator, root: {index: root.index, url: root.url}, muk: root.muk, rehearse});
       spare = {worker, generation: root.generation, givenExecutables: new Set(executables.map(e => e.key))};
     } catch (error) {
       void retireRootWorker(worker).then(result => { for (const failure of result.failures) failures.push(failure); }, cleanup => failures.push(cleanup));

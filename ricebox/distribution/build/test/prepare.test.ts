@@ -81,20 +81,6 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
   assert.equal(existsSync(join(at,'bad')),false);
 });
-test('pinned file store reaches real composition and deployment assets',{skip:!process.env.SODS_FILE_STORE_WASM},async t=>{
-  const {createHash}=await import('node:crypto');const {distributionAssets}=await import('../../deployment/assets.ts');
-  const {at,cache}=fixture(t);
-  const artifact=(name:string,bytes:Uint8Array)=>{const path=join(at,name);writeFileSync(path,bytes);return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};};
-  const tools={translator:artifact('translator.wasm',new Uint8Array([0,97,115,109,1,0,0,0])),sods:artifact('sods',Buffer.from('unused')),muk:artifact('muk',Buffer.from('fixture'))};
-  const fileStore={...artifact('core.wasm',readFileSync(process.env.SODS_FILE_STORE_WASM!)),maxFileBytes:8192},output=join(at,'core-release');
-  await prepareDistribution({packages:['base'],packageCache:cache,tools,fileStore,output,cache:''});
-  const about=JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')),index=JSON.parse(readFileSync(join(output,about.index.path),'utf8'));
-  assert.equal(index.fileStore.abi,4);assert.equal(index.fileStore.maxFileBytes,8192);
-  assert.ok(distributionAssets(output).has('ricebox/'+index.fileStore.path));
-  rmSync(join(output,index.fileStore.path));assert.throws(()=>distributionAssets(output),/ENOENT/);
-  const bad=join(at,'bad-core');await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,fileStore:{...fileStore,sha256:'0'.repeat(64)},output:bad}),/integrity mismatch/);assert.equal(existsSync(bad),false);
-});
-
 test('former catalog option fails explicitly before any IO even with usable tools', async t => {
   const {at,cache}=fixture(t),output=join(at,'not-created');
   t.mock.method(globalThis,'fetch',()=>{throw new Error('unexpected network');});
@@ -110,10 +96,20 @@ test('acquired package metadata without tools requires an explicit toolchain', a
   assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);
 });
 
-test('obsolete fileCore configuration is rejected before output acquisition', async t => {
+test('retired file owner configurations are rejected before output acquisition', async t => {
   const {at,cache}=fixture(t),output=join(at,'must-not-exist');
-  for(const value of [null,false,{},undefined]) {
-    await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,output,fileCore:value} as unknown as Parameters<typeof prepareDistribution>[0]),/fileCore.*regenerate/);
+  for(const name of ['fileCore','fileStore']) for(const value of [null,false,{},undefined]) {
+    await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,output,[name]:value} as unknown as Parameters<typeof prepareDistribution>[0]),/Unsupported file owner/);
     assert.equal(existsSync(output),false);
+  }
+});
+
+
+test('retired file owner CLI flags cannot silently fall back to ordinary payloads', () => {
+  const builder=fileURLToPath(new URL('../distribution.ts',import.meta.url));
+  for(const flag of ['--file-core','--file-core-limit','--file-store','--file-store-limit']) {
+    const result=spawnSync(process.execPath,[builder,'unused-root','unused-output',flag,'old'],{encoding:'utf8'});
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/usage: distribution.ts ROOT OUT/);
   }
 });

@@ -14,9 +14,9 @@ performance is a design goal, not a general performance guarantee.
 | Its own | Not its own |
 | --- | --- |
 | a program made a module: the translator, its form, its ABI (`src/`) | what a box is, and making one: muk (`../muk`, an OCI bundle run) |
-| what makes a translation the same translation, and translations kept under it (`src/identity.rs`, `src/cache.rs`, `runtime/translation/kept.ts`) | which programs are translated ahead and shipped: ricebox (`../ricebox`), which puts them in its layers |
+| what makes a translation the same translation, and translations kept under it (`src/identity.rs`, `src/cache.rs`, `runtime/translation/kept.ts`) | which programs are translated ahead and shipped: ricebox (`../distribution`), which puts them in its layers |
 | the Linux a translated program asks for (`runtime/linux/`) | an image, its layers and their form: ricebox (`../distribution/runtime`); sods lends a tree to mount them in |
-| every difference between hosts (`runtime/host.ts`), and the table of what runs where (`runtime/targets.ts`) | a terminal's other end: prompt (`../prompt`); words, addresses, policy: a product |
+| every difference between hosts (`runtime/host.ts`), and the table of what runs where (`runtime/targets.ts`) | a terminal's other end: prompt (`../distribution/terminal`); words, addresses, policy: a product |
 
 ## Public interfaces
 
@@ -27,7 +27,7 @@ changing.
 | File | What it gives |
 | --- | --- |
 | `runtime/translate.ts` | the translator loaded (`loadTranslator`: a program's bytes in, a module's out; `NotAProgram` is the file's fault), a program translated ahead of its run (`aheadOf`), a translation as a Linux here runs it (`prepare`), the form it is kept in (`packMain`, `packMore`, `taken`) and the name it is kept under (`madeBy`) |
-| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`), explicitly selected Rust file payloads (`prepareFileStore`, `loadFileScope`) |
+| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`), source-bound prepared execution (`captureExecutableSource`, `preparedLinux`) |
 | `runtime/host.ts` | the host, asked in one place: which it is, its threads and shared memory, clocks, random bytes, memory and room, a digest, what it keeps, how it fetches |
 | `runtime/targets.ts` | what runs where, and how far each is |
 
@@ -47,46 +47,31 @@ compiler or a registry download. Generated JavaScript includes the CPU Worker en
 browser applications still need a module-Worker-aware bundler. No ricebox or why is
 included. This is not a public registry release.
 
-The caller supplies trusted, integrity-verified translator bytes. A file store is a
-separate explicit selection, not a translator replacement or an implicit download:
+The caller supplies trusted, integrity-verified translator bytes. Regular file
+payloads are owned by the TypeScript Vfs; compiled artifacts do not select another
+file-storage engine.
 
 ```ts
 import {loadTranslator} from 'sods/translate';
-import {linux, Vfs, prepareFileStore, loadFileScope} from 'sods/linux';
+import {linux, Vfs} from 'sods/linux';
 
 const translate = await loadTranslator(translatorBytes);
-const module = await prepareFileStore(fileStoreBytes, 16 * 1024 * 1024);
-const scope = await loadFileScope(module, 16 * 1024 * 1024);
-const vfs = scope.createVfs();
+const vfs = new Vfs();
 vfs.writeFile('/bin/program', programBytes, 0o755);
 const kernel = linux({vfs, translate, inline: true, console: hostConsole});
 const status = await kernel.spawn('/bin/program', ['/bin/program'], [], '/');
 // status is a Linux wait status, not a decoded exit code.
-// Once no other kernels, mappings or embedding users depend on these files:
-scope.dispose();
 ```
 
-`prepareFileStore` checks the expected ABI with a temporary instance and returns a
-reusable module. It is neither an integrity check nor a sandbox for untrusted Wasm.
-Each `loadFileScope` creates independent payload ownership; disposing one does not
-dispose another. The selected limit bounds each file's logical size, not all retained
-memory. `createVfs()` explicitly selects Rust payloads for path-created regular
-files (`writeFile`, guest O_CREAT and regular mknod), including creation through the
-kernel's mounted namespaces. It does not convert existing inodes, devices, generated
-files, memfd or shared-anonymous mappings. A normal `new Vfs()` remains unchanged.
-
-Use a finite-lifetime scope: unlinked and replaced inodes remain retained until its
-disposal, even after fd close. There is no total-byte/count bound or automatic inode
-reclamation yet. This choice is not enabled by default for long-lived ricebox Workers.
-The scope must outlive every user, including other kernels accessing a shared mount;
-this interface does not claim migration of namespace/FD ownership or the whole kernel. There is no implicit fallback when
-an explicitly supplied core is invalid.
+The tree must outlive kernels, mappings, images and delayed readers that use it.
+Host persistence is separate from in-memory payload ownership. Guest exit alone
+is not evidence that every host operation or Worker has stopped.
 
 The package test extracts the actual tarball and checks its public JavaScript and
-Worker dependency closure without Node's TypeScript loader. With `SODS_FILE_STORE_WASM` and
-`SODS_TRANSLATOR_WASM`, it also runs a small real ELF inline and through a Node CPU
-Worker. These checks do not establish browser execution or all-current-source artifact
-compatibility when a historical translator is selected.
+Worker dependency closure without Node's TypeScript loader. With a selected
+translator fixture, execution checks can exercise real ELF inputs. Node results
+do not establish browser execution or current-source artifact compatibility when
+a historical translator is selected.
 
 ## Source-bound prepared executables
 
@@ -113,7 +98,7 @@ Changed sources decline and retain ordinary exec fallback. Duplicate keys or
 inodes, foreign tokens and malformed admission are rejected before kernel
 construction. Execution permissions, credentials and mount restrictions are
 still checked by Linux when the program runs. Canonical payloads are not read
-merely to attach an image, including selected Rust lazy payloads.
+merely to attach an image.
 
 Dirty mapping settlement invalidates the file revision **before** any canonical
 or alias publication. A failed partial publication, abandonment or retry cannot
@@ -125,7 +110,8 @@ If attachment fails after construction, `PreparedLinuxError` retains the actual
 `kernel` and earlier `attached` images for explicit cleanup. It does not promise
 rollback or physical Worker stop. Existing constructor-failure ownership limits
 are unchanged. The source/tree owner must still outlive all kernels, mappings,
-images and delayed readers; this API is not a whole-kernel Rust cutover.
+images and delayed readers. Linux authority and regular payloads remain in the
+TypeScript runtime.
 
 ## What runs where
 
@@ -300,7 +286,7 @@ For the same pinned root 0.6.5 ELF inputs, whole-translation gzip level 9 is now
 the published full-preservation correction. Native and Wasm translators produced
 byte-identical modules. These are artifact-size measurements, not a passed browser
 cold-start budget or a runtime speed claim. Input identities and the broader
-ownership/compatibility gates are recorded in [the runtime foundation design](../../docs/runtime-foundation.md).
+ownership/compatibility gates are recorded in [the runtime contract](../../docs/runtime-foundation.md).
 
 ## A translation kept
 
@@ -330,7 +316,7 @@ layers, named by the translator's digest.
 ## Its counts
 
 These historical implementation-ledger estimates are not proved specification lower bounds;
-[the runtime foundation design](../../docs/runtime-foundation.md) separates required work from interface-imposed copies and measurements.
+[the runtime contract](../../docs/runtime-foundation.md) separates required work from interface-imposed copies and measurements.
 
 A program made a module, in the translator's own instructions (callgrind, one machine, 2026-11-11). By hand, an
 x86 instruction is about 550: scanned once, decoded once, its block and its function laid out, the 30 bytes of

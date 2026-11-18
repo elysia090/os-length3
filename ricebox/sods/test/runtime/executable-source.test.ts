@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {canRunApart} from '../../runtime/host.ts';
-import {captureExecutableSource, Kernel, loadFileScope, preparedLinux, PreparedLinuxError, RemoteKernel, Vfs, mountTarget, provide, type ExecutableSource} from '../../runtime/linux.ts';
+import {captureExecutableSource, Kernel, preparedLinux, PreparedLinuxError, RemoteKernel, Vfs, mountTarget, provide, type ExecutableSource} from '../../runtime/linux.ts';
 import {E, File, FsError} from '../../runtime/linux/fs.ts';
 import {executableSourceFor} from '../../runtime/linux/executable-source.ts';
 
@@ -144,35 +143,6 @@ test('source revision changed during Image preparation is not attached or relabe
   assert.equal(k.translated(r.file), false); assert.equal(r.reads(), 0);
 });
 
-const fileStore = process.env.SODS_FILE_STORE_WASM;
-test('Rust lazy mapped source declines without loading, while zero-length and disposed-owner behavior stay explicit', {skip: !fileStore}, async () => {
-  for (const size of [0, 5]) {
-    const scope = await loadFileScope(readFileSync(fileStore!), 32), vfs = scope.createVfs();
-    let reads = 0;
-    const file = scope.mountTarget(vfs).file('/p', 0o755, size, () => { reads++; return new Uint8Array(size); }, 'source');
-    const source = captureExecutableSource(vfs, '/p', {origin: 'source', size}), k = new Kernel({vfs, console: quiet});
-    const mapping = {proc: {bytes: new Uint8Array(size)}, start: 0, length: size, off: 0};
-    file.map(mapping); if (size) mapping.proc.bytes[0] = 1;
-    assert.equal(file.load, null, 'Rust lazy ownership is not represented by File.load');
-    assert.equal(file.heldBytes(), 0);
-    const image = k.prebuiltSource(source, module);
-    assert.equal(!!image, size === 0); assert.equal(reads, 0); assert.equal(file.version, 0);
-    scope.dispose();
-    assert.throws(() => k.prebuiltSource(source, module), /scope is closed/);
-    file.abandon(mapping); k.halt();
-  }
-});
-test('source token preserves the selected Rust lazy payload owner without demanding its source', {skip: !fileStore}, async () => {
-  const scope = await loadFileScope(readFileSync(fileStore!), 32), vfs = scope.createVfs();
-  let reads = 0;
-  const bytes = Uint8Array.of(127, 69, 76, 70, 1), file = scope.mountTarget(vfs).file('/p', 0o755, 5, () => { reads++; return bytes; }, 'source');
-  const source = captureExecutableSource(vfs, '/p', {origin: 'source', size: 5}), k = new Kernel({vfs, console: quiet});
-  const image = k.prebuiltSource(source, module)!;
-  assert.equal(reads, 0); assert.equal(file.heldBytes(), 0);
-  assert.deepEqual(image.source!(), bytes); assert.equal(reads, 1);
-  // This is an explicit test-owner retirement, not automatic factory cleanup.
-  k.halt(); scope.dispose();
-});
 
 test('unavailable lazy source is not demanded by association; deliberate demand fails honestly and can retry', () => {
   const vfs = new Vfs(); let available = false, reads = 0;

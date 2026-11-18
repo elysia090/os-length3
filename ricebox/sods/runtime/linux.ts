@@ -8,7 +8,7 @@
 //                    turn on this thread; the programs given with their translations run them from the start
 //   Vfs, mountTarget, provide
 //                    its tree: made empty, filled through a mount's port (an image's reader fills it: ricebox's
-//                    distribution/mount.ts), a file given with its bytes put over what is there
+//                    ricebox/distribution/format/mount.ts), a file given with its bytes put over what is there
 //   keeper           translations kept from earlier runs, read when a program is first run
 //   Mirror           what a program changed under one directory, said to whoever keeps a copy outside
 //   said             a kernel that ran as far as it could: ended, or waiting, and for what
@@ -19,9 +19,7 @@ import {Vfs, type File} from './linux/fs.ts';
 import {executableSourceFor, type ExecutableSource} from './linux/executable-source.ts';
 import type {Segment} from './translation/share.ts';
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
-export {loadFileScope, type FileScope} from './linux/file-scope.ts';
 export {captureExecutableSource, type ExecutableSource} from './linux/executable-source.ts';
-export {prepareFileStore} from './file-store.ts';
 export {Mirror} from './linux/mirror.ts';
 export {Kernel, type Image, type Pumped} from './linux/process.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';

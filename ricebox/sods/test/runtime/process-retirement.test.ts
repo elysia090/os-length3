@@ -1,41 +1,12 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {Kernel, Process, SHARES, type Task} from '../../runtime/linux/process.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Vfs} from '../../runtime/linux/fs.ts';
-const enc=new TextEncoder(), dec=new TextDecoder();
 function kernel(vfs=new Vfs()){return new Kernel({vfs,translate(){throw Error('unused');},console:{write(){},read:()=>null}});}
 function processFor(k:Kernel){const p=new Process(k,null);p.fixed=[];p.mapBase=8192;p.mapEnd=65536;p.stackLow=4096;p.stackTop=8192;return p;}
 function memory(users=1){return Object.assign(new WebAssembly.Memory({initial:1}),{users,written:[],keeps:false,imageOf:null});}
 
-test('failed Rust mapping writeback still retires own maps/fds and preserves shared process owners', {skip:!process.env.SODS_FILE_STORE_WASM},async()=>{
-  const scope=await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),32),vfs=scope.createVfs(),k=kernel(vfs);
-  const p=processFor(k),q=processFor(k),mem=memory(2);
-  p.pid=2;q.pid=3;k.procs.set(2,p);k.procs.set(3,q);p.memory=mem;q.memory=mem;
-  const bad=vfs.writeFile('/bad','aaaa'),good=vfs.writeFile('/good','bbbb');
-  p.bytes.set(enc.encode('aaaa'),8192);q.bytes.set(enc.encode('aaaa'),12288);p.bytes.set(enc.encode('bbbb'),16384);
-  p.mapShared(bad,8192,4,0);q.mapShared(bad,12288,4,0);p.mapShared(good,16384,4,0);
-  p.bytes[8192]=90;p.bytes[16384]=89;
-  const writeback=Error('writeback'),fdFailure=Error('fd cleanup'),settle=bad.settle;let finalized=0;
-  const first=new Description('file',{node:bad}),second=new Description('file',{node:good});
-  first.gone=()=>{finalized++;k.exitProcess(p,9);throw fdFailure;};second.gone=()=>{finalized++;};
-  p.fds.install(first,{fd:7});p.fds.install(second,{fd:8});
-  bad.settle=()=>{throw writeback;};
-  try{
-    assert.throws(()=>k.exitProcess(p,9),e=>e instanceof AggregateError&&e.errors[0]===writeback&&e.errors[1]===fdFailure);
-    assert.equal(finalized,2);assert.equal(p.fds.slots.size,0);assert.equal(p.maps.length,0);assert.equal(p.memory,null);
-    assert.equal(mem.users,1);assert.equal(q.memory,mem);assert.equal(q.state,'live');assert.equal(q.maps.length,1);
-    assert.equal(bad.maps?.size,1);assert.equal(good.maps?.size??0,0);assert.equal(k.spareMemories.includes(mem),false);
-    bad.settle=settle;
-    assert.equal(dec.decode(bad.bytes()),'aaaa'); // Failed dirty bytes are lost, never reported as published.
-    assert.equal(dec.decode(good.bytes()),'Ybbb'); // Independent successful writeback remains committed.
-    q.bytes[12289]=88;assert.equal(dec.decode(bad.bytes()),'aXaa');
-    k.exitProcess(p,9);assert.equal(finalized,2);assert.equal(mem.users,1);
-    k.exitProcess(q,0);assert.equal(mem.users,0);
-  }finally{bad.settle=settle;scope.dispose();}
-});
 
 test('init retirement failure suppresses normal stopped notification but preserves terminal status',()=>{
   const k=kernel(),p=processFor(k);p.pid=1;k.procs.set(1,p);p.memory=memory();let stopped=0;

@@ -26,7 +26,7 @@ import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {checkPacks} from '../ricebox/distribution/format/pack.ts';
 import {tarMembers} from '../ricebox/distribution/host/node/tar.ts';
-import {type About, type Index} from '../ricebox/distribution/format/manifest.ts';
+import {requireStandardFileOwner, type About, type Index} from '../ricebox/distribution/format/manifest.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
@@ -72,6 +72,7 @@ if (about.index?.sha256 !== pin.web) throw new Error(`${asset}: webroot.json nam
 const indexBytes = members.get(about.index.path);
 if (!indexBytes || sha(indexBytes) !== pin.web) throw new Error(`${asset}: ${about.index.path} is not the index this tree pins (${pin.web})`);
 const index: Index = JSON.parse(indexBytes.toString('utf8'));
+requireStandardFileOwner(index);
 if (index.sha256 !== pin.sha256 || index.version !== version) throw new Error(`${asset}: its index is of root ${index.sha256} ${index.version}`);
 const named = [[index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
 // Some releases carry the box maker beside the root, rather than inside its index.

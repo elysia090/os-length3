@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFileSync} from 'node:fs';
 import {File, FsError, E} from '../../runtime/linux/fs.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 const enc = new TextEncoder(), dec = new TextDecoder();
 const call = (p: Process, nr: number, ...args: number[]) => p.syscall(BigInt(nr), ...([...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]));
@@ -44,14 +42,4 @@ test('madvise source replacement followed by throw retires without unrelated wri
   file.snapshotRange = () => { p.memory = memory(); throw new FsError(E.IO); };
   assert.throws(() => call(p, 28, 8192, 4096, 4), ReadLifetimeError);
   assert.equal(p.state, 'zombie'); assert.equal(file.bytes()[0], 7);
-});
-const wasm = process.env.SODS_FILE_STORE_WASM;
-test('Rust-backed shared madvise uses completed read snapshots and preserves settled guest writes', {skip: !wasm}, async () => {
-  const p = setup(), scope = await loadFileScope(readFileSync(wasm!), 8192);
-  const file = scope.writeFile(p.kernel.vfs, '/tmp/file', enc.encode('abc')), fd = map(p, file);
-  p.bytes[8192] = 90; p.bytes[8200] = 99;
-  assert.equal(call(p, 28, 8192, 4096, 4), 0n);
-  assert.equal(dec.decode(p.bytes.subarray(8192, 8195)), 'Zbc'); assert.equal(p.bytes[8200], 0);
-  assert.equal(dec.decode(file.bytes()), 'Zbc');
-  assert.equal(call(p, 11, 8192, 4096), 0n); assert.equal(call(p, 3, fd), 0n); scope.dispose();
 });

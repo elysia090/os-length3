@@ -29,10 +29,10 @@ function root(bytes: Uint8Array, mode = 0o755) {
     translator:{name:'sods',version:'test',path:'blobs/translator.bin',sha256:'d'.repeat(64),size:8,bytes:8,wasm:'e'.repeat(64)}};
   return {index,t,source:canonicalExecutableSource(index,t),reads:()=>reads,reading:{sha256:digest,decode(){throw Error('raw');},range(_name:string,at:number,length:number){reads++;return pack.bytes.slice(at,at+length);}}};
 }
-for (const rust of [false,true]) test(`actual prepared tree captures before overlays and whole AOT preserves lazy complete ELF, Rust=${rust}`, {skip:!translatorPath || rust&&!process.env.SODS_FILE_STORE_WASM}, async()=>{
+test('actual prepared tree captures before overlays and whole AOT preserves lazy complete ELF', {skip:!translatorPath}, async()=>{
   const bytes=elf(),r=root(bytes),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes));
   const replacement=bytes.slice();replacement[4108]=99;
-  const tree=await prepareTree({fileStore:rust?{module:readFileSync(process.env.SODS_FILE_STORE_WASM!),maxFileBytes:8192}:undefined,muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},
+  const tree=prepareTree({muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},
     captureSources:[r.source],files:[{path:r.t.path,bytes:replacement,mode:0o755}]});
   const {kernel,attached}=preparedLinux({vfs:tree.vfs,inline:true,translate:translator,console:{write(){},read:()=>new Uint8Array(0)},
     executables:[{key:'program',source:tree.sources.get(r.source.origin)!,module:new WebAssembly.Module(p.wasm),segments:p.segments,shared:false}]});
@@ -43,14 +43,14 @@ for (const rust of [false,true]) test(`actual prepared tree captures before over
     assert.deepEqual(tree.vfs.readFile(r.t.path),replacement);assert.equal(r.reads(),2,'overlay is never replaced by hot arrival');
     assert.ok(kernel.prebuiltSource(tree.sources.get(r.source.origin)!,new WebAssembly.Module(p.wasm),p.segments));
     assert.equal(kernel.translated(tree.vfs.file(r.t.path)),false,'late hot remains on original hardlinked source');
-  } finally {kernel.halt();if(kernel instanceof RemoteKernel){kernel.close();await kernel.snapshotWorkerStops();}tree.dispose();}
+  } finally {kernel.halt();if(kernel instanceof RemoteKernel){kernel.close();await kernel.snapshotWorkerStops();}}
 });
 
 test('actual prepared-tree capture keeps mode denial authoritative without reading canonical payload', {skip:!translatorPath}, async()=>{
   const bytes=elf(),r=root(bytes,0o644),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes));
-  const tree=await prepareTree({muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},captureSources:[r.source]});
+  const tree=prepareTree({muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},captureSources:[r.source]});
   const {kernel}=preparedLinux({vfs:tree.vfs,inline:true,console:{write(){},read:()=>new Uint8Array(0)},executables:[{key:'p',source:tree.sources.get(r.source.origin)!,module:new WebAssembly.Module(p.wasm),segments:p.segments}]});
-  try{assert.throws(()=>kernel.start(r.t.path,[r.t.path],[],'/'));assert.equal(r.reads(),0);}finally{kernel.halt();tree.dispose();}
+  try{assert.throws(()=>kernel.start(r.t.path,[r.t.path],[],'/'));assert.equal(r.reads(),0);}finally{kernel.halt();}
 });
 
 // A real engine module sufficient for preparation-only loadTranslator transport.
@@ -136,9 +136,9 @@ test('prepared Worker cancellation during asynchronous preparation publishes no 
   }finally{if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');}
 });
 
-for(const rust of [false,true])test(`partial canonical publication failure cannot revive prepared AOT or keeper after mapping abandonment, Rust=${rust}`,{skip:!translatorPath||rust&&!process.env.SODS_FILE_STORE_WASM},async()=>{
+test('partial canonical publication failure cannot revive prepared AOT or keeper after mapping abandonment', {skip:!translatorPath}, async()=>{
   const bytes=elf(),r=root(bytes),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes));
-  const tree=await prepareTree({fileStore:rust?{module:readFileSync(process.env.SODS_FILE_STORE_WASM!),maxFileBytes:8192}:undefined,muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},captureSources:[r.source]});
+  const tree=prepareTree({muk:Uint8Array.of(1),root:{index:r.index,reading:r.reading},captureSources:[r.source]});
   let keeperCalls=0;
   const source=tree.sources.get(r.source.origin)!,module=new WebAssembly.Module(p.wasm);
   const {kernel,attached}=preparedLinux({vfs:tree.vfs,inline:true,translate:translator,keeper:{has(){keeperCalls++;return true;},take(){throw new Error('stale keeper must not be asked');}},
@@ -154,5 +154,5 @@ for(const rust of [false,true])test(`partial canonical publication failure canno
     assert.equal(kernel.translated(original),false);assert.equal(kernel.keptFor(original),false);assert.equal(keeperCalls,0);
     const fresh=kernel.image(original,true);assert.notEqual(fresh,attached.get('program'));assert.equal(keeperCalls,0);
     assert.equal(fresh.source!()[4108],bytes[4108]!^1);
-  }finally{original.abandon(mapping);kernel.halt();tree.dispose();}
+  }finally{original.abandon(mapping);kernel.halt();}
 });

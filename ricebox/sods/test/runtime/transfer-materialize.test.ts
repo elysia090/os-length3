@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {File, FILE_MOST} from '../../runtime/linux/fs.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
@@ -49,22 +47,6 @@ for (const operation of ['fallocate', 'copy']) test(`${operation} destination lo
   assert.equal(run(), -5n); assert.equal(target.version, 0);
   assert.equal(p.fds.get(input)!.offset, 0); assert.equal(p.fds.get(output)!.offset, 0);
   fail = false; assert.equal(run(), operation === 'copy' ? 3n : 0n);
-});
-test('copy explicit offsets and fallocate use actual Rust payload', {skip: !process.env.SODS_FILE_STORE_WASM}, async () => {
-  const {k, p, fd} = setup();
-  const scope = await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!), 64);
-  try {
-    const source = scope.writeFile(k.vfs, '/tmp/source', 'abcdef');
-    const target = scope.writeFile(k.vfs, '/tmp/target', '------');
-    const input = fd(source), output = fd(target);
-    p.view.setBigInt64(128, 1n, true); p.view.setBigInt64(136, 2n, true);
-    assert.equal(call(p, 326, input, 128, output, 136, 3, 0), 3n);
-    assert.equal(dec.decode(target.bytes()), '--bcd-');
-    assert.equal(p.view.getBigInt64(128, true), 4n); assert.equal(p.view.getBigInt64(136, true), 5n);
-    assert.equal(p.fds.get(input)!.offset, 0); assert.equal(p.fds.get(output)!.offset, 0);
-    assert.equal(call(p, 285, output, 0x11, 3, 2), 0n);
-    assert.deepEqual([...target.bytes()], [45,45,98,0,0,45]);
-  } finally { scope.dispose(); }
 });
 
 test('fallocate invalid expansion is refused before loading', () => {

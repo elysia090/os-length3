@@ -21,7 +21,7 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(existsSync(join(out,'ricebox/distribution/npm')),false);
     assert.equal(pkg.exports['./vite'].import,'./ricebox/distribution/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./ricebox/distribution/build/prepare.ts');
-    for(const name of ['ricebox/distribution/format/executable-source.ts','ricebox/distribution/build/distribution.ts','ricebox/distribution/build/file-store-artifact.ts','ricebox/sods/runtime/file-store.ts',
+    for(const name of ['ricebox/distribution/format/executable-source.ts','ricebox/distribution/build/distribution.ts',
       'ricebox/distribution/deployment/assets.ts','ricebox/distribution/deployment/assets.js',
       'ricebox/distribution/integrations/vite.ts','ricebox/distribution/integrations/vite.js','ricebox/distribution/build/prepare.ts','ricebox/distribution/build/prepare.js']) {
       assert.ok(existsSync(join(out,name)),`missing ${name}`);
@@ -54,14 +54,10 @@ test('built npm package contains builder dependencies and imports public JS with
       if(!distributionAssets(output).has('ricebox/muk.json'))throw Error('missing maker');console.log('composition-ok');
     `],{encoding:'utf8',timeout:30_000});
     assert.match(composed,/composition-ok/);
-    const helper=pathToFileURL(join(out,'ricebox/distribution/build/file-store-artifact.ts')).href;
-    const checks=execFileSync(process.execPath,['--input-type=module','-e',
-      `const {fileStoreOptions}=await import(${JSON.stringify(helper)}); if(fileStoreOptions([])!==null) throw Error('selection'); console.log('builder-ok');`],{encoding:'utf8',timeout:30_000});
-    assert.match(checks,/builder-ok/);
     const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--offline','--json','--pack-destination',work],
       {cwd:out,env:{...process.env,npm_config_cache:join(work,'npm-cache')},encoding:'utf8',timeout:30_000}));
     assert.ok(existsSync(join(work,packed[0].filename)));
-    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/build/file-store-artifact.ts'));
+    assert.ok(!packed[0].files.some((f:{path:string})=>/file-store|file-scope/.test(f.path)), 'retired file ownership implementations are not package content');
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/format/executable-source.ts'));
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/integrations/vite.js'));
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);

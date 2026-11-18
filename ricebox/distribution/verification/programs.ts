@@ -120,21 +120,16 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const {RemoteKernel, keeper, linux, provide} = await import('../../sods/runtime/linux.ts');
   const {loadTranslator} = await import('../../sods/runtime/translate.ts');
   const {prepareTree} = await import('../runtime/prepared-tree.ts');
-  const {releaseFileStore} = await import('../runtime/file-store.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openDistribution(web);
-  const {requireFileStoreName} = await import('../runtime/root-types.ts');
-  requireFileStoreName(w.index);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
-  const fileStore = await releaseFileStore(w.index.fileStore, async (descriptor) => new Uint8Array(w.blob(descriptor)));
-  const tree = await prepareTree({fileStore, muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
+  const tree = prepareTree({muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
     range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
     decode: (b) => new Uint8Array(w.unzstd(b)),
     sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),
   }}});
   // The child realm owns this root across the run, like the browser Worker.
-  // Do not retire its scope merely because one kernel reports an exit.
   const vfs = tree.vfs;
   // As the page gives them: each program translated ahead of time, with its bytes, in the root's file (each of its names).
   const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {

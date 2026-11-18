@@ -2,9 +2,9 @@
 
 The supported sods Linux runtime is the TypeScript `Kernel`/`RemoteKernel`
 implementation. Ricebox prepares distributions and source-bound translations for
-that runtime; muk creates the guest container. An optional independent Rust/Wasm
-file store can own selected file payloads. It does not replace Linux syscall,
-process, pathname, credential or descriptor authority.
+that runtime; muk creates the guest container. Regular file payloads belong to
+the TypeScript Vfs, alongside Linux process, pathname, credential and descriptor
+authority. Translator and AOT artifacts do not select an alternate file owner.
 
 ## Entry points and responsibilities
 
@@ -84,23 +84,17 @@ Original errors and cleanup failures remain visible, including uncertain retirem
 The embedding still owns console delivery and persistent-storage synchronization.
 Guest output acceptance is not a universal guarantee of delivery or durable storage.
 
-## Optional file-store selection
+## File payloads and persistence
 
-The standalone file-store ABI is independent of the Linux runtime. A verified
-release may select an ABI4 descriptor containing compressed-blob and expanded-Wasm
-identities and a per-file size limit. `releaseFileStore` checks the current index;
-a cached startup hint cannot select another generation. Missing descriptors retain
-legacy compatibility, but a present invalid or unavailable selection fails rather
-than silently changing owners. A release-selected store cannot be overridden by a
-second caller selection.
+Regular files, including lazily loaded canonical pack files, use the TypeScript
+Vfs payload implementation. Source-bound AOT changes how code is attached, not
+which component owns those files. Distribution artifacts select executable code
+and authenticated source bytes, not a separate file-storage engine.
 
-`prepareTree` mounts selected pack files through the file scope. Ordinary
-non-pack files are not automatically promoted. `maxFileBytes` is a per-file limit,
-not a total retained-memory ceiling. Scope disposal does not authorize access by
-kernels or mappings that still depend on its payloads.
-
-See `ricebox/distribution/runtime/file-store.ts`,
-`ricebox/sods/runtime/file-store.ts` and `ricebox/sods/file-store/`.
+Canonical bytes may be demanded after startup by reads, mappings or translation.
+The tree and its readers must remain available for those operations. Host cache
+and persistent-storage policy remain the embedding's responsibility; in-memory
+Vfs ownership does not itself provide durable storage or a total memory budget.
 
 ## Copies and cost boundaries
 
@@ -113,8 +107,9 @@ See `ricebox/distribution/runtime/file-store.ts`,
 - Lazy source loading avoids only bytes not demanded. Rehearsal can move a read
   earlier rather than eliminate it. Pack tables, decoding, hashing and caching
   have separate costs.
-- The independent file store uses scratch transfers at its host boundary. It does
-  not make guest reads zero-copy or remove the TypeScript Linux owner.
+- Canonical Vfs bytes and guest linear memory are distinct storage. Guest reads
+  and mapping publication must transfer the required bytes; shared execution
+  memory does not make every file operation zero-copy.
 - Mapping publication and source invalidation must account for aliases and partial
   failure. A constant crossing count is an interface property, not proof of an
   optimal implementation.
@@ -135,8 +130,6 @@ Current regression sources cover the supported contracts:
   through the actual guest/container path.
 - `ricebox/distribution/runtime/test/worker-lifetime.test.ts`: admission closure,
   retained owners and retirement ordering.
-- `ricebox/distribution/runtime/test/file-store.test.ts`: release-selected storage,
-  absent-descriptor compatibility and invalid-selection rejection.
 
 Historical release qualification is not a result for every subsequent checkout.
 For the pinned 0.6.5 root, archive SHA-256

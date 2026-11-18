@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {File, FsError, E} from '../../runtime/linux/fs.ts';
 import {Kernel, Process, ImageSourceChangedError} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
@@ -79,19 +77,6 @@ test('exec head source replacement then throw is not returned as EIO to a new im
   assert.equal(p.state, 'zombie'); assert.equal(p.image, undefined);
 });
 
-const coreWasm = process.env.SODS_FILE_STORE_WASM;
-test('Rust-backed executable source is checked after completed copy and translation callback', {skip: !coreWasm}, async () => {
-  const scope = await loadFileScope(readFileSync(coreWasm!), 32);
-  let file: File, change = true;
-  const k = new Kernel({console: quiet, translate() { if (change) file.write(4, Uint8Array.of(2)); return wasm; }});
-  file = scope.writeFile(k.vfs, '/p', elf(), 0o755);
-  assert.throws(() => k.image(file), ImageSourceChangedError);
-  assert.equal(k.images.has(file), false); assert.equal(file.version, 1);
-  change = false;
-  assert.equal(k.image(file).source!()[4], 2);
-  assert.equal(k.images.get(file)!.version, 1);
-  scope.dispose();
-});
 
 test('prebuilt source invalidates origin on first changed capture and then keeps its COW bytes', () => {
   const k = new Kernel({console: quiet}), file = k.vfs.writeFile('/p', elf());

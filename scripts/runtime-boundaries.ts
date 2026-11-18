@@ -23,12 +23,11 @@ const hostImports: Record<string, readonly string[]> = {
   'ricebox/distribution/build/compression-pool.ts': ['node:worker_threads'],
   'ricebox/distribution/build/compress.worker.ts': ['node:worker_threads','node:zlib'],
   'ricebox/distribution/build/aot-cache.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path'],
-  'ricebox/distribution/build/file-store-artifact.ts': ['node:crypto'],
   'ricebox/distribution/build/muk-artifact.ts': ['node:child_process','node:crypto','node:fs','node:path','node:url'],
   'ricebox/distribution/build/package-database.ts': ['node:crypto','node:fs','node:path'],
   'ricebox/distribution/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
   'ricebox/distribution/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
-  'ricebox/distribution/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
+  'ricebox/distribution/deployment/assets.ts': ['node:crypto','node:fs','node:path'],
   'ricebox/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
   // The existing CLI is executable but must not become an importable runtime dependency.
   'ricebox/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
@@ -94,7 +93,6 @@ export function allowed(from: string, specifier: string): boolean {
   if (owner === 'ricebox/distribution/integrations') return inside(target, 'ricebox/distribution/build') || inside(target, 'ricebox/distribution/deployment');
   if (owner === 'ricebox/distribution/host/node') return inside(target, 'ricebox/distribution/format');
   if (from === 'ricebox/distribution/build/npm.ts' && target === 'ricebox/toolchain/package-typescript.ts') return true;
-  if (from === 'ricebox/distribution/build/file-store-artifact.ts' && target === 'ricebox/sods/runtime/linux.ts') return true;
   if (owner === 'ricebox/distribution/build' || owner === 'ricebox/distribution/deployment') return inside(target, 'ricebox/distribution/format') || inside(target, 'ricebox/distribution/host/node');
   if (owner === 'ricebox/distribution/runtime') return inside(target, 'ricebox/distribution/format') || publicSods.has(target);
   return owner === 'ricebox/cowboy/host' && target === 'ricebox/sods/runtime/linux.ts';
