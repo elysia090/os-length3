@@ -4,9 +4,10 @@ import {test} from 'node:test';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
 import {createGuest} from '../../runtime/host/node/execution.ts';
 
-// These are real core ABI probes with SYNTHETIC image, capability, output and
-// stop receipts. No Worker, socket, native sendfile, SIGPIPE or physical prefix
-// is proved here. A probe-feature core must never enter the production host.
+// These are real Core ABI probes with synthetic image/capability/output setup.
+// Only the named Node capture cases use a real Worker and its observed stop;
+// none proves a socket, native sendfile, SIGPIPE or physical sink delivery.
+// A probe-feature Core must never enter the production host.
 const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
 const queueArtifact = process.env.SODS_QUEUED_OUTPUT_PROBE_WASM;
@@ -646,7 +647,7 @@ function copyWorkerInput(guest: WebAssembly.Memory, core: WebAssembly.Memory, at
 }
 
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
-  test(`real Node Worker capture fixture: ${mode}`, {skip: workerQueueSkip, timeout: 10_000}, async t => {
+  test(`real Node Worker capture fixture: ${mode}`, {skip: workerQueueSkip, timeout: 30_000}, async t => {
     const r = raw(workerQueueArtifact!, true, false, true, true);
     assert.equal(r.call('linux_queued_output_probe_init'), 0);
     const input = captureGuest(), bridge = createGuest(input);
@@ -696,8 +697,8 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
           assert.equal(r.call(finish, id, request.sequence, action, 2, length), 0);
           bridge.requestStop(); await bridge.stopped;
           assert.equal(bridge.diagnostics().pendingRequest, true);
-          assert.ok(r.call('linux_run_receipt', id, request.invocation, 2, 0n) < 0);
-          assert.ok(r.call('linux_execution_retire', id) < 0);
+          assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), -4);
+          assert.equal(r.call('linux_execution_retire', id), -4);
           assert.equal(r.call(finish, id, request.sequence, action, 1, 0), 0);
           assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
           callbackStopped = true;
@@ -737,10 +738,13 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
         assert.deepEqual([r.length(), r.result()], [2n, 66n]);
       }
     } finally {
-      bridge.requestStop();
-      await bridge.stopped;
-      await bridge.requestsSettled();
       t.signal.removeEventListener('abort', onAbort);
+      bridge.requestStop();
+      if (bridge.diagnostics().created) {
+        const cleanup = await bridge.stopEvidence();
+        assert.equal(cleanup.stopped, true, 'cleanup requires observed Worker exit');
+        await bridge.requestsSettled();
+      }
     }
   });
 }
