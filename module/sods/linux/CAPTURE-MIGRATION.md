@@ -914,3 +914,43 @@ need no staging and still require the physical effect and exact
 receipt. The Rust Wasm and its disassembly are unchanged for this host
 transport. These observed operation counts are not an instruction count
 or a latency comparison.
+
+### Keep host and distribution selection as independent proof gates
+
+Do not map the Node File alternative to a browser Console, a Workerd
+response, or the legacy borrowed stdout. Keep the browser's labelled
+batches, flush epochs, byte boundary and drain ownership independent
+of the producer's lifecycle. The browser branch of Remote requests
+termination without the real Node exit observation. Until a portable
+protocol can prove ended use of the actual producer and independently
+draining consumer (or retain uncertainty within a declared bound),
+neither timeout nor a drained queue is an interchangeable stop receipt.
+
+In local Workerd 2026-11-13 with Node compatibility, creating shared
+Wasm memory worked. Neither the browser Worker constructor nor
+`node:worker_threads` was available. The actual Sods host check
+returned non-Node and no apart running; the capture entry rejected
+before instantiating Core, as intended. That is a preflight rejection
+test, not a Workerd execution or a production stack pass. Headless
+Chromium 156 stopped during launcher socket setup with EPERM, before a
+page or Worker ran. The real Playwright/Prompt and full Workerd-backed
+stack remain unverified here; their missing built app/webroot and local
+database prerequisites are separate from this capability check.
+
+For distribution, the existing opt-in capture reader already authenticates
+the selected index, stored blob, bounded expansion and decoded role pin.
+The offline suite covers competing roles, stale index, wrong sizes,
+wrong digests and a deliberately absent optional artifact. The normal
+webroot does not select an opt-in capture artifact by default. Keep a
+future owned-output pin separate from that capture role. Only a named
+caller selecting an authenticated generation should bind its prepared
+root, source transport and owned-output artifact together. A cross-
+generation mix, bad stored/decompressed bytes, wrong host or missing
+descriptor must fail before file creation. An index display or a
+fixture pin is not evidence that a deployed manifest selected this role.
+
+No existing Remote/Console or CLI caller moved as part of the owned
+cold path. This leaves the live TypeScript files and their references
+in place. Verify actual browser and Workerd delivery and retirement
+contracts, and identify a caller eligible for cutover, before removing
+them; do not publish another production branch to force a deletion.
