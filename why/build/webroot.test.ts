@@ -107,9 +107,9 @@ test('a pack or an index that is not the root is caught', () => {
   const busybox = index.files.find((f) => f.path === '/usr/bin/busybox');
   assert.ok(busybox);
   busybox.mode = 0o4755;
-  const json = Buffer.from(JSON.stringify(index));
-  writeFileSync(join(bad, about.index.path), json);
-  writeFileSync(join(bad, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json), size: json.length}}));
+  const json = Buffer.from(JSON.stringify(index)), sha256 = sha(json), path = `index-${sha256}.json`;
+  writeFileSync(join(bad, path), json);
+  writeFileSync(join(bad, 'webroot.json'), JSON.stringify({...about, index: {path, sha256, size: json.length}}));
   r = node([join(os, 'ricebox/distribution/verification/distribution.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /different \(1\):\n {2}\/usr\/bin\/busybox\tfile\t0755/);

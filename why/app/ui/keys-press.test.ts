@@ -18,7 +18,9 @@ test('a recording silent before it sounds is played from where it sounds, and fa
 // The context and the fetch are stood in for, as in keys-play.test.ts: what is counted is what is started, and when.
 test('a press sounds as it goes down and its release as it is let go; a stroke that could not sound in time is not played late', async (t) => {
   const started: number[] = [];
-  let slow = 0;
+  let clock = 1000;
+  let recorded!: () => void;
+  const recording = new Promise<void>(resolve => { recorded = resolve; });
   const node = () => ({gain: {value: 0}, frequency: {value: 0}, playbackRate: {value: 0}, connect() { return this; }, start(at: number) { started.push(at); }});
   class Context {
     destination = {}; currentTime = 10; state = 'running';
@@ -28,13 +30,13 @@ test('a press sounds as it goes down and its release as it is let go; a stroke t
     resume() { return Promise.resolve(); }
     async decodeAudioData() { return {length: 100, sampleRate: 44100, numberOfChannels: 1, getChannelData: () => new Float32Array(100)}; }
   }
-  for (const [name, value] of Object.entries({AudioContext: Context, document: {hidden: false}})) {
+  for (const [name, value] of Object.entries({AudioContext: Context, document: {hidden: false}, performance: {now: () => clock}})) {
     const before = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, {value, configurable: true});
     t.after(() => { if (before) Object.defineProperty(globalThis, name, before); else Reflect.deleteProperty(globalThis, name); });
   }
   t.mock.method(globalThis, 'fetch', async () => {
-    if (slow) await new Promise((resolve) => setTimeout(resolve, slow));
+    await recording;
     return {ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0)} as Response;
   });
   const module = './keys.ts?press-test';
@@ -42,21 +44,21 @@ test('a press sounds as it goes down and its release as it is let go; a stroke t
   const settled = () => new Promise<void>((resolve) => setImmediate(resolve));
 
   // The recordings take longer to come than a stroke may wait: it is silent, not late.
-  slow = 300;
   strike('enter');
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  clock += 300;
+  recorded();
+  await settled();
   assert.deepEqual(started, [], 'a stroke struck long before its sound was ready is not played');
 
   // They are there now: a press sounds its press alone, at once.
-  slow = 0;
   press('enter');
   await settled();
   assert.deepEqual(started, [10], 'the press, at the context\'s now');
   // Let go at once, its release still follows the press by a moment.
+  clock += 10;
   lift();
   await settled();
-  assert.equal(started.length, 2);
-  assert.ok(started[1] > 10 && started[1] <= 10.035, `the release, a moment after: ${started[1]}`);
+  assert.deepEqual(started, [10, 10.025], 'the release still follows the press by the minimum interval');
   // Let go again, nothing more.
   lift();
   await settled();
