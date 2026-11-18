@@ -18,7 +18,7 @@ function raw(preparedRoot = false) {
     assert.equal(call(name, value.length), 0);
     new Uint8Array((e.memory as WebAssembly.Memory).buffer, Number(result()), value.length).set(value);
   };
-  assert.equal(call('linux_abi_version'), 4); assert.equal(call('linux_init', 8, 32), 0);
+  assert.equal(call('linux_abi_version'), 5); assert.equal(call('linux_init', 8, 32), 0);
   if (preparedRoot) {
     // One valid lazy /app and its image association. No payload is supplied.
     const path = bytes('/app'), wire = new Uint8Array(72 + 40 + 40 + path.length + 104 + path.length);
@@ -117,6 +117,37 @@ test('live pathname capture rejects valid root catalog queries while retaining i
   assert.equal(r.call('linux_syscall_path_finish', owner.id, action, 5n, 0), 0);
   assert.equal(r.call('linux_root_source', 1), 0); assert.equal(r.length(), 3n);
   assert.equal(r.call('linux_root_artifact', 1), 0); assert.equal(r.length(), 160n);
+});
+
+test('register owner excludes generic receipts and valid register calls cannot bypass another exact pathname view', {skip: !artifact}, () => {
+  const r = raw(), a = r.live(), b = r.live();
+  assert.equal(r.call('linux_syscall_sequenced', a.id, a.invocation, 1, 158n, 0x1002n, 0n, 0n, 0n, 0n, 0n, 4096n), 0);
+  assert.equal(r.state(), 9); const register = r.result();
+  for (const [name, args] of [
+    ['linux_start', [register]], ['linux_receipt', [register, 1n, 0]], ['linux_retire', [register]],
+  ] as const) assert.equal(r.call(name, ...args), -4, name);
+  const path = r.open(b); r.capture(b, path, bytes('/app\0'));
+  assert.equal(r.call('linux_register_start', a.id, 1, register, 0n), -4);
+  assert.equal(r.call('linux_register_receipt', a.id, 1, register, 0n, 0), -4);
+  assert.equal(r.call('linux_syscall_sequenced', a.id, a.invocation, 2, 39n, 0n, 0n, 0n, 0n, 0n, 0n, 4096n), -4);
+  assert.equal(r.call('linux_syscall_path_finish', b.id, path, 5n, 0), 0);
+  assert.equal(r.call('linux_register_start', a.id, 1, register, 0n), 0);
+  assert.equal(r.call('linux_register_receipt', a.id, 1, register, 0n, 0), 0);
+  assert.equal(r.state(), 0); assert.equal(r.result(), 0n);
+  assert.ok(r.call('linux_register_receipt', a.id, 1, register, 0n, 0) < 0);
+});
+
+test('Unknown register retains resources after synthetic fault and a late stopped receipt never restores guest success', {skip: !artifact}, () => {
+  const r = raw(), a = r.live();
+  assert.equal(r.call('linux_syscall_sequenced', a.id, a.invocation, 1, 158n, 0x1002n, 77n, 0n, 0n, 0n, 0n, 4096n), 0);
+  const register = r.result();
+  assert.equal(r.call('linux_register_start', a.id, 1, register, 77n), 0);
+  assert.equal(r.call('linux_register_receipt', a.id, 1, register, 77n, 2), 0); assert.equal(r.state(), 4);
+  assert.equal(r.call('linux_run_receipt', a.id, a.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', a.id), 0); assert.equal(r.result(), 0n);
+  assert.equal(r.call('linux_register_start', a.id, 1, register, 77n), -12);
+  assert.equal(r.call('linux_register_receipt', a.id, 1, register, 77n, 0), 0); assert.equal(r.state(), 4);
+  assert.equal(r.call('linux_execution_retire', a.id), 0); assert.equal(r.result(), 1n);
 });
 
 test('another Unknown capture finish cannot allocate while a different owner exposes its input view', {skip: !artifact}, () => {

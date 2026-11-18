@@ -40,6 +40,9 @@ interface Admission extends WebAssembly.Exports {
   linux_run_start(id: bigint): number;
   linux_run_receipt(id: bigint, invocation: bigint, outcome: number, next: bigint): number;
   linux_syscall(id: bigint, invocation: bigint, nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): number;
+  linux_syscall_sequenced(id: bigint, invocation: bigint, sequence: number, nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): number;
+  linux_register_start(id: bigint, sequence: number, action: bigint, base: bigint): number;
+  linux_register_receipt(id: bigint, sequence: number, action: bigint, base: bigint, outcome: number): number;
   linux_syscall_path_start(id: bigint, action: bigint): number;
   linux_syscall_path_finish(id: bigint, action: bigint, actual: bigint, outcome: number): number;
   linux_syscall_complete(id: bigint): number;
@@ -154,7 +157,7 @@ export interface PathExecutionOptions {
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
 }
-const required = ['linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+const required = ['linux_syscall_sequenced', 'linux_register_start', 'linux_register_receipt', 'linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_path_start', 'linux_syscall_path_finish', 'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
@@ -244,7 +247,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new WebAssembly.Instance(module).exports as Admission;
-  if (core.linux_abi_version() !== 4) throw new Error('Unsupported Linux admission ABI');
+  if (core.linux_abi_version() !== 5) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   const safeNumber = (value: bigint): number => {
     const number = integer(numeric(value));
@@ -490,7 +493,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       try {
         const outcome = await w.bridge.run(w.invocation, entry, async request => {
           try {
-            const c = command(core.linux_syscall(w.id, request.invocation, request.nr, ...request.args, request.next));
+            const c = command(core.linux_syscall_sequenced(w.id, request.invocation, request.sequence, request.nr, ...request.args, request.next));
             if (c.tag === 0) return {kind: 'return', value: c.value};
             if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
             if ((c.tag & 255) === 7) {
@@ -501,6 +504,23 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
             if (c.tag === 8) {
               const completed = capturePath(w, c);
               if (completed.tag !== 0) throw new Error(`Path capture did not return: ${completed.tag}`);
+              return {kind: 'return', value: completed.value};
+            }
+            if (c.tag === 9) {
+              if (c.next !== wide(request.sequence)) throw new Error('Rust register sequence mismatch');
+              checked(core.linux_register_start(w.id, request.sequence, c.value, c.target));
+              let physical: Awaited<ReturnType<typeof w.bridge.applyFs>>;
+              try { physical = await w.bridge.applyFs(request, c.value, c.target); }
+              catch (error) {
+                // Start was consumed. A transport throw cannot certify zero.
+                // Attempt this receipt once; never retry a trapped core export.
+                try { checked(core.linux_register_receipt(w.id, request.sequence, c.value, c.target, 2)); }
+                catch (receipt) { throw new AggregateError([error, receipt], 'Register transport and uncertain receipt failed'); }
+                throw error;
+              }
+              const completed = command(core.linux_register_receipt(w.id, request.sequence, c.value, c.target,
+                physical === 'applied' ? 0 : physical === 'not-applied' ? 1 : 2));
+              if (completed.tag !== 0) throw new Error(`Worker register application failed or remains uncertain: ${physical}`);
               return {kind: 'return', value: completed.value};
             }
             if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);

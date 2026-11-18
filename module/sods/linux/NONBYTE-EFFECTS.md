@@ -45,7 +45,10 @@ Stopped evidence. Likewise guest stop says nothing about a still-active external
 stream/source callback. A future register-specific destruction proof must not
 silently generalize to output IO.
 
-## Next TLS boundary, not implemented here
+## Next TLS boundary, separate from this foundation
+
+The later selected integration is documented in [TLS-CALLER.md](TLS-CALLER.md).
+This foundation alone does not supply that transport or Linux caller.
 
 Rust must own ARCH_SET_FS admission, exact requested value, invocation/request
 sequence, action and private completion. FS base is not a dereferenced pointer;

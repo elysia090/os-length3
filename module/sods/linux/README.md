@@ -9,7 +9,7 @@ permission before host execution, retains uncertain completion, accepts cumulati
 prefix evidence, and refuses stale/duplicate actions. `Completion::Stopped` requires
 both no further effects and ended access; a confirmed byte count alone does not.
 
-The private wasm32 ABI (version 4) connects that table to `runtime/linux/memory-host.ts`, which
+The private wasm32 ABI (version 5) connects that table to `runtime/linux/memory-host.ts`, which
 creates and retains actual engine memories without exposing raw memory or callbacks.
 Capture/write/grow operations acquire admission before host access. Mutation reserves
 exclusively before execution; successful retirement publishes a new binding identity.
@@ -135,7 +135,7 @@ its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
 
 
-## Resident file to physical memory (private ABI 4)
+## Resident file to physical memory (private ABI 5)
 
 The following sections preserve successive integration stages. Earlier ABI2 or
 unconnected diagnostic limitations describe that stage; the later managed CLI
@@ -849,7 +849,7 @@ See [OPEN-CALLER.md](OPEN-CALLER.md) for the complete admission/failure contract
 The additive asynchronous `managedRoot` entrance in `sods/linux` exposes only a
 readonly root producer/transport and selected execution/lifetime facade. The
 private memory/grow/inode diagnostics are not public, and default Kernel/backend
-selection is unchanged. Its Linux ABI4 is distinct from file-store ABI4.
+selection is unchanged. Its Linux ABI5 is distinct from file-store ABI4.
 
 `prepared_root.rs` validates and seals a captured range-backed namespace/catalog
 without loading payloads. Hardlinks retain one canonical inode; exact root lazy
@@ -861,7 +861,8 @@ facts and external segments before actual Worker image publication.
 See [ROOT-AOT.md](ROOT-AOT.md) for trusted-artifact requirements, typed ownership,
 local SourceId scope, finite admission history, cancellation and retirement. This
 connects a selected fixed static caller, not the ordinary BusyBox/shell/muk/TTY
-profile. TLS, clear-tid, sendfile and Linux signal/VM compatibility remain gates.
+profile. Low-address Worker FS is covered by [TLS-CALLER.md](TLS-CALLER.md);
+clear-tid, sendfile and Linux signal/VM compatibility remain gates.
 
 ### Non-byte effect reservation foundation
 
@@ -869,6 +870,15 @@ The domain also reserves non-byte Effects in the same finite action arena and
 single token namespace as spans and lifetime changes. An Effect retains its exact
 binding incarnation but grants no guest byte span. Started Unknown effects remain
 owned after guest unwind and prevent rebinding until matching stopped evidence.
-This internal primitive does not yet implement Worker TLS or canonical-source
+This internal primitive alone does not implement Worker TLS or canonical-source
 sendfile. See [NONBYTE-EFFECTS.md](NONBYTE-EFFECTS.md) for its scope and the next
 physical apply/ack/return boundary.
+
+### Exact Worker FS application
+
+The actual Worker route captures every request sequence in Rust and admits only
+its explicit low-address ARCH_SET_FS profile. One non-byte action grants the real
+Worker setter, then ACK, matching Rust receipt and only then the final guest
+return. Unknown closes admission and retains resources even after observed exit;
+no generic stopped-zero or replay shortcut is supplied. See
+[TLS-CALLER.md](TLS-CALLER.md) for the complete selected scope and failure evidence.

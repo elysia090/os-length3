@@ -15,11 +15,12 @@ loaded only when explicitly selected. A selected obsolete Linux core fails its
 required-export/version check, never silently chooses another owner.
 
 The supplied module must be the **trusted matching Linux core**. Its private ABI
-is 4, independently of file-store ABI4. Export shape and version do not prove
+is 5, independently of file-store ABI4. Export shape and version do not prove
 arbitrary Wasm provenance. The current managed caller remains static/non-TTY and
 is not an ordinary utility, shell, muk box, full VM or terminal compatibility
-claim. TLS, clear-tid and owned sendfile needed by the next BusyBox caller remain
-separate implementation gates.
+claim. The low-address Worker FS subround is covered by
+[TLS-CALLER.md](TLS-CALLER.md). Clear-tid and owned sendfile needed by the next
+BusyBox caller remain separate implementation gates.
 
 ## Input and ownership
 
@@ -153,8 +154,9 @@ source-free image ownership, cancellation, invalid facts and Unknown image
 retirement. Full strict TypeScript, independent packaging, existing runtime/CI
 and actual browser budget still apply; local component probes do not replace them.
 
-The standard BusyBox `cat` target additionally requires open(2), ARCH_SET_FS,
-set_tid_address, sendfile and single-thread exit_group. Its transfer owner must
+The standard BusyBox `cat` target additionally requires open(2),
+set_tid_address, sendfile and single-thread exit_group beyond its admitted
+low-address ARCH_SET_FS bridge. Its transfer owner must
 retain both exact OFDs and commit only a known stopped prefix. In particular,
 zero count or source EOF is **not** endpoint-agnostic sendfile success: controlled
 native FIFO cases can still produce EAGAIN or EPIPE/SIGPIPE. A physical stream

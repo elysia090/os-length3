@@ -1,4 +1,4 @@
-//! Private wasm32 ABI4, one managed domain per instance. The read-only caller
+//! Private wasm32 ABI5, one managed domain per instance. The read-only caller
 //! is a limited fixed-memory profile, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
@@ -10,7 +10,7 @@ use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::prepared_root::{Limits as RootLimits, RootCatalog, RootImage};
 use crate::read::{ReadCapacity, Reads};
-use crate::syscall::{Continuation, PathOutcome, PhysicalResult, Step};
+use crate::syscall::{Continuation, PathOutcome, PhysicalResult, RegisterOutcome, Step};
 use crate::{
     credentials::Credentials,
     fs_context, mount,
@@ -276,7 +276,7 @@ fn inode(n: u64) -> Inode {
 }
 #[no_mangle]
 pub extern "C" fn linux_abi_version() -> u32 {
-    4
+    5
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -1007,6 +1007,16 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = length;
             action.sequence()
         }
+        Step::SetFs {
+            action,
+            sequence,
+            base,
+        } => {
+            s.state = 9;
+            s.auxiliary = base;
+            s.length = u64::from(sequence);
+            action.sequence()
+        }
         Step::Path {
             action,
             target,
@@ -1088,38 +1098,154 @@ pub extern "C" fn linux_syscall(
     next: u64,
 ) -> i32 {
     with_state(false, |s| {
+        syscall_enter(s, id, invocation, None, nr, a, b, c, d, e, f, next)
+    })
+}
+/// Actual Worker entrance: sequence is captured before syscall admission, not
+/// first adopted at a physical subround. Unsequenced diagnostics cannot set FS.
+#[no_mangle]
+pub extern "C" fn linux_syscall_sequenced(
+    id: u64,
+    invocation: u64,
+    sequence: u32,
+    nr: u64,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    next: u64,
+) -> i32 {
+    with_state(false, |s| {
+        syscall_enter(
+            s,
+            id,
+            invocation,
+            Some(sequence),
+            nr,
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            next,
+        )
+    })
+}
+fn syscall_enter(
+    s: &mut State,
+    id: u64,
+    invocation: u64,
+    sequence: Option<u32>,
+    nr: u64,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    next: u64,
+) -> Result<u64, i32> {
+    let i = execution_index(s, id)?;
+    let slot = s.executions[i].live_mut()?;
+    let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
+    let r = s.sealed.as_mut().ok_or(-9)?;
+    let namespace = match &slot.resources {
+        Resources::Normal {
+            fs: Some(fs),
+            decision,
+            ..
+        } => Some((fs, &decision.credentials)),
+        _ => None,
+    };
+    let continuation = slot.continuation.as_mut().ok_or(-11)?;
+    let args = [a, b, c, d, e, f];
+    let command = if let Some(sequence) = sequence {
+        continuation.enter_sequenced(
+            &mut r.files,
+            slot.resources.table()?,
+            namespace,
+            &mut r.reads,
+            &mut s.domain,
+            &mut slot.execution,
+            invocation,
+            sequence,
+            nr,
+            args,
+            next,
+        )
+    } else {
+        continuation.enter_with_namespace(
+            &mut r.files,
+            slot.resources.table()?,
+            namespace,
+            &mut r.reads,
+            &mut s.domain,
+            &mut slot.execution,
+            invocation,
+            nr,
+            args,
+            next,
+        )
+    }
+    .map_err(|_| -12)?;
+    Ok(step(s, command))
+}
+#[no_mangle]
+pub extern "C" fn linux_register_start(id: u64, sequence: u32, action: u64, base: u64) -> i32 {
+    with_state(false, |s| {
         let i = execution_index(s, id)?;
         let slot = s.executions[i].live_mut()?;
-        let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
-        let r = s.sealed.as_mut().ok_or(-9)?;
-        let namespace = match &slot.resources {
-            Resources::Normal {
-                fs: Some(fs),
-                decision,
-                ..
-            } => Some((fs, &decision.credentials)),
-            _ => None,
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .register_start(
+                &mut s.domain,
+                &slot.execution,
+                sequence,
+                token(action),
+                base,
+            )
+            .map_err(|_| -12)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_register_receipt(
+    id: u64,
+    sequence: u32,
+    action: u64,
+    base: u64,
+    outcome: u32,
+) -> i32 {
+    with_state(false, |s| {
+        let outcome = match outcome {
+            0 => RegisterOutcome::AppliedStopped,
+            1 => RegisterOutcome::NotAppliedStopped,
+            2 => RegisterOutcome::Unknown,
+            _ => return Err(-5),
         };
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
         let command = slot
             .continuation
             .as_mut()
             .ok_or(-11)?
-            .enter_with_namespace(
-                &mut r.files,
-                slot.resources.table()?,
-                namespace,
-                &mut r.reads,
+            .register_receipt(
                 &mut s.domain,
                 &mut slot.execution,
-                invocation,
-                nr,
-                [a, b, c, d, e, f],
-                next,
+                sequence,
+                token(action),
+                base,
+                outcome,
             )
             .map_err(|_| -12)?;
         Ok(step(s, command))
     })
 }
+
 /// One-shot bounded pathname capture. The private host may only use captured
 /// synchronous view/copy intrinsics until its exact matching finish call.
 #[no_mangle]
