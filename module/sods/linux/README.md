@@ -137,6 +137,10 @@ contract; a public release API must preserve recoverability before exposure.
 
 ## Resident file to physical memory (private ABI 3)
 
+The following sections preserve successive integration stages. Earlier ABI2 or
+unconnected diagnostic limitations describe that stage; the later managed CLI
+and read-only openat sections specify the connected opt-in caller today.
+
 The same Wasm instance now owns Files, memory admission and finite pending reads.
 The component builder uses bounded name/input staging; file input is transferred
 into the payload owner without another payload copy. A one-way seal creates the

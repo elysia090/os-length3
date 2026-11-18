@@ -191,7 +191,7 @@ rejected before capture), ten read, seven close and one exit. For its managed
 come from the observed request path and known input strings, not a memory-bus
 meter. Startup program/translator/image transfers are separate. The retained
 88-byte shared syscall slot is metadata, not a fresh 88-byte payload copy for
-each request. An open uses three state-changing Rust exports (entry, capture
+each request. A captured open uses three state-changing Rust exports (entry, capture
 start, finish) plus scalar-result getters; those crossings are current ABI cost,
 not an inevitable syscall or Rust floor.
 
@@ -214,8 +214,8 @@ One five-round rotated whole-process trial after OS-cache warmup measured native
 1.75 ms, managed debug 545.82 ms and managed release 493.04 ms medians. Each managed
 trial includes fresh Node, translation/image construction, Worker startup, guest
 requests and observed stop; each native trial includes spawn/exec. Native and
-managed path spellings/filesystem authorities also differ. Samples overlap and
-have uncontrolled host load. This is not a steady-syscall comparison, significance
+managed path spellings/filesystem authorities also differ. Debug/release samples
+overlap and have uncontrolled host load. This is not a steady-syscall comparison, significance
 claim, language speedup or specification lower-bound proof. A separate instrumented
 prepared-Worker trace has a different measurement window and must not be subtracted
 from those totals. A fixed probe's output could itself be specialized away.
