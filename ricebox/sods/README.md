@@ -244,6 +244,12 @@ SODS_SYSCALLS=1 SODS_FAULTS=1 SODS_TIMING=1 node runtime/run.ts PROGRAM
 
 ### Runtime tests
 
+The development runner reads its default artifacts under `CARGO_TARGET_DIR`
+(or `ricebox/sods/target/`). `SODS_NATIVE` and `SODS_TRANSLATOR_WASM` can
+select artifacts explicitly. `SODS_BLOCKS` and `SODS_RUN` require the native
+translator, because their trace and run-cut options are not part of the Wasm
+translator's API.
+
 The runtime tests can run without a guest root. Build the translator and the
 native fixtures with `test/programs/run.sh` for the executable integration
 cases. To use translators built in another directory, set `SODS_NATIVE`,

@@ -8,15 +8,17 @@
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
-import {basename, dirname, join} from 'node:path';
+import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Translator} from './linux/process.ts';
 import {NotAProgram, loadTranslator} from './translation/translator.ts';
 import {steady} from './host.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const translator = join(here, '..', 'target', 'release', 'sods');
-const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'sods.wasm');
+const build = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : join(here, '..', 'target');
+const selectedNative = process.env.SODS_NATIVE, selectedWasm = process.env.SODS_TRANSLATOR_WASM;
+const translator = resolve(selectedNative ?? join(build, 'release', 'sods'));
+const wasmTranslator = resolve(selectedWasm ?? join(build, 'wasm32-unknown-unknown', 'release', 'sods.wasm'));
 
 const args = process.argv.slice(2);
 let root: string | null = null, cwd = '/root', tty = false;
@@ -45,11 +47,14 @@ const traced = process.env.SODS_BLOCKS ? ['--trace'] : [];
 const cut = process.env.SODS_RUN ? [`--run=${process.env.SODS_RUN}`] : [];
 
 // The translator built as wasm, run in this process as the browser runs
-// it, when it is built from the same source as the native one (or newer):
-// code reached later is then translated here, from the ELF it holds parsed,
-// with no process or file per function. Modules from two builds never mix.
+// it, when explicitly selected or when it is no older than the default
+// native build. Trace and run-cut diagnostics require the native CLI. Code
+// reached later is translated from the same backend as the original module.
 const mtime = (f: string): number => (existsSync(f) ? statSync(f).mtimeMs : -1);
-const inProcess = !traced.length && mtime(wasmTranslator) >= mtime(translator) ? await loadTranslator(readFileSync(wasmTranslator)) : null;
+const needsNative = traced.length > 0 || cut.length > 0;
+const useWasm = !needsNative && (selectedWasm !== undefined ||
+  (selectedNative === undefined && existsSync(wasmTranslator) && mtime(wasmTranslator) >= mtime(translator)));
+const inProcess = useWasm ? await loadTranslator(readFileSync(wasmTranslator)) : null;
 
 // Cached translations are keyed by the translator too, so rebuilding it
 // never reuses modules made by an older one.
@@ -59,7 +64,7 @@ const translatorId = fileDigest(inProcess ? wasmTranslator : translator);
 // Each translator's translations in a folder of its own, named by its digest. A translator rebuilt starts a new
 // one, and then the folders of translators no longer built (neither the native one's nor the wasm one's) go: an
 // older translator's modules are never read again.
-const cacheRoot = join(here, '..', 'target', 'sods-cache');
+const cacheRoot = join(build, 'sods-cache');
 const cacheDir = join(cacheRoot, translatorId);
 if (!existsSync(cacheDir)) {
   const built = new Set([translator, wasmTranslator].filter(existsSync).map(fileDigest));

@@ -51,10 +51,10 @@ function sh(argv: string[], env: NodeJS.ProcessEnv): Promise<Ran> {
 }
 
 export async function runCase(c: Case, bin: string): Promise<{native: Ran; box: Ran; same: boolean}> {
-  const {busybox} = requireUserland();
+  const {busybox, translator} = requireUserland();
   const env = {PATH: `${bin}:/usr/bin:/bin`, HOME: '/root', LANG: 'C.UTF-8'};
   const native = await sh([busybox, 'sh', '-c', c.script], env);
-  const box = await sh([process.execPath, RUN, busybox, 'sh', '-c', c.script], env);
+  const box = await sh([process.execPath, RUN, busybox, 'sh', '-c', c.script], {...env, SODS_TRANSLATOR_WASM: translator});
   return {native, box, same: native.out === box.out && native.status === box.status};
 }
 
