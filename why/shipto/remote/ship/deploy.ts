@@ -48,7 +48,8 @@ import {limitsOf, month, spent, take} from '../plan/budget.ts';
 import {rows, type Db} from '../serve/request.ts';
 import {mirror, type Store} from '../bytes/mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, retireWorkers, workerRole} from '../db/neon.ts';
-import {pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from './releases.ts';
+import {shipped} from '../../release-pins.ts';
+import {pinnedDesktop, pinnedDistros, pinnedRoots} from './releases.ts';
 
 const config = new URL('../../../../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');

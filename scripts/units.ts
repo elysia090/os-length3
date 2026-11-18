@@ -14,7 +14,7 @@ export interface Unit {
   says: string;
   /** Its files and folders, from the repository's root; the longest path that holds a file is its unit's. */
   holds: string[];
-  /** The units it may take from ('*': any, a face's). */
+  /** The other units it may take from. */
   takes: string[];
   /**
    * Its files that what is outside its folder may import; none besides. Not said: any of them. What a unit is made of
@@ -41,14 +41,16 @@ export const UNITS: Unit[] = [
     holds: ['ricebox/otter'], takes: ['toolchain']},
   {name: 'cowboy', says: 'Guest networking and relay protocol, without Why account or service policy',
     holds: ['ricebox/cowboy'], takes: ['sods']},
-  {name: 'remote-contracts', says: 'SSH scope values and desktop release pins shared by Why and its Remote',
-    holds: ['why/api/ssh-scope.ts', 'why/shipto/desktop-releases.json'], takes: []},
+  {name: 'remote-contracts', says: 'SSH scope values and release pin metadata shared by Why and its Remote',
+    holds: ['why/api/ssh-scope.ts', 'why/shipto/release-pins.ts', 'why/shipto/desktop-releases.json'], takes: []},
   {name: 'remote', says: 'The hosted Why service: identity, synchronization, links and release delivery',
     holds: ['why/shipto/remote'], takes: ['remote-contracts']},
   {name: 'app', says: 'Why product core, platform adapters, and app surfaces',
-    holds: ['why'], takes: ['*']},
+    holds: ['why'], takes: ['ricebox', 'everyday', 'remote-contracts']},
   {name: 'why', says: 'The Why command-line frontend',
-    holds: ['why/cli'], takes: ['*']},
+    holds: ['why/cli'], takes: ['app', 'ricebox', 'remote-contracts']},
+  {name: 'why-test-support', says: 'Why application fixtures that exercise real Remote code',
+    holds: ['why/app/testing'], takes: ['app', 'remote']},
 ];
 
 /** Reusable components that may not depend on the Why product. */
@@ -96,7 +98,7 @@ export function dependencyViolations(sources: Iterable<readonly [string, string]
       let target = relative(ROOT, resolve(ROOT, dirname(file), m[1] ?? m[2] ?? '')).split(sep).join('/');
       try { if (statSync(join(ROOT, target)).isDirectory()) target += '/index.ts'; } catch { /* a file, as written */ }
       const to = notUnit(target) ? null : unitOf(target);
-      if (!to || to === from || from.takes.includes('*') || from.takes.includes(to.name) || seen.has(to.name)) continue;
+      if (!to || to === from || from.takes.includes(to.name) || seen.has(to.name)) continue;
       seen.add(to.name);
       crossings.push([from.name, to.name, file]);
     }

@@ -7,7 +7,7 @@ import {bootScript} from '../build/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../build/core-wasm.ts';
 import {putMuk} from '../../ricebox/distribution/build/muk-artifact.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
-import {shipped} from '../shipto/remote/ship/releases.ts';
+import {shipped} from '../shipto/release-pins.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
@@ -28,7 +28,7 @@ const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (why/shipto/remote/ship/releases.ts shipped, the newest pinned; not ricebox/distribution/RELEASE, which names the one being
+// The release this tree ships (why/shipto/release-pins.ts shipped, the newest pinned; not ricebox/distribution/RELEASE, which names the one being
 // made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/shipto/remote/bytes/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);

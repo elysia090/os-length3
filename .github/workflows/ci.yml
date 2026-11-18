@@ -82,7 +82,7 @@ jobs:
         env:
           INPUT_HASH: >-
             ${{ hashFiles('.cargo/config.toml',
-            'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts',
+            'why/prompt/roots/pins.rs', 'why/shipto/release-pins.ts',
             'why/shipto/desktop-releases.json', 'why/build/fetch-root.ts',
             'why/build/webroot.sh', 'ricebox/distribution/RELEASE',
             'ricebox/distribution/build/**', 'ricebox/distribution/format/**',

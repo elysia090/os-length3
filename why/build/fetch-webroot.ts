@@ -9,7 +9,7 @@ import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync}
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
+import {pinnedRoots} from '../shipto/release-pins.ts';
 import {checkPacks} from '../../ricebox/distribution/format/pack.ts';
 import {tarMembers} from '../../ricebox/distribution/host/node/tar.ts';
 import {requireStandardFileOwner, type About, type Index} from '../../ricebox/distribution/format/manifest.ts';

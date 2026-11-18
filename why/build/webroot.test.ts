@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
+import {pinnedRoots} from '../shipto/release-pins.ts';
 import {makeWebroot, standIn} from '../../ricebox/distribution/test/fixtures/distribution.ts';
 import type {Index} from '../../ricebox/distribution/format/manifest.ts';
 
@@ -142,9 +142,9 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 });
 
 function copyPromptSources(tree: string) {
-  for (const d of ['why/prompt/roots', 'why/build', 'why/shipto/remote/ship', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['why/prompt/roots', 'why/build', 'why/shipto', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
   // Run the downloader in a minimal checkout with its real import closure.
-  for (const f of ['why/prompt/roots/pins.rs', 'why/build/fetch-webroot.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
+  for (const f of ['why/prompt/roots/pins.rs', 'why/build/fetch-webroot.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/release-pins.ts', 'why/shipto/desktop-releases.json',
     'ricebox/distribution/format/pack.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));

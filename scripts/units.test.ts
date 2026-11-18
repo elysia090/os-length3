@@ -22,6 +22,12 @@ test('the hosted Remote depends on shared contracts, not product adapters', () =
   assert.deepEqual(dependencyViolations([[server, "import {api} from '../../connection.ts';"]]), [['remote', 'app', server]]);
   assert.deepEqual(dependencyViolations([['why/api/ssh-scope.ts', "import {core} from './host.ts';"]]),
     [['remote-contracts', 'app', 'why/api/ssh-scope.ts']]);
+  const build = 'why/build/fetch-root.ts';
+  assert.deepEqual(dependencyViolations([[build, "import {pinnedRoots} from '../shipto/release-pins.ts';"]]), []);
+  assert.deepEqual(dependencyViolations([[build, "import {pinnedRoots} from '../shipto/remote/ship/releases.ts';"]]),
+    [['app', 'remote', build]]);
+  const app = 'why/app/vite.config.ts';
+  assert.deepEqual(dependencyViolations([[app, "import './testing/remote.ts';"]]), [['app', 'why-test-support', app]]);
 });
 
 test('the distribution owns native and web execution; Why owns its product adapters', () => {
@@ -80,7 +86,7 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   const names = UNITS.map((u) => u.name), paths = UNITS.flatMap((u) => u.holds);
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
-  for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
+  for (const u of UNITS) for (const t of u.takes) assert.ok(names.includes(t), `${u.name} takes ${t}`);
   // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (the hosted Remote inside Why).
   assert.equal(unitOf('ricebox/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('ricebox/sods/runtime/linux/process.ts')?.name, 'sods');

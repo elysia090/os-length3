@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import type {Pinned} from './mirror.ts';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, isRoot, pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from '../ship/releases.ts';
+import {shipped} from '../../release-pins.ts';
+import {desktopFile, isRoot, pinnedDesktop, pinnedDistros, pinnedRoots} from '../ship/releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>

@@ -8,7 +8,7 @@ import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
+import {pinnedRoots} from '../shipto/release-pins.ts';
 
 const here = fileURLToPath(new URL('../..', import.meta.url));
 const [dir, asked] = process.argv.slice(2);
