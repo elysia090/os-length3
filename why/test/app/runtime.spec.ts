@@ -346,17 +346,19 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
 // again; a line that would not be read, or is no change, is left out and the rest stands; with the file gone, the
 // page is as its sheets have it.
 test('a look changed in .everyday is worn, what would not be read left out, and gone with the file', async ({app, page}) => {
-  const ground = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ground').trim());
+  const colour = (token: string) => page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), token);
+  const ground = () => colour('--ground');
   const worn = () => page.evaluate(() => document.getElementById('everyday')?.textContent ?? null);
   expect(await ground()).toBe('#dcd9d4');
   expect(await worn()).toBeNull();
 
-  // The ground a shade warmer and moves at half their length; then ink the ground's own colour (not read), and a line that says nothing.
-  await app.runtime.makeDotfile('.everyday', 'ground: #e9e4d8\npace: 0.5\nink: #e9e4d8\nnonsense; } body { display: none\n');
+  // The ground warmer and moves half as long; terminal text the same colour as its own background, and a line that says nothing.
+  const ink = await colour('--ink');
+  await app.runtime.makeDotfile('.everyday', `ground: #e9e4d8\npace: 0.5\ngreen: ${ink}\nnonsense; } body { display: none\n`);
   await expect.poll(worn).toBe(':root { --ground: #e9e4d8; --pace: 0.5; }');
   expect(await ground()).toBe('#e9e4d8');
   const notes = app.runtime.dotfiles.getByRole('status').filter({hasText: 'Theme lines not applied'});
-  await expect(notes).toContainText('Line 3: ink would not be read on ground');
+  await expect(notes).toContainText('Line 3: green would not be read on ink');
   await expect(notes).toContainText('Line 4: not a change');
 
   await app.open();
@@ -364,7 +366,7 @@ test('a look changed in .everyday is worn, what would not be read left out, and 
 
   await app.runtime.open('Dotfiles');
   await app.runtime.dotfile('.everyday').click();
-  await expect(notes).toContainText('Line 3: ink would not be read on ground');
+  await expect(notes).toContainText('Line 3: green would not be read on ink');
   await app.runtime.text('.everyday').fill('ground: #e9e4d8\npace: 0.5\n');
   await app.runtime.dotfiles.getByRole('button', {name: 'Save', exact: true}).click();
   await expect(notes).toHaveCount(0);
