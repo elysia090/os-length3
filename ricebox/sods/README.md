@@ -248,7 +248,9 @@ The development runner reads its default artifacts under `CARGO_TARGET_DIR`
 (or `ricebox/sods/target/`). `SODS_NATIVE` and `SODS_TRANSLATOR_WASM` can
 select artifacts explicitly. `SODS_BLOCKS` and `SODS_RUN` require the native
 translator, because their trace and run-cut options are not part of the Wasm
-translator's API.
+translator's API. The runner caches complete modules by translator digest
+under its Cargo target directory. A concurrent run does not delete another
+translator's cache.
 
 The runtime tests can run without a guest root. Build the translator and the
 native fixtures with `test/programs/run.sh` for the executable integration

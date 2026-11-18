@@ -7,7 +7,7 @@
 // what reads layers (ricebox: ricebox/distribution/verification/programs.ts), over the same linux.ts.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
+import {existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
 import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Translator} from './linux/process.ts';
@@ -61,17 +61,29 @@ const inProcess = useWasm ? await loadTranslator(readFileSync(wasmTranslator)) :
 const fileDigest = (f: string): string => createHash('sha256').update(readFileSync(f)).digest('hex');
 const translatorId = fileDigest(inProcess ? wasmTranslator : translator);
 
-// Each translator's translations in a folder of its own, named by its digest. A translator rebuilt starts a new
-// one, and then the folders of translators no longer built (neither the native one's nor the wasm one's) go: an
-// older translator's modules are never read again.
-const cacheRoot = join(build, 'sods-cache');
-const cacheDir = join(cacheRoot, translatorId);
-if (!existsSync(cacheDir)) {
-  const built = new Set([translator, wasmTranslator].filter(existsSync).map(fileDigest));
-  for (const name of existsSync(cacheRoot) ? readdirSync(cacheRoot) : []) {
-    if (!built.has(name)) rmSync(join(cacheRoot, name), {recursive: true, force: true});
+// Cache only complete translations. Different processes may start the same
+// compilation, but none reads another's temporary files or removes its cache.
+const cacheDir = join(build, 'sods-run-cache', translatorId);
+mkdirSync(cacheDir, {recursive: true});
+const wasmHeader = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
+const isWasm = (bytes: Buffer) => bytes.subarray(0, wasmHeader.length).equals(wasmHeader);
+function cached(name: string, make: (dir: string, output: string) => void): Uint8Array<ArrayBuffer> {
+  const final = join(cacheDir, name);
+  try {
+    const bytes = readFileSync(final);
+    if (isWasm(bytes)) return new Uint8Array(bytes);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-  mkdirSync(cacheDir, {recursive: true});
+  const dir = mkdtempSync(join(cacheDir, '.translate-'));
+  try {
+    const output = join(dir, 'result.wasm');
+    make(dir, output);
+    const bytes = readFileSync(output);
+    if (!isWasm(bytes)) throw new Error('sods did not produce WebAssembly');
+    renameSync(output, final);
+    return new Uint8Array(bytes);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 }
 
 // Each program's digest, taken once however often its code is asked for.
@@ -84,36 +96,31 @@ const digest = (bytes: Uint8Array): string => {
 
 const translate: Translator = (bytes: Uint8Array): Uint8Array<ArrayBuffer> => {
   const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).digest('hex');
-  const wasm = join(cacheDir, key + '.wasm');
-  if (!existsSync(wasm)) {
-    mkdirSync(cacheDir, {recursive: true});
-    if (inProcess) writeFileSync(wasm, inProcess(bytes));
+  return cached(key + '.wasm', (dir, output) => {
+    if (inProcess) writeFileSync(output, inProcess(bytes));
     else {
-      const elf = join(cacheDir, key + '.elf');
+      const elf = join(dir, 'input.elf');
       writeFileSync(elf, bytes);
-      // (Its exit status 8: no program it takes, as it read it. The file's fault, as the wasm translator's NotAProgram.)
-      const done = spawnSync(translator, [...traced, ...cut, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+      // The native translator uses status 8 for an input it does not accept.
+      const done = spawnSync(translator, [...traced, ...cut, elf, output], {stdio: ['ignore', 'ignore', 'pipe']});
+      if (done.error) throw done.error;
       if (done.status === 8) throw new NotAProgram(done.stderr.toString().trim());
       if (done.status !== 0) throw new Error(`sods failed: ${done.stderr}`);
     }
-  }
-  return new Uint8Array(readFileSync(wasm));
+  });
 };
-// This runner assembles the translator and the kernel: only it knows the translator's rejection type.
+// Only the runner knows which errors from its selected translator reject an input.
 translate.notProgram = (error: unknown): boolean => error instanceof NotAProgram;
 
 /** The program with the code it reached later (from the function starts `seeds`), as one module. */
 translate.seeded = inProcess ? inProcess.seeded : function seeded(bytes: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer> {
   const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`seeded|${seeds}`).digest('hex');
-  const wasm = join(cacheDir, key + '.wasm');
-  if (!existsSync(wasm)) {
-    mkdirSync(cacheDir, {recursive: true});
-    const elf = join(cacheDir, digest(bytes) + '.elf');
-    if (!existsSync(elf)) writeFileSync(elf, bytes);
-    writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
-    execFileSync(translator, [...traced, ...cut, `--seeds=${wasm}.seeds`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
-  }
-  return new Uint8Array(readFileSync(wasm));
+  return cached(key + '.wasm', (dir, output) => {
+    const elf = join(dir, 'input.elf'), points = join(dir, 'seeds');
+    writeFileSync(elf, bytes);
+    writeFileSync(points, seeds.join('\n'));
+    execFileSync(translator, [...traced, ...cut, `--seeds=${points}`, elf, output], {stdio: ['ignore', 'ignore', 'ignore']});
+  });
 };
 
 /** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
@@ -123,20 +130,17 @@ if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.
 translate.more = inProcess ? inProcess.more : function more(bytes: Uint8Array, seeds: (bigint | number)[], starts: Set<bigint>, base: number): Uint8Array<ArrayBuffer> {
   const known = [...starts];
   const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
-  const wasm = join(cacheDir, key + '.more.wasm');
-  if (!existsSync(wasm)) {
-    mkdirSync(cacheDir, {recursive: true});
-    const elf = join(cacheDir, digest(bytes) + '.elf');
-    if (!existsSync(elf)) writeFileSync(elf, bytes);
-    writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
-    writeFileSync(`${wasm}.known`, known.join('\n'));
-    const done = spawnSync(translator, [...traced, ...cut, `--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+  return cached(key + '.more.wasm', (dir, output) => {
+    const elf = join(dir, 'input.elf'), points = join(dir, 'seeds'), knownFile = join(dir, 'known');
+    writeFileSync(elf, bytes);
+    writeFileSync(points, seeds.join('\n'));
+    writeFileSync(knownFile, known.join('\n'));
+    const done = spawnSync(translator, [...traced, ...cut, `--more=${points}`, `--known=${knownFile}`, `--base=${base}`, elf, output], {stdio: ['ignore', 'ignore', 'pipe']});
+    if (done.error) throw done.error;
     if (done.status !== 0) throw new Error(`sods --more failed: ${done.stderr}`);
     const report = done.stderr.toString();
-    // SODS_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.
     if (process.env.SODS_UNSUPPORTED && !report.includes('"unsupported":{}')) process.stderr.write(`sods: at ${seeds}: ${report.trim()}\n`);
-  }
-  return new Uint8Array(readFileSync(wasm));
+  });
 };
 
 /** Mirror a host tree into the VFS; file contents load on first read. */
