@@ -2,7 +2,7 @@
 // Run the execution prerequisites inside an ordinary workerd isolate, not Node or
 // a browser Worker. No eval permission, node compatibility or Dynamic Worker is
 // enabled. A green result proves the probe ran, NOT that sods runs on Workers.
-// Usage: node module/sods/test/hosts/workerd.mjs [path/to/workerd]
+// Usage: node module/sods/test/hosts/workerd.ts [path/to/workerd]
 import {mkdtempSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';

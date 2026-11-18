@@ -31,7 +31,7 @@ test('type imports, re-exports, dynamic imports and worker source URLs are depen
 });
 
 test('runtime cannot reach products, build tools, tests or private sods internals', () => {
-  for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../build/distribution.ts', './test/helper.ts', '../../otter/make/artifacts.mjs', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
+  for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../build/distribution.ts', './test/helper.ts', '../../otter/make/artifacts.ts', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
     assert.equal(allowed('module/ricebox/runtime/root.ts', target), false, target);
   }
   assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/runtime/root.ts'), false);

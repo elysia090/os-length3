@@ -1,12 +1,12 @@
-import {test} from 'node:test';
+import {test, type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,readlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join,basename} from 'node:path';
+import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {resolvePackages,acquirePackages,publishCatalog} from './artifacts.mjs';
-const hash=b=>createHash('sha256').update(b).digest('hex');
-function fixture(t) {
+import {resolvePackages,acquirePackages,publishCatalog} from './artifacts.ts';
+const hash=(b: Uint8Array)=>createHash('sha256').update(b).digest('hex');
+function fixture(t: TestContext) {
   const at=mkdtempSync(join(tmpdir(),'otter-test-')); t.after(()=>rmSync(at,{recursive:true,force:true}));
   const built=join(at,'built');
   for(const n of ['base','app','unused']) {
@@ -17,10 +17,10 @@ function fixture(t) {
   symlinkSync('/usr/bin/app',join(built,'app/tree/usr/bin/alias'));
   const published=join(at,'published'), identity=publishCatalog({packageCache:built,packages:{base:[],app:['base'],unused:[]},output:published});
   const pin={...identity,url:'https://example.test/releases/catalog.json'};
-  const calls=[];
-  t.mock.method(globalThis,'fetch',async (url,options)=>{
-    assert.equal(options.redirect,'manual'); calls.push(String(url));
-    const path=new URL(url).pathname.replace('/releases/','');
+  const calls: string[]=[];
+  t.mock.method(globalThis,'fetch',async (url: string | URL | Request,options?: RequestInit)=>{
+    assert.equal(options?.redirect,'manual'); calls.push(String(url));
+    const path=new URL(url instanceof Request ? url.url : url).pathname.replace('/releases/','');
     return new Response(readFileSync(join(published,path)));
   });
   return {at,published,pin,calls};
@@ -45,10 +45,20 @@ test('rejects tampered catalogs and payloads, without accepting partial outputs'
 });
 test('rejects cycles, missing dependencies, path traversal and symlink parents',()=>{
   const p={version:'1',source:'source',key:'key',requires:[],files:[]};
-  const c={format:'otter-packages-v1',packages:{a:{...p,requires:['b']},b:{...p,requires:['a']}}};
+  const c: {format: string; packages: Record<string, unknown>}={format:'otter-packages-v1',packages:{a:{...p,requires:['b']},b:{...p,requires:['a']}}};
   assert.throws(()=>resolvePackages(c,['a']),/cycle/);
   delete c.packages.b; assert.throws(()=>resolvePackages(c,['a']),/unknown package/);
   c.packages.a={...p,files:[{path:'../escape',target:'target'}]}; assert.throws(()=>resolvePackages(c,['a']),/unsafe/);
   c.packages.a={...p,files:[{path:'usr',target:'etc'},{path:'usr/file',target:'elsewhere'}]}; assert.throws(()=>resolvePackages(c,['a']),/parent directory/);
   c.packages.a={...p,files:[{path:'link',target:'../../escape'}]}; assert.throws(()=>resolvePackages(c,['a']),/escaping/);
+});
+test('unknown catalog boundary checks only selected packages and rejects malformed selected data',()=>{
+  const valid={version:'1',source:'source',key:'key',requires:[],files:[]};
+  assert.deepEqual(resolvePackages({format:'otter-packages-v1',packages:{good:valid,unused:null}},['good']),['good']);
+  for (const malformed of [null,42,{}, {...valid,files:[null]}, {...valid,requires:[null]}, {...valid,files:[{path:'x',sha256:'0'.repeat(64),size:'1',mode:0o644}]}]) {
+    assert.throws(()=>resolvePackages({format:'otter-packages-v1',packages:{bad:malformed}},['bad']));
+  }
+  for (const selected of [null,[],['good','good'],[3]]) {
+    assert.throws(()=>resolvePackages({format:'otter-packages-v1',packages:{good:valid}},selected),/select unique/);
+  }
 });

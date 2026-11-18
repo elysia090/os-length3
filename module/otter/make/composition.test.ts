@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {publishCatalog,acquirePackages} from './artifacts.mjs';
+import {publishCatalog,acquirePackages} from './artifacts.ts';
 import {prepareDistribution} from '../../ricebox/build/prepare.ts';
 import {distributionAssets} from '../../ricebox/integrations/vite.ts';
 
@@ -15,14 +15,16 @@ test('otter acquires pinned closure then ricebox composes it without acquisition
     writeFileSync(join(dir,'tree/usr/share',name),name);
     for(const [key,value] of Object.entries({version:'1',source:name+'-source',key:name+'-key'}))writeFileSync(join(dir,key),value);
   }
-  const tools=Object.fromEntries(['translator','sods','muk'].map(name=>{
-    const path=join(work,name);writeFileSync(path,name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('not-executed-fixture'));return [name,path];
-  }));
+  const tool = (name: string) => {
+    const path=join(work,name);writeFileSync(path,name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('not-executed-fixture'));return path;
+  };
+  const tools = {translator: tool('translator'), sods: tool('sods'), muk: tool('muk')};
   const published=join(work,'published');
   const pin={...publishCatalog({packageCache:source,packages:{base:[],app:['base'],unused:[]},toolchains:{[`${process.platform}-${process.arch}`]:tools},output:published}),url:'https://example.test/catalog.json'};
   let calls=0;
-  const fetch=t.mock.method(globalThis,'fetch',async(url:string)=>{calls++;return new Response(readFileSync(join(published,new URL(url).pathname.slice(1))));});
+  const fetch=t.mock.method(globalThis,'fetch',async(url: string | URL | Request)=>{calls++;return new Response(readFileSync(join(published,new URL(url instanceof Request ? url.url : url).pathname.slice(1))));});
   const acquired=await acquirePackages({catalog:pin,packages:['app'],cache:join(work,'downloaded')});
+  assert.ok(acquired.tools);
   assert.deepEqual(acquired.packages,['base','app']);assert.equal(existsSync(join(acquired.packageCache,'unused')),false);
   assert.ok(calls>0);const before=calls;
   fetch.mock.mockImplementation(()=>{throw new Error('assembly must not acquire');});

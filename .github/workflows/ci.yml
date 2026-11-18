@@ -345,7 +345,7 @@ jobs:
       - name: Layers, and muk's parser beside its model
         if: matrix.part == 'native'
         run: |
-          node --test module/ricebox/runtime/test/*.test.ts module/muk/test/*.test.ts
+          node --test module/ricebox/runtime/test/*.test.ts module/muk/test/*.test.ts module/otter/make/*.test.ts
           sh module/muk/test/same.sh
 
       # The one muk on every host: muk's own corpus (module/muk/test/muk.sh, hostile.sh) run whole inside sods, the
