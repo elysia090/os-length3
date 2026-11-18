@@ -4,8 +4,8 @@
 # built with VITE_LENGTH3_REMOTE="" so it talks to the origin it came from).
 #
 # Built and shipped by Cloudflare's Workers Builds on each push to main
-# (from the repository's root; docs/README.md, Deploy): the build takes the Prompt from
-# the release ricebox/distribution/RELEASE names and builds the app (npm run build:cloudflare),
+# (from the repository's root; why/docs/operations.md, Cloudflare deployment): the build takes the Prompt from
+# the release pinned by why/prompt/roots/pins.rs and builds the app (npm run build:cloudflare),
 # and why/shipto/remote/ship/deploy.ts runs the migrations, makes the bucket, deploys the
 # Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
 # ENTER_KEY), and puts in the bucket the release files this tree pins that it

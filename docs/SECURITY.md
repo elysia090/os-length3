@@ -40,7 +40,7 @@ patched.
 
 ## Threat model, in short
 
-The whole model is in `docs/OS.md`:
+The [Why architecture guide](../why/docs/OS.md) covers the product threat model:
 
 - §5, "Names: who owns what, and what is trusted for it";
 - §6, "The canonical copy is on the Remote" and "The Remote";

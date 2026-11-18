@@ -1,19 +1,14 @@
 # The Remote
 
-What lives on the Remote and stays there however the OS is reached: a
-browser, the desktop app or why. The app and why run the OS on the device,
-but who someone is, the canonical copy of their repos, their names and the
-people they work with are kept here, so every device answers to the same
-account and agrees with the others. This is the map of that: each part,
-its routes, its tables and who uses it. What the Remote is for, in prose, is
-`OS.md` §6 ("The canonical copy is on the Remote"); this file is the
-reference beside the code, which is why it is here and not there (`OS.md`
-names no routes or tables).
+The Remote stores accounts, canonical repository history, and shared work.
+The web app, desktop app, and command-line client work locally and synchronize
+with it. This guide maps the service's routes and tables. For its storage and
+ownership rules, see the [architecture guide](../../docs/OS.md#the-canonical-copy-is-on-the-remote).
 
-Clients: **page** is the web app (in a browser, and in the desktop app's
-webview: the same code, `src/`); **core** is the native side (`why/lib.rs` and each part's Rust),
-which the desktop app's commands (`desktop`) and why (`cli/`) both use.
-**anyone** needs no session.
+The **page** is the [shared frontend](../../app/), running in a browser or the
+desktop webview. The **core** is the [Rust implementation](../../lib.rs)
+used by the CLI, desktop host, and browser worker. Routes marked **anyone**
+do not require a session.
 
 ## The parts
 

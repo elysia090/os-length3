@@ -3,7 +3,7 @@ import {BROWSER} from './paths.ts';
 
 // `npm run selftest`: global-setup.ts builds the app and starts a fresh
 // Remote and the preview on free ports, then every *.spec.ts here runs
-// against them in Chromium (README.md, Develop). Tests tagged @slow (the
+// against them in Chromium (why/docs/operations.md, Selftest). Tests tagged @slow (the
 // browser's Prompt) skip themselves unless SELFTEST_SLOW=1, as CI sets.
 const CI = !!process.env.CI;
 
