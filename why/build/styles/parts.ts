@@ -1,4 +1,4 @@
-// What each part of the stylesheet styles (styles-split.ts): its file, the comment it starts with, and the
+// What each part of the stylesheet styles (split.ts): its file, the comment it starts with, and the
 // classes that make a rule its. A rule is the part of the classes its selector is about: from its subject out, the
 // first class a part names (a common part's, such as a button's, only when nothing more particular is there); when
 // a compound anywhere names a place (Home's column, a board, the Review…), the place's. A rule about several parts at

@@ -29,7 +29,7 @@
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-/* The terminal's sixteen colours, as programs name them, under the one light (DESIGN §3, colour; scripts/light.ts
+/* The terminal's sixteen colours, as programs name them, under the one light (DESIGN §3, colour; why/build/styles/light.ts
    writes them): the six hues at equal steps round the wheel, at one lightness and one chroma from the light's neutral,
    so they mix to it and none is louder than another; read on paper, the bright ones a step more ink; black and white
    the OS's own greys ("white" the edge's, so it is seen). The rest of xterm's 256, and colours given as red, green and

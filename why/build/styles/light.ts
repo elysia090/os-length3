@@ -20,15 +20,15 @@
 // under Lc 45. Each set's six at one contrast (not one lightness: a blue and a yellow of one L are not one contrast),
 // the bright ones a step past it.
 //
-//   node scripts/light.ts           write the greys and the sixteen into the sheets
-//   node scripts/light.ts --check   say whether the sheets carry them (and end 1 if they do not)
+//   node why/build/styles/light.ts           write the greys and the sixteen into the sheets
+//   node why/build/styles/light.ts --check   say whether the sheets carry them (and end 1 if they do not)
 //
 // light.test.ts holds the laws on what the sheets carry, whoever wrote them.
 import {readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 const STYLES = join(OS, 'why', 'app', 'styles');
 
 export type Lab = [L: number, a: number, b: number];
@@ -216,7 +216,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const now = written();
   if (process.argv.includes('--check')) {
     const off = (['tokens', 'terminal', 'desk'] as const).filter((k) => readFileSync(FILES[k], 'utf8') !== now[k]);
-    if (off.length) { console.error(`not under one light: ${off.join(', ')} (node scripts/light.ts)`); process.exit(1); }
+    if (off.length) { console.error(`not under one light: ${off.join(', ')} (node why/build/styles/light.ts)`); process.exit(1); }
   } else if (process.argv.includes('--show')) {
     console.log(JSON.stringify(now.wanted, null, 1));
   } else for (const k of ['tokens', 'terminal', 'desk'] as const) writeFileSync(FILES[k], now[k]);

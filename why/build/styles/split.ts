@@ -1,6 +1,6 @@
 // Splits the stylesheet into files by what each part styles, keeping every rule where the cascade has it:
 //
-//   node scripts/styles-split.ts [--plan] [SHEET]
+//   node why/build/styles/split.ts [--plan] [SHEET]
 //
 // SHEET (why/app/styles/index.css) is one sheet of rules, or the entry this wrote before, whose parts it reads back first (each
 // part's first comment is its own, said again when it is written). It writes the parts beside SHEET (taking
@@ -9,7 +9,7 @@
 //
 // A rule wins over another as heavy only by coming later, so the order is the sheet's: each part is a run of the
 // sheet's rules one after another, and the entry imports the parts in the order the runs stand in. Which rules a run
-// holds is chosen so that most of its rules are about one part (styles-parts.ts says which, from their classes):
+// holds is chosen so that most of its rules are about one part (parts.ts says which, from their classes):
 // a new part costs as much as a few rules that stand in a part not their own, so a rule or two about something else
 // among many about one thing stay where they are, in the part around them. A part that comes back later in the
 // sheet is written again under its name and a number (bench-2.css, after bench.css).
@@ -21,15 +21,15 @@ import {mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync} from 'n
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {PARTS, classPart} from './styles-parts.ts';
-import {entryOf, leavesOf, readLeaf, readSheet, type Complex, type GroupNode, type Leaf, type SheetNode} from './styles-sheet.ts';
+import {PARTS, classPart} from './parts.ts';
+import {entryOf, leavesOf, readLeaf, readSheet, type Complex, type GroupNode, type Leaf, type SheetNode} from './sheet.ts';
 
 /** A leaf with the part it is about (null: whatever stands round it) and why. */
 export interface Parted extends Leaf { part: string | null; why: string }
 /** A run of leaves of one part: [from, to). */
 export interface Run { part: string; from: number; to: number }
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 const ABOUT = new Map(PARTS.map((p) => [p.name, p.about]));
 /** Parts that are about many places: their classes yield to a place's in the same selector. */
 const COMMON = new Set(['base', 'shared', 'controls', 'switch', 'menus', 'page', 'parts', 'cards', 'small-cards']);
@@ -244,7 +244,7 @@ export function split(text: string) {
     return {...p, head, text: head + p.body};
   });
   const again = parts.find((p) => p.count > 1);
-  const entry = comment(`The OS's stylesheet, in parts by what each styles: scripts/styles-split.ts wrote them from one sheet, and
+  const entry = comment(`The OS's stylesheet, in parts by what each styles: why/build/styles/split.ts wrote them from one sheet, and
     writes them again from these. The order is the cascade's: of two rules as heavy, the later wins, so where a part stands in this list
     is part of what it says${again ? `, and a part that comes back further down (${again.file}) stands where its rules do` : ''}.`)
     + parts.map((p) => `@import './${p.file}';\n`).join('');

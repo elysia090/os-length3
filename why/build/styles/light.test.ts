@@ -5,7 +5,7 @@ import {ANSI_ORDER, GREYS, HUES, lc, lightOf, NOTE_QUIET, oklab, PHOSPHOR, SETS,
 
 // One light (DESIGN §3, colour), held on what the sheets carry, whoever wrote them.
 
-const sheet = (name: string) => readFileSync(new URL(`../why/app/styles/${name}`, import.meta.url), 'utf8');
+const sheet = (name: string) => readFileSync(new URL(`../../app/styles/${name}`, import.meta.url), 'utf8');
 const tokens = sheet('tokens.css');
 const ground = /--ground: (#[0-9a-f]{6})/.exec(tokens)![1]!;
 const light = lightOf(ground);
@@ -81,7 +81,7 @@ test('words are crisp and never tiring: read at length at Lc 75 and more, no wor
   assert.ok(g <= PHOSPHOR + 1.5 && g >= -90, `the terminal's words on its glass: Lc ${g.toFixed(1)}`);
 });
 
-test('the sheets carry what scripts/light.ts writes (node scripts/light.ts)', () => {
+test('the sheets carry what why/build/styles/light.ts writes (node why/build/styles/light.ts)', () => {
   const now = written();
   assert.equal(tokens, now.tokens);
   assert.equal(sheet('terminal.css'), now.terminal);

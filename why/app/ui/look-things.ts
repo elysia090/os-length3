@@ -1,5 +1,5 @@
 // What of the OS's look a person may change: read off the stylesheets by everyday (ricebox/everyday), written here by
-// scripts/look.ts and checked against the sheets by look.test.ts. Not written by hand.
+// why/build/styles/look.ts and checked against the sheets by look.test.ts. Not written by hand.
 import type {Thing} from '../../../ricebox/everyday/src/everyday.ts';
 
 export const THINGS: readonly Thing[] = [

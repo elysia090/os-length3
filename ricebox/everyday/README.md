@@ -71,6 +71,6 @@ is checked as that; the usual value is the sheet's; and the way back is to take 
 ## In why
 
 why's pages are one face. Their sheets are `why/app/styles`; what of them may be changed is written into the
-app by `scripts/look.ts` (`why/app/ui/look-things.ts`), and a person's lines are the dotfile `.everyday`, kept
+app by `why/build/styles/look.ts` (`why/app/ui/look-things.ts`), and a person's lines are the dotfile `.everyday`, kept
 and brought to each device as every dotfile is (Runtime shows and edits it). `why/app/ui/look.ts` wears it, with
 the words that must stay read on the OS's grounds. Nothing of why is known here.

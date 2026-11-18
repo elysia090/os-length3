@@ -5,7 +5,7 @@
 import {readFile} from 'node:fs/promises';
 import {transformWithOxc} from 'vite';
 
-export const BOOT = new URL('../why/app/main/boot.ts', import.meta.url);
+export const BOOT = new URL('../app/main/boot.ts', import.meta.url);
 
 /** The script as the page has it. */
 export async function bootScript(): Promise<string> {

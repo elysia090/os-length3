@@ -543,9 +543,9 @@ npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (se
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 sh scripts/desktop.sh          # the .deb and the AppImage as they ship, why beside the app
-node scripts/styles-prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
-node scripts/styles-split.ts  # the stylesheet in parts by what each styles (why/app/styles/), in the cascade's order
-node scripts/styles-check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
+node why/build/styles/prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
+node why/build/styles/split.ts  # the stylesheet in parts by what each styles (why/app/styles/), in the cascade's order
+node why/build/styles/check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
 ### CI

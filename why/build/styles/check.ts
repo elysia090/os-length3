@@ -1,6 +1,6 @@
-// Whether the stylesheet as it is now is the same stylesheet as it was (after styles-split.ts, say):
+// Whether the stylesheet as it is now is the same stylesheet as it was (after split.ts, say):
 //
-//   node scripts/styles-check.ts [--before REV|FILE] [SHEET]
+//   node why/build/styles/check.ts [--before REV|FILE] [SHEET]
 //
 // BEFORE is a file, or a git revision whose SHEET it reads (HEAD unless named; an entry there is read with its parts
 // at that revision). Two things are held side by side, and both must be the same:
@@ -18,10 +18,10 @@ import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {build} from 'vite';
-import {said, wholeSheet} from './styles-split.ts';
-import {entryOf} from './styles-sheet.ts';
+import {said, wholeSheet} from './split.ts';
+import {entryOf} from './sheet.ts';
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 
 /** The sheet and the files it imports, as {path (from the sheet's folder): text}: from disk, or from git at `rev`. */
 function filesOf(sheet: string, rev: string | null): Record<string, string> {

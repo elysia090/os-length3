@@ -138,7 +138,7 @@
 .desk-none > .card.new.forge-first > svg { width: 18px; height: 18px; }
 /* The terminal (bench.ts standOf): the row's first piece, as wide as any and eighteen lines tall. In hand it is a
    sheet of ink, its words its own green and what it prints in the terminal's sixteen under the one light (lighter, to
-   be read on its glass: scripts/light.ts), its shadow green; at rest it is
+   be read on its glass: why/build/styles/light.ts), its shadow green; at rest it is
    drawn in line on the ground as every piece at rest is, its words a step quieter (--term-fg on --term-bg, either way). What it
    printed scrolls inside it, the line one types at following with nothing between. */
 .desk-box[data-kind] { --term-fg: var(--sub); --term-bg: var(--ground); --term-quiet: var(--quiet); --term-rule: var(--rule); --term-line: var(--ink); background: var(--term-bg); color: var(--term-fg); caret-color: var(--term-fg);

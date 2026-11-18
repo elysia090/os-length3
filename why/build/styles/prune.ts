@@ -1,13 +1,13 @@
 // Takes out of the stylesheet the rules no element can match: a selector that asks for a class, an id or an
 // element the app never puts on the page. Run from anywhere:
 //
-//   node scripts/styles-prune.ts [--dry] [--report FILE] [SHEET]
+//   node why/build/styles/prune.ts [--dry] [--report FILE] [SHEET]
 //
-// SHEET is why/app/styles/index.css unless named; when it is the entry styles-split.ts writes (only @imports), its parts are
+// SHEET is why/app/styles/index.css unless named; when it is the entry split.ts writes (only @imports), its parts are
 // pruned each in place. --dry changes nothing and only says what it would take out; --report also writes what it
 // says to FILE. Run it again and it finds nothing more.
 //
-// What the app can put on the page is read from its sources, not from a page drawn (styles-classes.ts): each place
+// What the app can put on the page is read from its sources, not from a page drawn (classes.ts): each place
 // a class or an id is given, followed back to the strings it is made of; an element, any word a string holds.
 // Anything this cannot read as never there stays.
 //
@@ -23,10 +23,10 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {madeBy, pageWords} from './styles-classes.ts';
-import {compareSpec, cutOf, entryOf, leavesOf, listSpec, readSheet, selectorList, spliced, textOf, type Complex, type Piece, type SheetNode} from './styles-sheet.ts';
+import {madeBy, pageWords} from './classes.ts';
+import {compareSpec, entryOf, leavesOf, listSpec, readSheet, selectorList, spliced, textOf, type Complex, type Piece, type SheetNode} from './sheet.ts';
 
-/** What the app can put on the page (styles-classes.ts): the classes, ids and elements a rule is read against. */
+/** What the app can put on the page (classes.ts): the classes, ids and elements a rule is read against. */
 type App = Pick<ReturnType<typeof pageWords>, 'classes' | 'ids' | 'tags'>;
 /** A piece taken out of a rule, and why. */
 interface Said { what: string; why: string }
@@ -34,7 +34,7 @@ interface Said { what: string; why: string }
 type Out = {line: number; what: string; why: string; whole: true} | {line: number; what: string; why: string; in: string; whole?: false}
   | {line: number; comment: string};
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 
 /** The page's own elements, there whatever the sources say. */
 const ALWAYS = new Set(['html', 'head', 'body']);
@@ -87,16 +87,16 @@ export function pruneRule(app: App, selector: string): {gone: true; why: string[
   return {gone: false, edits, said};
 }
 
-/** The cuts that take each piece marked in `out` out of `pieces`, from the last, each made against the list left. */
-function cuts(pieces: Piece[], out: string[]): [number, number][] {
+/** Remove each consecutive run in one cut. Offsets refer to the original list. */
+function cuts(pieces: Piece[], removed: string[]): [number, number][] {
   const edits: [number, number][] = [];
-  let left = [...pieces];
-  for (let i = pieces.length - 1; i >= 0; i--) {
-    const piece = pieces[i];
-    if (!out[i] || !piece) continue;
-    const at = left.indexOf(piece);
-    edits.push(cutOf(left, at));
-    left = left.filter((_, j) => j !== at);
+  for (let i = 0; i < pieces.length;) {
+    if (!removed[i]) { i++; continue; }
+    const first = i++;
+    while (i < pieces.length && removed[i]) i++;
+    const next = pieces[i];
+    if (next) edits.push([pieces[first]!.start, next.start]);
+    else edits.push([pieces[first - 1]!.end, pieces[i - 1]!.end]);
   }
   return edits;
 }
@@ -158,6 +158,7 @@ function main() {
   const lines: string[] = [];
   let rules = 0, pieces = 0;
   const built: string[] = [];
+  const changes: {file: string; text: string}[] = [];
   for (const file of sheetsOf(entry)) {
     const before = readFileSync(file, 'utf8');
     // An entry's own rules, after its @imports, are pruned as a sheet of their own.
@@ -172,7 +173,7 @@ function main() {
       lines.push(o.whole ? `${name}:${o.line}  ${o.what}\n    never matches: no source puts ${o.why} on the page`
         : `${name}:${o.line}  ${o.what}, out of ${o.in}\n    never matches: no source puts ${o.why} on the page`);
     }
-    if (text !== before && !values.dry) writeFileSync(file, text);
+    if (text !== before) changes.push({file, text});
     // What may be built rather than written whole: kept, and said, so the trust it rests on can be seen.
     for (const leaf of leavesOf(readSheet(pruned.text).nodes)) {
       if (leaf.node.kind !== 'rule') continue;
@@ -182,6 +183,8 @@ function main() {
       }
     }
   }
+  // Check all resulting stylesheets before writing any of them.
+  if (!values.dry) for (const {file, text} of changes) writeFileSync(file, text);
   const head = `${values.dry ? 'Would take out' : 'Took out'} ${rules} rule(s) and ${pieces} selector(s) or argument(s) no element can match`
     + ` (what the app can put on the page read from ${app.files.length} sources; lines as they were).`;
   const kept = [...new Set(built)].sort();

@@ -1,4 +1,4 @@
-// What the app can put on the page, read from its sources rather than from a page drawn (styles-prune.ts): the
+// What the app can put on the page, read from its sources rather than from a page drawn (prune.ts): the
 // classes, the ids and the elements. Every place a class is given is followed back to the words it is made of:
 //
 //   h('div', {class: …}), el.className = …, el.classList.add(…) / toggle / replace, setAttribute('class', …)
@@ -62,15 +62,17 @@ interface Index {
 interface Ctx { index: Index; memo: Map<string, Value>; busy: Set<string> }
 type Fn = ESTree.Function | ESTree.ArrowFunctionExpression;
 
-/** The sources of the app: why's modules that a page runs (not its tests, why/app/testing/ or why/text/), and public/'s scripts. */
+/** Source code visible to the browser, plus the scripts served directly from public/. */
 export function appSources(os: string): string[] {
   const out: string[] = [];
-  // What a page is made of is why's parts and its window: not the Remote, the faces Rust writes, or what drives it.
-  const not = new Set(['app/testing', 'text', 'test', 'cli', 'desktop', 'shipto/remote'].map((d) => join(os, 'why', d)));
+  // Tooling and data may mention selectors, but cannot make them appear on a page.
+  const outside = new Set(['app/public', 'app/testing', 'app/vite.config.ts', 'build', 'cli', 'desktop', 'docs', 'shipto/remote', 'test', 'text']
+    .map((path) => join(os, 'why', path)));
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) { if (!not.has(p)) walk(p); }
+      if (outside.has(p)) continue;
+      if (e.isDirectory()) walk(p);
       else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) out.push(p);
     }
   };

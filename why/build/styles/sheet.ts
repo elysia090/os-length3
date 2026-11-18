@@ -1,5 +1,5 @@
-// The stylesheet as the scripts that prune it and split it read it (styles-prune.ts, styles-split.ts,
-// styles-check.ts): its rules in order, each with the comments written over it, and each rule's selectors (and
+// The stylesheet as the scripts that prune it and split it read it (prune.ts, split.ts,
+// check.ts): its rules in order, each with the comments written over it, and each rule's selectors (and
 // what they weigh) and declarations.
 //
 // Read as the browser reads it, but only as far as these need: a rule is a selector and a body of declarations; an
@@ -316,16 +316,6 @@ export function parseComplex(s: string, offset = 0): Complex {
 /** A rule's selector list: each complex selector with where it stands in the list's text. */
 export function selectorList(selector: string): Arg[] {
   return splitTop(selector, ',').map((p) => ({...p, complex: parseComplex(p.text, p.start)}));
-}
-
-/**
- * The text that takes `pieces[k]` out of a list of pieces (a selector list, or the arguments of :is()), as
- * [start, end]: the piece and the separator after it, or, for the last, the separator before it.
- */
-export function cutOf(pieces: Piece[], k: number): [number, number] {
-  const at = (j: number) => { const p = pieces[j]; if (!p) throw new Error(`no piece ${j} of ${pieces.length}`); return p; };
-  if (pieces.length < 2) throw new Error('a list cannot lose its only piece');
-  return k < pieces.length - 1 ? [at(k).start, at(k + 1).start] : [at(k - 1).end, at(k).end];
 }
 
 /** `text` with each [start, end, by] put in (the ranges may come in any order; they must not overlap). */

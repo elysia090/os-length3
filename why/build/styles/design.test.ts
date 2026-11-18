@@ -1,15 +1,15 @@
 // What DESIGN.md says the OS never has, read off its sheets and its code, so that a rule broken is named where it is
 // broken: nothing see-through but depth (§1), a shadow hard (§3), no filter but depth's blur, two weights and the
-// display's, the four corners, no colour written outside the light's own sheets (scripts/light.ts), and nothing that
+// display's, the four corners, no colour written outside the light's own sheets (why/build/styles/light.ts), and nothing that
 // waits on a pointer (§7). What can only be seen rendered (heights, rings, colours as computed) is the browser's to
 // check, in every place (why/test/app/design.spec.ts).
 import assert from 'node:assert/strict';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {join, relative} from 'node:path';
 import {test} from 'node:test';
-import {declarations, entryOf, leavesOf, readSheet} from './styles-sheet.ts';
+import {declarations, entryOf, leavesOf, readSheet} from './sheet.ts';
 
-const ROOT = join(import.meta.dirname, '..');
+const ROOT = join(import.meta.dirname, '../../..');
 const APP = join(ROOT, 'why', 'app');
 const STYLES = join(APP, 'styles');
 
@@ -97,7 +97,7 @@ test('a corner is a key\'s, a field\'s or a sheet\'s, or round (§3)', () => {
   assert.deepEqual(wrong.map(named), []);
 });
 
-test('no colour is written outside the light\'s own sheets (scripts/light.ts)', () => {
+test('no colour is written outside the light\'s own sheets (why/build/styles/light.ts)', () => {
   // The light's: the tokens, and the terminal's sixteen as light.ts writes them. A mask's black is no colour (it says
   // only what is kept), and a picture's (a cursor's) is its own.
   const own = (s: Said) => s.at === 'tokens.css' || (s.at === 'terminal.css' && s.selector === ':root')

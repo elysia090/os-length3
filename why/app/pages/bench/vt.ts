@@ -690,7 +690,7 @@ export function css(s: Style): string {
   }
   // The OS's two weights (DESIGN §3): bold is the other one.
   if (s.flags & F.bold) parts.push('font-weight: 700');
-  // Dim is what programs mean by bright black, the least a word is read at (scripts/light.ts), never see-through (a grey
+  // Dim is what programs mean by bright black, the least a word is read at (why/build/styles/light.ts), never see-through (a grey
   // the light has not); a colour given keeps its colour.
   if (s.flags & F.dim && !(s.flags & F.inverse) && fg === -1) parts.push('color: var(--ansi-8)');
   if (s.flags & F.italic) parts.push('font-style: italic');

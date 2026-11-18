@@ -2,14 +2,15 @@
 // weight is the cascade's, the classes an app can put on a page are followed to the strings they are made of, what
 // can match nothing goes (and nothing else), and a sheet split into parts reads back as the same sheet.
 import assert from 'node:assert/strict';
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join, sep} from 'node:path';
 import {test} from 'node:test';
-import {madeBy, pageWords} from './styles-classes.ts';
-import {pruneText} from './styles-prune.ts';
-import {said, split} from './styles-split.ts';
-import {entryOf, leavesOf, parseComplex, readSheet, specificity, textOf} from './styles-sheet.ts';
+import {appSources, madeBy, pageWords} from './classes.ts';
+import {pruneText} from './prune.ts';
+import {said, split} from './split.ts';
+import {entryOf, leavesOf, parseComplex, readSheet, specificity, textOf} from './sheet.ts';
 
 const SHEET = `/* The tokens. */
 :root { --ink: #222; --mark: url("data:image/svg+xml,%3Csvg%3E{}%3C/svg%3E"); }
@@ -142,6 +143,42 @@ test('what can match nothing goes, and nothing else, with the comment over it wh
   assert.equal(out.filter((o) => 'whole' in o && o.whole).length, 4);
   // #gone stays in :is(): without it the rule would weigh less.
   assert.ok(!out.some((o) => 'what' in o && /#gone/.test(o.what)));
+});
+
+test('adjacent unused selectors are removed without cutting into survivors', () => {
+  const app = given(['a', 'b', 'c'], ['h1', 'h2', 'small']);
+  const before = `:is(h1, h2, h3, h4, small) { color: red; }
+.gone, .gone-again, .a, .missing, .absent, .b, .nope, .never { color: blue; }
+`;
+  const after = `:is(h1, h2, small) { color: red; }
+.a, .b { color: blue; }
+`;
+  assert.equal(pruneText(app, before).text, after);
+  assert.equal(pruneText(app, after).text, after);
+});
+
+test('the page vocabulary does not include its own build tools', () => {
+  const root = join(import.meta.dirname, '../../..');
+  const files = appSources(root);
+  assert.ok(files.includes(join(root, 'why/app/main/start.ts')));
+  assert.ok(!files.some((file) => file.startsWith(join(root, 'why/build') + sep)));
+  assert.ok(!files.includes(join(root, 'why/app/vite.config.ts')));
+});
+
+test('a malformed input does not leave an earlier stylesheet partly edited', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'styles-prune-'));
+  try {
+    const entry = join(dir, 'index.css');
+    const first = join(dir, 'first.css');
+    const css = '.fixture-prune-no-browser-element { color: red; }\n';
+    writeFileSync(entry, "@import './first.css';\n@import './later.css';\n");
+    writeFileSync(first, css);
+    writeFileSync(join(dir, 'later.css'), '.broken,');
+    const output = spawnSync(process.execPath, [join(import.meta.dirname, 'prune.ts'), entry], {encoding: 'utf8'});
+    assert.equal(output.status, 1, output.stderr);
+    assert.match(output.stderr, /a rule has no block/);
+    assert.equal(readFileSync(first, 'utf8'), css);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
 test('a sheet split into parts reads back as the same sheet, an @media cut where the parts are', () => {

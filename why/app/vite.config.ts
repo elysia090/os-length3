@@ -3,7 +3,7 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
-import {bootScript} from '../../scripts/boot.ts';
+import {bootScript} from '../build/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../build/core-wasm.ts';
 import {putMuk} from '../../ricebox/distribution/build/muk-artifact.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
@@ -157,7 +157,7 @@ const preloadApp = (): Plugin => ({
 
 /**
  * /boot.js, the page's first script (boot.ts: what the page says when the app cannot start), its types
- * taken away (scripts/boot.ts): a file of the build, and answered as it is by the development server.
+ * taken away (why/build/boot.ts): a file of the build, and answered as it is by the development server.
  */
 const boot = (): Plugin => ({
   name: 'why-boot',

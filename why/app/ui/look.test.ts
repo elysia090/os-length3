@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {contrast, things} from '../../../ricebox/everyday/src/everyday.ts';
-import {sheets, table} from '../../../scripts/look.ts';
+import {sheets, table} from '../../build/styles/look.ts';
 import {THINGS} from './look-things.ts';
 import {PAIRS, worn} from './look.ts';
 
 test('the table of what may be changed is the one the sheets give', () => {
-  assert.equal(readFileSync(new URL('./look-things.ts', import.meta.url), 'utf8'), table(things(sheets())), 'node scripts/look.ts writes it again');
+  assert.equal(readFileSync(new URL('./look-things.ts', import.meta.url), 'utf8'), table(things(sheets())), 'node why/build/styles/look.ts writes it again');
 });
 
 test('the words that must stay read are read as the sheets have them, each of the pair a colour that may be changed', () => {
