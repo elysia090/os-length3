@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::num::{NonZeroU64, NonZeroUsize};
 
 pub(crate) mod capture;
-#[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+#[cfg(any(test, all(target_arch = "wasm32", feature = "queued-worker-probe")))]
 mod receive;
 #[cfg(any(test, feature = "queued-worker-probe"))]
 mod sink;
@@ -25,6 +25,8 @@ pub(crate) enum Error {
     Length,
     ReceiverNotEmpty,
     ReceiverCapacity,
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "queued-worker-probe")))]
+    BadHead,
     #[cfg(any(test, feature = "queued-worker-probe"))]
     ExternalHead,
 }

@@ -55,6 +55,15 @@ Raw Wasm view callers are trusted to exclude direct memory growth
 and not to copy further after admitting uncertainty. This fixture does not
 mint a stop fact about arbitrary code holding a Wasm buffer.
 
+Keep scalar fixture routing out of the exact receive loan. A Rust head ticket
+names the destination as well as the slot and generation: two registries
+belonging to the same Files can have identical first lane/slot/generation.
+Decode fixture scalars only after selecting the receiver of the same Core.
+An independently held external frontier accepts offers or receipts through
+its own exact ticket/action; it need not inspect or reborrow the Core payload
+after escrow. The owned application result grants no native file or stop
+authority.
+
 ## External sink is a different operation
 
 Select and document what the sink can actually promise. For a narrow first
