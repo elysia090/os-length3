@@ -623,3 +623,29 @@ Separate accepted (Rust FIFO), detached (owned receiver), delivered (native
 effect), and stopped (no further effect) when considering that design.
 No default route or retained TS implementation can be switched on this
 input-only result.
+
+The current borrowed-output contract is observable on real pipes, not only
+regular files. Controlled Linux x64 pipes held 8192 bytes with a 4096-byte
+atomic unit. On both reviewed Node 22 and 24, the actual `--managed` CLI
+returned `-EAGAIN` for a full nonblocking pipe with zero new bytes. Asking
+for 8192 when only 4096 were free returned and physically wrote exactly
+4096, after which the pipe held the preserved old page followed by the new
+prefix. A closed peer returned `-EPIPE` to that CLI's guest; the same
+standalone native ELF instead died from default SIGPIPE. The baseline for
+a CLI cutover is the current CLI behavior, not a claim of full native
+signal equivalence. The pipe sizes are controlled fixture values, not a
+request, retention or batching policy.
+
+This selects two different contracts for further experiments. An
+asynchronous capture sink can consume one independently owned head under a
+bounded escrow, preserving original origin, count, suffix and stop
+evidence, but a previously acknowledged capture cannot return the later
+physical error to its producer. A CLI-compatible route must provide the
+actual result before replying to the paused syscall and must not retry an
+unknown effect. For a compatible synchronous write, one positive native
+effect plus exact completion evidence is necessary, but an extra owned
+payload copy is not: a checked stopped guest view can be borrowed directly
+for the exact call. A sealed resident prefix has the analogous no-staging
+possibility if the original OFD and its short commit remain held. These
+are work bounds and design constraints, not a chosen implementation,
+latency result, or permission to mix the two routes.
