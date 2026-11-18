@@ -80,7 +80,7 @@ function typeAt(dir: string): string | null {
  * What was asked, as node found it for the folder asking (a file's own address, for any folder): any module of that
  * folder that asks the same finds the same. Half of what a run's processes resolve is asked again so: a package's
  * modules importing their neighbours, a package's CommonJS modules each requiring the same few by their addresses,
- * and npm test's realms (testing-together.ts), each importing the page's modules again.
+ * and npm test's realms (why/test/unit/together.ts), each importing the page's modules again.
  */
 const found = new Map();
 

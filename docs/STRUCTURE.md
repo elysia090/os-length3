@@ -81,3 +81,6 @@ checks host facilities and dependencies encoded as Worker URLs. Cargo and
 the C build suites verify their own dependencies. The package suites load
 the generated JavaScript from a different working directory; release
 verification checks the names, modes, links and content of both root forms.
+`npm test` runs workspace and Ricebox checks in independent processes. Why
+suites use the [product unit harness](../why/test/unit/) for application
+modules and hosted-service database fixtures.

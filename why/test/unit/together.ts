@@ -1,33 +1,24 @@
-// For npm test (scripts/tests.ts): test files that make a Remote run one after another in one process, each a
-// suite of its own. Alone, each paid for loading the service (about a second), making a database (another) and,
-// for the page's, starting a core before its first test; here a process loads the service once, and lends its
-// databases from file to file (testing.ts).
+// Run Why unit suites in shared workers. Page modules have a fresh module
+// realm per suite; hosted Remote fixtures can reuse their database between
+// suites. Workspace and Ricebox checks do not use this harness.
 //
-// What a process is given to run is a file, or a part of one: `file#k/n`, every n-th of its tests from the
-// k-th (testing-part.ts), so that a long file whose tests are each their own runs in several processes at once.
-//
-// What a file makes for itself is its own, and let go when it is done, before the next is loaded:
-// - its own `after` hooks run as its suite ends, and what it borrowed for the file goes back (testing.ts);
-// - a file of the page's (src/) has the app's modules to itself, as in a process of its own: it is read as
-//   `?realm=<its path>`, and so is every module of src/ it reaches (they keep the page's state: its store,
-//   its sign-in, its core), the core a page runs (testing/core.ts) first. The service and the packages it
-//   uses are the process's, as they hold nothing of a file's;
-// - a timer the page's modules set and left (a sync gathering keystrokes, a change told a moment later) runs
-//   before the next file, as it would have before a process of its own ended;
-// - what it set on the process, globals (fetch, localStorage, location) and the environment, is put back.
+// A claimed unit is a test file or a part of it (`file#k/n`). Each unit runs
+// its own hooks, returns any borrowed databases, lets its page timers finish,
+// and restores process globals and environment before the next unit.
 
 import {mkdirSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 import {describe, test} from 'node:test';
 
 /** The repository's root, which a file is named from. */
-const OS = new URL('../../../../', import.meta.url).href;
-/** why's folder and, in it, the Remote's: why's parts and its window are the page's, the Remote is this process's. */
-const WHY = new URL('../../../', import.meta.url).href, REMOTE = new URL('../', import.meta.url).href;
+const OS = new URL('../../../', import.meta.url).href;
+/** Why's application modules are per-suite; the hosted service is shared. */
+const WHY = new URL('../../', import.meta.url).href;
+const REMOTE = new URL('shipto/remote/', WHY).href;
 /** Whether a module is the page's: read anew for each file that is (its realm), where the Remote's are read once. */
 const isPage = (url: string) => url.startsWith(WHY) && !url.startsWith(REMOTE);
 /** node:test as a part of a file sees it. */
-const PART = new URL('./testing-part.ts', import.meta.url).href;
+const PART = new URL('./part.ts', import.meta.url).href;
 
 /** The realm a module was read in (the file of the page's it is for), if any. */
 const realmOf = (url: string | undefined) => (url?.includes('?realm=') ? new URL(url).searchParams.get('realm') : null);
@@ -96,7 +87,7 @@ async function timersRun(f: () => Promise<void>) {
  */
 export async function together(units: string[], taken: string) {
   // First, at the root: the hook that takes back each test's database, for the tests of every file.
-  const {fileByFile} = await import('./testing.ts');
+  const {fileByFile} = await import('../../shipto/remote/tests/testing.ts');
   const {fileDone, lastDone} = fileByFile();
   try {
     for (const unit of units) {
@@ -115,7 +106,7 @@ export async function together(units: string[], taken: string) {
       const run = () => describe(part ? `${file} [${part}]` : file, async () => {
         try {
           await import(url.href);
-          if (part) (await import(`${PART}?part=${part}&of=${encodeURIComponent(url.pathname)}`) as typeof import('./testing-part.ts')).loaded();
+          if (part) (await import(`${PART}?part=${part}&of=${encodeURIComponent(url.pathname)}`) as typeof import('./part.ts')).loaded();
         } catch (e) {
           // Counted as a failed test, as node --test counts a file that cannot be loaded.
           test('loads', () => { throw e; });

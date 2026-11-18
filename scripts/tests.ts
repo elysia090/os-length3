@@ -4,7 +4,7 @@
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
 // tests then took. Here there is a process a core, and each takes the next file no other has taken, the longest
-// first, and runs it with what the process has made already (why/shipto/remote/tests/testing-together.ts), so that they end
+// first, and runs it with what the process has made already (why/test/unit/together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
 // Each process loads its modules as scripts/tests-load.ts says: their types stripped and their code compiled
@@ -38,7 +38,7 @@ const ALONE = new Set([
 
 /**
  * Files whose tests are each their own (each makes the Remote or the database it uses, and nothing of the file is
- * kept from one test to the next), which may run in parts in several processes at once (testing-part.ts): one
+ * kept from one test to the next), which may run in parts in several processes at once (part.ts): one
  * of them, service.test.ts, was a third of all the Remote's tests, and the run waited for it alone at the end.
  */
 const PARTS = new Set(['why/shipto/remote/tests/service.test.ts', 'why/shipto/remote/tests/security.test.ts', 'why/shipto/remote/plan/budget.test.ts', 'why/shipto/remote/tests/audit.test.ts']);
@@ -97,9 +97,9 @@ const weight = (f: string) => took[f] ?? guess(f);
 // As node --test, but every core: the runner itself only reports.
 const concurrency = Number(values['test-concurrency'] ?? availableParallelism());
 const alone = files.filter((f) => ALONE.has(f));
-// Ricebox's tests use the component directly, not Why's shared database or module realms.
-const independent = files.filter(f => f.startsWith('ricebox/'));
-const shared = files.filter(f => !ALONE.has(f) && !f.startsWith('ricebox/'));
+// Only Why's suites borrow its database or use fresh application realms.
+const independent = files.filter(f => !f.startsWith('why/'));
+const shared = files.filter(f => f.startsWith('why/') && !ALONE.has(f));
 // As many processes for them as run at once.
 const processes = Math.min(shared.length, concurrency);
 // What they run: each file, or a long one of PARTS in parts, none longer than a third of what each process has to
@@ -116,7 +116,7 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 // it first); made for this run, gone when it ends.
 const kept = scratch('why-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
-const together = pathToFileURL(join(OS, 'why/shipto/remote/tests/testing-together.ts')).href;
+const together = pathToFileURL(join(OS, 'why/test/unit/together.ts')).href;
 // Import the app core only in these Why test processes. A command-line preload
 // would also execute in unrelated Workers such as Ricebox's build compressors.
 const core = pathToFileURL(join(OS, 'why/app/testing/core.ts')).href;
@@ -139,7 +139,7 @@ const took_: Record<string, number> = {};
 /** What node:test tells of a test that ended (its test:pass and test:fail events), as far as it is read here. */
 interface TestEvent { name: string; nesting: number; file?: string; todo?: string | boolean; details?: {type?: string; duration_ms?: number} }
 const timed = (t: TestEvent) => {
-  // A part's suite is named by its file and the part (testing-together.ts): what a file took is its parts' together.
+  // A part's suite is named by its file and the part (together.ts): what a file took is its parts' together.
   const suite = t.nesting === 0 && t.details?.type === 'suite' ? t.name.replace(/ \[\d+\/\d+\]$/, '') : null;
   const f = suite !== null && shared.includes(suite) ? suite : t.nesting === 0 && t.file && !t.file.startsWith(kept) ? relative(OS, t.file) : null;
   if (f) took_[f] = (took_[f] ?? 0) + Math.round(t.details?.duration_ms ?? 0);

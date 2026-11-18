@@ -34,7 +34,7 @@ cover the product in more detail.
 | [`repo/`](repo/), [`home/`](home/), [`device/`](device/) | Repositories and history, personal state, and device storage and capabilities. |
 | [`prompt/`](prompt/), [`ssh/`](ssh/) | Guest environment selection and local SSH policy. |
 | [`shipto/`](shipto/) | Synchronization, service policy, and the [Remote](shipto/remote/README.md). |
-| [`build/`](build/), [`test/`](test/) | Product assembly, and browser, CLI, and production-like tests. |
+| [`build/`](build/), [`test/`](test/) | Product assembly and the unit, browser, CLI, and production test harnesses. |
 
 Why chooses which Ricebox distribution release to use, and which storage and
 capabilities to give to a guest. Ricebox supplies the root and execution
@@ -66,7 +66,7 @@ also needs the Rust `x86_64-unknown-linux-musl` target, `musl-gcc`, and
 
 | Check | Command |
 | --- | --- |
-| TypeScript and unit tests | `npm run check` |
+| TypeScript and unit tests | `npm run check`; `npm test -- <file>` runs selected tests. |
 | Browser workflows | `npx playwright install chromium`, then `npm run selftest` |
 | CLI and local Remote | `npm run selftest:cli` builds the client, or uses the binary specified by `WHY`. |
 | Remote with workerd and PostgreSQL | [Production-like selftests](test/prod/README.md) |
