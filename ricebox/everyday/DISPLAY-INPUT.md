@@ -201,3 +201,37 @@ Do not install tools or start a compositor when it fails. Raw registry output ma
 identify monitors, devices, serials and local paths; keep it private and redact it
 before sharing. Optional toolkit/service behavior still needs the separate inventory
 above. Offline recorder tests and fake banners prove no live Wayland behavior.
+
+### Offline comparison of caller-declared advertisements
+
+After saving preflight evidence, `test/native-registry.ts` compares its raw registry
+stdout with **explicit caller-listed** `INTERFACE=MIN_VERSION` requirements:
+
+```sh
+node ricebox/everyday/test/native-registry.ts "$proof/preflight.json" "$requirement_1" "$requirement_2"
+```
+
+Set each requirement from the exact selected client/library build's source or
+manual, including enabled features. There are no built-in foot/Waybar minimums,
+and no default requirement list. This example does not supply a compatible stack.
+The recorder and comparison tool do not discover requirements or prove provenance.
+
+The [wayland-utils 1.1.0 README example](https://sources.debian.org/src/wayland-utils/1.1.0-1/README.md)
+shows unindented global headers containing interface, version and numeric name.
+This diagnostic reads only that header form, ignoring indented device properties.
+It refuses malformed global headers, captures without globals, duplicate numeric
+IDs, repeated requirements and versions outside positive U32 range. A different
+output format needs review, not guessed interpretation. Input must be a regular,
+non-symlink preflight JSON file no larger than 40 MiB, allowing the escaped
+representation of the recorder's bounded streams. The comparison reads one
+buffer sized to the file, not to that limit.
+
+JSON reports each requested name as `missing`, `too-old` or `met`, its requested
+minimum and highest captured advertised version. Multiple distinct instances count
+as **at least one**, not all: choosing the intended seat/output and verifying its
+actual capabilities remains manual. Exit 0 means every declared advertisement
+matched; exit 1 supplies an unsatisfied comparison; exit 2 rejects input and emits
+no JSON. Subordinate properties, protocol behavior, required formats, client build
+features and visual/input acceptance are not validated. Neither a match nor a
+saved report authenticates the compositor or authorizes access. Keep the original
+capture private as above; this is an offline diagnostic, not a security gate.
