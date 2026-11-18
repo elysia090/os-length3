@@ -191,15 +191,36 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   const at = server.address();
   const port = typeof at === 'object' && at ? at.port : 0;
   // Run in a child the server here can answer (spawnSync would hold this process, and the server, still).
-  const go = () => new Promise<{status: number; stdout: string; stderr: string}>((resolve) => {
+  const go = (...args: string[]) => new Promise<{status: number; stdout: string; stderr: string}>((resolve) => {
     const env = {...process.env, WHY_RELEASES: `http://127.0.0.1:${port}`};
-    execFile(process.execPath, [join(tree, 'why/build/fetch-webroot.ts')], {env}, (e, stdout, stderr) =>
+    execFile(process.execPath, [...args, join(tree, 'why/build/fetch-webroot.ts')], {env}, (e, stdout, stderr) =>
       resolve({status: e ? (typeof e.code === 'number' ? e.code : 1) : 0, stdout, stderr}));
   });
   try {
     let r = await go();
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
+
+    const installed = join(tree, 'why/app/public/webroot');
+    const failedRename = join(work, 'publication-failure.mjs');
+    writeFileSync(failedRename, `
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+const rename = fs.renameSync;
+fs.renameSync = (source, target) => {
+  if (target === ${JSON.stringify(installed)} && !source.endsWith('/previous')) {
+    throw Object.assign(new Error('injected publication failure'), {code: 'EIO'});
+  }
+  return rename(source, target);
+};
+syncBuiltinESMExports();
+`);
+    r = await go('--import', failedRename);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /injected publication failure/);
+    assert.deepEqual(files(installed), files(out), 'failed installation keeps the previous verified release');
+    assert.equal(readdirSync(join(tree, 'why/app')).some(name => name.startsWith('.webroot-')), false);
+
     const wrongIndex = join(work, 'wrong-index-size');
     cpSync(out, wrongIndex, {recursive: true});
     const indexInfo = join(wrongIndex, 'webroot.json'), wrongAbout = JSON.parse(readFileSync(indexInfo, 'utf8'));

@@ -90,11 +90,37 @@ const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), descri
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 
-// Checked, all of it: then it is what why/app/public/webroot is, in one rename.
-const work = mkdtempSync(join(here, 'why/app/public', '.webroot-'));
+// Stage outside public so an interrupted build cannot serve the old copy
+// or partial files. Moving a nonempty directory is not an atomic exchange.
+const work = mkdtempSync(join(here, 'why/app', '.webroot-'));
+const next = join(work, 'next'), previous = join(work, 'previous');
+const installed = join(here, 'why/app/public/webroot');
+let keepBackup = false;
 try {
-  for (const [name, bytes] of members) { mkdirSync(join(work, name, '..'), {recursive: true}); writeFileSync(join(work, name), bytes); }
-  rmSync(join(here, 'why/app/public', 'webroot'), {recursive: true, force: true});
-  renameSync(work, join(here, 'why/app/public', 'webroot'));
-} catch (e) { rmSync(work, {recursive: true, force: true}); throw e; }
+  for (const [name, bytes] of members) {
+    mkdirSync(join(next, name, '..'), {recursive: true});
+    writeFileSync(join(next, name), bytes);
+  }
+  let backedUp = false;
+  try {
+    renameSync(installed, previous);
+    backedUp = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  try {
+    renameSync(next, installed);
+  } catch (error) {
+    if (backedUp) {
+      try { renameSync(previous, installed); }
+      catch (restore) {
+        keepBackup = true;
+        throw new AggregateError([error, restore], `Could not replace or restore the web root; its previous copy is at ${previous}`);
+      }
+    }
+    throw error;
+  }
+} finally {
+  if (!keepBackup) rmSync(work, {recursive: true, force: true});
+}
 console.log(`why ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in why/app/public/webroot`);
