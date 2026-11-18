@@ -69,6 +69,10 @@ The fixture's real Worker exit and retained ABC are not substitutes.
 Current capture work does not make a runtime TypeScript file unnecessary.
 The existing now-duplicated-looking code must remain until the corresponding
 set of entry points is retired or redirected with equivalent tests.
+Once those callers and supported hosts are verified on the replacement, remove
+the now-unnecessary TypeScript implementation and its obsolete references.
+A cutover is not complete while it retains an unused fallback or a second
+implementation for the same supported profile.
 
 - Old Worker-only transport: `cpu.ts`, `channel.ts`, `worker-stop.ts`.
   Remove the group only after the current RemoteKernel consumers, Worker

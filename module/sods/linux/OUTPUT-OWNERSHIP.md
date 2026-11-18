@@ -258,7 +258,7 @@ acceptance did not allocate a Domain action.
 The hand-written guest isolates transport. The current-source case compiles a
 static x86-64 fixture, translates the sealed ELF with the explicit current
 translator, and installs its bounded image/segments and Rust-built stack.
-The actual Worker checks its initial argc/argv0 and the accepted lengths
+The actual Worker checks argc, the first byte of argv0 and the accepted lengths
 before ABC, and the same stop boundary retains AB. A malformed canonical
 ELF fails before Worker construction. The stronger Core is still rejected
 by the ordinary host, and no external sink or delivery evidence is exercised.

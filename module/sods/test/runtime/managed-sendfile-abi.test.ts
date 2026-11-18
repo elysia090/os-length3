@@ -733,9 +733,13 @@ function currentCaptureProgram() {
   const directory = mkdtempSync(join(tmpdir(), 'sods-current-capture-'));
   try {
     const source = fileURLToPath(new URL('../fixtures/managed-sendfile/captured-order.S', import.meta.url));
+    const compiler = process.env.SODS_FIXTURE_CC ?? 'musl-gcc';
+    const object = join(directory, 'captured-order.o');
     const output = join(directory, 'capture.elf');
-    execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
-      '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', output,
+    // A stable object basename avoids cc's random temp symbol-file name.
+    execFileSync(compiler, ['-c', source, '-o', object], {stdio: 'pipe', timeout: 30_000});
+    execFileSync(compiler, [
+      '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', object, '-o', output,
     ], {stdio: 'pipe', timeout: 30_000});
     const artifact = readFileSync(currentTranslatorArtifact!);
     compiledCapture = {elf: new Uint8Array(readFileSync(output)), translator: new WebAssembly.Module(artifact),
@@ -750,7 +754,9 @@ function cancelPreparedImage(r: ReturnType<typeof raw>, id: bigint) {
   assert.equal(r.call('linux_startup_cancel', id), 0); assert.equal(r.result(), 1n);
 }
 
-async function prepareCurrentCapture(r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array) {
+async function prepareCurrentCapture(
+  r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array, omitPhnum = false,
+) {
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
@@ -777,12 +783,14 @@ async function prepareCurrentCapture(r: ReturnType<typeof raw>, translator: WebA
     const sections = WebAssembly.Module.customSections(validated, 'sods.facts');
     assert.equal(sections.length, 1);
     const facts = JSON.parse(new TextDecoder().decode(sections[0])) as Record<string, unknown>;
+    if (omitPhnum) delete facts.phnum; // Fixture-only corruption before any image admission.
     const fact = (key: string): number => {
       const value = facts[key];
       assert.ok(typeof value === 'number' && Number.isSafeInteger(value) && value >= 0, key);
       return value;
     };
     const entry = BigInt(fact('entry')), low = Math.ceil(fact('imageEnd') / 65536) * 65536, top = low + 65536;
+    const phdr = BigInt(fact('phdr')), phent = BigInt(fact('phent')), phnum = BigInt(fact('phnum'));
     assert.ok(top <= 0x100000000);
     const prepared = prepare(original, {shared: true});
     assert.ok(prepared.segments);
@@ -793,8 +801,7 @@ async function prepareCurrentCapture(r: ReturnType<typeof raw>, translator: WebA
       assert.ok(segment.bytes.length === 0 || segment.offset + segment.bytes.length <= low);
     }
     translating = false; // Never replay a receipt call of uncertain outcome.
-    assert.equal(r.call('linux_startup_translation_finish', id, 1, entry, BigInt(fact('phdr')),
-      BigInt(fact('phent')), BigInt(fact('phnum')), BigInt(top)), 0);
+    assert.equal(r.call('linux_startup_translation_finish', id, 1, entry, phdr, phent, phnum, BigInt(top)), 0);
     const pages = top / 65536, memory = new WebAssembly.Memory({initial: pages, maximum: pages, shared: true});
     assert.equal(r.call('linux_bind', BigInt(top)), 0); const binding = r.result();
     assert.equal(r.call('linux_startup_image_begin', id, binding, BigInt(low), BigInt(top)), 0);
@@ -827,6 +834,28 @@ test('current-source mixed capture rejects malformed canonical ELF before Worker
   for (const lane of [0, 1]) {
     assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
   }
+});
+
+test('current-source mixed capture rejects incomplete translated facts with stopped startup cleanup', {skip: currentMixedSkip, timeout: 30_000}, async () => {
+  const {elf, translator} = currentCaptureProgram();
+  const r = raw(workerQueueArtifact!, true, false, true, true, elf);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  await assert.rejects(prepareCurrentCapture(r, translator, elf, true), /phnum/);
+  assert.equal(r.call('linux_startup_cancel', 1n), 0); assert.equal(r.result(), 1n);
+  assert.ok(r.call('linux_run_start', 1n) < 0);
+});
+
+test('current-source mixed capture keeps cancelled initialization until stopped evidence', {skip: currentMixedSkip, timeout: 30_000}, async () => {
+  const {elf, translator} = currentCaptureProgram();
+  const r = raw(workerQueueArtifact!, true, false, true, true, elf);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const prepared = await prepareCurrentCapture(r, translator, elf);
+  assert.equal(r.call('linux_startup_cancel', prepared.id), 0); assert.equal(r.result(), 0n);
+  assert.ok(r.call('linux_run_start', prepared.id) < 0);
+  // This fixture demonstrably did not hand off the initialized memory to any
+  // Worker. Local accesses have ended; this is not inferred from cancellation.
+  cancelPreparedImage(r, prepared.id);
+  assert.ok(r.call('linux_run_start', prepared.id) < 0);
 });
 
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
@@ -1050,7 +1079,7 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
       }
       if (current) t.diagnostic(JSON.stringify({translatorSha256: current.sha, elfBytes: current.elf.length,
         elfSha256: createHash('sha256').update(current.elf).digest('hex'), entry: String(entry),
-        stack: 'Rust-created, guest checked argc and argv0'}));
+        stack: 'Rust-created, guest checked argc and first byte of argv0'}));
     } finally {
       t.signal.removeEventListener('abort', onAbort);
       bridge.requestStop();
@@ -1059,6 +1088,10 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
         assert.equal(stopped.stopped, true);
         await bridge.requestsSettled();
         if (prepared && !attemptedImageReceipt) cancelPreparedImage(r, prepared.id);
+      } else if (prepared && !attemptedImageReceipt) {
+        // The bridge was invoked but returned no Worker handle. A failed
+        // creation is not an exit receipt: request cancellation and retain.
+        assert.equal(r.call('linux_startup_cancel', prepared.id), 0); assert.equal(r.result(), 0n);
       }
     }
   });
