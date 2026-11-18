@@ -324,6 +324,12 @@ impl Execution {
         self.pending_call = Some(invocation);
         Ok(())
     }
+    /// Identity for the holder of an outstanding call, including stopped
+    /// cleanup. The invocation already carries the image/binding snapshot.
+    #[cfg(any(test, feature = "capture-result-v1"))]
+    pub(crate) fn retains_call(&self, invocation: Invocation) -> bool {
+        self.pending_call == Some(invocation) && self.retains_snapshot(invocation.identity)
+    }
     /// Execution half of first-publication preflight. The operation owner must
     /// separately exclude a cancelled/closed sequence in the same Core turn.
     /// This neither acquires nor ends a call, and is not a stop receipt.

@@ -37,6 +37,18 @@ _start:
   cmp $1, %rax
   jne bad
 
+#ifdef SODS_CAPTURE_RESIDENT_PRESSURE
+  /* Q/K still have room, but the first send owns the only R pin. */
+  mov $40, %eax
+  mov $2, %edi
+  mov $3, %esi
+  xor %edx, %edx
+  mov $1, %r10d
+  syscall
+  cmp $1, %rax
+  jne bad
+#endif
+
   movb $88, first(%rip)
   movb $67, last(%rip)
   mov $1, %eax

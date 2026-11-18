@@ -2,7 +2,7 @@
 //! No staging copy, payload view, guest memory lease or physical effect.
 use super::{Context, Error};
 use crate::descriptor::{OutputHold, ReadHold, Table};
-use crate::execution::{Invocation, Snapshot};
+use crate::execution::Invocation;
 use std::num::{NonZeroU64, NonZeroUsize};
 
 pub(crate) enum Turn {
@@ -13,11 +13,9 @@ pub(crate) enum Turn {
 #[must_use = "resume or cancel with the exact execution, Files and destination"]
 pub(crate) struct Resident {
     invocation: Invocation,
-    execution: Snapshot,
     registry: super::RegistryId,
     destination: Option<OutputHold>,
     source: Option<ReadHold>,
-    length: NonZeroUsize,
 }
 impl Resident {
     /// The caller has already consumed the exact sequenced request. Check Q/K/R
@@ -32,32 +30,34 @@ impl Resident {
     ) -> Result<Turn, Error> {
         enum Outcome {
             Accepted(NonZeroUsize),
-            Waiting(ReadHold, Snapshot),
+            Waiting(ReadHold),
         }
         ctx.execution.check_domain(ctx.domain)?;
-        ctx.execution.syscall_allowed(invocation)?;
-        let destination = ctx.files.hold_output(table, out)?;
-        ctx.execution
-            .hold_call(invocation)
-            .expect("checked same turn");
+        ctx.execution.hold_call(invocation)?;
+        let destination = match ctx.files.hold_output(table, out) {
+            Ok(hold) => hold,
+            Err(error) => {
+                ctx.execution
+                    .finish_call(invocation)
+                    .expect("same retained call");
+                return Err(error.into());
+            }
+        };
         let attempt = (|| -> Result<Outcome, Error> {
             let mut writer = ctx.lanes.held_writer(ctx.files, &destination)?;
             let Some(reservation) = writer.reserve_resident_when_room(length)? else {
-                let execution = ctx.execution.stamp()?;
                 let source = writer.reserve_resident_source(table, input, length)?;
-                return Ok(Outcome::Waiting(source, execution));
+                return Ok(Outcome::Waiting(source));
             };
             let count = writer.publish_reserved_resident(table, input, length, reservation)?;
             Ok(Outcome::Accepted(count))
         })();
         match attempt {
-            Ok(Outcome::Waiting(source, execution)) => Ok(Turn::Waiting(Self {
+            Ok(Outcome::Waiting(source)) => Ok(Turn::Waiting(Self {
                 invocation,
-                execution,
                 registry: ctx.lanes.id,
                 destination: Some(destination),
                 source: Some(source),
-                length,
             })),
             settled => {
                 ctx.files
@@ -79,7 +79,7 @@ impl Resident {
     }
     fn check(&self, ctx: &Context<'_>, id: NonZeroU64) -> Result<(), Error> {
         if self.id() != Some(id)
-            || !ctx.execution.retains_snapshot(self.execution)
+            || !ctx.execution.retains_call(self.invocation)
             || ctx.lanes.id != self.registry
             || ctx.files.owner() != self.registry.files
         {
@@ -95,18 +95,25 @@ impl Resident {
     ) -> Result<Option<NonZeroUsize>, Error> {
         self.check(ctx, id)?;
         ctx.execution.check_held_call_live(self.invocation)?;
+        let length = NonZeroUsize::new(
+            self.source
+                .as_ref()
+                .expect("checked resident cursor")
+                .length(),
+        )
+        .expect("exact resident request is nonempty");
         let mut writer = ctx.lanes.held_writer(
             ctx.files,
             self.destination.as_ref().expect("pending output"),
         )?;
-        let Some(reservation) = writer.reserve_resident_when_room(self.length)? else {
+        let Some(reservation) = writer.reserve_resident_when_room(length)? else {
             return Ok(None);
         };
         let source = self.source.take().expect("matching retained cursor");
         let accepted =
             writer
                 .queue
-                .accept_resident_prefix(writer.files, reservation, source, self.length);
+                .accept_resident_prefix(writer.files, reservation, source, length);
         self.release_destination(ctx);
         accepted.map(Some).map_err(Into::into)
     }

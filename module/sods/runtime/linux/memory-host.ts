@@ -108,7 +108,7 @@ interface ResultAdmission extends WebAssembly.Exports {
   linux_capture_select(profile: number): number;
   linux_capture_result_init(): number;
   linux_capture_result_startup(): number;
-  linux_capture_result_write_resume(execution: bigint, sequence: number, action: bigint): number;
+  linux_capture_result_resume(execution: bigint, sequence: number, action: bigint): number;
   linux_capture_result_write_start(execution: bigint, sequence: number, action: bigint): number;
   linux_capture_result_write_finish(execution: bigint, sequence: number, action: bigint, evidence: number, count: number): number;
   linux_capture_result_head(): number;
@@ -181,7 +181,7 @@ export interface PathExecutionOptions {
 }
 /** Supplied by the trusted build/deployment owner, not by the artifact source. */
 export interface CaptureResultPin {
-  readonly kind: 'sods-linux-capture-result-v2';
+  readonly kind: 'sods-linux-capture-result-v3';
   readonly byteLength: number;
   readonly sha256: string;
 }
@@ -189,7 +189,7 @@ const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', '
   'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
   'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create'];
 const resultOnly = ['linux_capture_candidate', 'linux_capture_select', 'linux_capture_result_init', 'linux_capture_result_startup',
-  'linux_capture_result_write_resume', 'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
+  'linux_capture_result_resume', 'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
   'linux_capture_result_copy_start', 'linux_capture_result_copy_finish'];
 const checkedResultExtent = (length: number): number => {
   if (length < 1 || length > 4) throw new Error('Unsupported captured result extent');
@@ -287,7 +287,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
     throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
   }
   const {kind, byteLength, sha256: expected} = pin;
-  if (kind !== 'sods-linux-capture-result-v2' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
+  if (kind !== 'sods-linux-capture-result-v3' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
       byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
     throw new TypeError('Invalid trusted captured result pin');
   }
@@ -298,7 +298,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
   if (actual !== expected) throw new Error('Captured result artifact digest mismatch');
   const module = new Module(bytes);
   const wire = Module.customSections(module, 'sods.linux.capture');
-  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0];
+  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0];
   if (wire.length !== 1 || wire[0]!.byteLength !== identity.length ||
       !new Bytes(wire[0]!).every((byte, i) => byte === identity[i])) {
     throw new Error('Unsupported captured result artifact identity');
@@ -307,7 +307,8 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
   return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
     runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
     workerEvidence: host.workerEvidence, takeOutput: host.takeOutput,
-    runPathPaced: host.runPathPaced, waitForCapturePressure: host.waitForCapturePressure});
+    runPathPaced: host.runPathPaced, waitForCapturePressure: host.waitForCapturePressure,
+    waitForCaptureOutput: host.waitForCaptureOutput});
 }
 
 function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, captureResult: boolean) {
@@ -501,23 +502,36 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     failureCount: number; firstFailure?: unknown;
     resourcesRetired: boolean; entry?: bigint; stdio?: ReturnType<typeof captureStdio>;
   };
-  // One selected lane, one active captured Worker, one blocked producer and
-  // one optional observer. The observer sees pressure, not EOF or a buffer.
+  // One selected lane, one active captured Worker and one blocked producer.
+  // Pressure and output availability each allow one independent observer.
   let captureRun: {worker: WorkerState; paced: boolean} | undefined;
   let pausedOutput: {worker: WorkerState; wake: () => void} | undefined;
   let pressureObserver: {worker: WorkerState; ready: () => void; cancel: (error: Error) => void} | undefined;
-  const wakeOutput = (worker?: WorkerState): void => {
+  let outputObserver: {worker: WorkerState; ready: () => void; cancel: (error: Error) => void} | undefined;
+  const wakeProducer = (worker?: WorkerState): void => {
     if (!pausedOutput || (worker && pausedOutput.worker !== worker)) return;
     const {wake} = pausedOutput;
     pausedOutput = undefined;
     wake();
   };
-  const closePressure = (worker: WorkerState): void => {
-    wakeOutput(worker);
-    if (pressureObserver?.worker !== worker) return;
-    const {cancel} = pressureObserver;
-    pressureObserver = undefined;
-    cancel(new Error('Captured result pressure is not available'));
+  const publishOutput = (worker: WorkerState): void => {
+    if (outputObserver?.worker !== worker) return;
+    const {ready} = outputObserver;
+    outputObserver = undefined;
+    ready();
+  };
+  const closeCaptureWaits = (worker: WorkerState): void => {
+    wakeProducer(worker);
+    if (pressureObserver?.worker === worker) {
+      const {cancel} = pressureObserver;
+      pressureObserver = undefined;
+      cancel(new Error('Captured result pressure is not available'));
+    }
+    if (outputObserver?.worker === worker) {
+      const {cancel} = outputObserver;
+      outputObserver = undefined;
+      cancel(new Error('Captured result producer ended without another notification'));
+    }
   };
   const workers = new Map<ExecutionBinding, WorkerState>();
   const workerOf = (handle: ExecutionBinding): WorkerState => {
@@ -669,7 +683,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       throw new Error('Captured result publication remains unconfirmed');
     }
     unsettledOutput = undefined;
-    wakeOutput(); // Only exact committed receive returns credit to the lane.
+    wakeProducer(); // Only exact committed receive returns credit to the lane.
     return output;
   };
   const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader, paced = false): Promise<{status: number; sourceFailures: number}> => {
@@ -744,13 +758,13 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
                     }
                   });
                   active(); // Stops in the same turn as a consume still win.
-                  c = command(capture.linux_capture_result_write_resume(w.id, sequence, action));
+                  c = command(capture.linux_capture_result_resume(w.id, sequence, action));
                 } while (c.tag === 14);
               }
-              if (c.tag === 13 && captureWrite) {
-                const completed = captureWrite(w, request.sequence, c);
-                if (completed.tag !== 0) throw new Error(`Captured write did not return: ${completed.tag}`);
-                return {kind: 'return', value: completed.value};
+              if (c.tag === 13 && captureWrite) c = captureWrite(w, request.sequence, c);
+              if (c.tag === 15 && capture) {
+                publishOutput(w); // Rust committed, and no borrowed view remains.
+                return {kind: 'return', value: c.value};
               }
               throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);
             }
@@ -787,7 +801,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       } finally {
         w.active = false;
         if (captureRun?.worker === w) {
-          closePressure(w);
+          closeCaptureWaits(w);
           if (w.resourcesRetired) captureRun = undefined;
         }
       }
@@ -951,7 +965,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         w = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false, stdio};
         const owned = w;
         void bridge.stopped.then(() => {
-          if (captureRun?.worker === owned) closePressure(owned);
+          if (captureRun?.worker === owned) closeCaptureWaits(owned);
           if (owned.imagePending) {
             try {
               checked(core.linux_startup_image_finish(id, 2));
@@ -1107,7 +1121,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     stopWorker(handle: ExecutionBinding): void {
       const w = workerOf(handle);
       w.bridge.requestStop();
-      if (captureRun?.worker === w) closePressure(w);
+      if (captureRun?.worker === w) closeCaptureWaits(w);
     },
     /** Observations only: neither method proves tree disposal or full owner release. */
     workerEvidence(handle: ExecutionBinding) {
@@ -1139,6 +1153,18 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       if (pressureObserver) throw new Error('Captured result already has a pressure observer');
       if (pausedOutput?.worker === w) return;
       return new Promise<void>((ready, cancel) => { pressureObserver = {worker: w, ready, cancel}; });
+    },
+    /** Lane availability is a hint, not a copy, producer status or EOF. */
+    async waitForCaptureOutput(): Promise<void> {
+      if (!capture) throw new Error('This host has no captured result');
+      ensureResultUsable();
+      if (outputObserver) throw new Error('Captured result already has an output observer');
+      // Peek and install the waiter in one synchronous turn; an already
+      // committed head cannot be lost between the check and registration.
+      if (result(capture.linux_capture_result_head()) !== 0n) return;
+      const w = captureRun?.worker;
+      if (!w?.active || w.bridge.diagnostics().stopping) throw new Error('Captured result has no active producer');
+      return new Promise<void>((ready, cancel) => { outputObserver = {worker: w, ready, cancel}; });
     },
     /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
     translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {

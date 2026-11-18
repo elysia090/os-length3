@@ -28,7 +28,7 @@ export interface FileStoreDescriptor extends Blob {
 }
 /** Private opt-in Node capture slot. Ordinary distribution loading ignores it. */
 export interface CaptureResultDescriptor extends Blob {
-  kind: 'sods-linux-capture-result-v2';
+  kind: 'sods-linux-capture-result-v3';
   host: 'linux-x64-node22-24';
   /** Expanded executable digest, independent of the content-addressed gzip. */
   wasm: string;

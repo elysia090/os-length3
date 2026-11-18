@@ -6,7 +6,7 @@ import type {CaptureResultDescriptor} from '../distribution/manifest.ts';
 import {sha256} from '../host/node/hash.ts';
 
 const maximum = 32 * 1024 * 1024;
-const kind = 'sods-linux-capture-result-v2';
+const kind = 'sods-linux-capture-result-v3';
 const host = 'linux-x64-node22-24';
 const hash = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const extent = (value: unknown, min: number): value is number =>

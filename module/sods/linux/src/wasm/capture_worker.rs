@@ -1,6 +1,8 @@
 //! Exact captured producer transport. Only trusted non-reentrant raw relays
 //! may borrow a view, and the selected owner never falls back to physical output.
 use super::{execution_index, step, token, with_state, with_state_access, Access, State};
+#[cfg(feature = "capture-result-v1")]
+use crate::descriptor::capture::{Resident, ResidentTurn};
 use crate::descriptor::{
     capture::{Access as CopyAccess, CallId, Finished, Receipt, Request},
     Target,
@@ -9,26 +11,47 @@ use crate::effect::Token;
 use crate::syscall::Step;
 use std::num::NonZeroUsize;
 
-pub(super) struct Active {
-    execution: u64,
-    call: CallId,
-    viewing: bool,
+pub(super) enum Active {
+    Write {
+        execution: u64,
+        call: CallId,
+        viewing: bool,
+    },
+    #[cfg(feature = "capture-result-v1")]
+    Resident {
+        execution: u64,
+        sequence: u32,
+        retained: Resident,
+    },
 }
 impl Active {
-    pub(super) fn blocks(&self, access: Access) -> bool {
-        self.viewing && access != self.finish_access()
-    }
-    pub(super) fn owns(&self, action: Token) -> bool {
-        self.call.action == action
-    }
-    fn finish_access(&self) -> Access {
-        Access::CaptureFinish {
-            execution: self.execution,
-            call: self.call,
+    fn execution(&self) -> u64 {
+        match self {
+            Self::Write { execution, .. } => *execution,
+            #[cfg(feature = "capture-result-v1")]
+            Self::Resident { execution, .. } => *execution,
         }
     }
+    pub(super) fn blocks(&self, access: Access) -> bool {
+        match self {
+            Self::Write {
+                call,
+                execution,
+                viewing: true,
+            } => {
+                access
+                    != Access::CaptureFinish {
+                        execution: *execution,
+                        call: *call,
+                    }
+            }
+            _ => false,
+        }
+    }
+    pub(super) fn owns(&self, action: Token) -> bool {
+        matches!(self, Self::Write {call, ..} if call.action == action)
+    }
 }
-
 /// Only this raw adapter can construct the claim after matching the
 /// exclusive exact view. This is not a public or hardware-minted receipt.
 pub(crate) struct FinishEvidence(Receipt);
@@ -86,7 +109,7 @@ extern "C" fn write(
     length: u64,
 ) -> i32 {
     with_state(false, |s| {
-        if s.capture_write.is_some() {
+        if s.capture_producer.is_some() {
             return Err(-4);
         }
         let index = execution_index(s, execution)?;
@@ -122,7 +145,7 @@ extern "C" fn write(
             Step::CapturePressure { call } => call,
             _ => unreachable!("installed exact captured call"),
         };
-        s.capture_write = Some(Active {
+        s.capture_producer = Some(Active::Write {
             execution,
             call,
             viewing: false,
@@ -131,36 +154,55 @@ extern "C" fn write(
     })
 }
 
-/// Resume only the call already retained in Rust. An early wake does not
-/// create queue credit. The consumer removes an exact head separately.
+/// The pressure token is interpreted only by the stored producer arm. A
+/// file cursor reservation is not a guest-memory token and exposes no view.
 #[cfg(feature = "capture-result-v1")]
 #[no_mangle]
-pub extern "C" fn linux_capture_result_write_resume(
-    execution: u64,
-    sequence: u32,
-    action: u64,
-) -> i32 {
+pub extern "C" fn linux_capture_result_resume(execution: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
-        let id = CallId {
-            sequence,
-            action: token(action),
-        };
-        s.capture_write
-            .as_ref()
-            .filter(|p| p.execution == execution && p.call == id && !p.viewing)
-            .ok_or(-4)?;
-        let index = execution_index(s, execution)?;
-        let slot = s.executions[index].live_mut()?;
-        let (files, output) = s.sealed.as_mut().ok_or(-9)?.capture_parts()?;
-        let command = slot
-            .continuation
+        let index = execution_index(s, execution);
+        let owner = s
+            .capture_producer
             .as_mut()
-            .ok_or(-11)?
-            .resume_capture_write(
-                output.context(files, &mut s.domain, &mut slot.execution),
-                id,
-            )
-            .map_err(|_| -12)?;
+            .filter(|p| p.execution() == execution)
+            .ok_or(-4)?;
+        let slot = s.executions[index?].live_mut()?;
+        let (files, output) = s.sealed.as_mut().ok_or(-9)?.capture_parts()?;
+        let mut ctx = output.context(files, &mut s.domain, &mut slot.execution);
+        let command = match owner {
+            Active::Write {
+                call,
+                viewing: false,
+                ..
+            } if call.sequence == sequence && call.action.sequence() == action => slot
+                .continuation
+                .as_mut()
+                .ok_or(-11)?
+                .resume_capture_write(ctx, *call)
+                .map_err(|_| -12)?,
+            Active::Resident {
+                sequence: owned,
+                retained,
+                ..
+            } if *owned == sequence => {
+                let id = retained
+                    .id()
+                    .filter(|value| value.get() == action)
+                    .ok_or(-4)?;
+                let resumed = retained.resume(&mut ctx, id);
+                if retained.id().is_none() {
+                    s.capture_producer = None;
+                }
+                match resumed.map_err(|_| -12)? {
+                    Some(count) => Step::CapturedAccepted(count.get() as u64),
+                    None => Step::CaptureResidentPressure {
+                        sequence,
+                        source: id,
+                    },
+                }
+            }
+            _ => return Err(-4),
+        };
         Ok(step(s, command))
     })
 }
@@ -181,7 +223,7 @@ extern "C" fn resident(
     length: u64,
 ) -> i32 {
     with_state(false, |s| {
-        if s.capture_write.is_some() {
+        if s.capture_producer.is_some() {
             return Err(-4);
         }
         if offset != 0 {
@@ -203,18 +245,44 @@ extern "C" fn resident(
             .ok_or(-11)?
             .admit_request(&s.domain, &slot.execution, invocation, Some(sequence))
             .map_err(|_| -12)?;
-        let accepted = output
-            .publish_resident_request(
-                files,
-                table,
-                out,
-                input as u32,
-                length,
-                &mut slot.execution,
-                invocation,
-            )
-            .map_err(|_| -12)?;
-        Ok(step(s, Step::Return(accepted.get() as i64)))
+        #[cfg(feature = "capture-result-v1")]
+        let command = match Resident::admit(
+            &mut output.context(files, &mut s.domain, &mut slot.execution),
+            table,
+            out,
+            input as u32,
+            length,
+            invocation,
+        )
+        .map_err(|_| -12)?
+        {
+            ResidentTurn::Accepted(count) => Step::CapturedAccepted(count.get() as u64),
+            ResidentTurn::Waiting(retained) => {
+                let source = retained.id().expect("fresh resident cursor");
+                s.capture_producer = Some(Active::Resident {
+                    execution,
+                    sequence,
+                    retained,
+                });
+                Step::CaptureResidentPressure { sequence, source }
+            }
+        };
+        #[cfg(not(feature = "capture-result-v1"))]
+        let command = Step::Return(
+            output
+                .publish_resident_request(
+                    files,
+                    table,
+                    out,
+                    input as u32,
+                    length,
+                    &mut slot.execution,
+                    invocation,
+                )
+                .map_err(|_| -12)?
+                .get() as i64,
+        );
+        Ok(step(s, command))
     })
 }
 
@@ -235,11 +303,17 @@ pub(super) extern "C" fn copy_start(execution: u64, sequence: u32, action: u64) 
             sequence,
             action: token(action),
         };
-        let p = s
-            .capture_write
-            .as_mut()
-            .filter(|p| p.execution == execution)
-            .ok_or(-4)?;
+        let Some(Active::Write {
+            execution: owner,
+            call,
+            viewing,
+        }) = s.capture_producer.as_mut()
+        else {
+            return Err(-4);
+        };
+        if *owner != execution || *call != id {
+            return Err(-4);
+        }
         let (files, output) = r.capture_parts()?;
         let (pointer, at, length) = slot
             .continuation
@@ -252,7 +326,7 @@ pub(super) extern "C" fn copy_start(execution: u64, sequence: u32, action: u64) 
             .map_err(|_| -12)?;
         // One scalar checks this exact view before other execution scans. No
         // pointer escapes until the guard is installed; the guard is not stop.
-        p.viewing = true;
+        *viewing = true;
         s.auxiliary = at;
         s.length = length as u64;
         Ok(pointer as u64)
@@ -286,10 +360,11 @@ pub(super) extern "C" fn copy_finish(
         let index = execution_index(s, execution)?;
         let slot = s.executions[index].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
-        s.capture_write
-            .as_ref()
-            .filter(|p| p.viewing && p.finish_access() == access)
-            .ok_or(-4)?;
+        if !matches!(&s.capture_producer, Some(Active::Write {execution: owner, call, viewing: true})
+            if *owner == execution && *call == id)
+        {
+            return Err(-4);
+        }
         let (complete, access) = match evidence {
             0 => (Some(count as usize), CopyAccess::BothEnded),
             1 if count == 0 => (None, CopyAccess::BothEnded),
@@ -318,38 +393,45 @@ pub(super) extern "C" fn copy_finish(
             .map_err(|_| -12)?;
         let command = match finish {
             Finished::Waiting => return Ok(step(s, Step::Waiting)),
+            #[cfg(feature = "capture-result-v1")]
+            Finished::Accepted(length) => Step::CapturedAccepted(length.get() as u64),
+            #[cfg(not(feature = "capture-result-v1"))]
             Finished::Accepted(length) => Step::Return(length.get() as i64),
             Finished::Discarded | Finished::Rejected(_) => Step::Waiting,
         };
-        s.capture_write = None;
+        s.capture_producer = None;
         Ok(step(s, command))
     })
 }
 
 pub(super) fn abandon(s: &mut State, execution: u64) -> Result<bool, i32> {
-    let Some(p) = s
-        .capture_write
-        .as_ref()
-        .filter(|p| p.execution == execution)
+    let index = execution_index(s, execution)?;
+    let Some(owner) = s
+        .capture_producer
+        .as_mut()
+        .filter(|p| p.execution() == execution)
     else {
         return Ok(true);
     };
-    let id = p.call;
-    let index = execution_index(s, execution)?;
     let slot = s.executions[index].live_mut()?;
-    let r = s.sealed.as_mut().ok_or(-9)?;
-    let (files, output) = r.capture_parts()?;
-    let ended = slot
-        .continuation
-        .as_mut()
-        .ok_or(-11)?
-        .cancel_capture(
-            &mut output.context(files, &mut s.domain, &mut slot.execution),
-            id,
-        )
-        .map_err(|_| -12)?;
+    let (files, output) = s.sealed.as_mut().ok_or(-9)?.capture_parts()?;
+    let mut ctx = output.context(files, &mut s.domain, &mut slot.execution);
+    let ended = match owner {
+        Active::Write { call, .. } => slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .cancel_capture(&mut ctx, *call)
+            .map_err(|_| -12)?,
+        #[cfg(feature = "capture-result-v1")]
+        Active::Resident { retained, .. } => {
+            let id = retained.id().ok_or(-4)?;
+            retained.cancel(&mut ctx, id).map_err(|_| -12)?;
+            true
+        }
+    };
     if ended {
-        s.capture_write = None;
+        s.capture_producer = None;
     }
     Ok(ended)
 }

@@ -116,6 +116,13 @@ pub(crate) enum Step {
     CapturePressure {
         call: capture::CallId,
     },
+    #[cfg(feature = "capture-result-v1")]
+    CaptureResidentPressure {
+        sequence: u32,
+        source: std::num::NonZeroU64,
+    },
+    #[cfg(feature = "capture-result-v1")]
+    CapturedAccepted(u64),
     Exit,
     Unsupported(u64),
     Waiting,

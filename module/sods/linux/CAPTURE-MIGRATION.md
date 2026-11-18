@@ -270,8 +270,7 @@ same turn as a consume must not stage another write. Worker settlement and
 FD retirement are observed separately; neither takes accepted result bytes
 away. The signal reports pressure, not readiness of every queued result
 or EOF. This is a pull-during-pressure witness, not a product streaming
-subscription or a physical sink adapter. Its raw transport currently only
-suspends mutable writes.
+subscription or a physical sink adapter.
 
 The native resident-sendfile experiment retains an exact original input OFD
 and cursor revision with the existing exclusive read hold, and the original
@@ -284,6 +283,25 @@ Matching acceptance takes Q/K/R, links one immutable prefix and commits the
 same cursor in one synchronous turn. Cancellation returns both exact holds
 without advancing either cursor or queue. The native controls replace both
 FDs, try an aliased seek and stop the execution before late resume.
+
+Wire 3 unifies pressure resumption around one selected active producer arm,
+with separate write and resident owners and no per-execution resident slot.
+The file reservation identity is not a guest-memory token. The original
+sequence identifies the arm even if token numbers overlap. The actual
+translated Worker sends A, resident B, resident D and C; the second send
+waits for R, not just byte credit. Taking copied A cannot advance it; taking
+pinned B allows exactly D and one cursor advance. Stopping first leaves
+AB. This resident-source proof does not promote a lazy packaged file or
+alter Linux's general sendfile or terminal semantics.
+
+The separate availability observer watches the selected lane, not the
+producer's numerical FD or a pressure event. Rust marks an acceptance only
+after publication and lexical access end, for both mutable writes and
+resident sends. An already visible head satisfies a late observer; otherwise
+peek and observer installation share one synchronous turn. The notice
+neither owns the bytes nor says they were physically delivered, and a
+consumer still takes the exact head. Producer end cancels that producer's
+observer without telling the caller there can never be later output.
 
 The private Linux x64 Node 22/24 distribution reader exercises the pin
 chain end to end with a current-source result artifact and Worker. The

@@ -89,7 +89,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
-    index.captureResult = {kind: 'sods-linux-capture-result-v2', host: 'linux-x64-node22-24',
+    index.captureResult = {kind: 'sods-linux-capture-result-v3', host: 'linux-x64-node22-24',
       path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
       bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
   }
@@ -129,9 +129,9 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       mutated[mutated.length - 1] ^= 1;
       await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
       const oldWire = Buffer.from(bytes);
-      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0]));
+      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0]));
       assert.notEqual(marker, -1);
-      oldWire[marker + 9] = 1;
+      oldWire[marker + 9] = 2;
       await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16),
         /artifact identity/, 'a valid digest for the closed old wire is not a resume-capable artifact');
       const ordinary = new Uint8Array(readFileSync(corePath));
@@ -148,7 +148,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
   const host = captured ?? await managedRoot(core, {memories: scenario === 'invalid' ? 5 : 4, actions: 16});
   assert.equal(Object.isFrozen(host), true);
   assert.deepEqual(Object.keys(host).sort(), ['prepareRoot', 'rootSource', 'pathExecution', 'runPath',
-    'stopWorker', 'workerSettled', 'workerEvidence', ...(captured ? ['takeOutput', 'runPathPaced', 'waitForCapturePressure'] : [])].sort(),
+    'stopWorker', 'workerSettled', 'workerEvidence', ...(captured ? ['takeOutput', 'runPathPaced', 'waitForCapturePressure', 'waitForCaptureOutput'] : [])].sort(),
   'no diagnostic memory/read/grow or bare-inode entrance');
   if (scenario === 'malformed') {
     const malformed = new Uint8Array(prepared.wire.length + 1);
@@ -303,7 +303,23 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       assert.equal(host.rootSource(1).size, elf.length, 'failed delivery cannot replace sealed decoded-size metadata');
     }
     let takenBeforeEnd: Uint8Array | undefined;
-    if (pacedScenario(scenario)) {
+    if (scenario === 'capture') {
+      assert.ok(captured);
+      await assert.rejects(captured.waitForCaptureOutput(), /no active producer/);
+      const execution = await start();
+      assert.equal(loads, 0, 'prepared AOT startup does not load the canonical ELF');
+      const run = captured.runPath(execution, load);
+      void run.catch(() => {});
+      const available = captured.waitForCaptureOutput();
+      await assert.rejects(captured.waitForCaptureOutput(), /already has an output observer/);
+      try {
+        await available;
+        assert.equal(captured.workerEvidence(execution).exited, false, 'no pressure or Worker stop was needed to notify');
+        assert.deepEqual(await run, {status: 0, sourceFailures: 0});
+        runs++;
+      } finally { await stopped(host, execution); }
+      await captured.waitForCaptureOutput(); // A late observer sees the already published head.
+    } else if (pacedScenario(scenario)) {
       assert.ok(captured);
       const execution = await start();
       let left = false;
@@ -347,6 +363,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const first = takenBeforeEnd ?? output;
       assert.ok(first?.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === 4);
       assert.equal(captured.takeOutput(), undefined);
+      await assert.rejects(captured.waitForCaptureOutput(), /no active producer/, 'empty after one Worker is not caller-independent EOF');
       assert.deepEqual(first, Uint8Array.of(127, 69, 76, 70), 'result outlives Worker retirement and later polling');
     }
     if (scenario === 'invalid') {

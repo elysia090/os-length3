@@ -189,7 +189,7 @@ struct State {
     #[cfg(feature = "capture-v1")]
     capture_selected: bool,
     #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
-    capture_write: Option<capture_worker::Active>,
+    capture_producer: Option<capture_worker::Active>,
     #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
     capture_receiver: capture_receiver::Receiver,
 }
@@ -270,7 +270,7 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
             return -4;
         }
         #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
-        if s.capture_write
+        if s.capture_producer
             .as_ref()
             .is_some_and(|pending| pending.blocks(access))
         {
@@ -347,7 +347,7 @@ fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Erro
     with_state(false, |s| {
         let t = token(sequence);
         #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
-        if s.capture_write
+        if s.capture_producer
             .as_ref()
             .is_some_and(|pending| pending.owns(t))
         {
@@ -509,7 +509,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             #[cfg(feature = "capture-v1")]
             capture_selected: false,
             #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
-            capture_write: None,
+            capture_producer: None,
             #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
             capture_receiver: capture_receiver::Receiver::default(),
         });
@@ -1266,6 +1266,17 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.state = 14;
             s.auxiliary = u64::from(call.sequence);
             call.action.sequence()
+        }
+        #[cfg(feature = "capture-result-v1")]
+        Step::CaptureResidentPressure { sequence, source } => {
+            s.state = 14;
+            s.auxiliary = u64::from(sequence);
+            source.get()
+        }
+        #[cfg(feature = "capture-result-v1")]
+        Step::CapturedAccepted(count) => {
+            s.state = 15;
+            count
         }
         Step::Path {
             action,

@@ -49,7 +49,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (resultProfile) {
     const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
     assert.equal(marker.length, 1);
-    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0]);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0]);
     assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
     for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
   }
@@ -1112,9 +1112,10 @@ test('strong capture probe real Node sink writes a new absolute suffix without r
   finally { rmSync(directory, {recursive: true, force: true}); }
 });
 
-let compiledCapture: {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string} | undefined;
-function currentCaptureProgram() {
-  if (compiledCapture) return compiledCapture;
+const compiledCapture = new Map<boolean, {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string}>();
+function currentCaptureProgram(pressure = false) {
+  const cached = compiledCapture.get(pressure);
+  if (cached) return cached;
   const directory = mkdtempSync(join(tmpdir(), 'sods-current-capture-'));
   try {
     const source = fileURLToPath(new URL('../fixtures/managed-sendfile/captured-order.S', import.meta.url));
@@ -1122,14 +1123,15 @@ function currentCaptureProgram() {
     const object = join(directory, 'captured-order.o');
     const output = join(directory, 'capture.elf');
     // A stable object basename avoids cc's random temp symbol-file name.
-    execFileSync(compiler, ['-c', source, '-o', object], {stdio: 'pipe', timeout: 30_000});
+    execFileSync(compiler, [...(pressure ? ['-DSODS_CAPTURE_RESIDENT_PRESSURE'] : []), '-c', source, '-o', object], {stdio: 'pipe', timeout: 30_000});
     execFileSync(compiler, [
       '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', object, '-o', output,
     ], {stdio: 'pipe', timeout: 30_000});
     const artifact = readFileSync(currentTranslatorArtifact!);
-    compiledCapture = {elf: new Uint8Array(readFileSync(output)), translator: new WebAssembly.Module(artifact),
+    const built = {elf: new Uint8Array(readFileSync(output)), translator: new WebAssembly.Module(artifact),
       sha: createHash('sha256').update(artifact).digest('hex')};
-    return compiledCapture;
+    compiledCapture.set(pressure, built);
+    return built;
   } finally { rmSync(directory, {recursive: true, force: true}); }
 }
 
@@ -1310,7 +1312,7 @@ test('non-probe capture result resumes the exact write only after confirmed resu
 }, async () => {
   const current = currentCaptureProgram();
   const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
-  const resume = 'linux_capture_result_write_resume';
+  const resume = 'linux_capture_result_resume';
   assert.equal(r.call('linux_capture_result_init'), 0);
   const input = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
   const {id, memory} = input;
@@ -1327,7 +1329,7 @@ test('non-probe capture result resumes the exact write only after confirmed resu
     const core = r.e.memory as WebAssembly.Memory;
     copyWorkerInput(memory, core, Number(r.auxiliary()), Number(r.result()), length);
     assert.equal(r.call(finish, id, sequence, action, 0, length), 0);
-    assert.deepEqual([r.state(), r.result()], [0, BigInt(length)]);
+    assert.deepEqual([r.state(), r.result()], [15, BigInt(length)]);
   };
   assert.equal(request(1, 1n, at, 4n), 0);
   assert.equal(r.state(), 13);
@@ -1361,6 +1363,100 @@ test('non-probe capture result resumes the exact write only after confirmed resu
   assert.equal(r.result(), 1n);
   assert.deepEqual(r.receive(0), bytes('E'));
   assert.equal(r.receive(0), undefined);
+});
+
+for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'abandons stopped' : 'resumes'} resident sendfile on the actual Worker`, {
+  skip: currentResultSkip, timeout: 30_000,
+}, async () => {
+  const current = currentCaptureProgram(true);
+  const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
+  const resume = 'linux_capture_result_resume';
+  assert.equal(r.call('linux_capture_result_init'), 0);
+  const prepared = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
+  const bridge = createGuest(prepared);
+  try {
+    await bridge.ready;
+    const {id, memory, entry} = prepared, core = r.e.memory as WebAssembly.Memory;
+    assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+    assert.equal(r.call('linux_run_start', id), 0);
+    const invocation = r.result(), observed: bigint[] = [], consumed: string[] = [];
+    const run = await bridge.run(invocation, entry, async request => {
+      observed.push(request.nr);
+      assert.equal(r.call('linux_syscall_sequenced', id, request.invocation, request.sequence,
+        request.nr, ...request.args, request.next), 0);
+      const c = r.command();
+      if (c.tag === 8) {
+        const length = bytes('/source\0').length;
+        assert.equal(r.call('linux_syscall_path_start', id, c.value), 0);
+        copyWorkerInput(memory, core, Number(c.target), Number(r.result()), length);
+        assert.equal(r.call('linux_syscall_path_finish', id, c.value, BigInt(length), 0), 0);
+        assert.deepEqual([r.state(), r.result()], [0, 3n]);
+        return {kind: 'return', value: 3n};
+      }
+      if (c.tag === 13) {
+        assert.equal(r.call('linux_capture_result_write_start', id, request.sequence, c.value), 0);
+        copyWorkerInput(memory, core, Number(r.auxiliary()), Number(r.result()), 1);
+        assert.equal(r.call('linux_capture_result_write_finish', id, request.sequence, c.value, 0, 1), 0);
+        assert.deepEqual([r.state(), r.result()], [15, 1n]);
+        return {kind: 'return', value: 1n};
+      }
+      if (c.tag === 15) return {kind: 'return', value: c.value};
+      if (c.tag === 2) return {kind: 'leave'};
+      assert.equal(c.tag, 14);
+      assert.equal(request.nr, 40n);
+      assert.equal(c.target, BigInt(request.sequence));
+      assert.equal(r.call('linux_capture_result_write_start', id, request.sequence, c.value), -4,
+        'resident pressure never exposes a write copy view');
+      assert.equal(r.call(resume, id, request.sequence, c.value + 1n), -4);
+      assert.equal(r.call(resume, id, request.sequence, c.value), 0);
+      assert.deepEqual(r.command(), c, 'nothing released yet');
+      const first = r.receive(0);
+      assert.deepEqual(first, bytes('A'));
+      consumed.push('A');
+      assert.equal(r.call(resume, id, request.sequence, c.value), 0);
+      assert.deepEqual(r.command(), c, 'receiving copied A returns Q/K, not the held R');
+      if (cancel) {
+        bridge.requestStop();
+        await bridge.stopped;
+        assert.equal(r.call('linux_run_receipt', id, invocation, 2, 0n), 0);
+        assert.equal(r.call(resume, id, request.sequence, c.value), -12, 'observed stop prevents publication');
+        assert.equal(r.call('linux_syscall_abandon', id), 0);
+        assert.equal(r.call(resume, id, request.sequence, c.value), -4);
+      } else {
+        assert.deepEqual(r.receive(0), bytes('B'));
+        consumed.push('B');
+        assert.equal(r.call(resume, id, request.sequence, c.value), 0);
+        assert.deepEqual([r.state(), r.result()], [15, 1n]);
+        assert.equal(r.call(resume, id, request.sequence, c.value), -4);
+        assert.deepEqual(r.remaining({id, invocation, sequence: request.sequence}, 3n), Uint8Array.of(),
+          'the retained source advanced exactly once from original B to the end of D');
+      }
+      return {kind: 'return', value: 1n};
+    });
+    await bridge.requestsSettled();
+    assert.equal(bridge.diagnostics().failureCount, 0);
+    if (cancel) {
+      assert.equal(run.kind, 'failed');
+      assert.deepEqual(observed, [2n, 1n, 40n, 40n]);
+    } else {
+      assert.deepEqual(run, {kind: 'left', unwound: true});
+      assert.deepEqual(observed, [2n, 1n, 40n, 40n, 1n, 60n]);
+      assert.equal(r.call('linux_run_receipt', id, invocation, 1, 0n), 0);
+      assert.equal(r.result(), 42n);
+    }
+    bridge.requestStop(); await bridge.stopped;
+    assert.equal(r.call('linux_execution_retire', id), 0);
+    assert.equal(r.result(), 1n);
+    for (const expected of cancel ? ['B'] : ['D', 'C']) {
+      assert.deepEqual(r.receive(0), bytes(expected));
+      consumed.push(expected);
+    }
+    assert.equal(r.receive(0), undefined);
+    assert.equal(consumed.join(''), cancel ? 'AB' : 'ABDC');
+  } finally {
+    bridge.requestStop();
+    if (bridge.diagnostics().created) await bridge.stopped;
+  }
 });
 
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
@@ -1542,11 +1638,11 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
           assert.deepEqual([r.state(), r.result()], [0, 3n]);
           return {kind: 'return', value: r.result()} as const;
         }
-        if (command.tag === 0) {
+        if (command.tag === (resultProfile ? 15 : 0)) {
           assert.equal(request.nr, 40n);
           const [out, fd, offset, length] = request.args;
           assert.deepEqual([out, fd, offset, length], [1n, 3n, 0n, 1n]);
-          assert.deepEqual(command, {tag: 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
+          assert.deepEqual(command, {tag: resultProfile ? 15 : 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
           if (stopBeforeFileReply) {
             assert.deepEqual(r.remaining(owner, fd), bytes('D'));
             inputCursorChecked = true;
@@ -1582,7 +1678,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
         }
         assert.equal(r.call(finish, id, request.sequence, action, 0, extent), 0);
         const step = r.command();
-        assert.deepEqual([step.tag, step.value], [0, 1n]);
+        assert.deepEqual([step.tag, step.value], [resultProfile ? 15 : 0, 1n]);
         if (writeAddresses.length === 2) {
           assert.deepEqual(r.remaining(owner, 3n), bytes('D'));
           inputCursorChecked = true;
