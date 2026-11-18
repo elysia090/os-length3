@@ -17,28 +17,32 @@
 // must name this root. --rs writes another root/ (for a test).
 
 import {createHash} from 'node:crypto';
-import {readFileSync, statSync, writeFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {readReleaseIndex, releaseIndexAsset, type About} from '../../ricebox/distribution/format/manifest.ts';
 
 const args = process.argv.slice(2);
 const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : fileURLToPath(new URL('../prompt/roots/pins.rs', import.meta.url));
 const [file, web] = args;
 const name = file ? basename(file) : '';
-const m = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-[0-9a-f]{64}\.tar\.zst$/.exec(name);
+const m = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-([0-9a-f]{64})\.tar\.zst$/.exec(name);
 if (!m) { console.error('node why/build/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]'); process.exit(2); }
 const version = m[1];
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
-const sha256 = sha(readFileSync(file));
-const bytes = statSync(file).size.toLocaleString('en').replace(/,/g, '_');
+const native = readFileSync(file), sha256 = sha(native);
+if (sha256 !== m[2]) throw new Error(`${name}: the archive digest is ${sha256}, not the digest in its name`);
+const bytes = native.length.toLocaleString('en').replace(/,/g, '_');
 
 // The web's index, checked: made from this very root, and its file the digest webroot.json says.
 let webSha = '';
 if (web) {
-  const about = JSON.parse(readFileSync(join(web, 'webroot.json'), 'utf8'));
+  const about: About = JSON.parse(readFileSync(join(web, 'webroot.json'), 'utf8'));
   if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is why ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
-  const got = sha(readFileSync(join(web, about.index.path)));
-  if (got !== about.index.sha256) throw new Error(`${web}/${about.index.path}: sha256 ${got}, webroot.json says ${about.index.sha256}`);
+  const asset = releaseIndexAsset(about);
+  const index = readFileSync(join(web, asset.path)), got = sha(index);
+  if (got !== asset.sha256 || index.length !== asset.size) throw new Error(`${web}/${asset.path}: not the index webroot.json names`);
+  readReleaseIndex(index, about);
   webSha = got;
 }
 

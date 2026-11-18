@@ -136,9 +136,22 @@ test('one entry pins why for both: the root, and the index the browser reads it 
   const other = join(work, 'other');
   cpSync(out, other, {recursive: true});
   const json = Buffer.concat([readFileSync(join(other, about.index.path)), Buffer.from(' ')]);
-  writeFileSync(join(other, about.index.path), json);
-  writeFileSync(join(other, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json)}}));
+  const sha256 = sha(json), path = `index-${sha256}.json`;
+  writeFileSync(join(other, path), json);
+  writeFileSync(join(other, 'webroot.json'), JSON.stringify({...about, index: {path, sha256, size: json.length}}));
   assert.match(node([join(os, 'why/build/pin-root.ts'), rootFile, other, '--rs', rs]).stderr, /a released index is never changed/);
+});
+
+test('the pin writer refuses a native archive inconsistent with its content-addressed name', () => {
+  const rs = join(work, 'untouched-pins.rs');
+  copyFileSync(join(os, 'why/prompt/roots/pins.rs'), rs);
+  const untouched = readFileSync(rs, 'utf8');
+  const renamed = join(work, `os-length3-linux-9.9.9-x86_64-${'0'.repeat(64)}.tar.zst`);
+  copyFileSync(rootFile, renamed);
+  const result = node([join(os, 'why/build/pin-root.ts'), renamed, '--rs', rs]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /not the digest in its name/);
+  assert.equal(readFileSync(rs, 'utf8'), untouched);
 });
 
 function copyPromptSources(tree: string) {
@@ -186,6 +199,15 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   try {
     let r = await go();
     assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
+    const wrongIndex = join(work, 'wrong-index-size');
+    cpSync(out, wrongIndex, {recursive: true});
+    const indexInfo = join(wrongIndex, 'webroot.json'), wrongAbout = JSON.parse(readFileSync(indexInfo, 'utf8'));
+    writeFileSync(indexInfo, JSON.stringify({...wrongAbout, index: {...wrongAbout.index, size: wrongAbout.index.size + 1}}));
+    tar = tarOf(wrongIndex);
+    r = await go();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /not the index this tree pins/);
     assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
 
 
