@@ -13,6 +13,8 @@ pub(super) enum Error {
     BadPin,
     BadReservation,
     Length,
+    ReceiverNotEmpty,
+    ReceiverCapacity,
 }
 impl From<FilesError> for Error {
     fn from(error: FilesError) -> Self {
@@ -145,6 +147,30 @@ struct Range {
 enum Entry {
     Reserved(NonZeroUsize),
     Queued { pin: Pin, next: Option<usize> },
+}
+struct Head<'a> {
+    index: usize,
+    pin: usize,
+    next: Option<usize>,
+    prefix: &'a ReadPrefix,
+}
+struct Removal {
+    index: usize,
+    pin: usize,
+    next: Option<usize>,
+    remaining: usize,
+}
+impl Head<'_> {
+    fn removal(&self, used: usize) -> Removal {
+        Removal {
+            index: self.index,
+            pin: self.pin,
+            next: self.next,
+            remaining: used
+                .checked_sub(self.prefix.length.get())
+                .expect("queued byte credit"),
+        }
+    }
 }
 
 /// Coarse ownership: Files is moved in and cannot be taken back or replaced.
@@ -325,36 +351,70 @@ impl Owner {
         commit.commit();
         Ok(length)
     }
+    fn head<'a>(
+        index: Option<usize>,
+        entries: &Arena<Entry>,
+        pins: &'a Arena<Range>,
+    ) -> Option<Head<'a>> {
+        let index = index?;
+        let State::Live(Entry::Queued { pin, next }) = &entries.cells[index].state else {
+            unreachable!("queued head")
+        };
+        let range = pins.get(pin.0.key).expect("queued pin");
+        assert!(range.queued);
+        Some(Head {
+            index,
+            pin: pin.0.key.index,
+            next: *next,
+            prefix: &range.prefix,
+        })
+    }
     pub(super) fn front_bytes(&mut self) -> Result<Option<&[u8]>, Error> {
-        let Some(head) = self.head else {
+        let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return Ok(None);
         };
-        let State::Live(Entry::Queued { pin, .. }) = &self.entries.cells[head].state else {
-            unreachable!("queued head")
-        };
-        let range = self.pins.get(pin.0.key).expect("queued pin");
-        assert!(range.queued);
-        Ok(Some(self.files.prefix_bytes(&range.prefix)?))
+        Ok(Some(self.files.prefix_bytes(head.prefix)?))
     }
-    /// Internal discard, not consumer delivery or stopped external access.
-    pub(super) fn discard_front(&mut self) -> bool {
-        let Some(head) = self.head else { return false };
-        let State::Live(Entry::Queued { pin, next }) = &self.entries.cells[head].state else {
-            unreachable!("queued head")
-        };
-        let range = self.pins.get(pin.0.key).expect("queued pin");
-        assert!(range.queued);
-        let pin_index = pin.0.key.index;
-        self.used = self
-            .used
-            .checked_sub(range.prefix.length.get())
-            .expect("queued byte credit");
-        self.head = *next;
+    fn remove_head(&mut self, removal: Removal) {
+        self.used = removal.remaining;
+        self.head = removal.next;
         if self.head.is_none() {
             self.tail = None;
         }
-        self.pins.remove(pin_index);
-        self.entries.remove(head);
+        self.pins.remove(removal.pin);
+        self.entries.remove(removal.index);
+    }
+    /// Transfer one entire head to separate caller-owned Rust storage. The
+    /// receiver must already have room; no allocation or zeroing pass here.
+    /// Failure holds both sides unchanged. Empty is not EOF or a flush receipt.
+    /// No view escapes and no external delivery or stopped-access is implied.
+    pub(super) fn take_front_into(
+        &mut self,
+        receiver: &mut Vec<u8>,
+        logical_limit: usize,
+    ) -> Result<Option<NonZeroUsize>, Error> {
+        let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
+            return Ok(None);
+        };
+        if !receiver.is_empty() {
+            return Err(Error::ReceiverNotEmpty);
+        }
+        let length = head.prefix.length;
+        if length.get() > logical_limit || length.get() > receiver.capacity() {
+            return Err(Error::ReceiverCapacity);
+        }
+        let removal = head.removal(self.used);
+        let bytes = self.files.prefix_bytes(head.prefix)?;
+        receiver.extend_from_slice(bytes);
+        self.remove_head(removal);
+        Ok(Some(length))
+    }
+    /// Internal discard, not consumer delivery or stopped external access.
+    pub(super) fn discard_front(&mut self) -> bool {
+        let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
+            return false;
+        };
+        self.remove_head(head.removal(self.used));
         true
     }
     /// Admission closure does not erase accepted data or cancel pending tickets.
@@ -671,6 +731,146 @@ mod tests {
         assert!(out.discard_front());
         assert_eq!(out.used, 0);
         assert_eq!(out.reserve(n(1)).unwrap_err(), Error::Closed);
+    }
+
+    #[test]
+    fn a_reserved_entry_is_not_consumable_and_rejected_receivers_preserve_the_head() {
+        let (mut out, table, fd) = owner(502, 4, 2, 2);
+        let reservation = out.reserve(n(2)).unwrap();
+        let mut receiver = Vec::new();
+        assert_eq!(out.take_front_into(&mut receiver, 0), Ok(None));
+        assert_eq!(out.used, 2);
+        let source = out.begin_resident(&table, fd, 2).unwrap();
+        let pin = out.pin_prefix(&source, n(2)).unwrap();
+        let pin_key = pin.0.key;
+        let entry_key = reservation.0.key;
+        out.publish(reservation, pin, source).unwrap();
+
+        assert_eq!(
+            out.take_front_into(&mut receiver, 2),
+            Err(Error::ReceiverCapacity),
+        );
+        receiver.reserve_exact(4);
+        assert_eq!(
+            out.take_front_into(&mut receiver, 1),
+            Err(Error::ReceiverCapacity),
+        );
+        receiver.push(97);
+        assert_eq!(
+            out.take_front_into(&mut receiver, 4),
+            Err(Error::ReceiverNotEmpty),
+        );
+        assert_eq!(receiver, b"a");
+        receiver.clear();
+        // Use a test-only inconsistent witness to simulate a short Store read.
+        // The backing contract forbids this in conforming code.
+        out.pins.live_mut(pin_key.index).prefix.start = 3;
+        assert_eq!(
+            out.take_front_into(&mut receiver, 4),
+            Err(Error::Source(FilesError::Payload)),
+        );
+        assert!(receiver.is_empty());
+        assert_eq!(out.used, 2);
+        assert!(out.entries.get(entry_key).is_some());
+        assert!(out.pins.get(pin_key).is_some());
+        assert_eq!(out.files.offset(&table, fd), Ok((2, 1)));
+        out.pins.live_mut(pin_key.index).prefix.start = 0;
+        assert_eq!(out.take_front_into(&mut receiver, 2), Ok(Some(n(2))));
+        assert_eq!(receiver, b"bo");
+        assert!(out.entries.get(entry_key).is_none());
+        assert!(out.pins.get(pin_key).is_none());
+        assert_eq!(out.used, 0);
+        assert_eq!(out.files.offset(&table, fd), Ok((2, 1)));
+        assert_eq!(out.take_front_into(&mut receiver, 0), Ok(None));
+        assert_eq!(receiver, b"bo");
+    }
+
+    #[test]
+    fn copied_head_frees_exact_credits_and_independently_owns_bytes_after_owner_drop() {
+        let (mut out, table, fd) = owner(502, 4, 2, 2);
+        for _ in 0..2 {
+            let source = out.begin_resident(&table, fd, 2).unwrap();
+            let pin = out.pin_prefix(&source, n(2)).unwrap();
+            let reservation = out.reserve(n(2)).unwrap();
+            out.publish(reservation, pin, source).unwrap();
+        }
+        assert_eq!(out.reserve(n(1)).unwrap_err(), Error::Full);
+        let mut receiver = Vec::with_capacity(2);
+        let allocation = receiver.as_ptr();
+        assert_ne!(out.front_bytes().unwrap().unwrap().as_ptr(), allocation);
+        assert_eq!(out.take_front_into(&mut receiver, 2), Ok(Some(n(2))));
+        assert_eq!(receiver.as_ptr(), allocation);
+        assert_eq!(out.used, 2);
+        assert_eq!(out.front_bytes(), Ok(Some(&b"dy"[..])));
+        assert_eq!(out.files.offset(&table, fd), Ok((4, 2)));
+        let available = out.reserve(n(2)).unwrap();
+        out.cancel(available).unwrap();
+
+        out.close_admission();
+        assert_eq!(out.reserve(n(1)).unwrap_err(), Error::Closed);
+        let mut second = Vec::with_capacity(2);
+        assert_eq!(out.take_front_into(&mut second, 2), Ok(Some(n(2))));
+        assert_eq!(out.files.offset(&table, fd), Ok((4, 2)));
+        out.files.let_go(table).unwrap();
+        drop(out);
+        assert_eq!(receiver, b"bo");
+        assert_eq!(second, b"dy");
+    }
+
+    #[test]
+    fn lost_invocation_cannot_admit_first_publication_or_undo_an_accepted_head() {
+        use crate::execution::{Execution, ImageResult, Unwind};
+        use crate::lease::Domain;
+
+        for lost_first in [true, false] {
+            let (mut out, table, fd) = owner(502, 2, 1, 1);
+            let mut domain = Domain::new(504, 1, 4).unwrap();
+            let binding = domain.bind(65536).unwrap();
+            let mut producer = Execution::new(1, binding);
+            producer.image_begin(&mut domain, 65536).unwrap();
+            producer
+                .image_finish(&mut domain, ImageResult::Installed)
+                .unwrap();
+            let invocation = producer.start(&mut domain).unwrap();
+            producer.hold_call(invocation).unwrap();
+            let source = out.begin_resident(&table, fd, 2).unwrap();
+            let pin = out.pin_prefix(&source, n(2)).unwrap();
+            let reservation = out.reserve(n(2)).unwrap();
+            // Exercise the proposed caller order in a Rust fixture, not an
+            // active Worker, continuation cancellation or transport adapter.
+            if lost_first {
+                producer
+                    .receipt(&mut domain, invocation, Unwind::Unknown)
+                    .unwrap();
+                assert!(producer.check_held_call_live(invocation).is_err());
+                out.abort_source(source).ok().unwrap();
+                out.release(pin).unwrap();
+                out.cancel(reservation).unwrap();
+                assert_eq!(out.files.offset(&table, fd), Ok((0, 0)));
+            } else {
+                producer.check_held_call_live(invocation).unwrap();
+                out.publish(reservation, pin, source).unwrap();
+                assert_eq!(out.files.offset(&table, fd), Ok((2, 1)));
+            }
+            producer
+                .receipt(&mut domain, invocation, Unwind::Fault)
+                .unwrap();
+            assert!(!producer.retireable());
+            assert!(producer.check_held_call_live(invocation).is_err());
+            producer.finish_call(invocation).unwrap();
+            assert!(producer.retireable());
+            out.files.let_go(table).unwrap();
+            let mut receiver = Vec::with_capacity(2);
+            assert_eq!(
+                out.take_front_into(&mut receiver, 2),
+                Ok((!lost_first).then(|| n(2)))
+            );
+            if lost_first {
+                assert!(receiver.is_empty());
+            } else {
+                assert_eq!(receiver, b"bo");
+            }
+        }
     }
 
     #[test]

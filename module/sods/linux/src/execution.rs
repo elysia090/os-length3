@@ -317,6 +317,20 @@ impl Execution {
         self.pending_call = Some(invocation);
         Ok(())
     }
+    /// Execution half of first-publication preflight. The operation owner must
+    /// separately exclude a cancelled/closed sequence in the same Core turn.
+    /// This neither acquires nor ends a call, and is not a stop receipt.
+    pub(crate) fn check_held_call_live(&self, invocation: Invocation) -> Result<(), Error> {
+        if self.pending_call != Some(invocation) {
+            return Err(Error::Identity);
+        }
+        // Admission captured the current invocation and a pending call blocks
+        // start/reimage. Only Running retains that current invocation live.
+        if self.phase != Phase::Running || self.exit_requested.is_some() {
+            return Err(Error::State);
+        }
+        Ok(())
+    }
     pub(crate) fn finish_call(&mut self, invocation: Invocation) -> Result<(), Error> {
         if self.pending_call != Some(invocation) {
             return Err(Error::Identity);
@@ -577,6 +591,57 @@ mod retirement_tests {
         assert!(!e.retireable());
         e.finish_call(invocation).unwrap();
         assert!(e.retireable());
+    }
+
+    #[test]
+    fn live_held_call_admission_is_not_a_same_image_snapshot_or_call_acquisition() {
+        let mut d = Domain::new(90, 1, 4).unwrap();
+        let binding = d.bind(65536).unwrap();
+        let mut e = Execution::new(1, binding);
+        e.image_begin(&mut d, 65536).unwrap();
+        e.image_finish(&mut d, ImageResult::Installed).unwrap();
+        let first = e.start(&mut d).unwrap();
+        assert_eq!(e.check_held_call_live(first), Err(Error::Identity));
+        e.hold_call(first).unwrap();
+        assert_eq!(e.check_held_call_live(first), Ok(()));
+        assert_eq!(e.hold_call(first), Err(Error::State));
+        e.receipt(&mut d, first, Unwind::Yield(7)).unwrap();
+        assert_eq!(e.check_held_call_live(first), Err(Error::State));
+        e.finish_call(first).unwrap();
+        let second = e.start(&mut d).unwrap();
+        assert_eq!(first.identity, second.identity);
+        assert_ne!(first.number(), second.number());
+        e.hold_call(second).unwrap();
+        assert_eq!(e.check_held_call_live(first), Err(Error::Identity));
+        assert_eq!(e.check_held_call_live(second), Ok(()));
+        e.finish_call(second).unwrap();
+        assert_eq!(e.check_held_call_live(second), Err(Error::Identity));
+    }
+
+    #[test]
+    fn exit_or_uncertain_invocation_cannot_admit_first_publication_but_keeps_cleanup() {
+        for (incarnation, unwind) in [(90, Unwind::Fault), (91, Unwind::Exit)] {
+            let mut d = Domain::new(incarnation, 1, 4).unwrap();
+            let binding = d.bind(65536).unwrap();
+            let mut e = Execution::new(1, binding);
+            e.image_begin(&mut d, 65536).unwrap();
+            e.image_finish(&mut d, ImageResult::Installed).unwrap();
+            let invocation = e.start(&mut d).unwrap();
+            e.hold_call(invocation).unwrap();
+            if unwind == Unwind::Exit {
+                e.request_exit(invocation, 0).unwrap();
+                assert_eq!(e.phase(), Phase::Running);
+                assert_eq!(e.check_held_call_live(invocation), Err(Error::State));
+            }
+            e.receipt(&mut d, invocation, Unwind::Unknown).unwrap();
+            assert_eq!(e.check_held_call_live(invocation), Err(Error::State));
+            assert!(!e.stopped());
+            e.receipt(&mut d, invocation, unwind).unwrap();
+            assert_eq!(e.check_held_call_live(invocation), Err(Error::State));
+            assert!(!e.retireable());
+            e.finish_call(invocation).unwrap();
+            assert!(e.retireable());
+        }
     }
 }
 

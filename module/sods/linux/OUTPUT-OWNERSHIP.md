@@ -67,3 +67,27 @@ Guest-call and cancellation admission, lazy source coordination, drain
 binding, captured delivery and Linux pipe algorithms remain unselected gates.
 This owner is not installed in the Core or Worker and creates no positive
 physical capability, guest result or new ABI.
+
+Before first publication, a future continuation must check both its exact
+held invocation and its own open sequence in the same non-reentrant turn.
+`Execution::check_held_call_live` checks only the execution half: same-image
+snapshots can be reused across invocations, and an uncertain or exit-requested
+execution may still own a cleanup obligation. This check neither changes that
+obligation nor proves that the continuation was not cancelled. Cancellation
+before first publication must not create output; after acceptance it must not
+rewind input or erase the queue's ownership of accepted bytes.
+
+## Synchronous owned receiver
+
+One internal take copies a whole head into caller-owned, pre-admitted Rust
+storage. The receiver must be empty, and both its allocated capacity and an
+explicit logical byte limit must cover the exact nonzero head. Refusal leaves
+the queue, credits and receiver unchanged. An absent published head is not EOF:
+reservations may still be live. Closing admission does not discard accepted work.
+
+After checking the entire head and its credit update, take performs one bulk
+copy and releases only that head's Q/K/R in the same turn. The receiver is
+independent of Files; discarding or destroying the native owner cannot change
+its bytes. Inside Wasm, an owned Rust allocation still cannot outlive the
+instance's linear memory. Take is neither a borrowed view nor evidence of
+external delivery or a stopped host drain. No guest cursor is changed here.
