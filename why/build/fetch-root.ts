@@ -1,22 +1,18 @@
-// A release root this tree pins (why/prompt/roots/pins.rs RELEASES): VERSION's, or the
-// newest pinned, as a file: from DIR when it is there already, else from the
-// GitHub release that published it, and kept only at the pinned digest and size.
-// Prints its path. For building the web root (scripts/webroot.sh) and checking
-// it against the native root (webroot-parity.ts).
-//
-//   node scripts/root-file.ts DIR [VERSION]
-//
-// The repository is public: the file is taken from the release's own
-// download link (WHY_RELEASES: where releases are downloaded from, for a
-// test; GITHUB_REPOSITORY names the repository when it is not this one).
+// Print the local path to a pinned root archive, downloading it if needed.
+// Usage: node why/build/fetch-root.ts DIR [VERSION]
+// Omit VERSION to use the first pin in why/prompt/roots/pins.rs. Archives are
+// accepted only at the pinned size and digest. WHY_RELEASES can override the
+// download URL; otherwise GITHUB_REPOSITORY selects the repository.
+
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
+import {fileURLToPath} from 'node:url';
+import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
 
-const here = new URL('..', import.meta.url).pathname;
+const here = fileURLToPath(new URL('../..', import.meta.url));
 const [dir, asked] = process.argv.slice(2);
-if (!dir) { console.error('usage: root-file.ts DIR [VERSION]'); process.exit(2); }
+if (!dir) { console.error('usage: fetch-root.ts DIR [VERSION]'); process.exit(2); }
 const roots = pinnedRoots(readFileSync(join(here, 'why/prompt/roots/pins.rs'), 'utf8'));
 const pin = asked ? roots.find((r) => r.version === asked) : roots[0];
 if (!pin) throw new Error(`why/prompt/roots/pins.rs pins no root for ${asked}`);

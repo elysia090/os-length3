@@ -36,7 +36,7 @@ const ALONE = new Set([
   // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
   'why/prompt/webroot-fetch.test.ts',
   // Builds why with child processes, and waits for them.
-  'scripts/webroot.test.ts',
+  'why/build/webroot.test.ts',
 ]);
 
 /**

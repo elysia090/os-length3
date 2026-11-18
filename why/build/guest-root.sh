@@ -1,9 +1,9 @@
 #!/bin/sh
 # Add the Why command and shell policy without replacing Ricebox's identity.
 # The archive name is kept for release and download compatibility.
-# sh why/make/root.sh PACKAGES OUT VERSION
+# sh why/build/guest-root.sh PACKAGES OUT VERSION
 set -eu
-[ "$#" -eq 3 ] || { echo 'usage: root.sh PACKAGES OUT VERSION' >&2; exit 2; }
+[ "$#" -eq 3 ] || { echo 'usage: guest-root.sh PACKAGES OUT VERSION' >&2; exit 2; }
 pkgs=$(cd "$1" && pwd); out=$2; version=$3
 here=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/why-root.XXXXXX")
@@ -17,7 +17,7 @@ done < "$pkgs/record"
 (cd "$here" && cargo build -q --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl)
 why="$here/target/x86_64-unknown-linux-musl/prompt/why"
 mkdir -p "$work/why/tree/usr/bin" "$work/why/tree/etc/profile.d"
-install -m 0644 "$here/why/make/shell.sh" "$work/why/tree/etc/profile.d/why.sh"
+install -m 0644 "$here/why/build/profile.sh" "$work/why/tree/etc/profile.d/why.sh"
 install -m 0755 "$why" "$work/why/tree/usr/bin/why"
 sha=$(sha256sum "$why" | cut -d' ' -f1)
 source=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)

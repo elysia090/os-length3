@@ -4,7 +4,7 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {bootScript} from '../../scripts/boot.ts';
-import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
+import {buildCoreWasm, coreWasmPath} from '../build/core-wasm.ts';
 import {putMuk} from '../../ricebox/distribution/build/muk-artifact.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
 import {shipped} from '../shipto/remote/ship/releases.ts';

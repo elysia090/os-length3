@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('why/**/*.rs', 'why/Cargo.toml', 'why/api/web/Cargo.toml', 'ricebox/distribution/src/**', 'ricebox/distribution/Cargo.toml', 'ricebox/distribution/build.rs', 'Cargo.toml', 'Cargo.lock', 'why/repo/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('why/**/*.rs', 'why/Cargo.toml', 'why/api/web/Cargo.toml', 'ricebox/distribution/src/**', 'ricebox/distribution/Cargo.toml', 'ricebox/distribution/build.rs', 'Cargo.toml', 'Cargo.lock', 'why/repo/templates.json', 'why/build/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('ricebox/distribution/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'scripts/webroot.sh', 'ricebox/distribution/build/**', 'ricebox/distribution/host/node/**', 'ricebox/distribution/format/**', 'ricebox/distribution/deployment/**', 'scripts/root-file.ts', 'ricebox/distribution/verification/distribution.ts', 'ricebox/distribution/verification/inventory.ts', 'ricebox/sods/Cargo.toml', 'ricebox/sods/Cargo.lock', 'ricebox/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('ricebox/distribution/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'why/build/webroot.sh', 'ricebox/distribution/build/**', 'ricebox/distribution/host/node/**', 'ricebox/distribution/format/**', 'ricebox/distribution/deployment/**', 'why/build/fetch-root.ts', 'ricebox/distribution/verification/distribution.ts', 'ricebox/distribution/verification/inventory.ts', 'ricebox/sods/Cargo.toml', 'ricebox/sods/Cargo.lock', 'ricebox/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -99,8 +99,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm ci
-          root=$(node scripts/root-file.ts target/root)
-          sh scripts/webroot.sh "$root" why/app/public/webroot
+          root=$(node why/build/fetch-root.ts target/root)
+          sh why/build/webroot.sh "$root" why/app/public/webroot
           node ricebox/distribution/verification/distribution.ts "$root" why/app/public/webroot
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -139,7 +139,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm ci
-          root=$(node scripts/root-file.ts target/root)
+          root=$(node why/build/fetch-root.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
           node ricebox/distribution/verification/commands.ts why/app/public/webroot target/root-open/root --jobs 4 --check
 
@@ -217,7 +217,7 @@ jobs:
           path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
-      # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
+      # Newer than the checkout, so why/build/core-wasm.ts (which goes by mtime) does not rebuild it.
       - run: touch target/wasm32-wasip1/web/why_core_web.wasm
       - run: npm ci
       - name: Test
@@ -514,7 +514,7 @@ jobs:
       - name: Assemble and check
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
-          sh why/make/root.sh target/root-packages target/root-made 0.0.0
+          sh why/build/guest-root.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
           # Owned by root, as in a Prompt: apk will not audit a database another user owns.
           sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
@@ -668,7 +668,7 @@ jobs:
           path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
-      # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
+      # Newer than the checkout, so why/build/core-wasm.ts (which goes by mtime) does not rebuild it.
       - run: touch target/wasm32-wasip1/web/why_core_web.wasm
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -1,14 +1,14 @@
 #!/bin/sh
 # The web root this tree's app is built with (why/app/public/webroot): the root why pins newest (why/prompt/roots/pins.rs,
-# fetched by scripts/root-file.ts when it is not given), made into layers by ricebox itself
+# fetched by why/build/fetch-root.ts when it is not given), made into layers by ricebox itself
 # (ricebox/distribution/build/distribution.sh: its index, packs and blobs, and the box's maker beside them).
 #
-#   sh scripts/webroot.sh [ROOT.tar.zst [OUT]]
+#   sh why/build/webroot.sh [ROOT.tar.zst [OUT]]
 set -eu
-here=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")/../.." && pwd)
 root=${1:-}
 out=${2:-$here/why/app/public/webroot}
-if [ -z "$root" ]; then root=$(node "$here/scripts/root-file.ts" "$here/target/root"); fi
+if [ -z "$root" ]; then root=$(node "$here/why/build/fetch-root.ts" "$here/target/root"); fi
 # Product-specific warm programs and the former CLI name belong here, not in ricebox.
 cli=/usr/bin/why
 if ! tar --zstd -tf "$root" | grep -qx 'root/usr/bin/why'; then cli=/usr/bin/l3; fi

@@ -4,7 +4,7 @@ import {stripTypeScriptTypes} from 'node:module';
 import {test} from 'node:test';
 
 // Exercise the production download loop without fetching the large pinned root.
-const source = readFileSync(new URL('./root-file.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./fetch-root.ts', import.meta.url), 'utf8');
 const begin = source.indexOf('async function download(');
 const code = stripTypeScriptTypes(source.slice(begin, source.indexOf('\nconst bytes = ', begin)));
 function downloader(fetch: typeof globalThis.fetch) {

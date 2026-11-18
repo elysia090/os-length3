@@ -6,7 +6,7 @@ import {existsSync, readdirSync, statSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../..', import.meta.url));
 /** why's parts (docs/STRUCTURE.md): each a folder of why/ holding its Rust and its TypeScript side by side. */
 export const CORE_PARTS = ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device'];
 const TARGET = 'wasm32-wasip1';

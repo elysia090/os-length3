@@ -1,6 +1,6 @@
 // A stand-in release root, a few files of each kind a root has, and why for
 // the browser made from it with a stand-in translator: for tests
-// (scripts/webroot.test.ts, why/prompt/userland.test.ts), so they need neither the real
+// (why/build/webroot.test.ts, why/prompt/userland.test.ts), so they need neither the real
 // root nor Rust.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';

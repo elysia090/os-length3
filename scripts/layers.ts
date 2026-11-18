@@ -13,10 +13,11 @@ import {fileURLToPath} from 'node:url';
 const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
-export const TREES: {root: string; order: string[]; skip?: string[]; build?: string[]}[] = [
+export const TREES: {root: string; order: string[]; skip?: string[]; build?: string[]; buildHosts?: string[]}[] = [
   // why's parts (docs/STRUCTURE.md), each a folder of all it is whatever it is written in, then the window: a part
-  // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole. make/ composes the release; runtime code must never take from it.
-  {root: 'why', order: ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test'], build: ['make']},
+  // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole. build/ composes the release; runtime code must never take from it.
+  {root: 'why', order: ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test'], build: ['build'],
+    buildHosts: ['why/app/vite.config.ts', 'why/app/testing/', 'why/test/']},
   // The window: what is drawn with (ui), what a host is asked for a page (host), the pages, and what starts them.
   {root: 'why/app', order: ['ui', 'host', 'pages', 'main', '.'], skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
@@ -57,7 +58,10 @@ export function violations(): [string, string, string, string, string][] {
         const to = moduleOf(tree, target);
         if (to === from) continue;
         if (tree.build?.includes(to)) {
-          found.push([tree.root, from, to, relative(OS, file), spec]);
+          const source = relative(OS, file).split(sep).join('/');
+          if (!tree.buildHosts?.some((host) => host.endsWith('/') ? source.startsWith(host) : source === host)) {
+            found.push([tree.root, from, to, source, spec]);
+          }
           continue;
         }
         if (tree.build?.includes(from) || tree.skip?.includes(from) || tree.skip?.includes(to)) continue;

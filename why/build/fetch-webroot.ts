@@ -1,41 +1,27 @@
-// The web root (why/app/public/webroot): why for the browser's Prompt, taken from the release of the
-// newest why this tree pins: the same root the desktop app installs, as the browser reads it
-// (ricebox/distribution/build/distribution.ts). It is made where Rust is, by the release
-// (.github/workflows/release.yml), and is the OS that version is; a build
-// that only has Node (Cloudflare's Workers Builds) takes it from it, and
-// takes only the why this tree pins: why/prompt/roots/pins.rs
-// RELEASES, whose entry is the whole of why's pin (the root, by sha256, and
-// `web`, the sha256 of the index the browser reads it by). The release's
-// SHA256SUMS must say the same of the file it is in; webroot.json must name that
-// root and that index; the index must be that digest, and every pack and
-// blob it names the digest its name is. Anything else is refused, and
-// nothing is put in why/app/public/webroot. Shipping a newer Prompt is releasing it (a
-// new version in ricebox/distribution/RELEASE): the release proposes the entry it pinned to main.
-//
-//   node scripts/prompt-files.ts
-//
-// The repository is public: each file is taken from the release's own
-// download link, which anyone may read (WHY_RELEASES: where releases are
-// downloaded from, for a test; GITHUB_REPOSITORY names the repository when it
-// is not this one).
+// Install the web distribution pinned by the product in why/prompt/roots/pins.rs.
+// Usage from the checkout: node why/build/fetch-webroot.ts
+// The release checksum, pinned index and pack contents are verified before the app's
+// existing webroot is replaced. WHY_RELEASES overrides the release download URL;
+// when it is unset, GITHUB_REPOSITORY selects the repository.
 
 import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {checkPacks} from '../ricebox/distribution/format/pack.ts';
-import {tarMembers} from '../ricebox/distribution/host/node/tar.ts';
-import {requireStandardFileOwner, type About, type Index} from '../ricebox/distribution/format/manifest.ts';
+import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
+import {checkPacks} from '../../ricebox/distribution/format/pack.ts';
+import {tarMembers} from '../../ricebox/distribution/host/node/tar.ts';
+import {requireStandardFileOwner, type About, type Index} from '../../ricebox/distribution/format/manifest.ts';
 
-const here = new URL('..', import.meta.url).pathname;
+const here = fileURLToPath(new URL('../..', import.meta.url));
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const releases = process.env.WHY_RELEASES || `https://github.com/${repo}/releases/download`;
 // The pin this tree has comes first: without one, nothing is fetched or taken.
 const pin = pinnedRoots(readFileSync(join(here, 'why/prompt/roots/pins.rs'), 'utf8'))[0];
-if (!pin) throw new Error('why/prompt/roots/pins.rs pins no why: release one, and merge the change it proposes');
+if (!pin) throw new Error('why/prompt/roots/pins.rs does not pin a release');
 const {version, tag} = pin;
-if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`why/prompt/roots/pins.rs pins why ${version}'s root but no index for the web (web: "${pin.web}"): a release since webroot.ts pins both`);
+if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`why/prompt/roots/pins.rs pins root ${version} without a valid web index digest`);
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 /** One of the release's files, from its download link. Never waited on for good (a download that stalls holds the

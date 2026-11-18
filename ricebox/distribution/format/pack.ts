@@ -2,10 +2,8 @@
 // its table: the SHA-256 of each file it stores (its bytes as stored: zstd frames, or as it is), one 32-byte line
 // each, in the order the files are in it; and the pack is named by the SHA-256 of its table. A file's bytes are
 // checked against its line, the table against the pack's name, and the name is the index's, which is checked against
-// the digest a release pins: so nothing read from a pack is used before it is known to be the root's. The writer
-// (ricebox/distribution/build/distribution.ts), every reader (pack.ts, ricebox/distribution/deployment/local.ts, scripts/prompt-files.ts) and
-// their tests take this one account of it. `sha256(bytes)` gives the 32 bytes of a digest: the translator's in a
-// browser (where a system call must have the bytes at once), node's elsewhere.
+// the digest a release pins. Writers and readers share this format. The host
+// supplies `sha256(bytes)`, which returns a 32-byte digest.
 
 /** Bytes of a line of a table. */
 export const LINE = 32;

@@ -19,7 +19,10 @@ translate a program with Sods independently of Why.
 
 The Cargo and npm locks, TypeScript settings, CI and cross-repository checks
 live at the root. A shared build workspace is not a runtime dependency. Build
-outputs do not belong in the source tree or in an API's dependency closure.
+outputs do not belong in the source tree or in a runtime dependency graph.
+[Why's build tools](../why/build/) compose the product's guest root, prepare
+or fetch its web assets, and build the browser's Rust core. They consume
+Ricebox's build tools and formats; Why's runtime does not import them.
 
 ## Dependency direction
 

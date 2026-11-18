@@ -1,9 +1,5 @@
-// The web root against the root it is made from, on a stand-in
-// release root (a few files of each kind a root has): made by ricebox/distribution/build/distribution.ts,
-// it is the root (webroot-parity.ts), the same twice, and anything changed in it
-// is caught; pin-root.ts pins both in one entry, and prompt-files.ts takes
-// it from a stand-in release only at that pin. The real root is checked the
-// same way by the release and CI (webroot-parity.ts on the pinned root).
+// Verify reproducible web layers against a fixture root and test that Why's
+// downloader accepts only the artifact covered by its release pin.
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -13,11 +9,11 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {makeWebroot, standIn} from '../ricebox/distribution/test/fixtures/distribution.ts';
-import type {Index} from '../ricebox/distribution/format/manifest.ts';
+import {pinnedRoots} from '../shipto/remote/ship/releases.ts';
+import {makeWebroot, standIn} from '../../ricebox/distribution/test/fixtures/distribution.ts';
+import type {Index} from '../../ricebox/distribution/format/manifest.ts';
 
-const os = fileURLToPath(new URL('..', import.meta.url));
+const os = fileURLToPath(new URL('../..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
 const node = (args: string[]) => spawnSync(process.execPath, args, {encoding: 'utf8'});
 let work = '', rootFile = '', out = '';
@@ -34,6 +30,19 @@ before(() => {
   make(rootFile, out);
 });
 after(() => rmSync(work, {recursive: true, force: true}));
+
+test('the Why launcher delegates to Ricebox from outside the checkout', () => {
+  const tree = join(work, 'checkout with spaces');
+  const launcher = join(tree, 'why/build/webroot.sh');
+  const distribution = join(tree, 'ricebox/distribution/build/distribution.sh');
+  for (const file of [launcher, distribution]) mkdirSync(dirname(file), {recursive: true});
+  copyFileSync(join(os, 'why/build/webroot.sh'), launcher);
+  writeFileSync(distribution, '#!/bin/sh\nprintf \'%s\\n\' "$@"\n');
+  const output = join(work, 'test output');
+  const delegated = spawnSync('sh', [launcher, rootFile, output], {cwd: work, encoding: 'utf8'});
+  assert.equal(delegated.status, 0, delegated.stderr);
+  assert.deepEqual(delegated.stdout.trimEnd().split('\n'), [rootFile, output, '--name', 'why', '--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git']);
+});
 
 test('unknown distributor options do not create a web root', () => {
   const invalid = join(work, 'invalid-options');
@@ -117,9 +126,9 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 });
 
 function copyPromptSources(tree: string) {
-  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
-  // And what both of those check packs by, where the repository has it (ricebox/distribution/runtime).
-  for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
+  for (const d of ['why/prompt/roots', 'why/build', 'why/shipto/remote/ship', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
+  // Run the downloader in a minimal checkout with its real import closure.
+  for (const f of ['why/prompt/roots/pins.rs', 'why/build/fetch-webroot.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
     'ricebox/distribution/format/pack.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
@@ -134,7 +143,7 @@ test('release downloader fixture includes the archive reader dependency closure'
 });
 
 test('a Node-only build takes why from its release only at the pin, and refuses anything else', async () => {
-  // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
+  // A tree as fetch-webroot.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
   const tree = join(work, 'repo');
   copyPromptSources(tree);
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/prompt/roots/pins.rs')]).status, 0);
@@ -155,7 +164,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   // Run in a child the server here can answer (spawnSync would hold this process, and the server, still).
   const go = () => new Promise<{status: number; stdout: string; stderr: string}>((resolve) => {
     const env = {...process.env, WHY_RELEASES: `http://127.0.0.1:${port}`};
-    execFile(process.execPath, [join(tree, 'scripts/prompt-files.ts')], {env}, (e, stdout, stderr) =>
+    execFile(process.execPath, [join(tree, 'why/build/fetch-webroot.ts')], {env}, (e, stdout, stderr) =>
       resolve({status: e ? (typeof e.code === 'number' ? e.code : 1) : 0, stdout, stderr}));
   });
   try {

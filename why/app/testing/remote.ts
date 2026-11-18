@@ -13,7 +13,7 @@ import {createAuth} from '../../shipto/remote/people/auth.ts';
 import {memoryBucket} from '../../shipto/remote/bytes/bucket.ts';
 import {bearerOf, fileDb, SECRET} from '../../shipto/remote/tests/testing.ts';
 import type {Billing, PlanConfig} from '../../shipto/remote/plan/plan.ts';
-import {buildCoreWasm} from '../../../scripts/core-wasm.ts';
+import {buildCoreWasm} from '../../build/core-wasm.ts';
 import {cookieJar} from './cookies.ts';
 import {nodeCore} from './node-core.ts';
 

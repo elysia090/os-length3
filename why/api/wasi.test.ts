@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {buildCoreWasm, coreWasmPath, hasCargo} from '../../scripts/core-wasm.ts';
+import {buildCoreWasm, coreWasmPath, hasCargo} from '../build/core-wasm.ts';
 import {Core} from './abi.ts';
 import {E, Exit, MemoryFS, WASI} from './wasi.ts';
 

@@ -1,4 +1,4 @@
-# why's shell extension, installed only by why/make/root.sh.
+# why's shell extension, installed only by why/build/guest-root.sh.
 [ "$LENGTH3_LANG" != ja ] || export LANGUAGE=ja
 # The repo's history is the Remote's: git has nothing to say inside it, so it says where to go (unless a repository
 # of git's own is there: a .git in this folder or one above it in the repo, or GIT_DIR).

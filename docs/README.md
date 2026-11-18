@@ -81,7 +81,7 @@ tracked in issue #20.
   Prompt translates as it runs (the code its shell reaches, gcc's cc1, curl)
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
-  with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
+  with `npm run webroot` (`why/build/webroot.sh`: the translator from this tree and the
   newest root `why/prompt/roots/pins.rs` pins), and check it against that root
   with `npm run webroot:parity -- ROOT why/app/public/webroot`; `node ricebox/distribution/verification/programs.ts
   why/app/public/webroot ROOT_DIR` says which programs of it run under muk today.
@@ -528,11 +528,11 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | the repository's own (empty) |
-| Build command | `npm run build:cloudflare`: the web root from the release of the newest why `why/prompt/roots/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
+| Build command | `npm run build:cloudflare`: the web root from the release of the newest why `why/prompt/roots/pins.rs` pins (`why/build/fetch-webroot.ts`, taken only at the index pinned for it), then the app |
 | Deploy command | `npm run deploy:cloudflare` (`why/shipto/remote/ship/deploy.ts`): the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`why/shipto/remote/bytes/mirror.ts`): each root `why/prompt/roots/pins.rs` pins and the newest desktop app `why/shipto/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`why/shipto/remote/ship/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
-| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
+| Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`why/build/fetch-webroot.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `ricebox/distribution/RELEASE`, `.github/workflows/release.yml`; without
@@ -701,7 +701,7 @@ repository is read. About 95 journeys take about four minutes on four cores.
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and why through
   the translator) and run with `SELFTEST_SLOW=1` once `why/app/public/webroot` holds why
-  (`npm run webroot`, or `node scripts/prompt-files.ts`); the build then
+  (`npm run webroot`, or `node why/build/fetch-webroot.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (Selftest in `.github/workflows/ci.yml`) runs everything in four
   shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,

@@ -4,7 +4,7 @@
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
 #                                                  recipe (ricebox/distribution/build/packages.sh), with this tree's why (ricebox/distribution/build/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
-#                                                  to be the same tree (webroot-parity.ts)
+#                                                  to be the same tree (ricebox/distribution/verification/distribution.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that why (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
 #   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with why beside it (desktop.sh)
@@ -44,7 +44,7 @@ cd "$here"
 case "$version" in 0.[0-5].*) node ricebox/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.
-sh why/make/root.sh "${ROOT_PACKAGES:?the root's packages, as ricebox/distribution/build/packages.sh made them}" "$out" "$version"
+sh why/build/guest-root.sh "${ROOT_PACKAGES:?the root's packages, as ricebox/distribution/build/packages.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.
@@ -59,7 +59,7 @@ else
 fi
 
 # The web root, the same root: every path, type, mode, link target and sha256 as the app installs.
-sh scripts/webroot.sh "$root" why/app/public/webroot
+sh why/build/webroot.sh "$root" why/app/public/webroot
 node ricebox/distribution/verification/distribution.ts "$root" why/app/public/webroot
 webroot=os-length3-linux-$version-webroot.tar
 tar -C why/app/public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
@@ -114,7 +114,7 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/why/prompt/roots/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`why/shipto/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
+  echo "and its desktop app in \`why/shipto/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`why/build/fetch-webroot.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

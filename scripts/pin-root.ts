@@ -4,7 +4,7 @@
 // index the browser reads the same root by (ricebox/distribution/build/distribution.ts, made from that
 // bundle). why and the app built from this tree install that root (and no
 // other new one), and the web build takes only that index
-// (scripts/prompt-files.ts). The release does it before building what
+// (why/build/fetch-webroot.ts). The release does it before building what
 // ships beside the root, so the app in a release trusts that release's
 // root; the same entry is then committed, so the source says what was
 // released. Only this release is pinned: a device installs the newest pin

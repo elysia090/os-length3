@@ -3,7 +3,7 @@
 // It starts at the first question: a process that never asks one (the Remote's own tests) pays nothing.
 
 import type {Ask} from '../../api/client.ts';
-import {buildCoreWasm} from '../../../scripts/core-wasm.ts';
+import {buildCoreWasm} from '../../build/core-wasm.ts';
 import {nodeCore} from './node-core.ts';
 import {useCore} from '../../api/host.ts';
 

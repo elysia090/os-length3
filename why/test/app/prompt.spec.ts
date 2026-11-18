@@ -7,7 +7,7 @@ import {WEBROOT_MANIFEST} from './paths.ts';
 // rest runs the root's BusyBox sh and why through the WebAssembly translator:
 // slow (it fetches why and translates as it runs), so tagged @slow and run
 // with SELFTEST_SLOW=1, as CI does. Those need why in why/app/public/webroot (`npm run webroot`,
-// or `node scripts/prompt-files.ts` from the release), which the build then
+// or `node why/build/fetch-webroot.ts` from the release), which the build then
 // carries.
 
 
