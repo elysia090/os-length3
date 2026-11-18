@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
+import {createGuest} from '../../runtime/host/node/execution.ts';
 
 // These are real core ABI probes with SYNTHETIC image, capability, output and
 // stop receipts. No Worker, socket, native sendfile, SIGPIPE or physical prefix
@@ -598,3 +599,148 @@ test('strong capture probe retains exclusive access after full count or only one
   assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
   assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
 });
+
+function captureGuest() {
+  // Hand-written fixture only; the real Node Worker executes a Wasm store and
+  // syscall. This is not a currently translated ELF or an installed profile.
+  const unsigned = (n: number) => {
+    const out: number[] = [];
+    do { const low = n & 127; n >>>= 7; out.push(low | (n ? 128 : 0)); } while (n);
+    return out;
+  };
+  const signed = (n: number) => {
+    const out: number[] = [];
+    for (;;) {
+      const low = n & 127; n >>= 7;
+      const end = (n === 0 && !(low & 64)) || (n === -1 && (low & 64));
+      out.push(low | (end ? 0 : 128));
+      if (end) return out;
+    }
+  };
+  const name = (s: string) => [...unsigned(s.length), ...bytes(s)];
+  const section = (id: number, content: number[]) => [id, ...unsigned(content.length), ...content];
+  const store = (at: number, value: number) => [0x41, ...signed(at), 0x41, ...signed(value), 0x3a, 0, 0];
+  const syscall = (nr: number, args: number[]) =>
+    [nr, ...args, ...Array(7 - args.length).fill(0)].flatMap(n => [0x42, ...signed(n)]).concat(0x10, 0);
+  const code = [0, ...store(32, 65), ...store(33, 66), ...syscall(1, [1, 32, 2]),
+    0x42, 2, 0x52, 0x04, 0x40, 0x00, 0x0b, // trap unless accepted write returned exactly 2
+    ...store(32, 88), ...store(33, 89), ...syscall(60, [42]), 0x1a, 0x0b];
+  const wasm = new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0,
+    ...section(1, [2, 0x60, 8, ...Array(8).fill(0x7e), 1, 0x7e, 0x60, 1, 0x7e, 0]),
+    ...section(2, [2, ...name('env'), ...name('syscall'), 0, 0, ...name('env'), ...name('memory'), 2, 3, 2, 2]),
+    ...section(3, [1, 1]), ...section(7, [1, ...name('run'), 0, 1]), ...section(10, [1, ...unsigned(code.length), ...code]),
+  ]);
+  return {module: new WebAssembly.Module(wasm), memory: new WebAssembly.Memory({initial: 2, maximum: 2, shared: true})};
+}
+
+const FixtureBytes = Uint8Array;
+const fixtureSet = FixtureBytes.prototype.set;
+const fixtureApply = Reflect.apply;
+const fixtureMemoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
+function copyWorkerInput(guest: WebAssembly.Memory, core: WebAssembly.Memory, at: number, pointer: number, length: number) {
+  const input = new FixtureBytes(fixtureApply(fixtureMemoryBuffer, guest, []), at, length);
+  const output = new FixtureBytes(fixtureApply(fixtureMemoryBuffer, core, []), pointer, length);
+  // No callback, species lookup, await, export, grow, or view escaping here.
+  fixtureApply(fixtureSet, output, [input]);
+}
+
+for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
+  test(`real Node Worker capture fixture: ${mode}`, {skip: workerQueueSkip, timeout: 10_000}, async t => {
+    const r = raw(workerQueueArtifact!, true, false, true, true);
+    assert.equal(r.call('linux_queued_output_probe_init'), 0);
+    const input = captureGuest(), bridge = createGuest(input);
+    const onAbort = () => bridge.requestStop();
+    t.signal.addEventListener('abort', onAbort, {once: true});
+    try {
+      await bridge.ready;
+      const owner = r.live(true), id = owner.id;
+      let writes = 0, accepted = false, callbackStopped = false;
+      const outcome = await bridge.run(owner.invocation, 4096n, async request => {
+        assert.equal(request.invocation, owner.invocation);
+        assert.equal(request.sequence, owner.sequence + 1);
+        assert.equal(bridge.diagnostics().exited, false);
+        if (request.nr === 60n) {
+          assert.equal(mode, 'accept');
+          assert.deepEqual(r.request(owner, request.nr, request.args).tag, 2);
+          return {kind: 'leave'} as const;
+        }
+        assert.equal(request.nr, 1n);
+        assert.equal(++writes, 1);
+        const [fd, at, requested] = request.args;
+        assert.equal(r.call('linux_queued_worker_probe_write', id, request.invocation, request.sequence, fd, at, requested), 0);
+        owner.sequence = request.sequence;
+        const c = r.command(), action = c.value, start = 'linux_queued_worker_probe_start', finish = 'linux_queued_worker_probe_finish';
+        assert.deepEqual([c.tag, c.target, c.next, c.endpoint], [13, 32n, 2n, 0n]);
+        if (mode === 'stop-before-copy') {
+          bridge.requestStop(); await bridge.stopped;
+          assert.equal(bridge.diagnostics().pendingRequest, true);
+          assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
+          assert.ok(r.call(start, id, request.sequence, action) < 0);
+          assert.equal(r.call('linux_syscall_abandon', id), 0);
+          callbackStopped = true;
+          return {kind: 'leave'} as const;
+        }
+        assert.equal(r.call(start, id, request.sequence, action), 0);
+        const pointer = r.result(), source = r.auxiliary(), length = Number(r.length());
+        assert.deepEqual([source, length], [c.target, Number(c.next)]);
+        try { copyWorkerInput(input.memory, r.e.memory as WebAssembly.Memory, Number(source), Number(pointer), length); }
+        catch (error) {
+          // The trusted lexical helper unwound; the views cannot remain.
+          assert.equal(r.call(finish, id, request.sequence, action, 1, 0), 0);
+          throw error;
+        }
+        if (mode === 'stop-while-unconfirmed') {
+          // Keep the access state unresolved as an explicit fault injection.
+          // No actual JS view is stored across this await.
+          assert.equal(r.call(finish, id, request.sequence, action, 2, length), 0);
+          bridge.requestStop(); await bridge.stopped;
+          assert.equal(bridge.diagnostics().pendingRequest, true);
+          assert.ok(r.call('linux_run_receipt', id, request.invocation, 2, 0n) < 0);
+          assert.ok(r.call('linux_execution_retire', id) < 0);
+          assert.equal(r.call(finish, id, request.sequence, action, 1, 0), 0);
+          assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
+          callbackStopped = true;
+          return {kind: 'leave'} as const;
+        }
+        assert.equal(r.call(finish, id, request.sequence, action, 0, length), 0);
+        const done = r.command();
+        assert.deepEqual([done.tag, done.value], [0, 2n]);
+        accepted = true;
+        if (mode === 'stop-after-accept') {
+          bridge.requestStop(); await bridge.stopped;
+          assert.equal(bridge.diagnostics().pendingRequest, true);
+          assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
+          callbackStopped = true;
+        }
+        return {kind: 'return', value: done.value} as const;
+      });
+      await bridge.requestsSettled();
+      assert.equal(bridge.diagnostics().failureCount, 0);
+      if (mode === 'accept') {
+        assert.deepEqual(outcome, {kind: 'left', unwound: true});
+        assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0); assert.equal(r.result(), 42n);
+        bridge.requestStop(); await bridge.stopped;
+        assert.deepEqual(Array.from(new Uint8Array(input.memory.buffer, 32, 2)), [88, 89]);
+      } else {
+        assert.equal(outcome.kind, 'failed');
+        assert.equal(callbackStopped, true);
+      }
+      assert.equal(writes, 1);
+      assert.equal(bridge.diagnostics().exited, true);
+      assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+      assert.equal(accepted, mode === 'accept' || mode === 'stop-after-accept');
+      assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0);
+      assert.deepEqual([r.length(), r.result()], accepted ? [2n, 65n] : [0n, 0n]);
+      if (accepted) {
+        assert.equal(r.call('linux_queued_output_probe_peek', 0, 1), 0);
+        assert.deepEqual([r.length(), r.result()], [2n, 66n]);
+      }
+    } finally {
+      bridge.requestStop();
+      await bridge.stopped;
+      await bridge.requestsSettled();
+      t.signal.removeEventListener('abort', onAbort);
+    }
+  });
+}

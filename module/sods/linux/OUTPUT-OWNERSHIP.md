@@ -227,3 +227,12 @@ The raw completion claim is trusted fixture-relay evidence, not independent
 inference from a count. Admission failure after the sequence is consumed
 cannot be retried under that sequence. Ordinary artifacts cannot select this
 path, and no external output or stopped sink capability is added.
+
+The fixture uses the actual Node Worker transport with a small hand-written
+Wasm guest and synthetic Core image setup. The guest stores its own source
+bytes, requires accepted write length before resuming, and then mutates its
+old buffer. Its captured record remains unchanged after observed Worker exit
+and Rust resource retirement. The stop variants distinguish before-copy,
+after-acceptance-before-reply, and an unresolved guarded-access observation.
+This is a one-write transport witness, not a current-translator, production,
+sendfile, or external sink success path.
