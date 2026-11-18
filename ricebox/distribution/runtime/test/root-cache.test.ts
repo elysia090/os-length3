@@ -4,6 +4,7 @@ import {test, type TestContext} from 'node:test';
 import {gzipSync} from 'node:zlib';
 import {madeBy} from '../../../sods/runtime/translate.ts';
 import {createRoot} from '../root.ts';
+import {createAssetCache} from '../asset-cache.ts';
 import type {About, Index} from '../root-types.ts';
 
 const emptyWasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
@@ -56,7 +57,7 @@ function fixture(t: TestContext, base: string) {
   };
   const root = () => createRoot({base, usedKey: 'used', planKey: 'plan', message: key => key,
     missing: () => 'missing release', errorText: String});
-  return {assets, requests, index, pack, entries, prefs, cache, root, publish, url};
+  return {assets, requests, index, pack, entries, prefs, cache, root, publish, url, install};
 }
 
 for (const base of ['layers/', 'https://assets.example.test/webroot/']) {
@@ -150,4 +151,21 @@ test('cached bytes must still match the current release descriptor size', async 
   await f.cache.put(base + about.index.path, new Response(new Uint8Array(bytes)));
   f.publish({index: {...about.index, size: about.index.size + 1}});
   await assert.rejects(f.root().rootIndex(), /wrong size/);
+});
+
+test('quota eviction stops once the oldest asset makes room for a new one', async t => {
+  const base = 'https://assets.example.test/webroot/', f = fixture(t, base);
+  f.install('navigator', {storage: {async estimate() { return {quota: 400, usage: 390}; }}});
+  const storage = createAssetCache({base, usedKey: 'used'});
+  const old = base + 'old', recent = base + 'recent', adding = base + 'adding';
+  const stored = () => new Response(new Uint8Array(30), {headers: {'content-length': '30'}});
+  // Insert out of order: last use, not insertion order, selects the eviction.
+  await f.cache.put(recent, stored());
+  await f.cache.put(old, stored());
+  f.prefs.set('used', JSON.stringify({[old]: 1, [new URL(recent).pathname]: 2}));
+
+  assert.equal(await storage.keep(adding, new Uint8Array(20)), true);
+  assert.equal(f.entries.has(old), false);
+  assert.equal(f.entries.has(recent), true);
+  assert.equal(f.entries.has(adding), true);
 });

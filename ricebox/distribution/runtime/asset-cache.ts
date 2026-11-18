@@ -45,10 +45,14 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
    * The size of each kept copy, by its whole URL: read from what is kept once a page (each copy's head), then
    * followed as copies are kept and let go, so what is kept is counted without opening every copy each time.
    */
+  const storedSize = (response?: Response): number => {
+    const size = Number(response?.headers.get('content-length') ?? 0);
+    return Number.isSafeInteger(size) && size > 0 ? size : 0;
+  };
   let sizes: Promise<Map<string, number>> | null = null;
   const sizesOf = (c: Cache) => (sizes ??= (async () => {
     const m = new Map<string, number>();
-    for (const r of await c.keys()) m.set(r.url, Number((await c.match(r))?.headers.get('content-length') ?? 0));
+    for (const r of await c.keys()) m.set(r.url, storedSize(await c.match(r)));
     return m;
   })());
   const gone = (c: Cache, url: string) => void sizesOf(c).then((m) => m.delete(whole(url)));
@@ -162,13 +166,16 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
     const key = whole(url);
     const oldest = (await c.keys()).map((r) => r.url).filter(k => k !== key)
       .sort((a, b) => (u[a] ?? 0) - (u[b] ?? 0));
-    // Room is the share left, and what the origin as a whole may still take.
-    const room = () => Math.min(budget - mine, e.quota! - (e.usage ?? 0));
+    // Successful eviction frees space in both the cache and the origin's
+    // estimate. The actual write remains subject to the browser's quota.
+    let available = e.quota - (e.usage ?? 0);
+    const room = () => Math.min(budget - mine, available);
     while (room() < size && oldest.length) {
       const k = oldest.shift()!;
-      const r = await c.match(k);
-      mine -= Number(r?.headers.get('content-length') ?? 0);
-      await c.delete(k);
+      const bytes = storedSize(await c.match(k));
+      if (!await c.delete(k)) continue;
+      mine = Math.max(0, mine - bytes);
+      available += bytes;
       gone(c, k);
     }
     return room() >= size;
