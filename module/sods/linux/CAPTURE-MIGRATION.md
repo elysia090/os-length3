@@ -551,3 +551,40 @@ consumers use: multiple/suspended Workers, read/input readiness, signals and
 output flush epochs, pipes/TTY and Node versus actual browser/Workerd hosts.
 The verified file-store binding and a successful Linux x64 Node witness do
 not migrate any of those callers or retire their TS files.
+
+### Selected width, not a blanket CLI limit
+
+The private wire 5 requires the trusted embedding to choose maximum exact
+request M and retained bytes Q separately, before compilation and startup.
+Neither the artifact index, the returned blob, nor the guest chooses them.
+The host snapshots both scalars and Rust checks `1 <= M <= Q <= 65536` before
+allocating the exact receiver. The 64 KiB ceiling bounds this experiment's
+logical bytes to one legacy outbox allocation; it is not the Linux or
+RemoteKernel write limit. K=3 and R=1 remain independent fixed record/pin
+limits. Queue metadata is provisioned at root initialization. Copied
+payload allocation happens later on bounded admission, can still fail,
+and is never promised or retried as pressure. A positive byte reply is
+only exact capture acceptance. No hidden split or widening occurs.
+
+A request of length zero or greater than M does not enter the producer
+continuation or touch a resident source, even with spare Q. This private
+negative is not normal Linux zero-write or errno equivalence. A request
+that fits can wait only for published capacity that can be reused; when
+the last-generation K record retires on consumption it cannot grant space.
+Taking a record gives the receiver one independently owned allocation,
+temporarily alongside the Core's bytes. Q is not a host heap ceiling and
+does not bound how many detached records the application retains.
+
+For the same ELF, an explicit M=4096/Q=8192 run reports separate intact
+5-, 32- and 4096-byte records after retirement, in guest order. Native and
+the actual `--managed` CLI accept the same requests and stream bytes.
+The Q4 control still fails before accepting five. This proves the selected
+examples, not CLI parity, unidentified larger calls or a default capacity.
+
+For N accepted mutable bytes the stable snapshot requires at least N
+bytes of guest-to-owner movement, and the independently owned JavaScript
+result requires at least N bytes of owner-to-receiver movement. A pinned
+ready-resident prefix skips the first movement but not the second. Choosing
+M/Q adds no payload movement; staging still zeroes mutable storage before
+its one guest copy and is not claimed to reach the initialization lower
+bound. Failure before M admission requires neither payload movement.

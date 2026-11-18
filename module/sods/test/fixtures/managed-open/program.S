@@ -61,6 +61,20 @@ _start:
  mov $5,%edx
  syscall
  want 5
+#ifdef SODS_CAPTURE_SELECT_WIDTH
+ mov $1,%eax
+ mov $2,%edi
+ lea record(%rip),%rsi
+ mov $32,%edx
+ syscall
+ want 32
+ mov $1,%eax
+ mov $1,%edi
+ lea record(%rip),%rsi
+ mov $4096,%edx
+ syscall
+ want 4096
+#endif
 #else
  mov $4,%edx
  syscall
@@ -282,6 +296,9 @@ finish:
 .section .rodata
 empty: .byte 0
 missing: .asciz "__sods_missing__"
+#ifdef SODS_CAPTURE_SELECT_WIDTH
+record: .fill 4096,1,0xa6
+#endif
 .bss
 .balign 16
 buffer: .skip 16

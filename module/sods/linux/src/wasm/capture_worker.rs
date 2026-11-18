@@ -5,7 +5,7 @@ use super::{execution_index, step, token, with_state, with_state_access, Access,
 use crate::descriptor::capture::{Resident, ResidentTurn};
 use crate::descriptor::{
     capture::{Access as CopyAccess, CallId, Finished, Receipt, Request},
-    Target,
+    CaptureOutput, Target,
 };
 use crate::effect::Token;
 use crate::syscall::Step;
@@ -61,10 +61,17 @@ impl FinishEvidence {
     }
 }
 
-fn exact_length(length: u64) -> Result<NonZeroUsize, i32> {
+fn exact_length(length: u64, output: &CaptureOutput) -> Result<NonZeroUsize, i32> {
+    #[cfg(feature = "capture-result-v1")]
+    let maximum = output.maximum_request();
+    #[cfg(not(feature = "capture-result-v1"))]
+    let maximum = {
+        let _ = output;
+        4
+    };
     usize::try_from(length)
         .ok()
-        .filter(|n| *n <= 4)
+        .filter(|n| *n <= maximum)
         .and_then(NonZeroUsize::new)
         .ok_or(-5)
 }
@@ -122,7 +129,7 @@ extern "C" fn write(
             return Err(-12);
         }
         let (files, output) = r.capture_parts()?;
-        let length = exact_length(length)?;
+        let length = exact_length(length, output)?;
         // Reuse the exact continuation gate, not a physical command or an
         // earlier raw Unsupported sentinel.
         let continuation = slot.continuation.as_mut().ok_or(-11)?;
@@ -229,7 +236,6 @@ extern "C" fn resident(
         if offset != 0 {
             return Err(-5);
         }
-        let length = exact_length(length)?;
         let index = execution_index(s, execution)?;
         let slot = s.executions[index].live_mut()?;
         let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
@@ -240,6 +246,7 @@ extern "C" fn resident(
             return Err(-12);
         }
         let (files, output) = r.capture_parts()?;
+        let length = exact_length(length, output)?;
         slot.continuation
             .as_mut()
             .ok_or(-11)?

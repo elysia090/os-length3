@@ -39,6 +39,6 @@ export function validateCaptureResultArtifact(input: Uint8Array, expected: strin
 
 export function captureResultDescriptor(artifact: ReturnType<typeof validateCaptureResultArtifact>,
   blob: (bytes: Uint8Array) => Blob): CaptureResultDescriptor {
-  return {kind: 'sods-linux-capture-result-v4', host: 'linux-x64-node22-24',
+  return {kind: 'sods-linux-capture-result-v5', host: 'linux-x64-node22-24',
     wasm: artifact.wasm, ...blob(artifact.bytes)};
 }

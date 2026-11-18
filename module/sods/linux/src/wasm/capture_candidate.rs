@@ -17,7 +17,7 @@ static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x01\x01\x00";
 #[used]
 #[link_section = "sods.linux.capture"]
 #[cfg(feature = "capture-result-v1")]
-static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x04\x02\x00";
+static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x05\x02\x00";
 
 #[no_mangle]
 pub extern "C" fn linux_capture_candidate() -> u32 {
@@ -42,7 +42,7 @@ pub extern "C" fn linux_capture_select(profile: u32) -> i32 {
 /// conveys no physical sink, Worker or result, and it cannot be replaced.
 #[cfg(feature = "capture-result-v1")]
 #[no_mangle]
-pub extern "C" fn linux_capture_result_init() -> i32 {
+pub extern "C" fn linux_capture_result_init(maximum_request: u32, queue_bytes: u32) -> i32 {
     with_state(false, |s| {
         let sealed = s.sealed.as_mut().ok_or(-9)?;
         if sealed.root.is_none() {
@@ -51,8 +51,19 @@ pub extern "C" fn linux_capture_result_init() -> i32 {
         if sealed.capture_output.is_some() {
             return Err(-4);
         }
-        sealed.capture_output =
-            Some(CaptureOutput::single_result(&mut sealed.files).map_err(|_| -1)?);
+        // Bound the private witness, not the Linux write syscall. Neither
+        // startup nor a bad request spends any of the byte/record credits.
+        if maximum_request == 0 || maximum_request > queue_bytes || queue_bytes > 64 * 1024 {
+            return Err(-5);
+        }
+        sealed.capture_output = Some(
+            CaptureOutput::single_result(
+                &mut sealed.files,
+                maximum_request as usize,
+                queue_bytes as usize,
+            )
+            .map_err(|_| -1)?,
+        );
         Ok(0)
     })
 }

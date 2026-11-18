@@ -107,7 +107,7 @@ interface Admission extends WebAssembly.Exports {
 interface ResultAdmission extends WebAssembly.Exports {
   linux_capture_candidate(): number;
   linux_capture_select(profile: number): number;
-  linux_capture_result_init(): number;
+  linux_capture_result_init(maximumRequest: number, queueBytes: number): number;
   linux_capture_result_startup(): number;
   linux_capture_result_resume(execution: bigint, sequence: number, action: bigint): number;
   linux_capture_result_write_start(execution: bigint, sequence: number, action: bigint): number;
@@ -182,9 +182,15 @@ export interface PathExecutionOptions {
 }
 /** Supplied by the trusted build/deployment owner, not by the artifact source. */
 export interface CaptureResultPin {
-  readonly kind: 'sods-linux-capture-result-v4';
+  readonly kind: 'sods-linux-capture-result-v5';
   readonly byteLength: number;
   readonly sha256: string;
+}
+/** Independently chosen by the trusted caller. The artifact/blob reader and
+ * guest do not set retention or the largest indivisible request. */
+export interface CaptureResultCapacity {
+  readonly maximumRequest: number;
+  readonly queueBytes: number;
 }
 type CapturedOutputRecord = Readonly<{stream: 'stdout' | 'stderr'; bytes: Uint8Array<ArrayBuffer>}>;
 const resultStream = (origin: bigint): CapturedOutputRecord['stream'] => {
@@ -192,9 +198,9 @@ const resultStream = (origin: bigint): CapturedOutputRecord['stream'] => {
   if (origin === 2n) return 'stderr';
   throw new Error('Unsupported captured output origin');
 };
-const checkedResultExtent = (length: number): number => {
-  if (length < 1 || length > 4) throw new Error('Unsupported captured result extent');
-  return length; // The pinned profile 2 wire envelope, not a Linux write limit.
+const checkedResultExtent = (length: number, maximum: number): number => {
+  if (length < 1 || length > maximum) throw new Error('Unsupported captured result extent');
+  return length;
 };
 const integer = (n: number): number => {
   if (!Number.isSafeInteger(n) || n < 0) throw new RangeError('Expected a nonnegative safe integer');
@@ -267,20 +273,27 @@ function startupWire(path: Uint8Array, argv: readonly Uint8Array[], env: readonl
 /** Instantiate once: the Rust instance is private and has no guest/host imports.
  * No memory/view/instance escapes. There is deliberately no arbitrary callback API. */
 export function memoryHost(module: WebAssembly.Module, memories: number, actions: number) {
-  return memoryHostFor(module, memories, actions, false);
+  return memoryHostFor(module, memories, actions);
 }
 
 /** Internal opt-in, not the default managedRoot or the product's terminal.
  * The independent pin and exact owned snapshot are verified before any Core
  * instance exists. No raw Module or structural "verified" value can enter. */
-export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPin, memories: number, actions: number) {
+export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPin, memories: number, actions: number,
+  capacity: CaptureResultCapacity) {
   if (!isNode || process.platform !== 'linux' || process.arch !== 'x64' || ![22, 24].includes(Number(process.versions.node.split('.')[0]))) {
     throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
   }
   const {kind, byteLength, sha256: expected} = pin;
-  if (kind !== 'sods-linux-capture-result-v4' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
+  if (kind !== 'sods-linux-capture-result-v5' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
       byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
     throw new TypeError('Invalid trusted captured result pin');
+  }
+  // Snapshot scalars before either artifact hashing or future callbacks.
+  const {maximumRequest, queueBytes} = capacity;
+  if (!Number.isSafeInteger(maximumRequest) || !Number.isSafeInteger(queueBytes) ||
+      maximumRequest < 1 || maximumRequest > queueBytes || queueBytes > 64 * 1024) {
+    throw new RangeError('Invalid trusted captured result capacity');
   }
   if (lengthOf(input) !== byteLength) throw new Error('Captured result artifact length mismatch');
   const bytes = ownedInput(input);
@@ -289,7 +302,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
   if (actual !== expected) throw new Error('Captured result artifact digest mismatch');
   const module = new Module(bytes);
   validateCaptureResultIdentity(module);
-  const host = memoryHostFor(module, memories, actions, true);
+  const host = memoryHostFor(module, memories, actions, {maximumRequest, queueBytes});
   return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
     runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
     workerEvidence: host.workerEvidence, takeOutput: host.takeOutput,
@@ -297,14 +310,14 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
     waitForCaptureOutput: host.waitForCaptureOutput});
 }
 
-function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, captureResult: boolean) {
+function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, capacity?: CaptureResultCapacity) {
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
-  validateLinuxMemorySurface(module, captureResult);
+  validateLinuxMemorySurface(module, capacity !== undefined);
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new Instance(module).exports as Admission;
-  const capture = captureResult ? core as unknown as ResultAdmission : undefined;
+  const capture = capacity ? core as unknown as ResultAdmission : undefined;
   if (core.linux_abi_version() !== 7) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   if (capture) {
@@ -603,7 +616,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     return command(core.linux_syscall_path_finish(w.id, c.value, wide(actual), 0));
   };
   const captureWrite = capture && ((w: WorkerState, sequence: number, c: ReturnType<typeof command>): ReturnType<typeof command> => {
-    const count = checkedResultExtent(safeNumber(c.next)), source = safeNumber(c.target);
+    const count = checkedResultExtent(safeNumber(c.next), capacity!.maximumRequest), source = safeNumber(c.target);
     if (c.endpoint !== 0) throw new Error('Captured write has a physical endpoint');
     const address = result(capture.linux_capture_result_write_start(w.id, sequence, c.value));
     try {
@@ -631,7 +644,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     const generation = result(capture.linux_capture_result_head());
     if (generation === 0n) return undefined; // Temporarily empty, not EOF or stop evidence.
     const slot = u32(safeNumber(core.linux_result_auxiliary()));
-    const length = checkedResultExtent(safeNumber(core.linux_result_length()));
+    const length = checkedResultExtent(safeNumber(core.linux_result_length()), capacity!.maximumRequest);
     const origin = core.linux_result_endpoint();
     const output = freeze({stream: resultStream(origin), bytes: new Bytes(length)});
     unsettledOutput = output;
@@ -1259,7 +1272,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         throw error;
       }
       checked(core.linux_prepared_root(values[0]!, values[1]!, values[2]!, values[3]!, values[4]!, values[5]!, values[6]!, values[7]!, values[8]!, values[9]!, flags, values[10]!));
-      if (capture) checked(capture.linux_capture_result_init());
+      if (capture) checked(capture.linux_capture_result_init(capacity!.maximumRequest, capacity!.queueBytes));
     },
     /** Root-local immutable transport coordinates, not namespace lookup. */
     rootSource(source: number): {pack: number; at: number; stored: number; size: number; raw: boolean} {

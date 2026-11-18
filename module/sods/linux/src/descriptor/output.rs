@@ -549,6 +549,13 @@ impl Queue {
         }
         Ok(bytes)
     }
+    fn entries_can_progress(&self) -> bool {
+        self.entries.has_room()
+            || self.entries.cells.iter().any(|cell| {
+                cell.generation != u64::MAX
+                    && matches!(cell.state, State::Live(Entry::Queued { .. }))
+            })
+    }
     /// Allocate only after bounded admission. The zeros are not captured data.
     fn stage_write(
         &mut self,
@@ -1001,11 +1008,7 @@ impl Writer<'_> {
             Err(Error::Full | Error::Capacity)
                 if queue.head.is_some()
                     && length.get() <= queue.byte_limit
-                    && (queue.entries.has_room()
-                        || queue.entries.cells.iter().any(|cell| {
-                            cell.generation != u64::MAX
-                                && matches!(cell.state, State::Live(Entry::Queued { .. }))
-                        }))
+                    && queue.entries_can_progress()
                     && (queue.pins.has_room()
                         || queue.pins.cells.iter().any(|cell| {
                             cell.generation != u64::MAX
@@ -1052,7 +1055,9 @@ impl Writer<'_> {
             // No unrelated capacity or allocation error is retryable. A
             // queued head must exist and the request must fit an empty lane.
             Err(Error::Full)
-                if self.queue.head.is_some() && length.get() <= self.queue.byte_limit =>
+                if self.queue.head.is_some()
+                    && length.get() <= self.queue.byte_limit
+                    && self.queue.entries_can_progress() =>
             {
                 Ok(None)
             }
@@ -1110,14 +1115,20 @@ pub(crate) struct CaptureOutput {
     registry: LaneRegistry,
     producer: Producer,
     consumer: Consumer,
+    #[cfg(feature = "capture-result-v1")]
+    maximum_request: usize,
 }
 #[cfg(any(feature = "queued-output-probe", feature = "capture-result-v1"))]
 impl CaptureOutput {
     #[cfg(feature = "capture-result-v1")]
-    pub(crate) fn single_result(files: &mut Files) -> Result<Self, Error> {
+    pub(crate) fn single_result(
+        files: &mut Files,
+        maximum_request: usize,
+        queue_bytes: usize,
+    ) -> Result<Self, Error> {
         let mut registry = LaneRegistry::new(files, 1)?;
         let limits = Limits {
-            bytes: 4,
+            bytes: queue_bytes,
             entries: 3,
             pins: 1,
         };
@@ -1126,7 +1137,13 @@ impl CaptureOutput {
             registry,
             producer,
             consumer,
+            maximum_request,
         })
+    }
+
+    #[cfg(feature = "capture-result-v1")]
+    pub(crate) fn maximum_request(&self) -> usize {
+        self.maximum_request
     }
 
     #[cfg(feature = "capture-result-v1")]
@@ -2748,6 +2765,32 @@ mod tests {
         a.cancel_staged(ready).unwrap();
         assert_eq!(a.used, 0);
         assert!(a.entries.get(key).is_none());
+    }
+
+    #[test]
+    fn staged_capture_does_not_wait_for_a_published_last_generation() {
+        for (generation, can_progress) in [(u64::MAX - 1, true), (u64::MAX, false)] {
+            let (mut out, table, _) = owner(502, 2, 1, 0);
+            let mut first = out.reserve(n(1)).unwrap();
+            let index = first.0.key.index;
+            out.entries.cells[index].generation = generation;
+            first.0.key.generation = generation;
+            out.publish_copy(first, b"A").unwrap();
+            let mut writer = Writer {
+                files: &mut out.files,
+                queue: &mut out.queue,
+                origin: None,
+            };
+            if can_progress {
+                assert!(writer.stage_when_room(n(1)).unwrap().is_none());
+            } else {
+                assert_eq!(writer.stage_when_room(n(1)).unwrap_err(), Error::Full);
+            }
+            assert_eq!(out.front_bytes(), Ok(Some(b"A".as_slice())));
+            assert!(out.discard_front());
+            assert_eq!(out.entries.has_room(), can_progress);
+            out.files.let_go(table).unwrap();
+        }
     }
 
     #[test]

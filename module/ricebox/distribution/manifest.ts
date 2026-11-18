@@ -28,7 +28,7 @@ export interface FileStoreDescriptor extends Blob {
 }
 /** Private opt-in Node capture slot. Ordinary distribution loading ignores it. */
 export interface CaptureResultDescriptor extends Blob {
-  kind: 'sods-linux-capture-result-v4';
+  kind: 'sods-linux-capture-result-v5';
   host: 'linux-x64-node22-24';
   /** Expanded executable digest, independent of the content-addressed gzip. */
   wasm: string;
@@ -45,7 +45,7 @@ export function checkedCaptureResultDescriptor(input: unknown): CaptureResultDes
     throw new Error('Invalid or missing capture result descriptor');
   }
   const {kind, host, path, sha256, size, bytes, wasm} = input as Partial<CaptureResultDescriptor>;
-  if (kind !== 'sods-linux-capture-result-v4' || host !== 'linux-x64-node22-24' ||
+  if (kind !== 'sods-linux-capture-result-v5' || host !== 'linux-x64-node22-24' ||
       !captureDigest(sha256) || !captureDigest(wasm) || path !== `blobs/${sha256}.bin` ||
       !captureExtent(size, 1) || !captureExtent(bytes, 8)) {
     throw new Error('Invalid or missing capture result descriptor');

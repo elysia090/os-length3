@@ -40,6 +40,7 @@ const descriptions = {
   'capture-ready-only': 'pinned captured result notifies on one resident byte without pressure',
   'capture-cold': 'pinned captured result declines a cold prepared-root source without starting a loader',
   'capture-wide': 'pinned captured result refuses a valid five-byte native write rather than silently losing it',
+  'capture-selected-width': 'pinned captured result with explicit M and Q accepts actual Worker writes of 5, 32 and 4096 bytes',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
   size: 'wrong decoded source length fails the exact Rust source, retires, and retries without metadata drift',
@@ -91,12 +92,14 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     files: [{path: guestPath, mode: 0o755, size: elf.length, pack: 0, at: sourceAt, len: elf.length, raw: true}],
     translator: {...blob(translatorBytes), name: 'sods', version: 'current-fixture', wasm: hash(translatorBytes)},
     translations: [translation]};
+  const width = scenario === 'capture-selected-width';
+  const capacity = width ? {maximumRequest: 4096, queueBytes: 8192} : {maximumRequest: 4, queueBytes: 4};
   let storedCapture: ReturnType<typeof gzipSync> | undefined;
   if (scenario.startsWith('capture')) {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
-    index.captureResult = {kind: 'sods-linux-capture-result-v4', host: 'linux-x64-node22-24',
+    index.captureResult = {kind: 'sods-linux-capture-result-v5', host: 'linux-x64-node22-24',
       path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
       bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
   }
@@ -130,25 +133,31 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const wrongIndex = encode(JSON.stringify({...index, captureResult: wrong}));
       const wrongSelected = await readCapturedResultRelease({sha256: hash(wrongIndex), size: wrongIndex.length},
         wrongIndex, readStored);
-      await assert.rejects(capturedResultHost(wrongSelected.bytes, wrongSelected.pin, 4, 16), /digest mismatch/,
+      await assert.rejects(capturedResultHost(wrongSelected.bytes, wrongSelected.pin, 4, 16, capacity), /digest mismatch/,
         'transit through an authenticated gzip cannot replace the expanded index digest');
       const mutated = new Uint8Array(bytes); // Decoded bytes may be a Node Buffer.
       mutated[mutated.length - 1] ^= 1;
-      await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
+      await assert.rejects(capturedResultHost(mutated, pin, 4, 16, capacity), /digest mismatch/);
       const oldWire = Buffer.from(bytes);
-      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 4, 2, 0]));
+      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 5, 2, 0]));
       assert.notEqual(marker, -1);
-      oldWire[marker + 9] = 3;
-      await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16),
-        /artifact identity/, 'a valid digest for the closed old wire is not a resume-capable artifact');
+      oldWire[marker + 9] = 4;
+      await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16, capacity),
+        /artifact identity/, 'a valid digest for the fixed-width artifact is not an admission with selected capacity');
       const ordinary = new Uint8Array(readFileSync(corePath));
-      await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16),
+      await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16, capacity),
         /artifact identity/, 'a matching hash for the wrong role is not admission');
       const shared = new Uint8Array(new SharedArrayBuffer(bytes.length));
       shared.set(bytes);
-      await assert.rejects(capturedResultHost(shared, pin, 4, 16), TypeError);
+      await assert.rejects(capturedResultHost(shared, pin, 4, 16, capacity), TypeError);
     }
-    const creating = capturedResultHost(bytes, pin, 4, 16);
+    for (const invalid of [{maximumRequest: 0, queueBytes: 4}, {maximumRequest: 5, queueBytes: 4},
+      {maximumRequest: 1, queueBytes: 65537}, {maximumRequest: 1.5, queueBytes: 4}]) {
+      if (scenario === 'capture') await assert.rejects(capturedResultHost(bytes, pin, 4, 16, invalid), /trusted captured result capacity/);
+    }
+    const creating = capturedResultHost(bytes, pin, 4, 16, capacity);
+    // The owner selects M/Q, not later mutations during hashing.
+    if (width) Object.assign(capacity, {maximumRequest: 1, queueBytes: 1});
     bytes.fill(0); // The snapshot used for digest and compilation must already be owned.
     return creating;
   })() : undefined;
@@ -377,7 +386,13 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     } else {
       await succeed();
     }
-    if (captured) {
+    if (captured && width) {
+      const expected = [{stream: 'stdout', bytes: Uint8Array.of(127, 69, 76, 70, 0)},
+        {stream: 'stderr', bytes: new Uint8Array(32).fill(0xa6)},
+        {stream: 'stdout', bytes: new Uint8Array(4096).fill(0xa6)}];
+      for (const record of expected) assert.deepEqual(captured.takeOutput(), record);
+      assert.equal(captured.takeOutput(), undefined);
+    } else if (captured) {
       const output = captured.takeOutput();
       const expected = scenario === 'capture-paced' ? Uint8Array.of(127)
         : scenario === 'capture-ready' || scenario === 'capture-ready-only' ? Uint8Array.of(2)
@@ -435,6 +450,7 @@ if (process.argv[2] === '--managed-root-child') {
           : scenario === 'capture-ready-only' ? ['-DSODS_CAPTURE_READY_ONLY']
           : scenario === 'capture-cold' ? ['-DSODS_CAPTURE_COLD_SOURCE']
           : scenario === 'capture-wide' ? ['-DSODS_CAPTURE_WIDE_OUTPUT']
+          : scenario === 'capture-selected-width' ? ['-DSODS_CAPTURE_WIDE_OUTPUT', '-DSODS_CAPTURE_SELECT_WIDTH']
           : scenario === 'capture-pressure' || scenario.startsWith('capture-paced') ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
@@ -456,12 +472,15 @@ if (process.argv[2] === '--managed-root-child') {
         artifacts: scenario === 'invalid' ? 5 : scenario === 'cancel' ? 6 : scenario === 'size' ? 2 : 1,
         workers: executions, runs: successfulRuns,
         lateControls: scenario === 'cancel' ? 2 : 0, retired: true});
-      if (scenario === 'capture-wide') {
+      if (scenario === 'capture-wide' || scenario === 'capture-selected-width') {
         const native = spawnSync(program, [], {input: '', timeout: 10_000});
         assert.equal(native.error, undefined);
         assert.equal(native.signal, null);
         assert.equal(native.status, 0, native.stderr.toString());
-        assert.deepEqual(native.stdout, Buffer.from([127, 69, 76, 70, 0]));
+        const header = Buffer.from([127, 69, 76, 70, 0]);
+        const wider = scenario === 'capture-selected-width';
+        assert.deepEqual(native.stdout, wider ? Buffer.concat([header, Buffer.alloc(4096, 0xa6)]) : header);
+        assert.deepEqual(native.stderr, wider ? Buffer.alloc(32, 0xa6) : Buffer.alloc(0));
         const cli = fileURLToPath(new URL('../../../sods/runtime/run.ts', import.meta.url));
         const ordinary = spawnSync(process.execPath, [cli, '--managed', program], {
           input: '', timeout: 10_000, env: {...process.env, NODE_NO_WARNINGS: '1'},

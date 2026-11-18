@@ -49,7 +49,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (resultProfile) {
     const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
     assert.equal(marker.length, 1);
-    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 4, 2, 0]);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 5, 2, 0]);
     assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
     for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
   }
@@ -92,7 +92,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_capture_candidate'), 2);
     assert.equal(call('linux_capture_select', 1), -12);
     assert.equal(call('linux_capture_select', 2), 0);
-    assert.equal(call('linux_capture_result_init'), -9, 'exact sealed Files must precede the receiver');
+    assert.equal(call('linux_capture_result_init', 4, 4), -9, 'exact sealed Files must precede the receiver');
   }
   assert.equal(call('linux_prepared_files', 8, 8, Math.max(4096, program.length), 16, 128, 256, 16, 32, 1, 192, 0), 0);
   const root = result();
@@ -1292,13 +1292,18 @@ test('non-probe capture result cannot start or borrow before its exact receiver'
   assert.equal(call('linux_capture_select', 2), 0);
   assert.equal(call('linux_files_prepare', 8, 8, 4096, 8, 32, 32, 2), 0);
   assert.equal(call('linux_files_seal', 8), 0);
-  assert.equal(call('linux_capture_result_init'), -11, 'an unmounted diagnostic Files is not the startup owner');
+  assert.equal(call('linux_capture_result_init', 4, 4), -11, 'an unmounted diagnostic Files is not the startup owner');
   r.stageStartup();
   assert.equal(r.call('linux_capture_result_startup'), -9);
   assert.equal(r.result(), 0n);
   assert.equal(r.call('linux_capture_result_head'), -9);
-  assert.equal(r.call('linux_capture_result_init'), 0);
-  assert.equal(r.call('linux_capture_result_init'), -4);
+  for (const [m, q] of [[0, 4], [5, 4], [1, 65537], [4, -1]]) {
+    assert.equal(r.call('linux_capture_result_init', m!, q!), -5);
+    assert.equal(r.call('linux_capture_result_head'), -9, 'invalid width did not install a receiver');
+    assert.equal(r.call('linux_capture_result_startup'), -9);
+  }
+  assert.equal(r.call('linux_capture_result_init', 4, 4), 0);
+  assert.equal(r.call('linux_capture_result_init', 4, 4), -4);
   assert.equal(r.call('linux_capture_result_copy_start', 0, 1n), -10);
   assert.equal(r.receive(0), undefined);
   r.stageStartup('/not-present');
@@ -1317,7 +1322,7 @@ test('non-probe capture result resumes the exact write only after confirmed resu
   const current = currentCaptureProgram();
   const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
   const resume = 'linux_capture_result_resume';
-  assert.equal(r.call('linux_capture_result_init'), 0);
+  assert.equal(r.call('linux_capture_result_init', 4, 4), 0);
   const input = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
   const {id, memory} = input;
   assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
@@ -1369,13 +1374,42 @@ test('non-probe capture result resumes the exact write only after confirmed resu
   assert.equal(r.receive(0), undefined);
 });
 
+test('non-probe capture result rejects requests wider than M even with Q available', {
+  skip: currentResultSkip, timeout: 30_000,
+}, async () => {
+  const current = currentCaptureProgram();
+  const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
+  assert.equal(r.call('linux_capture_result_init', 4, 8), 0);
+  const {id, memory} = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
+  assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+  assert.equal(r.call('linux_run_start', id), 0);
+  const invocation = r.result(), at = 64n;
+  new Uint8Array(memory.buffer, Number(at), 5).set(bytes('ABCDE'));
+  const request = (nr: bigint, n: bigint) =>
+    r.call('linux_syscall_sequenced', id, invocation, 1, nr, 1n, nr === 1n ? at : 999n, nr === 1n ? n : 0n, n, 0n, 0n, 0n);
+  for (const invalid of [0n, 5n, 0x100000004n]) {
+    assert.equal(request(1n, invalid), -5);
+    assert.equal(request(40n, invalid), -5, 'wide resident length rejects before the source fd');
+    assert.equal(r.receive(0), undefined);
+  }
+  assert.equal(request(1n, 4n), 0, 'invalid width did not spend the request sequence');
+  const action = r.result();
+  assert.equal(r.call('linux_capture_result_write_start', id, 1, action), 0);
+  copyWorkerInput(memory, r.e.memory as WebAssembly.Memory, Number(at), Number(r.result()), 4);
+  assert.equal(r.call('linux_capture_result_write_finish', id, 1, action, 0, 4), 0);
+  assert.deepEqual(r.receive(0), bytes('ABCD'));
+  assert.equal(r.call('linux_run_receipt', id, invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', id), 0);
+  assert.equal(r.result(), 1n);
+});
+
 for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'abandons stopped' : 'resumes'} resident sendfile on the actual Worker`, {
   skip: currentResultSkip, timeout: 30_000,
 }, async () => {
   const current = currentCaptureProgram(true);
   const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
   const resume = 'linux_capture_result_resume';
-  assert.equal(r.call('linux_capture_result_init'), 0);
+  assert.equal(r.call('linux_capture_result_init', 4, 4), 0);
   const prepared = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
   const bridge = createGuest(prepared);
   try {
@@ -1592,8 +1626,8 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
     const r = resultProfile ? raw(resultArtifact!, false, false, false, false, current!.elf, true)
       : raw(workerQueueArtifact!, true, false, true, true, current?.elf);
     assert.throws(() => memoryHost(r.module, 2, 8), resultProfile ? /not an ordinary Linux admission/ : /Synthetic sendfile probe/);
-    assert.equal(r.call(resultProfile ? 'linux_capture_result_init'
-      : current ? 'linux_queued_worker_probe_init_joined' : 'linux_queued_output_probe_init'), 0);
+    assert.equal(resultProfile ? r.call('linux_capture_result_init', 4, 4)
+      : r.call(current ? 'linux_queued_worker_probe_init_joined' : 'linux_queued_output_probe_init'), 0);
     const prepared = current ? await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile}) : undefined;
     const input = prepared ?? captureGuest(true), bridge = createGuest(input);
     const onAbort = () => bridge.requestStop();
