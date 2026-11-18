@@ -14,6 +14,10 @@ import {neonConfig} from '@neondatabase/serverless';
 import {accepted, frame, frames} from './ws.ts';
 
 type Target = {tcp: true} | {pglite: PGlite};
+// Signal a normal WebSocket close (1000) before ending the TCP stream.
+const finish = (socket: Socket) => {
+  if (!socket.writableEnded) socket.end(frame(Uint8Array.of(0x03, 0xe8), 8));
+};
 
 /**
  * Postgres messages as they come over one connection, cut into whole ones:
@@ -71,17 +75,20 @@ export async function bridge(target: Target): Promise<{port: number; close(): Pr
     frames(socket, messages((batch, terminate) => {
       // One connection's messages at a time: a PGlite is one session, whoever is asking.
       turn = turn.then(async () => {
-        if (batch.length && !done) {
+        if (batch.length && !done && !socket.writableEnded) {
           const out = await pg.execProtocolRaw(new Uint8Array(batch));
-          if (!done && out.length) socket.write(frame(out));
+          if (!done && !socket.writableEnded && out.length) socket.write(frame(out));
         }
-        if (terminate) end();
+        if (terminate && !done) finish(socket);
       }).catch(end);
     }), end);
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const port = (server.address() as {port: number}).port;
-  return {port, close: () => new Promise<void>((done) => { for (const s of open) s.destroy(); server.close(() => done()); })};
+  return {port, close: () => new Promise<void>(resolve => {
+    server.close(() => resolve());
+    for (const socket of open) finish(socket);
+  })};
 }
 
 /** This process's Neon driver goes through the bridge on `port` (plain Postgres, no TLS: this machine only). */
