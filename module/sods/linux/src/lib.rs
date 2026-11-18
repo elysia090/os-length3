@@ -13,6 +13,8 @@ mod wasm;
 
 mod inode;
 
+mod prepared_root;
+
 mod descriptor;
 
 mod read;

@@ -79,6 +79,7 @@ pub(crate) enum Error {
     UnknownInode,
     NotDirectory,
     NotRegular,
+    InvalidSize,
     Exists,
     Payload(store::Error),
 }
@@ -95,7 +96,10 @@ struct Directory {
 }
 enum Kind {
     Directory(Directory),
-    Regular(u32),
+    Regular {
+        payload: u32,
+        expected_size: Option<usize>,
+    },
     Symlink(Vec<u8>),
 }
 struct Node {
@@ -306,7 +310,10 @@ impl Tree {
                     gid: creation.gid,
                     nlink: 1,
                 },
-                kind: Kind::Regular(payload),
+                kind: Kind::Regular {
+                    payload,
+                    expected_size: None,
+                },
             },
         ))
     }
@@ -317,6 +324,30 @@ impl Tree {
         creation: Creation,
         source: u32,
         size: usize,
+    ) -> Result<Inode, Error> {
+        self.lazy_file_inner(parent, component, creation, source, size, false)
+    }
+    /// Sealed metadata profile: successful source delivery must have exactly the
+    /// declared decoded size. This fixes length only, not payload authenticity.
+    /// General lazy_file deliberately retains its provisional-size semantics.
+    pub(crate) fn lazy_file_exact(
+        &mut self,
+        parent: Inode,
+        component: &[u8],
+        creation: Creation,
+        source: u32,
+        size: usize,
+    ) -> Result<Inode, Error> {
+        self.lazy_file_inner(parent, component, creation, source, size, true)
+    }
+    fn lazy_file_inner(
+        &mut self,
+        parent: Inode,
+        component: &[u8],
+        creation: Creation,
+        source: u32,
+        size: usize,
+        exact: bool,
     ) -> Result<Inode, Error> {
         mode(creation.mode)?;
         let place = self.prepare(parent, component, true)?;
@@ -330,7 +361,10 @@ impl Tree {
                     gid: creation.gid,
                     nlink: 1,
                 },
-                kind: Kind::Regular(payload),
+                kind: Kind::Regular {
+                    payload,
+                    expected_size: exact.then_some(size),
+                },
             },
         ))
     }
@@ -367,7 +401,7 @@ impl Tree {
         inode: Inode,
     ) -> Result<(), Error> {
         let index = self.index(inode)?;
-        if !matches!(self.nodes[index].kind, Kind::Regular(_)) {
+        if !matches!(self.nodes[index].kind, Kind::Regular { .. }) {
             return Err(Error::NotRegular);
         }
         let links = self.nodes[index]
@@ -399,7 +433,7 @@ impl Tree {
     }
     fn payload(&self, inode: Inode) -> Result<u32, Error> {
         match self.nodes[self.index(inode)?].kind {
-            Kind::Regular(payload) => Ok(payload),
+            Kind::Regular { payload, .. } => Ok(payload),
             _ => Err(Error::NotRegular),
         }
     }
@@ -422,9 +456,24 @@ impl Tree {
         success: bool,
         bytes: &mut Vec<u8>,
     ) -> Result<(), Error> {
+        let (payload, expected_size) = match self.nodes[self.index(inode)?].kind {
+            Kind::Regular {
+                payload,
+                expected_size,
+            } => (payload, expected_size),
+            _ => return Err(Error::NotRegular),
+        };
+        if success && expected_size.is_some_and(|size| size != bytes.len()) {
+            // Settle only a matching attempt, as a failed load. In particular a
+            // stale receipt must remain BadCompletion and cannot consume the
+            // active attempt, adopt bytes or alter the declared logical size.
+            self.payloads
+                .load_finish_take(payload, attempt, false, bytes)?;
+            return Err(Error::InvalidSize);
+        }
         Ok(self
             .payloads
-            .load_finish_take(self.payload(inode)?, attempt, success, bytes)?)
+            .load_finish_take(payload, attempt, success, bytes)?)
     }
 }
 
@@ -885,5 +934,149 @@ mod creation_tests {
             Tree::new(711, 1, 0, 0, root_owned(DIRECTORY)),
             Err(Error::InvalidMode)
         ));
+    }
+}
+
+#[cfg(test)]
+mod exact_size_tests {
+    use super::*;
+
+    fn creation() -> Creation {
+        Creation {
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+        }
+    }
+    fn tree() -> Tree {
+        Tree::new(
+            901,
+            8,
+            8,
+            32,
+            Creation {
+                mode: 0o755,
+                ..creation()
+            },
+        )
+        .unwrap()
+    }
+    #[test]
+    fn exact_size_mismatch_settles_only_matching_attempt_without_adopting_bytes() {
+        let mut tree = tree();
+        let root = tree.root();
+        let file = tree
+            .lazy_file_exact(root, b"exact", creation(), 41, 3)
+            .unwrap();
+        tree.hardlink(root, b"alias", file).unwrap();
+        let alias = tree.lookup(root, b"alias").unwrap().unwrap();
+        let first = tree.load_begin(file).unwrap();
+        let mut bad = Vec::with_capacity(17);
+        bad.extend_from_slice(b"long");
+        let pointer = bad.as_ptr();
+        let capacity = bad.capacity();
+        assert_eq!(
+            tree.load_finish(alias, first + 1, true, &mut bad),
+            Err(Error::Payload(store::Error::BadCompletion))
+        );
+        assert_eq!(tree.size(file), Ok(3));
+        assert_eq!(
+            tree.load_finish(alias, first, true, &mut bad),
+            Err(Error::InvalidSize)
+        );
+        assert_eq!(bad, b"long");
+        assert_eq!(bad.as_ptr(), pointer);
+        assert_eq!(bad.capacity(), capacity);
+        assert_eq!(tree.size(alias), Ok(3));
+        assert_eq!(tree.source(alias), Ok(41));
+        assert_eq!(
+            tree.read(alias, 0, 9),
+            Err(Error::Payload(store::Error::LoadConflict))
+        );
+
+        let mut good = b"abc".to_vec();
+        assert_eq!(
+            tree.load_finish(file, first, true, &mut good),
+            Err(Error::Payload(store::Error::BadCompletion))
+        );
+        let next = tree.load_begin(alias).unwrap();
+        assert_ne!(next, first);
+        assert_eq!(
+            tree.load_finish(file, first, true, &mut bad),
+            Err(Error::Payload(store::Error::BadCompletion))
+        );
+        assert_eq!(bad, b"long");
+        tree.load_finish(alias, next, true, &mut good).unwrap();
+        assert!(good.is_empty());
+        assert_eq!(tree.size(file), Ok(3));
+        assert_eq!(tree.read(file, 0, 9), Ok(&b"abc"[..]));
+        assert_eq!(
+            tree.load_finish(file, next, true, &mut bad),
+            Err(Error::Payload(store::Error::BadCompletion))
+        );
+        assert_eq!(tree.size(file), Ok(3));
+        assert_eq!(tree.read(alias, 0, 9), Ok(&b"abc"[..]));
+        assert_eq!(bad.as_ptr(), pointer);
+        assert_eq!(bad.capacity(), capacity);
+    }
+
+    #[test]
+    fn exact_size_failed_receipt_does_not_validate_or_adopt_failed_input() {
+        let mut tree = tree();
+        let root = tree.root();
+        let file = tree
+            .lazy_file_exact(root, b"exact", creation(), 42, 3)
+            .unwrap();
+        let first = tree.load_begin(file).unwrap();
+        let mut bytes = b"not a successful payload".to_vec();
+        let pointer = bytes.as_ptr();
+        tree.load_finish(file, first, false, &mut bytes).unwrap();
+        assert_eq!(bytes.as_ptr(), pointer);
+        assert_eq!(bytes, b"not a successful payload");
+        assert_eq!(tree.size(file), Ok(3));
+        let next = tree.load_begin(file).unwrap();
+        assert_ne!(next, first);
+        tree.load_finish(file, next, false, &mut Vec::new())
+            .unwrap();
+    }
+
+    #[test]
+    fn exact_compressed_empty_accepts_only_decoded_empty_and_remains_source_backed() {
+        let mut tree = tree();
+        let root = tree.root();
+        let file = tree
+            .lazy_file_exact(root, b"compressed-empty", creation(), 43, 0)
+            .unwrap();
+        let first = tree.load_begin(file).unwrap();
+        let mut bad = vec![1];
+        assert_eq!(
+            tree.load_finish(file, first, true, &mut bad),
+            Err(Error::InvalidSize)
+        );
+        assert_eq!(bad, [1]);
+        assert_eq!(tree.size(file), Ok(0));
+        let next = tree.load_begin(file).unwrap();
+        let mut empty = Vec::with_capacity(9);
+        tree.load_finish(file, next, true, &mut empty).unwrap();
+        assert_eq!(empty.capacity(), 0);
+        assert_eq!(tree.size(file), Ok(0));
+        assert_eq!(tree.source(file), Ok(43));
+        assert_eq!(tree.read(file, 0, 1), Ok(&[][..]));
+        assert_eq!(tree.load_begin(file), Ok(0));
+    }
+
+    #[test]
+    fn general_lazy_file_retains_provisional_size_compatibility() {
+        let mut tree = tree();
+        let root = tree.root();
+        let file = tree
+            .lazy_file(root, b"provisional", creation(), 44, 9)
+            .unwrap();
+        let attempt = tree.load_begin(file).unwrap();
+        let mut bytes = b"abc".to_vec();
+        tree.load_finish(file, attempt, true, &mut bytes).unwrap();
+        assert!(bytes.is_empty());
+        assert_eq!(tree.size(file), Ok(3));
+        assert_eq!(tree.read(file, 0, 9), Ok(&b"abc"[..]));
     }
 }
