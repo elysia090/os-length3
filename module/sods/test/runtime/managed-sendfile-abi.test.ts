@@ -8,6 +8,7 @@ import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
 import {createGuest} from '../../runtime/host/node/execution.ts';
+import {verifiedCaptureCandidate} from '../../runtime/host/node/capture-artifact.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from '../../runtime/linux/translated-image.ts';
 import {prepare} from '../../runtime/translation/share.ts';
 import {loadTranslator, NotAProgram} from '../../runtime/translation/translator.ts';
@@ -20,6 +21,7 @@ const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
 const queueArtifact = process.env.SODS_QUEUED_OUTPUT_PROBE_WASM;
 const workerQueueArtifact = process.env.SODS_QUEUED_WORKER_PROBE_WASM;
+const resultArtifact = process.env.SODS_CAPTURE_RESULT_WASM;
 const currentTranslatorArtifact = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 const normalSkip = normalArtifact ? false : 'Requires explicit SODS_LINUX_WASM production ABI7 artifact';
 const probeSkip = probeArtifact ? false : 'Requires explicit SODS_SENDFILE_PROBE_WASM feature artifact; normal core cannot accept proof1';
@@ -27,14 +29,30 @@ const queueSkip = queueArtifact ? false : 'Requires the isolated SODS_QUEUED_OUT
 const workerQueueSkip = workerQueueArtifact ? false : 'Requires the stronger SODS_QUEUED_WORKER_PROBE_WASM feature artifact';
 const currentMixedSkip = workerQueueSkip || (!currentTranslatorArtifact || process.platform !== 'linux' || process.arch !== 'x64'
   ? 'Requires explicit current-source translator and a Linux x86-64 fixture compiler' : false);
+const currentResultSkip = !resultArtifact || !currentTranslatorArtifact || process.platform !== 'linux' || process.arch !== 'x64'
+  ? 'Requires the explicit independent-result artifact and current Linux x86-64 translator' : false;
 const bytes = (value: string) => new TextEncoder().encode(value);
 type Owner = {id: bigint; invocation: bigint; sequence: number};
 type Send = {owner: Owner; action: bigint; sequence: number; endpoint: bigint; offered: bigint};
 
-function raw(path: string, probe: boolean, lazyData = false, queued = false, workerQueue = false, program = bytes('abcdef')) {
-  const wasm = new Uint8Array(readFileSync(path)), module = new WebAssembly.Module(wasm);
+function raw(path: string, probe: boolean, lazyData = false, queued = false, workerQueue = false, program = bytes('abcdef'), resultProfile = false) {
+  const wasm = new Uint8Array(readFileSync(path));
+  if (resultProfile) {
+    // CI pins a separate known build independently before exercising this
+    // private relay. This is intentionally not an application-facing loader.
+    assert.equal(wasm.byteLength, Number(process.env.SODS_CAPTURE_RESULT_BYTES));
+    assert.equal(createHash('sha256').update(wasm).digest('hex'), process.env.SODS_CAPTURE_RESULT_SHA256);
+  }
+  const module = new WebAssembly.Module(wasm);
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
+  if (resultProfile) {
+    const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
+    assert.equal(marker.length, 1);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 1, 2, 0]);
+    assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
+    for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
+  }
   assert.equal(typeof e.linux_queued_worker_probe_startup_shared, workerQueue ? 'function' : 'undefined');
   assert.equal(typeof e.linux_queued_worker_probe_init_joined, workerQueue ? 'function' : 'undefined');
   const call = (name: string, ...args: (number | bigint)[]): number => {
@@ -70,6 +88,12 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
+  if (resultProfile) {
+    assert.equal(call('linux_capture_candidate'), 2);
+    assert.equal(call('linux_capture_select', 1), -12);
+    assert.equal(call('linux_capture_select', 2), 0);
+    assert.equal(call('linux_capture_result_init'), -9, 'exact sealed Files must precede the receiver');
+  }
   assert.equal(call('linux_prepared_files', 8, 8, Math.max(4096, program.length), 16, 128, 256, 16, 32, 1, 192, 0), 0);
   const root = result();
   put('linux_name', bytes('app')); put('linux_input', program);
@@ -78,7 +102,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     put('linux_name', bytes('data'));
     assert.equal(call('linux_tree_lazy', root, 0o444, 7, 0), 0);
   }
-  if (workerQueue) {
+  if (workerQueue || resultProfile) {
     put('linux_name', bytes('source')); put('linux_input', bytes('BD'));
     assert.equal(call('linux_tree_file', root, 0o444), 0);
   }
@@ -173,7 +197,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_read_receipt', read, 0n, 0), 0); // Observe without advancing its cursor.
     assert.equal(call('linux_read_retire', read), 0); return value;
   };
-  const transfer = captureTransfer({e, call, result, length, auxiliary});
+  const transfer = captureTransfer({e, call, result, length, auxiliary}, resultProfile);
   return {wasm, module, e, call, result, state, length, auxiliary, endpoint, command, put,
     receive: (lane: number, limit?: number) => transfer(lane, false, limit)?.bytes,
     transferForSink: (lane: number) => transfer(lane, true),
@@ -847,13 +871,14 @@ type CaptureRecord = {head: bigint; generation: bigint; bytes: Uint8Array<ArrayB
 
 // Private diagnostic adapter bound to one Core (including any other lane). No
 // callback, await or other Core call receives the raw view or the local copy.
-function captureTransfer(r: CaptureCore) {
+function captureTransfer(r: CaptureCore, resultProfile = false) {
   const memory = r.e.memory as WebAssembly.Memory;
   let unresolved: CaptureRecord | undefined;
   return (lane: number, sink: boolean, limit = 4): CaptureRecord | undefined => {
     if (unresolved) throw new Error('Capture receiver has unresolved Core access');
+    if (resultProfile) assert.ok(!sink && lane === 0, 'the result artifact has one receiver and no sink');
     const route = sink ? 'sink' : 'receive';
-    assert.equal(r.call(`linux_queued_worker_probe_${route}_head`, lane), 0);
+    assert.equal(resultProfile ? r.call('linux_capture_result_head') : r.call(`linux_queued_worker_probe_${route}_head`, lane), 0);
     const generation = r.result(), head = r.auxiliary(), length = Number(r.length());
     if (generation === 0n) return undefined; // Temporary empty, not EOF.
     assert.ok(length >= 1 && length <= limit, 'Capture receiver has insufficient capacity');
@@ -861,13 +886,14 @@ function captureTransfer(r: CaptureCore) {
     const record = {head, generation, bytes: output};
     unresolved = record; // Keep allocation on ambiguous start/finish. Do not replay.
     const whichStart = sink ? 'sink_copy_start' : 'receive_start';
-    const start = r.call(`linux_queued_worker_probe_${whichStart}`, lane, head, generation);
+    const start = resultProfile ? r.call('linux_capture_result_copy_start', Number(head), generation)
+      : r.call(`linux_queued_worker_probe_${whichStart}`, lane, head, generation);
     if (start !== 0) {
       unresolved = undefined; // Known rejection, no loan issued.
       throw new Error(`Capture receiver start: ${start}`);
     }
     const attempt = r.auxiliary(), pointer = Number(r.result());
-    const finish = 'linux_queued_worker_probe_receive_finish';
+    const finish = resultProfile ? 'linux_capture_result_copy_finish' : 'linux_queued_worker_probe_receive_finish';
     try {
       if (Number(r.length()) !== length) throw new Error('Capture receiver extent changed');
       fixtureApply(fixtureSet, output,
@@ -1114,12 +1140,13 @@ function cancelPreparedImage(r: ReturnType<typeof raw>, id: bigint) {
 }
 
 async function prepareCurrentCapture(
-  r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array, omitPhnum = false,
+  r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array,
+  {omitPhnum = false, resultProfile = false} = {},
 ) {
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
-  const begun = r.call('linux_queued_worker_probe_startup_shared'), id = r.result();
+  const begun = r.call(resultProfile ? 'linux_capture_result_startup' : 'linux_queued_worker_probe_startup_shared'), id = r.result();
   assert.equal(r.call('linux_startup_input', 0), 0);
   if (begun !== 0) {
     if (id) assert.equal(r.call('linux_startup_cancel', id), 0);
@@ -1199,7 +1226,7 @@ test('current-source mixed capture rejects incomplete translated facts with stop
   const {elf, translator} = currentCaptureProgram();
   const r = raw(workerQueueArtifact!, true, false, true, true, elf);
   assert.equal(r.call('linux_queued_output_probe_init'), 0);
-  await assert.rejects(prepareCurrentCapture(r, translator, elf, true), /phnum/);
+  await assert.rejects(prepareCurrentCapture(r, translator, elf, {omitPhnum: true}), /phnum/);
   assert.equal(r.call('linux_startup_cancel', 1n), 0); assert.equal(r.result(), 1n);
   assert.ok(r.call('linux_run_start', 1n) < 0);
 });
@@ -1244,6 +1271,38 @@ test('strong capture probe joined startup owns only admitted failure and never f
   assert.equal(next, 2n, 'later preparation never adopts the cancelled identity');
   assert.equal(r.call('linux_startup_cancel', next), 0);
   assert.equal(r.result(), 1n);
+});
+
+test('non-probe capture result cannot start or borrow before its exact receiver', {
+  skip: resultArtifact ? false : 'Requires explicit independent-result artifact',
+}, () => {
+  const r = raw(resultArtifact!, false, false, false, false, bytes('not needed'), true);
+  assert.throws(() => memoryHost(r.module, 2, 8), /not an ordinary Linux admission/);
+  assert.throws(() => verifiedCaptureCandidate(r.wasm, {kind: 'sods-linux-capture-candidate-v1',
+    byteLength: r.wasm.byteLength, sha256: createHash('sha256').update(r.wasm).digest('hex')}), /identity/);
+  const separate = new WebAssembly.Instance(r.module).exports;
+  const call = (name: string, ...args: number[]) => (separate[name] as (...values: number[]) => number)(...args);
+  assert.equal(call('linux_init', 1, 8), 0);
+  assert.equal(call('linux_capture_select', 2), 0);
+  assert.equal(call('linux_files_prepare', 8, 8, 4096, 8, 32, 32, 2), 0);
+  assert.equal(call('linux_files_seal', 8), 0);
+  assert.equal(call('linux_capture_result_init'), -11, 'an unmounted diagnostic Files is not the startup owner');
+  r.stageStartup();
+  assert.equal(r.call('linux_capture_result_startup'), -9);
+  assert.equal(r.result(), 0n);
+  assert.equal(r.call('linux_capture_result_head'), -9);
+  assert.equal(r.call('linux_capture_result_init'), 0);
+  assert.equal(r.call('linux_capture_result_init'), -4);
+  assert.equal(r.call('linux_capture_result_copy_start', 0, 1n), -10);
+  assert.equal(r.receive(0), undefined);
+  r.stageStartup('/not-present');
+  assert.ok(r.call('linux_capture_result_startup') < 0);
+  const failed = r.result();
+  assert.equal(failed, 1n, 'missing receiver previously admitted no execution');
+  assert.ok(r.call('linux_run_start', failed) < 0);
+  assert.equal(r.call('linux_startup_cancel', failed), 0);
+  assert.equal(r.result(), 1n);
+  assert.equal(r.receive(0), undefined);
 });
 
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
@@ -1362,17 +1421,20 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
   });
 }
 
-for (const [useCurrent, stopBeforeFileReply, withSink] of [
-  [false, false, false], [false, true, false], [true, false, false], [true, true, false], [true, false, true],
+for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
+  [false, false, false, false], [false, true, false, false], [true, false, false, false],
+  [true, true, false, false], [true, false, true, false], [true, false, false, true], [true, true, false, true],
 ] as const) {
-  test(`real Node Worker capture fixture: ${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : withSink ? 'ABC reaches the owned Node file only through exact sink settlement' : 'write, resident sendfile, write yields ABC'}`, {
-    skip: useCurrent ? currentMixedSkip : workerQueueSkip, timeout: 30_000,
+  test(`real Node Worker capture fixture: ${resultProfile ? 'non-probe capture result ' : ''}${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : withSink ? 'ABC reaches the owned Node file only through exact sink settlement' : 'write, resident sendfile, write yields ABC'}`, {
+    skip: resultProfile ? currentResultSkip : useCurrent ? currentMixedSkip : workerQueueSkip, timeout: 30_000,
   }, async t => {
     const current = useCurrent ? currentCaptureProgram() : undefined;
-    const r = raw(workerQueueArtifact!, true, false, true, true, current?.elf);
-    assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
-    assert.equal(r.call(current ? 'linux_queued_worker_probe_init_joined' : 'linux_queued_output_probe_init'), 0);
-    const prepared = current ? await prepareCurrentCapture(r, current.translator, current.elf) : undefined;
+    const r = resultProfile ? raw(resultArtifact!, false, false, false, false, current!.elf, true)
+      : raw(workerQueueArtifact!, true, false, true, true, current?.elf);
+    assert.throws(() => memoryHost(r.module, 2, 8), resultProfile ? /not an ordinary Linux admission/ : /Synthetic sendfile probe/);
+    assert.equal(r.call(resultProfile ? 'linux_capture_result_init'
+      : current ? 'linux_queued_worker_probe_init_joined' : 'linux_queued_output_probe_init'), 0);
+    const prepared = current ? await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile}) : undefined;
     const input = prepared ?? captureGuest(true), bridge = createGuest(input);
     const onAbort = () => bridge.requestStop();
     t.signal.addEventListener('abort', onAbort, {once: true});
@@ -1406,7 +1468,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         guestCalls.push(request.nr);
         // The original request crosses once. The fixture now responds to the
         // Rust-issued command; syscall numbers below are assertions only.
-        assert.equal(r.call('linux_queued_worker_probe_request', id, request.invocation, request.sequence,
+        assert.equal(r.call(resultProfile ? 'linux_syscall_sequenced' : 'linux_queued_worker_probe_request', id, request.invocation, request.sequence,
           request.nr, ...request.args, request.next), 0);
         owner.sequence = request.sequence;
         const command = r.command();
@@ -1450,15 +1512,17 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         assert.deepEqual([command.tag, command.target, command.next, command.endpoint], [13, at, 1n, 0n]);
         if (firstWriteAction === undefined) firstWriteAction = action;
         else assert.equal(action, firstWriteAction + 1n, 'resident file acceptance did not issue another Domain action');
-        assert.equal(r.call('linux_queued_worker_probe_start', id, request.sequence, action), 0);
+        const start = resultProfile ? 'linux_capture_result_write_start' : 'linux_queued_worker_probe_start';
+        const finish = resultProfile ? 'linux_capture_result_write_finish' : 'linux_queued_worker_probe_finish';
+        assert.equal(r.call(start, id, request.sequence, action), 0);
         const pointer = Number(r.result()), source = Number(r.auxiliary()), extent = Number(r.length());
         assert.deepEqual([source, extent], [Number(at), 1]);
         try { copyWorkerInput(input.memory, core, source, pointer, extent); }
         catch (error) {
-          assert.equal(r.call('linux_queued_worker_probe_finish', id, request.sequence, action, 1, 0), 0);
+          assert.equal(r.call(finish, id, request.sequence, action, 1, 0), 0);
           throw error;
         }
-        assert.equal(r.call('linux_queued_worker_probe_finish', id, request.sequence, action, 0, extent), 0);
+        assert.equal(r.call(finish, id, request.sequence, action, 0, extent), 0);
         const step = r.command();
         assert.deepEqual([step.tag, step.value], [0, 1n]);
         if (writeAddresses.length === 2) {
@@ -1482,6 +1546,22 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
       }
       assert.equal(bridge.diagnostics().exited, true);
       assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+      if (resultProfile) {
+        const head = 'linux_capture_result_head', start = 'linux_capture_result_copy_start', finish = 'linux_capture_result_copy_finish';
+        assert.equal(r.call(head), 0);
+        const generation = r.result(), slot = Number(r.auxiliary()), extent = Number(r.length());
+        assert.equal(extent, 1);
+        assert.equal(r.call(start, slot, generation + 1n), -10, 'stale result may not expose bytes');
+        assert.equal(r.call(start, slot, generation), 0);
+        const attempt = r.auxiliary();
+        assert.equal(r.call(head), -4, 'one published Core view excludes the next access');
+        assert.equal(r.call(finish, attempt + 1n, 1, 0), -4);
+        assert.equal(r.call(finish, attempt, 2, extent), 0, 'full count without stop is not publication');
+        assert.equal(r.call(finish, attempt, 0, extent), -4);
+        assert.equal(r.call(finish, attempt, 1, 0), 0, 'ended unpublished access leaves the same head');
+        assert.equal(r.call(head), 0);
+        assert.deepEqual([r.result(), Number(r.auxiliary()), Number(r.length())], [generation, slot, extent]);
+      }
       if (sink) {
         assert.equal(sink.writeOne(1, true), 'waiting');
         assert.deepEqual(new Uint8Array(readFileSync(join(sinkDirectory!, 'output'))), bytes('A'));
@@ -1503,7 +1583,8 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
           received.push(buffer!);
         }
         assert.equal(r.receive(0), undefined);
-        if (current) assert.equal(r.call('linux_queued_worker_probe_receive_head', 1), -5);
+        if (resultProfile) assert.throws(() => r.receive(1), /one receiver/);
+        else if (current) assert.equal(r.call('linux_queued_worker_probe_receive_head', 1), -5);
         else assert.equal(r.receive(1), undefined);
         assert.equal(received.map(value => new TextDecoder().decode(value)).join(''), stopBeforeFileReply ? 'AB' : 'ABC');
       }

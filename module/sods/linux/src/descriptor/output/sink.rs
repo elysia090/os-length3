@@ -217,18 +217,6 @@ impl Reader<'_> {
     }
 }
 
-impl Queue {
-    pub(super) fn front_ticket(&self, index: usize) -> Ticket {
-        Ticket {
-            destination: self.id,
-            key: super::Key {
-                index,
-                generation: self.entries.cells[index].generation,
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::{

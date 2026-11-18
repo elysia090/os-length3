@@ -252,7 +252,10 @@ impl WriteCall {
     ) -> Result<Finished, Error> {
         self.settle(ctx, id, receipt, false)
     }
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
     pub(crate) fn raw_start(
         &mut self,
         ctx: Context<'_>,
@@ -265,7 +268,10 @@ impl WriteCall {
             guard.bytes.len(),
         ))
     }
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
     pub(crate) fn raw_finish(
         &mut self,
         ctx: &mut Context<'_>,

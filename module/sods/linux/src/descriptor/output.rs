@@ -5,7 +5,13 @@ use std::marker::PhantomData;
 use std::num::{NonZeroU64, NonZeroUsize};
 
 pub(crate) mod capture;
-#[cfg(any(test, all(target_arch = "wasm32", feature = "queued-worker-probe")))]
+#[cfg(any(
+    test,
+    all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    )
+))]
 mod receive;
 #[cfg(any(test, feature = "queued-worker-probe"))]
 mod sink;
@@ -25,7 +31,13 @@ pub(crate) enum Error {
     Length,
     ReceiverNotEmpty,
     ReceiverCapacity,
-    #[cfg(any(test, all(target_arch = "wasm32", feature = "queued-worker-probe")))]
+    #[cfg(any(
+        test,
+        all(
+            target_arch = "wasm32",
+            any(feature = "queued-worker-probe", feature = "capture-result-v1")
+        )
+    ))]
     BadHead,
     #[cfg(any(test, feature = "queued-worker-probe"))]
     ExternalHead,
@@ -219,7 +231,10 @@ enum Chunk {
     Escrowed(NonZeroUsize),
 }
 enum HeadBytes<'a> {
-    Pinned { pin: usize, prefix: &'a ReadPrefix },
+    Pinned {
+        pin: usize,
+        prefix: &'a ReadPrefix,
+    },
     Copied(&'a [u8]),
     #[cfg(any(test, feature = "queued-worker-probe"))]
     Escrowed(NonZeroUsize),
@@ -284,6 +299,17 @@ struct Queue {
     external: sink::Drain,
 }
 impl Queue {
+    #[cfg(any(test, feature = "queued-worker-probe", feature = "capture-result-v1"))]
+    fn front_ticket(&self, index: usize) -> Ticket {
+        Ticket {
+            destination: self.id,
+            key: Key {
+                index,
+                generation: self.entries.cells[index].generation,
+            },
+        }
+    }
+
     fn new(id: DestinationId, limits: Limits) -> Result<Self, Error> {
         Ok(Self {
             id,
@@ -909,16 +935,88 @@ impl Reader<'_> {
 
 /// Primary lane and the only receiver allowed to borrow it. Files is shared
 /// beside this owner, not acquired or replaced by either endpoint.
-#[cfg(feature = "queued-output-probe")]
-struct CaptureOutput {
+#[cfg(any(feature = "queued-output-probe", feature = "capture-result-v1"))]
+pub(crate) struct CaptureOutput {
     registry: LaneRegistry,
     producer: Producer,
     consumer: Consumer,
 }
-#[cfg(feature = "queued-output-probe")]
+#[cfg(any(feature = "queued-output-probe", feature = "capture-result-v1"))]
 impl CaptureOutput {
+    #[cfg(feature = "capture-result-v1")]
+    pub(crate) fn single_result(files: &mut Files) -> Result<Self, Error> {
+        let mut registry = LaneRegistry::new(files, 1)?;
+        let limits = Limits {
+            bytes: 4,
+            entries: 3,
+            pins: 1,
+        };
+        let (producer, consumer) = registry.destination(limits)?;
+        Ok(Self {
+            registry,
+            producer,
+            consumer,
+        })
+    }
+
+    #[cfg(feature = "capture-result-v1")]
+    pub(crate) fn joined_stdio(&self, files: &mut Files, limit: u32) -> Result<Table, Error> {
+        self.registry
+            .queued_stdio(files, 1, [&self.producer, &self.producer], limit)
+    }
+
     fn receiver<'a>(&'a mut self, files: &'a mut Files) -> Result<Reader<'a>, Error> {
         self.registry.reader(files, &self.consumer)
+    }
+
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
+    pub(crate) fn context<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        domain: &'a mut crate::lease::Domain,
+        execution: &'a mut crate::execution::Execution,
+    ) -> capture::Context<'a> {
+        capture::Context {
+            files,
+            lanes: &mut self.registry,
+            domain,
+            execution,
+        }
+    }
+
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
+    pub(crate) fn publish_resident_request(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        out: u32,
+        input: u32,
+        length: NonZeroUsize,
+        execution: &mut crate::execution::Execution,
+        invocation: crate::execution::Invocation,
+    ) -> Result<NonZeroUsize, capture::Error> {
+        let hold = files.hold_output(table, out)?;
+        if let Err(error) = execution.hold_call(invocation) {
+            files.release_output(hold).expect("new exact held output");
+            return Err(error.into());
+        }
+        // No callback or host operation is admitted between the exact
+        // continuation hold and this resident publication.
+        let result = self
+            .registry
+            .held_writer(files, &hold)
+            .and_then(|mut writer| writer.publish_resident(table, input, length));
+        files.release_output(hold).expect("retained exact output");
+        execution
+            .finish_call(invocation)
+            .expect("same synchronous call");
+        result.map_err(Into::into)
     }
 }
 
@@ -987,6 +1085,10 @@ impl QueueProbe {
         }
         Ok(())
     }
+    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    pub(crate) fn output(&mut self) -> &mut CaptureOutput {
+        &mut self.capture
+    }
     pub(crate) fn stdio(
         &self,
         files: &mut Files,
@@ -1003,49 +1105,6 @@ impl QueueProbe {
             .capture
             .registry
             .queued_stdio(files, 1, [stdout, stderr], limit)?)
-    }
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
-    pub(crate) fn capture_context<'a>(
-        &'a mut self,
-        files: &'a mut Files,
-        domain: &'a mut crate::lease::Domain,
-        execution: &'a mut crate::execution::Execution,
-    ) -> capture::Context<'a> {
-        capture::Context {
-            files,
-            lanes: &mut self.capture.registry,
-            domain,
-            execution,
-        }
-    }
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
-    pub(crate) fn capture_resident(
-        &mut self,
-        files: &mut Files,
-        table: &Table,
-        out: u32,
-        input: u32,
-        length: NonZeroUsize,
-        execution: &mut crate::execution::Execution,
-        invocation: crate::execution::Invocation,
-    ) -> Result<NonZeroUsize, QueueProbeError> {
-        let hold = files.hold_output(table, out).map_err(Error::Source)?;
-        if execution.hold_call(invocation).is_err() {
-            files.release_output(hold).expect("new exact held output");
-            return Err(QueueProbeError::Owner);
-        }
-        // The held invocation is live at this boundary. The following
-        // synchronous preparation/commit does not reenter or touch the host.
-        let outcome = self
-            .capture
-            .registry
-            .held_writer(files, &hold)
-            .and_then(|mut writer| writer.publish_resident(table, input, length));
-        files.release_output(hold).expect("retained exact output");
-        execution
-            .finish_call(invocation)
-            .expect("same synchronous call");
-        outcome.map_err(Into::into)
     }
     pub(crate) fn publish(
         &mut self,

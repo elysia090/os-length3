@@ -19,11 +19,11 @@ use crate::{
 use std::cell::RefCell;
 #[cfg(feature = "capture-v1")]
 mod capture_candidate;
-#[cfg(feature = "queued-worker-probe")]
+#[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
 mod capture_receiver;
-#[cfg(feature = "queued-worker-probe")]
+#[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
 mod capture_worker;
-#[cfg(feature = "queued-worker-probe")]
+#[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
 pub(crate) use capture_worker::FinishEvidence;
 const DOMAIN: u64 = 1;
 const TREE: u64 = 2;
@@ -44,6 +44,8 @@ struct Sealed {
     files: Files,
     #[cfg(feature = "queued-output-probe")]
     queue_probe: Option<descriptor::QueueProbe>,
+    #[cfg(feature = "capture-result-v1")]
+    capture_output: Option<descriptor::CaptureOutput>,
     table: Option<Table>,
     root: Option<mount::Place>,
     root_view: Option<mount::Ticket>,
@@ -51,6 +53,16 @@ struct Sealed {
     reads: Reads,
     input: Vec<u8>,
     file_limit: usize,
+}
+#[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
+impl Sealed {
+    fn capture_parts(&mut self) -> Result<(&mut Files, &mut descriptor::CaptureOutput), i32> {
+        #[cfg(feature = "capture-result-v1")]
+        let output = self.capture_output.as_mut().ok_or(-9)?;
+        #[cfg(not(feature = "capture-result-v1"))]
+        let output = self.queue_probe.as_mut().ok_or(-9)?.output();
+        Ok((&mut self.files, output))
+    }
 }
 enum Resources {
     MemoryOnly,
@@ -176,9 +188,9 @@ struct State {
     sealed: Option<Sealed>,
     #[cfg(feature = "capture-v1")]
     capture_selected: bool,
-    #[cfg(feature = "queued-worker-probe")]
+    #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
     capture_write: Option<capture_worker::Active>,
-    #[cfg(feature = "queued-worker-probe")]
+    #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
     capture_receiver: capture_receiver::Receiver,
 }
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
@@ -220,12 +232,12 @@ enum Access {
         sequence: u32,
         action: Token,
     },
-    #[cfg(feature = "queued-worker-probe")]
+    #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
     CaptureFinish {
         execution: u64,
         call: descriptor::capture::CallId,
     },
-    #[cfg(feature = "queued-worker-probe")]
+    #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
     ReceiveFinish(u64),
 }
 fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
@@ -253,12 +265,15 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         if !s.capture_selected && access != Access::CaptureSelection {
             return -12;
         }
-        #[cfg(feature = "queued-worker-probe")]
+        #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
         if s.capture_receiver.blocks(access) {
             return -4;
         }
-        #[cfg(feature = "queued-worker-probe")]
-        if s.capture_write.as_ref().is_some_and(|pending| pending.blocks(access)) {
+        #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
+        if s.capture_write
+            .as_ref()
+            .is_some_and(|pending| pending.blocks(access))
+        {
             return -4;
         }
         // Canonical source views exclude every old Read exception too. Only
@@ -331,8 +346,11 @@ fn token(sequence: u64) -> Token {
 fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Error>) -> i32 {
     with_state(false, |s| {
         let t = token(sequence);
-        #[cfg(feature = "queued-worker-probe")]
-        if s.capture_write.as_ref().is_some_and(|pending| pending.owns(t)) {
+        #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
+        if s.capture_write
+            .as_ref()
+            .is_some_and(|pending| pending.owns(t))
+        {
             return Err(-4);
         }
         if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t))
@@ -490,9 +508,9 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             sealed: None,
             #[cfg(feature = "capture-v1")]
             capture_selected: false,
-            #[cfg(feature = "queued-worker-probe")]
+            #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
             capture_write: None,
-            #[cfg(feature = "queued-worker-probe")]
+            #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
             capture_receiver: capture_receiver::Receiver::default(),
         });
         0
@@ -766,6 +784,8 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
             files,
             #[cfg(feature = "queued-output-probe")]
             queue_probe: None,
+            #[cfg(feature = "capture-result-v1")]
+            capture_output: None,
             table,
             root,
             root_view: b.root_view.take(),
@@ -1327,8 +1347,28 @@ pub extern "C" fn linux_syscall(
 }
 /// Actual Worker entrance: sequence is captured before syscall admission, not
 /// first adopted at a physical subround. Unsequenced diagnostics cannot set FS.
+#[cfg(feature = "capture-result-v1")]
 #[no_mangle]
 pub extern "C" fn linux_syscall_sequenced(
+    id: u64,
+    invocation: u64,
+    sequence: u32,
+    nr: u64,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    next: u64,
+) -> i32 {
+    capture_worker::request(id, invocation, sequence, nr, a, b, c, d, e, f, next)
+}
+#[cfg_attr(
+    not(feature = "capture-result-v1"),
+    export_name = "linux_syscall_sequenced"
+)]
+extern "C" fn sequenced_syscall(
     id: u64,
     invocation: u64,
     sequence: u32,
@@ -1945,7 +1985,7 @@ pub extern "C" fn linux_syscall_resumed(id: u64, stopped: u32, success: u32) -> 
 #[no_mangle]
 pub extern "C" fn linux_syscall_abandon(id: u64) -> i32 {
     with_state(false, |s| {
-        #[cfg(feature = "queued-worker-probe")]
+        #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
         if !capture_worker::abandon(s, id)? {
             return Ok(0);
         }
@@ -2051,7 +2091,7 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
         if s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) || !slot.execution.stopped() {
             return Ok(0);
         }
-        #[cfg(feature = "queued-worker-probe")]
+        #[cfg(any(feature = "queued-worker-probe", feature = "capture-result-v1"))]
         let slot = {
             if !capture_worker::abandon(s, id)? {
                 return Ok(0);
@@ -2076,11 +2116,14 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
             || {
                 #[cfg(not(feature = "capture-v1"))]
                 {
-                    slot.continuation.as_ref().is_some_and(|c|
-                        c.sendfile_pending() || c.sendfile_references(&slot.execution))
+                    slot.continuation.as_ref().is_some_and(|c| {
+                        c.sendfile_pending() || c.sendfile_references(&slot.execution)
+                    })
                 }
                 #[cfg(feature = "capture-v1")]
-                { false }
+                {
+                    false
+                }
             }
             || s.sealed
                 .as_ref()
@@ -2297,6 +2340,8 @@ pub extern "C" fn linux_prepared_root(
             files,
             #[cfg(feature = "queued-output-probe")]
             queue_probe: None,
+            #[cfg(feature = "capture-result-v1")]
+            capture_output: None,
             table: None,
             root: Some(root),
             root_view: Some(view),
@@ -2427,17 +2472,24 @@ pub extern "C" fn linux_queued_worker_probe_startup_shared() -> i32 {
         shared_output: true,
     })
 }
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(feature = "capture-result-v1")]
+#[no_mangle]
+pub extern "C" fn linux_capture_result_startup() -> i32 {
+    startup_begin(StartupTable::CaptureResult)
+}
+#[cfg(any(not(feature = "capture-v1"), feature = "capture-result-v1"))]
 #[derive(Clone, Copy)]
 enum StartupTable {
+    #[cfg(not(feature = "capture-v1"))]
     Empty,
+    #[cfg(not(feature = "capture-v1"))]
     Physical,
     #[cfg(feature = "queued-output-probe")]
-    CaptureProbe {
-        shared_output: bool,
-    },
+    CaptureProbe { shared_output: bool },
+    #[cfg(feature = "capture-result-v1")]
+    CaptureResult,
 }
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(any(not(feature = "capture-v1"), feature = "capture-result-v1"))]
 fn startup_begin(table: StartupTable) -> i32 {
     with_state(false, |s| {
         let wire = &s.startup_input;
@@ -2480,6 +2532,10 @@ fn startup_begin(table: StartupTable) -> i32 {
         .map_err(|_| -5)?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         let root = r.root.as_ref().ok_or(-11)?;
+        #[cfg(feature = "capture-result-v1")]
+        if matches!(table, StartupTable::CaptureResult) && r.capture_output.is_none() {
+            return Err(-9);
+        }
         #[cfg(feature = "queued-output-probe")]
         if let StartupTable::CaptureProbe { shared_output } = table {
             r.queue_probe
@@ -2508,7 +2564,9 @@ fn startup_begin(table: StartupTable) -> i32 {
             .select_cwd(p.fs.as_ref().unwrap(), &Credentials::initial_root(), cwd)
             .map_err(|_| -10)?;
         p.table = Some(match table {
+            #[cfg(not(feature = "capture-v1"))]
             StartupTable::Empty => r.files.table(r.fd_limit).map_err(|_| -10)?,
+            #[cfg(not(feature = "capture-v1"))]
             StartupTable::Physical => r.files.stdio([1, 2, 3], r.fd_limit).map_err(|_| -10)?,
             #[cfg(feature = "queued-output-probe")]
             StartupTable::CaptureProbe { shared_output } => r
@@ -2517,6 +2575,13 @@ fn startup_begin(table: StartupTable) -> i32 {
                 .expect("validated capture probe")
                 .stdio(&mut r.files, r.fd_limit, shared_output)
                 .map_err(queue_probe_error)?,
+            #[cfg(feature = "capture-result-v1")]
+            StartupTable::CaptureResult => r
+                .capture_output
+                .as_ref()
+                .expect("admitted result receiver")
+                .joined_stdio(&mut r.files, r.fd_limit)
+                .map_err(|_| -10)?,
         });
         p.program = Some(
             r.files

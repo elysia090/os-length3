@@ -29,10 +29,15 @@ use std::num::{NonZeroU64, NonZeroUsize};
 
 #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
 mod output;
-#[cfg(all(target_arch = "wasm32", feature = "queued-output-probe"))]
-pub(crate) use output::{QueueProbe, QueueProbeError};
 #[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
 pub(crate) use output::capture;
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "queued-worker-probe", feature = "capture-result-v1")
+))]
+pub(crate) use output::CaptureOutput;
+#[cfg(all(target_arch = "wasm32", feature = "queued-output-probe"))]
+pub(crate) use output::{QueueProbe, QueueProbeError};
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 pub(crate) use output::{SinkEvidence, SinkOutcome};
 

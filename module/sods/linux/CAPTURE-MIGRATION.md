@@ -196,6 +196,28 @@ cannot start a Worker, create an output file, or provide a capture-ready
 artifact. The normal `memoryHost` also refuses candidate modules before
 instantiation.
 
+The separate `capture-result-v1` build is a non-probe transport witness, not
+an enabled application profile. It uses a distinct profile value (2) and
+keeps its readiness flag closed. It installs one finite receiver on the
+prepared Files before the same pathname/image/stack startup used by ordinary
+execution. The corresponding typed write and exact resident sendfile share
+the ordinary sequenced ingress and the same bounded lane. The one initial
+transfer profile uses Q=4, K=3, R=1 and the same limited exact-count operation
+range as the witness. It makes no claim about arbitrary write sizes,
+asynchronous files, general sendfile offsets or a terminal session.
+
+A trusted private Node relay in the tests verifies the exact build pin and
+uses the existing client Worker/translation. It gets an independently owned
+byte result only after an exact copy receipt, even after the actual Worker
+and FD table have stopped. There is no physical output or sink ABI in that
+artifact. Its result belongs to the receiving application, not the guest or
+the underlying Core memory. A missed or ambiguous view receipt still keeps
+the guard/queue owner. Both default admission and the old Node-file candidate
+verifier reject this profile. Before exposing an ordinary application opt-in,
+prove host wiring and candidate pin catalog provenance separately; maintain
+default behavior and delete a legacy TS path only after its actual callers
+have switched.
+
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution
 state. There are no borrowed-stdio, captured startup or diagnostic execution

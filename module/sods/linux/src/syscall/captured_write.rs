@@ -64,7 +64,10 @@ impl Continuation {
             .map_err(Error::Capture)
     }
 
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
     pub(crate) fn start_raw_capture(
         &mut self,
         ctx: Context<'_>,
@@ -113,7 +116,10 @@ impl Continuation {
         self.observe_capture_finish(result)
     }
 
-    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "queued-worker-probe", feature = "capture-result-v1")
+    ))]
     pub(crate) fn finish_raw_capture(
         &mut self,
         ctx: &mut Context<'_>,

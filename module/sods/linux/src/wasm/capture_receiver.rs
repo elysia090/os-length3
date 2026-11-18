@@ -1,6 +1,9 @@
-//! Trusted diagnostic relay only; the normal host rejects this artifact.
+//! Trusted relay only; the normal host rejects these separate artifacts.
 //! Successful settlement means one independently owned host copy, not I/O.
-use super::{queue_probe_error, with_state, with_state_access, Access};
+#[cfg(feature = "queued-worker-probe")]
+use super::queue_probe_error;
+use super::{with_state, with_state_access, Access};
+#[cfg(feature = "queued-worker-probe")]
 use crate::descriptor::{SinkEvidence, SinkOutcome};
 
 #[derive(Default)]
@@ -9,11 +12,13 @@ pub(super) struct Receiver {
     active: Option<View>,
 }
 struct View {
+    #[cfg(feature = "queued-worker-probe")]
     lane: u32,
     head: u64,
     generation: u64,
     length: u32,
     uncertain: bool,
+    #[cfg(feature = "queued-worker-probe")]
     sink: bool,
 }
 impl Receiver {
@@ -23,23 +28,42 @@ impl Receiver {
 }
 
 #[no_mangle]
+#[cfg(feature = "queued-worker-probe")]
 pub extern "C" fn linux_queued_worker_probe_receive_head(lane: u32) -> i32 {
     head(lane, false)
 }
 
 #[no_mangle]
+#[cfg(feature = "queued-worker-probe")]
 pub extern "C" fn linux_queued_worker_probe_sink_head(lane: u32) -> i32 {
     head(lane, true)
 }
 
-fn head(lane: u32, sink: bool) -> i32 {
+#[cfg(feature = "capture-result-v1")]
+#[no_mangle]
+pub extern "C" fn linux_capture_result_head() -> i32 {
+    head(0, false)
+}
+
+fn head(_lane: u32, _sink: bool) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
-        let q = r.queue_probe.as_mut().ok_or(-9)?;
-        let Some((head, generation, length)) = q
-            .receive_head(&mut r.files, lane, sink)
-            .map_err(queue_probe_error)?
-        else {
+        #[cfg(feature = "queued-worker-probe")]
+        let chunk = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .receive_head(&mut r.files, _lane, _sink)
+            .map_err(queue_probe_error)?;
+        #[cfg(feature = "capture-result-v1")]
+        let chunk = {
+            let (files, output) = r.capture_parts()?;
+            output
+                .result_head(files)
+                .map_err(|_| -10)?
+                .map(|(slot, generation, length)| (u64::from(slot), generation, length))
+        };
+        let Some((head, generation, length)) = chunk else {
             return Ok(0); // Temporary empty; not EOF or stopped.
         };
         s.auxiliary = head;
@@ -49,6 +73,7 @@ fn head(lane: u32, sink: bool) -> i32 {
 }
 
 #[no_mangle]
+#[cfg(feature = "queued-worker-probe")]
 pub extern "C" fn linux_queued_worker_probe_receive_start(
     lane: u32,
     head: u64,
@@ -58,6 +83,7 @@ pub extern "C" fn linux_queued_worker_probe_receive_start(
 }
 
 #[no_mangle]
+#[cfg(feature = "queued-worker-probe")]
 pub extern "C" fn linux_queued_worker_probe_sink_copy_start(
     lane: u32,
     head: u64,
@@ -66,21 +92,39 @@ pub extern "C" fn linux_queued_worker_probe_sink_copy_start(
     start(lane, head, generation, true)
 }
 
-fn start(lane: u32, head: u64, generation: u64, sink: bool) -> i32 {
+#[cfg(feature = "capture-result-v1")]
+#[no_mangle]
+pub extern "C" fn linux_capture_result_copy_start(slot: u32, generation: u64) -> i32 {
+    start(0, u64::from(slot), generation, false)
+}
+
+fn start(_lane: u32, head: u64, generation: u64, _sink: bool) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
-        let q = r.queue_probe.as_mut().ok_or(-9)?;
         let attempt = s.capture_receiver.sequence.checked_add(1).ok_or(-6)?;
-        let (pointer, length) = q
-            .receive_start(&mut r.files, lane, head, generation, sink)
+        #[cfg(feature = "queued-worker-probe")]
+        let (pointer, length) = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .receive_start(&mut r.files, _lane, head, generation, _sink)
             .map_err(queue_probe_error)?;
+        #[cfg(feature = "capture-result-v1")]
+        let (pointer, length) = {
+            let (files, output) = r.capture_parts()?;
+            output
+                .result_copy(files, head as u32, generation)
+                .map_err(|_| -10)?
+        };
         s.capture_receiver.active = Some(View {
-            lane,
+            #[cfg(feature = "queued-worker-probe")]
+            lane: _lane,
             head,
             generation,
             length: length as u32,
             uncertain: false,
-            sink,
+            #[cfg(feature = "queued-worker-probe")]
+            sink: _sink,
         });
         s.capture_receiver.sequence = attempt;
         s.length = length as u64;
@@ -89,12 +133,15 @@ fn start(lane: u32, head: u64, generation: u64, sink: bool) -> i32 {
     })
 }
 
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_receive_finish(
-    attempt: u64,
-    evidence: u32,
-    count: u32,
-) -> i32 {
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_receive_finish"
+)]
+#[cfg_attr(
+    feature = "capture-result-v1",
+    export_name = "linux_capture_result_copy_finish"
+)]
+pub(super) extern "C" fn finish(attempt: u64, evidence: u32, count: u32) -> i32 {
     with_state_access(Access::ReceiveFinish(attempt), |s| {
         let view = s.capture_receiver.active.as_mut().ok_or(-4)?;
         match evidence {
@@ -103,15 +150,25 @@ pub extern "C" fn linux_queued_worker_probe_receive_finish(
                     return Err(-4);
                 }
                 let r = s.sealed.as_mut().ok_or(-9)?;
-                let q = r.queue_probe.as_mut().ok_or(-9)?;
-                q.receive_commit(
-                    &mut r.files,
-                    view.lane,
-                    view.head,
-                    view.generation,
-                    view.sink,
-                )
-                .map_err(queue_probe_error)?;
+                #[cfg(feature = "queued-worker-probe")]
+                r.queue_probe
+                    .as_mut()
+                    .ok_or(-9)?
+                    .receive_commit(
+                        &mut r.files,
+                        view.lane,
+                        view.head,
+                        view.generation,
+                        view.sink,
+                    )
+                    .map_err(queue_probe_error)?;
+                #[cfg(feature = "capture-result-v1")]
+                {
+                    let (files, output) = r.capture_parts()?;
+                    output
+                        .result_commit(files, view.head as u32, view.generation)
+                        .map_err(|_| -10)?;
+                }
                 let length = view.length;
                 s.capture_receiver.active = None;
                 Ok(u64::from(length))
@@ -131,6 +188,7 @@ pub extern "C" fn linux_queued_worker_probe_receive_finish(
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_bind(lane: u32) -> i32 {
     with_state(false, |s| {
@@ -144,6 +202,7 @@ pub extern "C" fn linux_queued_worker_probe_sink_bind(lane: u32) -> i32 {
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_offer(
     lane: u32,
@@ -164,6 +223,7 @@ pub extern "C" fn linux_queued_worker_probe_sink_offer(
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_receipt(
     lane: u32,
@@ -209,6 +269,7 @@ pub extern "C" fn linux_queued_worker_probe_sink_receipt(
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_cancel(
     lane: u32,
@@ -227,6 +288,7 @@ pub extern "C" fn linux_queued_worker_probe_sink_cancel(
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_discard(
     lane: u32,
@@ -245,6 +307,7 @@ pub extern "C" fn linux_queued_worker_probe_sink_discard(
     })
 }
 
+#[cfg(feature = "queued-worker-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_sink_shutdown(lane: u32) -> i32 {
     with_state(false, |s| {

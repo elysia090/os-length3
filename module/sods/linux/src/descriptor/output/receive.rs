@@ -1,15 +1,25 @@
 //! A receive loan selects the exact first accepted entry of its destination.
 //! The raw fixture transport additionally retains the entire owner and
 //! globally excludes mutation/growth until the exact lexical receipt.
+#[cfg(feature = "capture-result-v1")]
+use super::CaptureOutput;
+#[cfg(any(test, feature = "queued-worker-probe"))]
+use super::HeadBytes;
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
-use super::{sink, Files, Key, QueueProbe, QueueProbeError};
-use super::{Error, Head, HeadBytes, Queue, Reader, Ticket};
+use super::{sink, QueueProbe, QueueProbeError};
+use super::{Error, Head, Queue, Reader, Ticket};
+#[cfg(any(
+    feature = "capture-result-v1",
+    all(target_arch = "wasm32", feature = "queued-worker-probe")
+))]
+use super::{Files, Key};
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 use crate::effect::Token;
 use std::num::NonZeroUsize;
 
 enum CopyDisposition {
     OwnedResult,
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     SinkEscrow,
 }
 
@@ -27,6 +37,7 @@ impl Reader<'_> {
         let Some(head) = Queue::head(queue.head, &queue.entries, &queue.pins) else {
             return Ok(None);
         };
+        #[cfg(any(test, feature = "queued-worker-probe"))]
         if matches!(head.bytes, HeadBytes::Escrowed(_)) {
             return Err(Error::ExternalHead);
         }
@@ -43,6 +54,7 @@ impl Reader<'_> {
     /// changes only the Rust FIFO, not the physical sink's observed progress.
     fn receive_commit(&mut self, ticket: Ticket, dest: CopyDisposition) -> Result<(), Error> {
         let head = Self::selected_head(self.queue, ticket)?;
+        #[cfg(any(test, feature = "queued-worker-probe"))]
         if matches!(head.bytes, HeadBytes::Escrowed(_)) {
             return Err(Error::ExternalHead);
         }
@@ -50,11 +62,62 @@ impl Reader<'_> {
         let removal = head.removal(self.queue.used, length);
         match dest {
             CopyDisposition::OwnedResult => self.queue.remove_head(removal),
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             CopyDisposition::SinkEscrow => {
                 self.escrow(removal, length);
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "capture-result-v1")]
+impl CaptureOutput {
+    pub(crate) fn result_head(
+        &mut self,
+        files: &mut Files,
+    ) -> Result<Option<(u32, u64, usize)>, Error> {
+        Ok(self.receiver(files)?.receive_head()?.map(|(ticket, len)| {
+            (
+                u32::try_from(ticket.key.index).expect("wasm32 index"),
+                ticket.key.generation,
+                len.get(),
+            )
+        }))
+    }
+
+    pub(crate) fn result_copy(
+        &mut self,
+        files: &mut Files,
+        slot: u32,
+        generation: u64,
+    ) -> Result<(*const u8, usize), Error> {
+        let mut reader = self.receiver(files)?;
+        let ticket = result_ticket(&reader, slot, generation);
+        let bytes = reader.receive_bytes(ticket)?;
+        Ok((bytes.as_ptr(), bytes.len()))
+    }
+
+    pub(crate) fn result_commit(
+        &mut self,
+        files: &mut Files,
+        slot: u32,
+        generation: u64,
+    ) -> Result<(), Error> {
+        let mut reader = self.receiver(files)?;
+        let ticket = result_ticket(&reader, slot, generation);
+        reader.receive_commit(ticket, CopyDisposition::OwnedResult)
+    }
+}
+
+#[cfg(feature = "capture-result-v1")]
+fn result_ticket(reader: &Reader<'_>, slot: u32, generation: u64) -> Ticket {
+    Ticket {
+        destination: reader.queue.id,
+        key: Key {
+            index: slot as usize,
+            generation,
+        },
     }
 }
 

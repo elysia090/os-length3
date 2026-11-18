@@ -20,6 +20,8 @@ queued-output-probe = ["sendfile-probe"]
 queued-worker-probe = ["queued-output-probe"]
 # Separate non-probe provenance/ownership candidate; no enabled capture startup.
 capture-v1 = []
+# Private non-probe test of the composed, independently owned result path.
+capture-result-v1 = ["capture-v1"]
 
 [dependencies]
 sods-file-store = { path = "../file-store", default-features = false }

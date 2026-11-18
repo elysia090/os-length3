@@ -1,5 +1,5 @@
-//! Rejected-artifact fixture boundary for one captured write. Raw callers are
-//! trusted relay code. No view or fixture selection is exposed in memoryHost.
+//! Exact captured producer transport. Only trusted non-reentrant raw relays
+//! may borrow a view, and the selected owner never falls back to physical output.
 use super::{execution_index, step, token, with_state, with_state_access, Access, State};
 use crate::descriptor::{
     capture::{Access as CopyAccess, CallId, Finished, Receipt, Request},
@@ -29,7 +29,7 @@ impl Active {
     }
 }
 
-/// Only this raw fixture adapter can construct the claim after matching the
+/// Only this raw adapter can construct the claim after matching the
 /// exclusive exact view. This is not a public or hardware-minted receipt.
 pub(crate) struct FinishEvidence(Receipt);
 impl FinishEvidence {
@@ -38,7 +38,7 @@ impl FinishEvidence {
     }
 }
 
-fn fixture_length(length: u64) -> Result<NonZeroUsize, i32> {
+fn exact_length(length: u64) -> Result<NonZeroUsize, i32> {
     usize::try_from(length)
         .ok()
         .filter(|n| *n <= 4)
@@ -46,11 +46,14 @@ fn fixture_length(length: u64) -> Result<NonZeroUsize, i32> {
         .ok_or(-5)
 }
 
-/// Sequenced ingress for the selected captured fixture. The adapter transports
+/// Sequenced ingress for a selected captured execution. The adapter transports
 /// the original request and handles only the returned command. The two narrow
 /// producer branches verify captured targets and never try borrowed output.
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_request(
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_request"
+)]
+pub(super) extern "C" fn request(
     execution: u64,
     invocation: u64,
     sequence: u32,
@@ -64,16 +67,17 @@ pub extern "C" fn linux_queued_worker_probe_request(
     next: u64,
 ) -> i32 {
     match nr {
-        1 => linux_queued_worker_probe_write(execution, invocation, sequence, a, b, c),
-        40 => linux_queued_worker_probe_sendfile(execution, invocation, sequence, a, b, c, d),
-        _ => super::linux_syscall_sequenced(
-            execution, invocation, sequence, nr, a, b, c, d, e, f, next,
-        ),
+        1 => write(execution, invocation, sequence, a, b, c),
+        40 => resident(execution, invocation, sequence, a, b, c, d),
+        _ => super::sequenced_syscall(execution, invocation, sequence, nr, a, b, c, d, e, f, next),
     }
 }
 
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_write(
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_write"
+)]
+extern "C" fn write(
     execution: u64,
     invocation: u64,
     sequence: u32,
@@ -94,8 +98,8 @@ pub extern "C" fn linux_queued_worker_probe_write(
         if r.files.target(table, fd).map_err(|_| -12)? != Target::CapturedOutput {
             return Err(-12);
         }
-        let queue = r.queue_probe.as_mut().ok_or(-9)?;
-        let length = fixture_length(length)?;
+        let (files, output) = r.capture_parts()?;
+        let length = exact_length(length)?;
         // Reuse the exact continuation gate, not a physical command or an
         // earlier raw Unsupported sentinel.
         let command = slot
@@ -103,7 +107,7 @@ pub extern "C" fn linux_queued_worker_probe_write(
             .as_mut()
             .ok_or(-11)?
             .admit_capture_write(
-                queue.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
+                output.context(files, &mut s.domain, &mut slot.execution),
                 table,
                 Request {
                     invocation,
@@ -126,10 +130,13 @@ pub extern "C" fn linux_queued_worker_probe_write(
     })
 }
 
-/// Test-only NULL-offset exact resident sendfile into the same held lane as
+/// NULL-offset exact resident sendfile into the same held lane as
 /// captured writes. This is in-memory acceptance, not physical delivery.
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_sendfile(
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_sendfile"
+)]
+extern "C" fn resident(
     execution: u64,
     invocation: u64,
     sequence: u32,
@@ -145,7 +152,7 @@ pub extern "C" fn linux_queued_worker_probe_sendfile(
         if offset != 0 {
             return Err(-5);
         }
-        let length = fixture_length(length)?;
+        let length = exact_length(length)?;
         let index = execution_index(s, execution)?;
         let slot = s.executions[index].live_mut()?;
         let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
@@ -155,15 +162,15 @@ pub extern "C" fn linux_queued_worker_probe_sendfile(
         if r.files.target(table, out).map_err(|_| -12)? != Target::CapturedOutput {
             return Err(-12);
         }
-        let queue = r.queue_probe.as_mut().ok_or(-9)?;
+        let (files, output) = r.capture_parts()?;
         slot.continuation
             .as_mut()
             .ok_or(-11)?
             .admit_request(&s.domain, &slot.execution, invocation, Some(sequence))
             .map_err(|_| -12)?;
-        let accepted = queue
-            .capture_resident(
-                &mut r.files,
+        let accepted = output
+            .publish_resident_request(
+                files,
                 table,
                 out,
                 input as u32,
@@ -176,12 +183,15 @@ pub extern "C" fn linux_queued_worker_probe_sendfile(
     })
 }
 
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_start(
-    execution: u64,
-    sequence: u32,
-    action: u64,
-) -> i32 {
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_start"
+)]
+#[cfg_attr(
+    feature = "capture-result-v1",
+    export_name = "linux_capture_result_write_start"
+)]
+pub(super) extern "C" fn copy_start(execution: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
         let index = execution_index(s, execution)?;
         let slot = s.executions[index].live_mut()?;
@@ -195,13 +205,13 @@ pub extern "C" fn linux_queued_worker_probe_start(
             .as_mut()
             .filter(|p| p.execution == execution)
             .ok_or(-4)?;
-        let q = r.queue_probe.as_mut().ok_or(-9)?;
+        let (files, output) = r.capture_parts()?;
         let (pointer, at, length) = slot
             .continuation
             .as_mut()
             .ok_or(-11)?
             .start_raw_capture(
-                q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
+                output.context(files, &mut s.domain, &mut slot.execution),
                 id,
             )
             .map_err(|_| -12)?;
@@ -214,8 +224,15 @@ pub extern "C" fn linux_queued_worker_probe_start(
     })
 }
 
-#[no_mangle]
-pub extern "C" fn linux_queued_worker_probe_finish(
+#[cfg_attr(
+    feature = "queued-worker-probe",
+    export_name = "linux_queued_worker_probe_finish"
+)]
+#[cfg_attr(
+    feature = "capture-result-v1",
+    export_name = "linux_capture_result_write_finish"
+)]
+pub(super) extern "C" fn copy_finish(
     execution: u64,
     sequence: u32,
     action: u64,
@@ -253,13 +270,13 @@ pub extern "C" fn linux_queued_worker_probe_finish(
             _ => return Err(-5),
         };
         let receipt = FinishEvidence(Receipt { complete, access });
-        let q = r.queue_probe.as_mut().ok_or(-9)?;
+        let (files, output) = r.capture_parts()?;
         let finish = slot
             .continuation
             .as_mut()
             .ok_or(-11)?
             .finish_raw_capture(
-                &mut q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
+                &mut output.context(files, &mut s.domain, &mut slot.execution),
                 id,
                 receipt,
             )
@@ -286,13 +303,13 @@ pub(super) fn abandon(s: &mut State, execution: u64) -> Result<bool, i32> {
     let index = execution_index(s, execution)?;
     let slot = s.executions[index].live_mut()?;
     let r = s.sealed.as_mut().ok_or(-9)?;
-    let q = r.queue_probe.as_mut().ok_or(-9)?;
+    let (files, output) = r.capture_parts()?;
     let ended = slot
         .continuation
         .as_mut()
         .ok_or(-11)?
         .cancel_capture(
-            &mut q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
+            &mut output.context(files, &mut s.domain, &mut slot.execution),
             id,
         )
         .map_err(|_| -12)?;

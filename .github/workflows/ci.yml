@@ -364,6 +364,14 @@ jobs:
           grep -q 'capture-v1 cannot be built with synthetic probe features' module/sods/linux/target/capture-v1-conflict.log
           # Pin the trusted local build before exercising the artifact reader.
           SODS_CAPTURE_CANDIDATE_SHA256="$(sha256sum "$SODS_CAPTURE_CANDIDATE_WASM" | cut -d' ' -f1)" SODS_CAPTURE_CANDIDATE_BYTES="$(wc -c < "$SODS_CAPTURE_CANDIDATE_WASM")" node --test module/sods/test/runtime/managed-capture-selection.test.ts
+      - name: Test private non-probe capture startup and owned result
+        if: matrix.part == 'native'
+        env:
+          SODS_CAPTURE_RESULT_WASM: module/sods/linux/target/capture-result-v1/wasm32-unknown-unknown/release/sods_linux.wasm
+          SODS_CURRENT_TRANSLATOR_WASM: module/sods/target/wasm32-unknown-unknown/release/sods.wasm
+        run: |
+          CARGO_TARGET_DIR=module/sods/linux/target/capture-result-v1 cargo build --locked --release --target wasm32-unknown-unknown --features capture-result-v1 --manifest-path module/sods/linux/Cargo.toml
+          SODS_CAPTURE_RESULT_SHA256="$(sha256sum "$SODS_CAPTURE_RESULT_WASM" | cut -d' ' -f1)" SODS_CAPTURE_RESULT_BYTES="$(wc -c < "$SODS_CAPTURE_RESULT_WASM")" node --test --test-name-pattern='non-probe capture result' module/sods/test/runtime/managed-sendfile-abi.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model
