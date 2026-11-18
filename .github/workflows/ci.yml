@@ -350,6 +350,20 @@ jobs:
         run: |
           CARGO_TARGET_DIR=module/sods/linux/target/queued-worker-probe cargo build --locked --target wasm32-unknown-unknown --features queued-worker-probe --manifest-path module/sods/linux/Cargo.toml
           node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture|current-source mixed capture' module/sods/test/runtime/managed-sendfile-abi.test.ts
+      - name: Test the separate Linux capture candidate admission
+        if: matrix.part == 'native'
+        env:
+          SODS_CAPTURE_CANDIDATE_WASM: module/sods/linux/target/capture-v1/wasm32-unknown-unknown/release/sods_linux.wasm
+          SODS_LINUX_WASM: module/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
+          SODS_QUEUED_WORKER_PROBE_WASM: module/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
+        run: |
+          CARGO_TARGET_DIR=module/sods/linux/target/capture-v1 cargo build --locked --release --target wasm32-unknown-unknown --features capture-v1 --manifest-path module/sods/linux/Cargo.toml
+          if CARGO_TARGET_DIR=module/sods/linux/target/capture-v1-conflict cargo check --locked --target wasm32-unknown-unknown --features capture-v1,queued-worker-probe --manifest-path module/sods/linux/Cargo.toml >module/sods/linux/target/capture-v1-conflict.log 2>&1; then
+            echo 'Capture candidate must not compose with probe features' >&2; exit 1
+          fi
+          grep -q 'capture-v1 cannot be built with synthetic probe features' module/sods/linux/target/capture-v1-conflict.log
+          # Pin the trusted local build before exercising the artifact reader.
+          SODS_CAPTURE_CANDIDATE_SHA256="$(sha256sum "$SODS_CAPTURE_CANDIDATE_WASM" | cut -d' ' -f1)" SODS_CAPTURE_CANDIDATE_BYTES="$(wc -c < "$SODS_CAPTURE_CANDIDATE_WASM")" node --test module/sods/test/runtime/managed-capture-selection.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model

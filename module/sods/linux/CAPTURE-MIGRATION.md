@@ -164,6 +164,27 @@ before instantiation. A module can imitate export names; shape is not
 provenance. Missing, wrong-version, ordinary and probe modules must fail before
 any Worker construction, file creation or borrowed-stdio fallback.
 
+Stage the artifact boundary separately from actual capture startup. The
+first `capture-v1` build advertises only **candidate** admission. Before a
+Core exists, the private Node verifier checks the exact byte length and
+SHA-256 against a pin obtained from a trusted build/deployment catalog,
+then checks the candidate wire version, imports and required exports on
+the same owned snapshot. A digest supplied by the byte source itself is
+not provenance. Reject repeated/shadow metadata and ordinary/probe exports;
+never compile the bytes once and instantiate a separately supplied module.
+The initial verification is deliberately not a public constructor. It
+cannot start a Worker, create an output file, or provide a capture-ready
+artifact. The normal `memoryHost` also refuses candidate modules before
+instantiation.
+
+The candidate's Rust selector is a one-way admission latch, not output
+initialization. A wrong selection does not unlock any file or execution
+state. There are no borrowed-stdio, captured startup or diagnostic execution
+creation exports in this artifact stage. A later explicit ready stage needs
+its own contract. It requires the captured table/dispatcher, independent
+host owner retention and real post-selection failures to be exercised before
+exposing a facade.
+
 Reuse validated translation/stack/Worker transport rather than maintaining a
 second bootstrap. A capture-only startup path makes the Rust file descriptions
 select captured output. Select the command handler once as well: the Rust
@@ -173,6 +194,16 @@ the default dispatch scan an optional capture lane on every syscall. Verify
 the unchanged borrowed-stdio path and its generated work separately from the
 explicit profile. Start with the proven Node owned-file behavior; Workerd and
 browser retain their current paths until a replacement is verified there.
+
+At that next boundary, the sequenced Rust syscall entrance must choose the
+captured branch from the exact held output OFD, not from a syscall-number
+table in TypeScript or a fresh lookup of the numeric FD after suspension.
+Reuse `Continuation::admit_request` once per request, before first effect.
+Move capture admission into the Rust dispatcher; return only a typed command
+and exact action to the bridge. Unsupported operations, stale invocation,
+closure and exhausted Q/K/R must not dispatch a physical command or prepare
+the source. Probe-only syscall arbitration should then be removed from tests
+that exercise the real adapter; independent raw rejection witnesses remain.
 
 A product sink session must retain the whole exact Core and native/JS owners
 through an ambiguous state and expose a bounded failure/retirement API. The

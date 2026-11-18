@@ -18,6 +18,8 @@ sendfile-probe = []
 queued-output-probe = ["sendfile-probe"]
 # Stronger explicit Worker and owned-sink witness, never production host IO.
 queued-worker-probe = ["queued-output-probe"]
+# Separate non-probe provenance/ownership candidate; no enabled capture startup.
+capture-v1 = []
 
 [dependencies]
 sods-file-store = { path = "../file-store", default-features = false }

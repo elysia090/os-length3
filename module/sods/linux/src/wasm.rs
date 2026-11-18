@@ -17,6 +17,8 @@ use crate::{
     startup::{Facts, Startup},
 };
 use std::cell::RefCell;
+#[cfg(feature = "capture-v1")]
+mod capture_candidate;
 #[cfg(feature = "queued-worker-probe")]
 mod capture_receiver;
 #[cfg(feature = "queued-worker-probe")]
@@ -172,6 +174,8 @@ struct State {
     state: u32,
     builder: Option<Builder>,
     sealed: Option<Sealed>,
+    #[cfg(feature = "capture-v1")]
+    capture_selected: bool,
     #[cfg(feature = "queued-worker-probe")]
     capture_write: Option<capture_worker::Active>,
     #[cfg(feature = "queued-worker-probe")]
@@ -204,6 +208,8 @@ fn read_code(error: crate::read::Error) -> i32 {
 enum Access {
     Ordinary,
     Read,
+    #[cfg(feature = "capture-v1")]
+    CaptureSelection,
     PathFinish {
         execution: u64,
         action: Token,
@@ -242,6 +248,10 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         s.auxiliary = 0;
         s.endpoint = 0;
         s.state = 0;
+        #[cfg(feature = "capture-v1")]
+        if !s.capture_selected && access != Access::CaptureSelection {
+            return -12;
+        }
         #[cfg(feature = "queued-worker-probe")]
         if s.capture_receiver.blocks(access) {
             return -4;
@@ -463,6 +473,8 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             state: 0,
             builder: None,
             sealed: None,
+            #[cfg(feature = "capture-v1")]
+            capture_selected: false,
             #[cfg(feature = "queued-worker-probe")]
             capture_write: None,
             #[cfg(feature = "queued-worker-probe")]
@@ -900,6 +912,7 @@ fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
         Err(-11)
     }
 }
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
     with_state(false, |s| {
@@ -2348,21 +2361,24 @@ pub extern "C" fn linux_startup_input(length: u32) -> i32 {
         })
     })
 }
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_startup_begin() -> i32 {
     startup_begin(StartupTable::Empty)
 }
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_startup_begin_stdio() -> i32 {
     startup_begin(StartupTable::Physical)
 }
 /// Actual captured OFD installation only in the already rejected test artifact.
 /// This does not select a Worker, guest output, or a host receiver.
-#[cfg(feature = "queued-output-probe")]
+#[cfg(all(feature = "queued-output-probe", not(feature = "capture-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_queued_output_probe_startup() -> i32 {
     startup_begin(StartupTable::CaptureProbe)
 }
+#[cfg(not(feature = "capture-v1"))]
 #[derive(Clone, Copy)]
 enum StartupTable {
     Empty,
@@ -2370,6 +2386,7 @@ enum StartupTable {
     #[cfg(feature = "queued-output-probe")]
     CaptureProbe,
 }
+#[cfg(not(feature = "capture-v1"))]
 fn startup_begin(table: StartupTable) -> i32 {
     with_state(false, |s| {
         let wire = &s.startup_input;

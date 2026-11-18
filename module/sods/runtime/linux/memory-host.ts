@@ -255,6 +255,9 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   if (names.has('linux_sendfile_probe') || names.has('linux_sendfile_probe_access_ended')) {
     throw new Error('Synthetic sendfile probe is not a production Linux admission module');
   }
+  if (names.has('linux_capture_candidate')) {
+    throw new Error('Linux capture candidate is not an ordinary Linux admission module');
+  }
   if (WebAssembly.Module.imports(module).length || names.get('memory') !== 'memory' || required.some(name => names.get(name) !== 'function')) {
     throw new Error('Unsupported Linux admission module');
   }
