@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {existsSync} from 'node:fs';
-import {OWED, UNDER_RICEBOX, UNITS, check, reaches, unitOf} from './units.ts';
+import {OWED, UNDER_RICEBOX, UNITS, check, entryViolations, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
   assert.deepEqual(check().homeless, []);
@@ -58,6 +58,26 @@ test('muk, prompt and sods are taken from through their entries alone: muk and p
   // (what reads an image's layers is the distribution's, not the machine's: muk holds no TypeScript that runs)
   assert.equal(unitOf('module/ricebox/distribution/mount.ts')?.name, 'ricebox');
   assert.equal(unitOf('module/sods/src/cache.rs')?.name, 'sods');
+});
+
+test('entry checks follow the owner, even outside module/ and under another unit', () => {
+  for (const prefix of ['module', 'foundation']) {
+    const parent = UNITS.find(unit => unit.name === 'ricebox')!;
+    const sods = UNITS.find(unit => unit.name === 'sods')!;
+    const units = [
+      {...parent, holds: [prefix]},
+      {...sods, holds: [`${prefix}/sods`], entries: [`${prefix}/sods/api.ts`]},
+    ];
+    assert.deepEqual(entryViolations([
+      [`${prefix}/caller.ts`, "export {internal} from './sods/private.ts';"],
+      [`${prefix}/consumer.ts`, "import('./sods/api.ts');"],
+      [`${prefix}/sods/api.ts`, "export {internal} from './private.ts';"],
+      ['scripts/check.ts', `import('../${prefix}/sods/private.ts');`],
+    ], units), [
+      [`${prefix}/caller.ts`, `${prefix}/sods/private.ts`],
+      ['scripts/check.ts', `${prefix}/sods/private.ts`],
+    ]);
+  }
 });
 
 test('the table is one: each name once, each path held by one unit, each unit taken from is in it', () => {

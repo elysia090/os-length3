@@ -96,9 +96,9 @@ export const OWED: [string, string, string][] = [
 ];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
-export function unitOf(rel: string): Unit | null {
+export function unitOf(rel: string, units: readonly Unit[] = UNITS): Unit | null {
   let best: Unit | null = null, length = -1;
-  for (const u of UNITS) for (const h of u.holds) {
+  for (const u of units) for (const h of u.holds) {
     if ((rel === h || rel.startsWith(h + '/')) && h.length > length) best = u, length = h.length;
   }
   return best;
@@ -157,19 +157,24 @@ function everyTs(dir = ROOT): string[] {
  * taken from through them alone by everything outside its own folder, tests and scripts included; its own files and
  * its own tests reach where they like.
  */
-export function reaches(): [string, string][] {
+export function entryViolations(
+  sources: Iterable<readonly [string, string]>,
+  units: readonly Unit[] = UNITS,
+): [string, string][] {
   const found: [string, string][] = [];
-  const guarded = UNITS.filter((u) => u.entries).map((u) => ({unit: u, folders: u.holds.filter((h) => h.startsWith('module/'))}));
-  for (const rel of everyTs()) {
-    for (const m of readFileSync(join(ROOT, rel), 'utf8').matchAll(IMPORT)) {
-      const target = relative(ROOT, resolve(ROOT, dirname(rel), m[1] ?? m[2] ?? '')).split(sep).join('/');
-      for (const {unit, folders} of guarded) {
-        const inside = (path: string) => folders.some((f) => path.startsWith(f + '/'));
-        if (inside(target) && !inside(rel) && !unit.entries!.includes(target)) found.push([rel, target]);
-      }
+  for (const [file, source] of sources) {
+    const from = unitOf(file, units);
+    for (const m of source.matchAll(IMPORT)) {
+      const target = relative(ROOT, resolve(ROOT, dirname(file), m[1] ?? m[2] ?? '')).split(sep).join('/');
+      const owner = unitOf(target, units);
+      if (owner?.entries && owner !== from && !owner.entries.includes(target)) found.push([file, target]);
     }
   }
   return found;
+}
+
+export function reaches(): [string, string][] {
+  return entryViolations(everyTs().map(file => [file, readFileSync(join(ROOT, file), 'utf8')] as const));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
