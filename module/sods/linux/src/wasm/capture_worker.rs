@@ -38,6 +38,14 @@ impl FinishEvidence {
     }
 }
 
+fn fixture_length(length: u64) -> Result<NonZeroUsize, i32> {
+    usize::try_from(length)
+        .ok()
+        .filter(|n| *n <= 4)
+        .and_then(NonZeroUsize::new)
+        .ok_or(-5)
+}
+
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_write(
     execution: u64,
@@ -61,34 +69,14 @@ pub extern "C" fn linux_queued_worker_probe_write(
             return Err(-12);
         }
         let queue = r.queue_probe.as_mut().ok_or(-9)?;
-        let length = usize::try_from(length)
-            .ok()
-            .filter(|n| *n <= 4)
-            .and_then(NonZeroUsize::new)
-            .ok_or(-5)?;
-        // Reuse the existing exact sequence/continuation preflight and the
-        // tagged nonphysical branch. A different target never reaches it.
-        let admitted = slot
-            .continuation
+        let length = fixture_length(length)?;
+        // Reuse the exact continuation gate, not a physical command or an
+        // earlier raw Unsupported sentinel.
+        slot.continuation
             .as_mut()
             .ok_or(-11)?
-            .enter_sequenced(
-                &mut r.files,
-                table,
-                None,
-                &mut r.reads,
-                &mut s.domain,
-                &mut slot.execution,
-                invocation,
-                sequence,
-                1,
-                [u64::from(fd), at, length.get() as u64, 0, 0, 0],
-                0,
-            )
+            .admit_request(&s.domain, &slot.execution, invocation, Some(sequence))
             .map_err(|_| -12)?;
-        if admitted != Step::Unsupported(1) {
-            return Err(-12);
-        }
         let call = WriteCall::admit(
             &mut queue.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
             table,
@@ -111,6 +99,56 @@ pub extern "C" fn linux_queued_worker_probe_write(
         s.auxiliary = at;
         s.length = length.get() as u64;
         Ok(action.sequence())
+    })
+}
+
+/// Test-only NULL-offset exact resident sendfile into the same held lane as
+/// captured writes. This is in-memory acceptance, not physical delivery.
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sendfile(
+    execution: u64,
+    invocation: u64,
+    sequence: u32,
+    out: u64,
+    input: u64,
+    offset: u64,
+    length: u64,
+) -> i32 {
+    with_state(false, |s| {
+        if s.capture_write.is_some() {
+            return Err(-4);
+        }
+        if offset != 0 {
+            return Err(-5);
+        }
+        let length = fixture_length(length)?;
+        let index = execution_index(s, execution)?;
+        let slot = s.executions[index].live_mut()?;
+        let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let table = slot.resources.table()?;
+        let out = out as u32;
+        if r.files.target(table, out).map_err(|_| -12)? != Target::CapturedOutput {
+            return Err(-12);
+        }
+        let queue = r.queue_probe.as_mut().ok_or(-9)?;
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .admit_request(&s.domain, &slot.execution, invocation, Some(sequence))
+            .map_err(|_| -12)?;
+        let accepted = queue
+            .capture_resident(
+                &mut r.files,
+                table,
+                out,
+                input as u32,
+                length,
+                &mut slot.execution,
+                invocation,
+            )
+            .map_err(|_| -12)?;
+        Ok(step(s, Step::Return(accepted.get() as i64)))
     })
 }
 

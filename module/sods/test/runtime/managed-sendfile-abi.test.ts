@@ -46,7 +46,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   for (const name of ['init', 'publish', 'peek', 'discard', 'startup']) {
     assert.equal(Object.hasOwn(e, `linux_queued_output_probe_${name}`), queued);
   }
-  for (const name of ['write', 'start', 'finish']) {
+  for (const name of ['write', 'start', 'finish', 'sendfile']) {
     assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_${name}`), workerQueue);
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
@@ -58,6 +58,10 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (lazyData) {
     put('linux_name', bytes('data'));
     assert.equal(call('linux_tree_lazy', root, 0o444, 7, 0), 0);
+  }
+  if (workerQueue) {
+    put('linux_name', bytes('source')); put('linux_input', bytes('BD'));
+    assert.equal(call('linux_tree_file', root, 0o444), 0);
   }
   assert.equal(call('linux_files_seal', 16), 0);
 
@@ -598,6 +602,55 @@ test('strong capture probe retains exclusive access after full count or only one
   assert.deepEqual([r.state(), r.result()], [4, 0n]);
   assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), 0);
   assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
+});
+
+test('strong capture probe resident sendfile rejects unsupported shapes and preserves the source on pressure', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, true, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const physical = r.live(), name = 'linux_queued_worker_probe_sendfile';
+  assert.ok(r.call(name, physical.id, physical.invocation, 1, 1n, 3n, 0n, 1n) < 0);
+  assert.equal(r.request(physical, 1n, [1n, 32n, 1n, 0n, 0n, 0n]).tag, 263);
+  assert.equal(r.call('linux_syscall_abandon', physical.id), 0);
+  const owner = r.live(true), id = owner.id, fd = r.open(owner, '/source');
+  const send = (sequence: number, length: bigint, offset = 0n) =>
+    r.call(name, id, owner.invocation, sequence, 1n, fd, offset, length);
+  for (const [sequence, n, offset] of [[3, 1n, 0n], [2, 1n, 1n], [2, 0n, 0n], [2, 5n, 0n]] as const) {
+    assert.ok(send(sequence, n, offset) < 0);
+  }
+  assert.ok(send(2, 3n) < 0, 'short resident data cannot become a partial success');
+  assert.ok(send(2, 1n) < 0, 'failed admitted sequence may not replay');
+  assert.deepEqual(r.remaining(owner, fd), bytes('BD'));
+  assert.equal(r.call('linux_queued_worker_probe_write', id, owner.invocation, 3, 1n, 32n, 4n), 0);
+  const action = r.result();
+  assert.equal(r.call('linux_queued_worker_probe_start', id, 3, action), 0);
+  new Uint8Array((r.e.memory as WebAssembly.Memory).buffer, Number(r.result()), 4).set(bytes('fill'));
+  assert.equal(r.call('linux_queued_worker_probe_finish', id, 3, action, 0, 4), 0);
+  assert.ok(send(4, 1n) < 0, 'Q is full even with spare entry and pin slots');
+  assert.deepEqual(r.remaining(owner, fd), bytes('BD'));
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), 0);
+  assert.equal(send(5, 1n), 0);
+  assert.deepEqual([r.state(), r.result()], [0, 1n]);
+  assert.deepEqual(r.remaining(owner, fd), bytes('D'));
+  assert.ok(send(6, 1n) < 0, 'R is full even with spare Q/K');
+  assert.deepEqual(r.remaining(owner, fd), bytes('D'));
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.deepEqual([r.length(), r.result()], [1n, 66n]);
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), 0);
+  assert.equal(send(7, 1n), 0);
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.deepEqual([r.length(), r.result()], [1n, 68n]);
+  assert.deepEqual(r.remaining(owner, fd), bytes(''));
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), 0);
+  assert.ok(send(8, 1n) < 0, 'EOF rejects even with Q/K/R available');
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
+
+  const lazy = r.live(true), lazyFd = r.open(lazy, '/data');
+  assert.ok(r.call(name, lazy.id, lazy.invocation, 2, 1n, lazyFd, 0n, 1n) < 0);
+  assert.equal(r.call('linux_managed_read_begin', lazy.id, Number(lazyFd), 0n, 1n), 0);
+  const read = r.result();
+  assert.equal(r.call('linux_read_load_start', lazy.id, read), 0);
+  assert.deepEqual([r.result(), r.length()], [7n, 1n], 'resident-only refusal never dispatched this lazy attempt');
+  assert.equal(r.call('linux_read_load_finish', lazy.id, read, 1, 0), 0);
+  assert.equal(r.call('linux_read_retire', read), 0);
   assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
 });
 

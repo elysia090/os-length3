@@ -156,6 +156,9 @@ impl<T> Arena<T> {
             generation: 1,
         })
     }
+    fn has_room(&self) -> bool {
+        self.free.is_some() || self.cells.len() < self.limit
+    }
     fn get(&self, key: Key) -> Option<&T> {
         let cell = self.cells.get(key.index)?;
         match &cell.state {
@@ -393,6 +396,36 @@ impl Queue {
         self.link(reservation, Chunk::Pinned(pinned));
         commit.commit();
         Ok(length)
+    }
+    fn accept_resident_prefix(
+        &mut self,
+        files: &mut Files,
+        reservation: Reservation,
+        source: ReadHold,
+        length: NonZeroUsize,
+    ) -> Result<NonZeroUsize, Error> {
+        let pin = match self.pin_prefix(files, &source, length) {
+            Ok(pin) => pin,
+            Err(error) => {
+                self.cancel(reservation).expect("same private reservation");
+                files.abort_read(source);
+                return Err(error);
+            }
+        };
+        match self.publish(files, reservation, pin, source) {
+            Ok(accepted) => Ok(accepted),
+            Err(Rejected {
+                error,
+                reservation,
+                pin,
+                source,
+            }) => {
+                self.cancel(reservation).expect("same private reservation");
+                self.release(pin).expect("same private prepared pin");
+                files.abort_read(source);
+                Err(error)
+            }
+        }
     }
     /// Snapshots a stable loan, after the caller's execution/cancel checks.
     /// The exact reservation is returned on failure, without taking input
@@ -757,6 +790,40 @@ impl Writer<'_> {
     ) -> Result<NonZeroUsize, Rejected> {
         self.queue.publish(self.files, reservation, pin, source)
     }
+    /// Restricted exact-count resident capture, with all pressure checked
+    /// before touching the source. No host callback can intervene here.
+    fn publish_resident(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        length: NonZeroUsize,
+    ) -> Result<NonZeroUsize, Error> {
+        let reservation = self.queue.reserve(length)?;
+        if !self.queue.pins.has_room() {
+            self.queue
+                .cancel(reservation)
+                .expect("same private reservation");
+            return Err(Error::Capacity);
+        }
+        let source = match self.files.reserve_read(table, fd, length.get() as u64) {
+            Ok(source) => source,
+            Err(error) => {
+                self.queue
+                    .cancel(reservation)
+                    .expect("same private reservation");
+                return Err(error.into());
+            }
+        };
+        if source.length() != length.get() {
+            self.files.abort_read(source);
+            self.queue
+                .cancel(reservation)
+                .expect("same private reservation");
+            return Err(Error::Length);
+        }
+        self.queue
+            .accept_resident_prefix(self.files, reservation, source, length)
+    }
     pub(super) fn publish_copy(
         &mut self,
         reservation: Reservation,
@@ -841,7 +908,11 @@ impl QueueProbe {
         let mut registry = LaneRegistry::new(files, 2)?;
         let limits = || Limits {
             pins: 1,
-            entries: 1,
+            entries: if cfg!(feature = "queued-worker-probe") {
+                3
+            } else {
+                1
+            },
             bytes: 4,
         };
         let (a, read_a) = registry.destination(limits())?;
@@ -871,6 +942,34 @@ impl QueueProbe {
             execution,
         }
     }
+    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    pub(crate) fn capture_resident(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        out: u32,
+        input: u32,
+        length: NonZeroUsize,
+        execution: &mut crate::execution::Execution,
+        invocation: crate::execution::Invocation,
+    ) -> Result<NonZeroUsize, QueueProbeError> {
+        let hold = files.hold_output(table, out).map_err(Error::Source)?;
+        if execution.hold_call(invocation).is_err() {
+            files.release_output(hold).expect("new exact held output");
+            return Err(QueueProbeError::Owner);
+        }
+        // The held invocation is live at this boundary. The following
+        // synchronous preparation/commit does not reenter or touch the host.
+        let outcome = self
+            .registry
+            .held_writer(files, &hold)
+            .and_then(|mut writer| writer.publish_resident(table, input, length));
+        files.release_output(hold).expect("retained exact output");
+        execution
+            .finish_call(invocation)
+            .expect("same synchronous call");
+        outcome.map_err(Into::into)
+    }
     pub(crate) fn publish(
         &mut self,
         files: &mut Files,
@@ -898,28 +997,9 @@ impl QueueProbe {
                 return Err(error.into());
             }
         };
-        let pin = match queue.pin_prefix(files, &source, length) {
-            Ok(pin) => pin,
-            Err(error) => {
-                queue.cancel(reservation).expect("same private reservation");
-                files.abort_read(source);
-                return Err(error.into());
-            }
-        };
-        match queue.publish(files, reservation, pin, source) {
-            Ok(accepted) => Ok(accepted.get()),
-            Err(Rejected {
-                error,
-                reservation,
-                pin,
-                source,
-            }) => {
-                queue.cancel(reservation).expect("same private reservation");
-                queue.release(pin).expect("same private prepared pin");
-                files.abort_read(source);
-                Err(error.into())
-            }
-        }
+        Ok(queue
+            .accept_resident_prefix(files, reservation, source, length)?
+            .get())
     }
     pub(crate) fn peek(
         &mut self,
@@ -1983,6 +2063,82 @@ mod tests {
         assert!(reader.discard_front());
         assert_eq!(reader.front_bytes(), Ok(Some(&b"2"[..])));
         root.files.let_go(table).unwrap();
+    }
+
+    #[test]
+    fn resident_sendfile_preflights_q_k_r_and_keeps_held_destination_after_reuse() {
+        let (mut files, _, inode, old, _) = files(502);
+        files.let_go(old).unwrap();
+        let mut root = Root::new(files, 1).ok().unwrap();
+        let (producer, reader) = root
+            .destination(Limits {
+                bytes: 4,
+                entries: 3,
+                pins: 1,
+            })
+            .unwrap();
+        let table = root.queued_stdio(1, [&producer, &producer], 8).unwrap();
+        let input = root.files.open(&table, inode, false).unwrap();
+        let input_alias = root.files.dup(&table, input, 4, false).unwrap();
+        let out = root.files.hold_output(&table, 1).unwrap();
+        root.files.close(&table, 1).unwrap();
+        assert_eq!(root.files.dup(&table, 0, 1, false), Ok(1));
+
+        // Q-full and separately K-full with space in the other budgets.
+        for chunks in [&[&b"1234"[..]][..], &[&b"A"[..], &b"B"[..], &b"C"[..]][..]] {
+            let mut writer = root.held_writer(&out).unwrap();
+            for &bytes in chunks {
+                let reservation = writer.reserve(n(bytes.len())).unwrap();
+                writer.publish_copy(reservation, bytes).unwrap();
+            }
+            let next = root.files.next_read_reservation;
+            assert_eq!(
+                root.held_writer(&out)
+                    .unwrap()
+                    .publish_resident(&table, input, n(1)),
+                Err(Error::Full),
+            );
+            assert_eq!(root.files.next_read_reservation, next);
+            assert_eq!(root.files.offset(&table, input_alias), Ok((0, 0)));
+            let mut consumer = root.reader(&reader).unwrap();
+            for _ in chunks {
+                assert!(consumer.discard_front());
+            }
+        }
+
+        let original = root.files.reserve_read(&table, input, 1).unwrap();
+        let address = root.files.read_bytes(&original).as_ptr();
+        root.files.abort_read(original);
+        assert_eq!(
+            root.held_writer(&out)
+                .unwrap()
+                .publish_resident(&table, input, n(1)),
+            Ok(n(1)),
+        );
+        assert_eq!(root.files.offset(&table, input_alias), Ok((1, 1)));
+        let next = root.files.next_read_reservation;
+        assert_eq!(
+            root.held_writer(&out)
+                .unwrap()
+                .publish_resident(&table, input, n(1)),
+            Err(Error::Capacity),
+        );
+        assert_eq!(
+            root.files.next_read_reservation, next,
+            "R preflight rejects before File preparation"
+        );
+        assert_eq!(root.files.offset(&table, input_alias), Ok((1, 1)));
+        root.files.let_go(table).unwrap();
+        root.files.release_output(out).unwrap();
+        let mut consumer = root.reader(&reader).unwrap();
+        let accepted = consumer.front_bytes().unwrap().unwrap();
+        assert_eq!(accepted, b"b");
+        assert_eq!(
+            accepted.as_ptr(),
+            address,
+            "resident accepted from canonical storage"
+        );
+        assert!(consumer.discard_front());
     }
 
     #[test]

@@ -236,3 +236,13 @@ and Rust resource retirement. The stop variants distinguish before-copy,
 after-acceptance-before-reply, and an unresolved guarded-access observation.
 This is a one-write transport witness, not a current-translator, production,
 sendfile, or external sink success path.
+
+The stronger fixture also admits a separate exact resident sendfile operation
+into the same held lane. It uses the same sequenced request admission without
+dispatching a physical capability. With NULL offset and a bounded nonempty
+count, it reserves Q/K and checks pin room before touching the source. It
+links a canonical source pin and commits the input OFD cursor once, without
+a source copy, raw view, or new Domain action. Short tail, EOF, lazy sources
+and pressure fail without publishing or moving the cursor. The stronger
+artifact has three entries, one pin and four logical bytes per lane. The
+older diagnostic limits and the ordinary guest sendfile route are unchanged.

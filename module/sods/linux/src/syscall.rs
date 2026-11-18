@@ -329,20 +329,16 @@ impl Continuation {
             next,
         )
     }
-    fn enter_request(
+    /// Shared sequenced admission, including explicit diagnostic producers.
+    /// A successful admission consumes its sequence even if preparation fails.
+    #[inline]
+    pub(crate) fn admit_request(
         &mut self,
-        files: &mut Files,
-        table: &Table,
-        namespace: Option<(&Ticket, &Credentials)>,
-        reads: &mut Reads,
-        domain: &mut Domain,
-        execution: &mut Execution,
+        domain: &Domain,
+        execution: &Execution,
         invocation: Invocation,
         sequence: Option<u32>,
-        nr: u64,
-        args: [u64; 6],
-        next: u64,
-    ) -> Result<Step, Error> {
+    ) -> Result<(), Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         execution.syscall_allowed(invocation)?;
@@ -364,6 +360,23 @@ impl Continuation {
             }
             self.last_sequence = sequence;
         }
+        Ok(())
+    }
+    fn enter_request(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        namespace: Option<(&Ticket, &Credentials)>,
+        reads: &mut Reads,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        invocation: Invocation,
+        sequence: Option<u32>,
+        nr: u64,
+        args: [u64; 6],
+        next: u64,
+    ) -> Result<Step, Error> {
+        self.admit_request(domain, execution, invocation, sequence)?;
         if nr == 40 {
             let Some(sequence) = sequence else {
                 return Ok(Step::Unsupported(40));
