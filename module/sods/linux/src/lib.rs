@@ -1,8 +1,8 @@
 //! Linux execution-domain authority, separate from translation and file payloads.
 //!
 //! Private memory/image admission and sealed resident/lazy read ABI.
-//! A private fixed-memory read/exit guest diagnostic is connected; the normal
-//! Node/Worker Linux runtime entry is not migrated.
+//! An opt-in fixed-memory read-only caller/stdio profile is connected; the
+//! default Node/Worker Linux runtime entry is not migrated.
 //! The legacy TypeScript runtime is not replaced by this crate.
 mod effect;
 

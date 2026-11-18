@@ -34,6 +34,8 @@ interface Admission extends WebAssembly.Exports {
   linux_run_start(id: bigint): number;
   linux_run_receipt(id: bigint, invocation: bigint, outcome: number, next: bigint): number;
   linux_syscall(id: bigint, invocation: bigint, nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): number;
+  linux_syscall_path_start(id: bigint, action: bigint): number;
+  linux_syscall_path_finish(id: bigint, action: bigint, actual: bigint, outcome: number): number;
   linux_syscall_complete(id: bigint): number;
   linux_syscall_resumed(id: bigint, completion: number, success: number): number;
   linux_syscall_abandon(id: bigint): number;
@@ -86,7 +88,7 @@ interface Admission extends WebAssembly.Exports {
 // The importing realm's intrinsics must be trusted at module initialization.
 const Bytes = Uint8Array, Memory = WebAssembly.Memory, apply = Reflect.apply, freeze = Object.freeze;
 const numeric = Number, wide = BigInt, unsigned = BigInt.asUintN;
-const setBytes = Uint8Array.prototype.set;
+const setBytes = Uint8Array.prototype.set, findByte = Uint8Array.prototype.indexOf;
 const Instance = WebAssembly.Instance, Global = WebAssembly.Global;
 const globalValue = Object.getOwnPropertyDescriptor(WebAssembly.Global.prototype, 'value')!.set!;
 const growMemory = WebAssembly.Memory.prototype.grow;
@@ -126,7 +128,7 @@ export interface PathExecutionOptions {
   signal?: AbortSignal;
 }
 const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
-  'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
+  'linux_syscall_path_start', 'linux_syscall_path_finish', 'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
@@ -215,7 +217,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new WebAssembly.Instance(module).exports as Admission;
-  if (core.linux_abi_version() !== 2) throw new Error('Unsupported Linux admission ABI');
+  if (core.linux_abi_version() !== 3) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   const objects = new Map<MemoryBinding, {id: bigint; memory: WebAssembly.Memory}>();
   const get = (binding: MemoryBinding): {id: bigint; memory: WebAssembly.Memory} => {
@@ -404,6 +406,35 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     if (observed.kind === 'unknown') throw observed.error;
     return completed;
   };
+  const capturePath = (w: WorkerState, c: ReturnType<typeof command>): ReturnType<typeof command> => {
+    const pointer = numeric(result(core.linux_syscall_path_start(w.id, c.value)));
+    const limit = numeric(core.linux_result_length());
+    let actual: number;
+    try {
+      // Rust admitted the binding/span and owns bounded initialized scratch.
+      // NUL scanning only reduces physical copying; Rust validates the actual
+      // prefix and decides all pathname/dirfd/flag/permission/errno semantics.
+      const guestBuffer = bufferOf(w.memory), offset = numeric(c.target);
+      const source = new Bytes(guestBuffer, offset, limit);
+      const nul = apply(findByte, source, [0]);
+      actual = nul < 0 ? limit : nul + 1;
+      // TypedArray.subarray is NOT callback-free: even a captured method asks
+      // SpeciesConstructor. Use only captured built-in constructors on buffers.
+      const prefix = new Bytes(guestBuffer, offset, actual);
+      const target = new Bytes(bufferOf(core.memory), pointer, actual);
+      apply(setBytes, target, [prefix]);
+      // No view escapes, callback/await/core call interleaves these intrinsics.
+    } catch (error) {
+      // The captured synchronous interval has unwound: both views/accesses are
+      // ended, but scratch content is invalid and no FD has been published.
+      // This does not certify guest Worker exit or reusable execution memory.
+      try { checked(core.linux_syscall_path_finish(w.id, c.value, 0n, 1)); }
+      catch (receipt) { throw new AggregateError([error, receipt], 'Path capture and failed receipt'); }
+      throw error;
+    }
+    // Do not replay a failed/trapped finish: it may already have published an FD.
+    return command(core.linux_syscall_path_finish(w.id, c.value, wide(actual), 0));
+  };
   const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> => {
       const w = workerOf(handle);
       if (w.entry !== undefined && entry !== w.entry) throw new Error('Entry differs from Rust committed startup');
@@ -420,6 +451,11 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
             if ((c.tag & 255) === 7) {
               const completed = transferStream(w, c);
               if (completed.tag !== 0) throw new Error(`Worker stream did not return: ${completed.tag}`);
+              return {kind: 'return', value: completed.value};
+            }
+            if (c.tag === 8) {
+              const completed = capturePath(w, c);
+              if (completed.tag !== 0) throw new Error(`Path capture did not return: ${completed.tag}`);
               return {kind: 'return', value: completed.value};
             }
             if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);

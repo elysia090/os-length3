@@ -14,7 +14,9 @@ unchanged. The managed profile is one paused guest, fixed private engine-memory
 ownership (physically shared with its Node Worker), one syscall at a time, sealed
 prepared regular files/directories and mode-only credentials. Its physical
 linear-memory bounds do not represent guest virtual mapping holes/permissions.
-NULL is rejected; this does not establish arbitrary Linux EFAULT equivalence.
+A NULL pathname pointer is rejected; positive regular/stream I/O still uses
+physical linear offsets, so this does not establish arbitrary Linux EFAULT
+equivalence.
 Logical guest mapping authority is a separate required cutover before claiming
 ordinary process-memory compatibility.
 
@@ -27,6 +29,8 @@ ordinary process-memory compatibility.
 - The host owns actual Memory/Worker objects and short intrinsic view/copy work.
   It does not choose an inode, resolve a path, authorize flags or return its own
   Linux errno. The existing Node stdio adapter still owns physical stream calls.
+  These are reviewed private-host contracts, not a JavaScript compartment or
+  sandbox against arbitrary same-realm host manipulation or false receipts.
 
 ## Admitted syscall subset
 
@@ -65,7 +69,11 @@ from allocation/domain-capacity failure before FD publication.
 4. A one-shot start grants the host a core scratch view. Captured intrinsic
    indexOf/set may find the first NUL and copy only that prefix. This is physical
    marshaling, not path semantics. No callback, await or core call occurs between
-   fresh view construction and the copy. No view escapes.
+   fresh view construction and the copy. No view escapes. Capturing a
+   TypedArray.subarray method is insufficient: it still invokes SpeciesConstructor
+   and may expose the buffer to a callback. Use fresh captured built-in constructors
+   on held buffers, not species-sensitive view creation. See the
+   [ECMAScript TypedArray specification](https://tc39.es/ecma262/2024/multipage/indexed-collections.html).
 5. A matching receipt reports actual copied count and independent stopped/unknown
    evidence. Rust validates count against the admitted span and inspects only
    scratch[..actual], never stale tail. An actual count of zero (even for an empty path), or a short capture without
@@ -97,8 +105,11 @@ capture finish are allowed. Existing read receipt/query/cancel/retire and execut
 retirement exports are not exceptions to this guard. Generic action exports cannot
 start, finish or retire a path-owned token.
 
-Unknown capture retains scratch, source/binding span, base holds and the pending
-invocation. It is not retried. Cancellation closes admission but cannot manufacture
+A capture receipt always certifies that the short core scratch view no longer
+escapes or remains in use. Unknown still means physical guest-span completion or
+copy content is uncertain: it retains scratch, source/binding span, base holds and
+the pending invocation. It is not retried. Unknown cannot be used while an
+external writer still retains the core scratch view. Cancellation closes admission but cannot manufacture
 ended access. A later valid stopped receipt may settle the same operation; after
 cancellation or execution fault it performs cleanup without publishing an FD.
 Ready cancellation can release an unstarted reservation. A trapped/incomplete
@@ -107,7 +118,11 @@ finish preserves ownership rather than claiming rollback.
 FD publication and delivery of the return value are different events. Lost Worker
 response must not undo or replay an open: the committed descriptor remains owned
 by that execution's table until existing observed-stop retirement closes it.
-A host termination request is not physical exit evidence.
+A host termination request is not physical exit evidence. Same-token finish
+replay is rejected by Rust. Distinct guest syscall entries within one invocation
+are distinct operations: preventing transport replay of the original request also
+uses the existing Node sequence/stop bridge, not a claim that Continuation can
+recognize arbitrary repeated semantic calls.
 
 Close consumes only the guest slot. A read keeps its exact OFD independently of
 close/reuse, so offset/result settlement cannot retarget a newer slot. Borrowed
@@ -165,3 +180,50 @@ speedup or a specification lower bound.
 No production TS path/permission/OFD authority is removed by this opt-in slice.
 Its new TS code must be physical transport only. Default caller migration and
 removal of that default TS authority remain explicit later gates.
+
+
+## Local work and instruction checkpoint
+
+The actual quiet ELF probe records **27 guest requests**: nine openat (one NULL
+rejected before capture), ten read, seven close and one exit. For its managed
+`/bin/program.elf`/parent/basename inputs, eight captured NUL prefixes total
+**103 logical bytes**; positive canonical reads total **14 bytes**. These counts
+come from the observed request path and known input strings, not a memory-bus
+meter. Startup program/translator/image transfers are separate. The retained
+88-byte shared syscall slot is metadata, not a fresh 88-byte payload copy for
+each request. An open uses three state-changing Rust exports (entry, capture
+start, finish) plus scalar-result getters; those crossings are current ABI cost,
+not an inevitable syscall or Rust floor.
+
+Bounded static disassembly of the same Rust source with toolchain 1.100.0:
+
+| Function | Wasm debug body bytes / operators | Native Rust debug body bytes / instructions |
+| --- | ---: | ---: |
+| path_start | 1,116 / 458 | 1,166 / 222 |
+| path_finish | 2,667 / 1,056 | 2,845 / 496 |
+| prepare_open_route | 678 / 286 | 800 / 142 |
+| open_read | 1,653 / 697 | 2,319 / 389 |
+
+These are unoptimized body footprints, not executed instruction counts. Called
+bodies, dynamic branches and Wasm ABI-guard work are not included; Wasm operators
+and native instructions are different units. The native guest's two-byte SYSCALL
+also delegates work into its host kernel, so it is not comparable to the whole
+Rust path/OFD implementation as a lower bound.
+
+One five-round rotated whole-process trial after OS-cache warmup measured native
+1.75 ms, managed debug 545.82 ms and managed release 493.04 ms medians. Each managed
+trial includes fresh Node, translation/image construction, Worker startup, guest
+requests and observed stop; each native trial includes spawn/exec. Native and
+managed path spellings/filesystem authorities also differ. Samples overlap and
+have uncontrolled host load. This is not a steady-syscall comparison, significance
+claim, language speedup or specification lower-bound proof. A separate instrumented
+prepared-Worker trace has a different measurement window and must not be subtracted
+from those totals. A fixed probe's output could itself be specialized away.
+
+The release Linux artifact is 239,569 bytes versus the 6,084,936-byte debug build;
+neither is a browser distribution asset. Both pass the 58-case focused real-guest/
+ABI/lifetime group with the same current translator. Debug full runtime passes
+792 cases with four pre-existing fixture skips; all 167 Rust tests pass. Package,
+format and dependency-boundary checks also pass locally. Full strict TypeScript,
+canonical musl corpus and new-head browser/CI gates still require CI, not inference
+from these local checks. No generated ELF, Wasm or disassembly is a source commit.

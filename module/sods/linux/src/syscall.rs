@@ -1,15 +1,17 @@
-//! Private initial read/exit continuation, NOT the complete Linux syscall ABI.
-//! Preopened regular read-only files only: access flags, signals, mappings and
-//! multi-thread exit are not implemented here. Requested-range clipping follows
-//! the current TS file caller; it is not a claim of normative Linux equivalence.
+//! Private fixed-memory read-only openat/read/close/stdio/exit continuation,
+//! NOT the complete Linux syscall ABI. Prepared regular files/directories only;
+//! unsupported access/status flags, signals, mappings and multi-thread exit stay
+//! outside the profile. Physical-range clipping is not virtual mapping authority
+//! or a claim of normative Linux pointer-fault equivalence.
 //! TS transports commands; syscall numbers, errors and resume register values
 //! are decided here. The managed owner must not expose the owned ReadId for
 //! independent retirement or manufacture source-failure evidence.
-use crate::descriptor::{self, Files, Table};
+use crate::descriptor::{self, Files, OpenError, OpenOptions, OpenRoute, Table};
 use crate::effect::{Completion, Token};
 use crate::execution::{self, Execution, Invocation, Phase, Snapshot};
 use crate::lease::{self, Domain};
 use crate::read::{self, Reads};
+use crate::{credentials::Credentials, fs_context::Ticket};
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -55,6 +57,11 @@ pub(crate) enum Step {
         length: u64,
         write: bool,
     },
+    Path {
+        action: Token,
+        target: u64,
+        length: u64,
+    },
     Exit,
     Unsupported(u64),
     Waiting,
@@ -93,10 +100,59 @@ struct StreamPending {
     action: Token,
     started: bool,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PathOutcome {
+    Captured,
+    Failed,
+    Unknown,
+}
+struct Opening {
+    invocation: Invocation,
+    snapshot: Snapshot,
+    route: OpenRoute,
+    options: OpenOptions,
+    action: Token,
+    length: u64,
+    started: bool,
+    viewing: bool,
+    cancelled: bool,
+}
+fn file_error(error: descriptor::Error) -> Result<i64, Error> {
+    match error {
+        descriptor::Error::BadFd => Ok(-9),
+        descriptor::Error::FdLimit => Ok(-24),
+        descriptor::Error::NotDirectory => Ok(-20),
+        descriptor::Error::Capacity
+        | descriptor::Error::Mount(crate::mount::Error::Capacity)
+        | descriptor::Error::Fs(crate::fs_context::Error::Capacity)
+        | descriptor::Error::Fs(crate::fs_context::Error::Mount(crate::mount::Error::Capacity)) => {
+            Ok(-12)
+        }
+        other => Err(Error::Files(other)),
+    }
+}
+fn open_error(error: OpenError) -> Result<Step, Error> {
+    let value = match error {
+        OpenError::Files(error) | OpenError::Path(crate::path::Error::Files(error)) => {
+            file_error(error)?
+        }
+        OpenError::Path(crate::path::Error::NotFound) => -2,
+        OpenError::NotDirectory | OpenError::Path(crate::path::Error::NotDirectory) => -20,
+        OpenError::Access | OpenError::Path(crate::path::Error::Access) => -13,
+        OpenError::Loop | OpenError::Path(crate::path::Error::Loop) => -40,
+        OpenError::Path(crate::path::Error::NameTooLong) => -36,
+        OpenError::Path(crate::path::Error::InvalidPath) => return Err(Error::State),
+        OpenError::Unsupported => return Ok(Step::Unsupported(257)),
+    };
+    Ok(Step::Return(value))
+}
 pub(crate) struct Continuation {
     owner: Snapshot,
     pending: Option<Pending>,
     stream: Option<StreamPending>,
+    opening: Option<Opening>,
+    path_input: Vec<u8>,
+    closed: bool,
 }
 impl Continuation {
     pub(crate) fn new(execution: &Execution) -> Result<Self, Error> {
@@ -104,6 +160,9 @@ impl Continuation {
             owner: execution.stamp()?,
             pending: None,
             stream: None,
+            opening: None,
+            path_input: Vec::new(),
+            closed: false,
         })
     }
     /// Only Reading retains a live Reads record; Applying/Uncertain owns the
@@ -131,11 +190,102 @@ impl Continuation {
         args: [u64; 6],
         next: u64,
     ) -> Result<Step, Error> {
+        self.enter_with_namespace(
+            files, table, None, reads, domain, execution, invocation, nr, args, next,
+        )
+    }
+    pub(crate) fn enter_with_namespace(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        namespace: Option<(&Ticket, &Credentials)>,
+        reads: &mut Reads,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        invocation: Invocation,
+        nr: u64,
+        args: [u64; 6],
+        next: u64,
+    ) -> Result<Step, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         execution.syscall_allowed(invocation)?;
-        if self.pending.is_some() || self.stream.is_some() {
+        if self.closed || self.pending.is_some() || self.stream.is_some() || self.opening.is_some()
+        {
             return Err(Error::State);
+        }
+        if nr == 257 {
+            let Some((fs, credentials)) = namespace else {
+                return Ok(Step::Unsupported(nr));
+            };
+            let flags = args[2] as u32;
+            // Only this explicit read-only regular/directory profile is admitted.
+            const ADMITTED: u32 = 0x80000 | 0x10000 | 0x20000 | 0x100 | 0x8000;
+            if flags & !ADMITTED != 0 {
+                return Ok(Step::Unsupported(nr));
+            }
+            let address = args[1];
+            let extent = domain.extent(execution.binding())?;
+            if address == 0 || address >= extent {
+                return Ok(Step::Return(-14));
+            }
+            let length = 4096.min(extent - address);
+            if self.path_input.is_empty() {
+                if self.path_input.try_reserve_exact(4096).is_err() {
+                    return Ok(Step::Return(-12));
+                }
+                self.path_input.resize(4096, 0);
+            }
+            let route =
+                match files.prepare_open_route(table, fs, credentials, args[0] as u32 as i32) {
+                    Ok(route) => route,
+                    Err(error) => return file_error(error).map(Step::Return),
+                };
+            let action = match domain.span(execution.binding(), address, length) {
+                Ok(action) => action,
+                Err(error) => {
+                    files
+                        .release_open_route(route)
+                        .expect("same private lookup owner, no interleaving");
+                    return if error == lease::Error::Capacity {
+                        Ok(Step::Return(-12))
+                    } else {
+                        Err(error.into())
+                    };
+                }
+            };
+            let snapshot = execution
+                .stamp()
+                .expect("validated callback-free invocation");
+            execution
+                .hold_call(invocation)
+                .expect("validated callback-free admission");
+            self.opening = Some(Opening {
+                invocation,
+                snapshot,
+                route,
+                options: OpenOptions {
+                    directory: flags & 0x10000 != 0,
+                    follow_terminal: flags & 0x20000 == 0,
+                    cloexec: flags & 0x80000 != 0,
+                },
+                action,
+                length,
+                started: false,
+                viewing: false,
+                cancelled: false,
+            });
+            return Ok(Step::Path {
+                action,
+                target: address,
+                length,
+            });
+        }
+        if nr == 3 {
+            return match files.close(table, args[0] as u32) {
+                Ok(()) => Ok(Step::Return(0)),
+                Err(error) => file_error(error).map(Step::Return),
+            };
         }
         if nr == 0 || nr == 1 {
             let fd = args[0] as u32;
@@ -158,9 +308,6 @@ impl Continuation {
                 if direction != wanted {
                     return Ok(Step::Return(-9));
                 }
-                if args[2] == 0 {
-                    return Ok(Step::Return(0));
-                }
                 // Stream consumes irreversibly: unlike resident file clipping,
                 // validate the full requested range before any host command.
                 if args[1]
@@ -168,6 +315,9 @@ impl Continuation {
                     .is_none_or(|end| end > 0x7ffffffff000)
                 {
                     return Ok(Step::Return(-14));
+                }
+                if args[2] == 0 {
+                    return Ok(Step::Return(0));
                 }
                 match domain.range(execution.binding(), args[1], args[2]) {
                     Ok(()) => (),
@@ -212,21 +362,25 @@ impl Continuation {
                 Ok(Step::Exit)
             }
             0 => {
-                // Current caller checks fd before zero length or target memory.
+                // FD/access precedes numerical access_ok, then the file operation.
+                // Physical mapping holes remain outside this fixed-memory profile.
                 let fd = args[0] as u32; // Linux syscall argument uses int fd.
                 match files.inode(table, fd) {
                     Ok(_) => {}
                     Err(descriptor::Error::BadFd) => return Ok(Step::Return(-9)),
                     Err(e) => return Err(Error::Files(e)),
                 }
-                if args[2] == 0 {
-                    return Ok(Step::Return(0));
-                }
                 let at = args[1];
                 let requested = args[2];
                 const TASK_SIZE: u64 = 0x7ffffffff000;
                 if at.checked_add(requested).is_none_or(|end| end > TASK_SIZE) {
                     return Ok(Step::Return(-14));
+                }
+                if files.fd_kind(table, fd).map_err(Error::Files)? == 0o040000 {
+                    return Ok(Step::Return(-21));
+                }
+                if requested == 0 {
+                    return Ok(Step::Return(0));
                 }
                 let extent = domain.extent(execution.binding())?;
                 if at >= extent {
@@ -260,6 +414,110 @@ impl Continuation {
     }
     pub(crate) fn owns(&self, token: Token) -> bool {
         self.stream.as_ref().is_some_and(|p| p.action == token)
+            || self.opening.as_ref().is_some_and(|p| p.action == token)
+    }
+    pub(crate) fn path_view(&self) -> Option<Token> {
+        self.opening
+            .as_ref()
+            .filter(|p| p.viewing)
+            .map(|p| p.action)
+    }
+    /// One private short input view. No allocating ABI call may interleave.
+    pub(crate) fn path_start(
+        &mut self,
+        domain: &mut Domain,
+        execution: &Execution,
+        action: Token,
+    ) -> Result<&mut [u8], Error> {
+        self.owner(execution)?;
+        execution.check_domain(domain)?;
+        let p = self.opening.as_mut().ok_or(Error::State)?;
+        if p.action != action || p.started || p.cancelled {
+            return Err(Error::State);
+        }
+        execution.check(p.snapshot)?;
+        if execution.phase() != Phase::Running {
+            return Err(Error::State);
+        }
+        domain.start(action)?;
+        p.started = true;
+        p.viewing = true;
+        Ok(&mut self.path_input[..p.length as usize])
+    }
+    /// Receipt ends the private input-view interval. Unknown still owns the
+    /// physical memory span, lookup bases and invocation; it is never reissued.
+    pub(crate) fn path_finish(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        action: Token,
+        actual: u64,
+        outcome: PathOutcome,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        execution.check_domain(domain)?;
+        let p = self.opening.as_ref().ok_or(Error::State)?;
+        if p.action != action
+            || !p.started
+            || !execution.owns_snapshot(p.snapshot)
+            || actual > p.length
+        {
+            return Err(Error::State);
+        }
+        let nul = if outcome == PathOutcome::Captured {
+            if actual == 0 {
+                return Err(Error::State);
+            }
+            let nul = self.path_input[..actual as usize]
+                .iter()
+                .position(|&b| b == 0);
+            if nul.is_none() && actual < p.length {
+                return Err(Error::State);
+            }
+            nul
+        } else {
+            None
+        };
+        domain.receipt(
+            action,
+            actual,
+            if outcome == PathOutcome::Unknown {
+                Completion::Unknown
+            } else {
+                Completion::Stopped
+            },
+        )?;
+        self.opening.as_mut().unwrap().viewing = false;
+        if outcome == PathOutcome::Unknown {
+            return Ok(Step::Waiting);
+        }
+        domain.retire(action).expect("matching stopped path span");
+        let p = self.opening.take().unwrap();
+        let response = if outcome == PathOutcome::Captured
+            && !p.cancelled
+            && execution.phase() == Phase::Running
+        {
+            match nul {
+                Some(n) => match files.open_read(table, &p.route, &self.path_input[..n], p.options)
+                {
+                    Ok(fd) => Ok(Step::Return(fd as i64)),
+                    Err(error) => open_error(error),
+                },
+                None => Ok(Step::Return(if p.length < 4096 { -14 } else { -36 })),
+            }
+        } else {
+            Ok(Step::Waiting)
+        };
+        self.closed |= p.cancelled || outcome == PathOutcome::Failed;
+        files
+            .release_open_route(p.route)
+            .expect("same retained private lookup owner");
+        execution
+            .finish_call(p.invocation)
+            .expect("path continuation owns pending call");
+        response
     }
     pub(crate) fn stream_start(
         &mut self,
@@ -400,6 +658,25 @@ impl Continuation {
     ) -> Result<bool, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
+        if let Some(p) = self.opening.as_mut() {
+            self.closed = true;
+            p.cancelled = true;
+            domain.cancel(p.action)?;
+            if p.started {
+                return Ok(false);
+            }
+            domain
+                .retire(p.action)
+                .expect("unstarted cancelled path span");
+            let p = self.opening.take().unwrap();
+            files
+                .release_open_route(p.route)
+                .expect("same private cancelled lookup owner");
+            execution
+                .finish_call(p.invocation)
+                .expect("path continuation owns pending call");
+            return Ok(true);
+        }
         if let Some(p) = self.stream.as_ref() {
             files.stream(&p.hold).map_err(Error::Files)?;
             domain.cancel(p.action)?;
@@ -525,7 +802,7 @@ mod tests {
         for (nr, args, result) in [
             (1, [0, 0, 1, 0, 0, 0], -9),
             (0, [0, 15, 2, 0, 0, 0], -14),
-            (1, [1, u64::MAX, 0, 0, 0, 0], 0),
+            (1, [1, u64::MAX, 0, 0, 0, 0], -14),
         ] {
             assert_eq!(
                 c.enter(&mut f, &t, &mut r, &mut d, &mut e, i, nr, args, 100)
@@ -788,7 +1065,7 @@ mod tests {
                 [fd as u64, u64::MAX, 0, 0, 0, 0],
                 1
             ),
-            Ok(Step::Return(0))
+            Ok(Step::Return(-14))
         );
         assert_eq!(
             c.enter(
@@ -878,5 +1155,394 @@ mod tests {
         r.receipt(&mut f, &mut d, id, 2, Completion::Stopped)
             .unwrap();
         assert_eq!(c.complete(&mut r, &mut e), Ok(Step::Return(2)));
+    }
+}
+
+#[cfg(test)]
+mod open_tests {
+    use super::*;
+    use crate::execution::{ImageResult, Unwind};
+    use crate::inode::{Creation, Tree};
+    use crate::mount;
+    use crate::read::ReadCapacity;
+    struct Guest {
+        files: Files,
+        table: Table,
+        fs: Ticket,
+        reads: Reads,
+        domain: Domain,
+        execution: Execution,
+        call: Continuation,
+        invocation: Invocation,
+    }
+    impl Guest {
+        fn new(actions: usize) -> Self {
+            let metadata = Creation {
+                mode: 0o755,
+                uid: 0,
+                gid: 0,
+            };
+            let mut tree = Tree::new(1301, 8, 8, 8, metadata).unwrap();
+            let root = tree.root();
+            tree.file_take(root, b"program", metadata, &mut b"abcd".to_vec())
+                .unwrap();
+            let mut files = Files::new(
+                1302,
+                tree,
+                descriptor::Limits {
+                    contexts: 2,
+                    tables: 1,
+                    descriptions: 8,
+                    slots: 8,
+                },
+            );
+            let view = files
+                .bootstrap_mount(
+                    root,
+                    mount::Limits {
+                        views: 2,
+                        holds: 24,
+                    },
+                    mount::ViewPolicy {
+                        no_exec: false,
+                        no_suid: false,
+                        no_symfollow: false,
+                    },
+                )
+                .unwrap();
+            let root = files.view_root(&view).unwrap();
+            let fs = files.create_fs(&root, &root, 0o022).unwrap();
+            let table = files.table(8).unwrap();
+            let reads = Reads::new(&files, ReadCapacity::new(1).unwrap());
+            let mut domain = Domain::new(1303, 1, actions).unwrap();
+            let binding = domain.bind(8192).unwrap();
+            let mut execution = Execution::new(1304, binding);
+            execution.image_begin(&mut domain, 8192).unwrap();
+            execution
+                .image_finish(&mut domain, ImageResult::Installed)
+                .unwrap();
+            let call = Continuation::new(&execution).unwrap();
+            let invocation = execution.start(&mut domain).unwrap();
+            Self {
+                files,
+                table,
+                fs,
+                reads,
+                domain,
+                execution,
+                call,
+                invocation,
+            }
+        }
+        fn enter(&mut self, nr: u64, args: [u64; 6]) -> Result<Step, Error> {
+            self.call.enter_with_namespace(
+                &mut self.files,
+                &self.table,
+                Some((&self.fs, &Credentials::initial_root())),
+                &mut self.reads,
+                &mut self.domain,
+                &mut self.execution,
+                self.invocation,
+                nr,
+                args,
+                100,
+            )
+        }
+        fn admit(&mut self, address: u64, flags: u64) -> Token {
+            let Step::Path {
+                action,
+                target,
+                length,
+            } = self
+                .enter(257, [(-100i64) as u64, address, flags, 0, 0, 0])
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(target, address);
+            assert_eq!(length, 4096.min(8192 - address));
+            action
+        }
+        fn capture(&mut self, token: Token, bytes: &[u8]) {
+            let input = self
+                .call
+                .path_start(&mut self.domain, &self.execution, token)
+                .unwrap();
+            input[..bytes.len()].copy_from_slice(bytes);
+        }
+        fn finish(
+            &mut self,
+            token: Token,
+            count: u64,
+            outcome: PathOutcome,
+        ) -> Result<Step, Error> {
+            self.call.path_finish(
+                &mut self.files,
+                &self.table,
+                &mut self.domain,
+                &mut self.execution,
+                token,
+                count,
+                outcome,
+            )
+        }
+        fn open(&mut self, path: &[u8]) -> i64 {
+            let token = self.admit(16, 0);
+            let mut bytes = path.to_vec();
+            bytes.push(0);
+            self.capture(token, &bytes);
+            let Step::Return(fd) = self
+                .finish(token, bytes.len() as u64, PathOutcome::Captured)
+                .unwrap()
+            else {
+                panic!()
+            };
+            fd
+        }
+    }
+    #[test]
+    fn actual_open_read_close_uses_one_description_and_reuses_only_the_slot() {
+        let mut g = Guest::new(1);
+        let fd = g.open(b"/program");
+        assert_eq!(fd, 0);
+        let Step::Read { id, .. } = g.enter(0, [fd as u64, 64, 2, 0, 0, 0]).unwrap() else {
+            panic!()
+        };
+        let (pointer, length) = g
+            .reads
+            .start_managed(&mut g.files, &mut g.domain, &g.execution, id)
+            .unwrap();
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(pointer as *const u8, length as usize) },
+            b"ab"
+        );
+        g.reads
+            .receipt(&mut g.files, &mut g.domain, id, 2, Completion::Stopped)
+            .unwrap();
+        assert_eq!(
+            g.call.complete(&mut g.reads, &mut g.execution),
+            Ok(Step::Return(2))
+        );
+        assert_eq!(g.files.offset(&g.table, fd as u32), Ok((2, 1)));
+        assert_eq!(g.enter(3, [fd as u64, 0, 0, 0, 0, 0]), Ok(Step::Return(0)));
+        assert_eq!(
+            g.enter(0, [fd as u64, 64, 2, 0, 0, 0]),
+            Ok(Step::Return(-9))
+        );
+        assert_eq!(g.open(b"/program"), fd);
+        assert_eq!(g.files.offset(&g.table, fd as u32), Ok((0, 0)));
+        assert_eq!(g.enter(3, [999, 0, 0, 0, 0, 0]), Ok(Step::Return(-9)));
+    }
+    #[test]
+    fn captured_count_zero_and_stale_tail_cannot_manufacture_a_path() {
+        let mut g = Guest::new(1);
+        assert_eq!(g.open(b"/program"), 0);
+        let token = g.admit(16, 0);
+        g.capture(token, b"/p");
+        assert_eq!(g.finish(token, 0, PathOutcome::Captured), Err(Error::State));
+        assert_eq!(g.finish(token, 2, PathOutcome::Captured), Err(Error::State));
+        assert_eq!(g.call.path_view(), Some(token));
+        assert!(g.call.owns(token));
+        assert_eq!(g.files.target(&g.table, 1), Err(descriptor::Error::BadFd));
+        assert_eq!(g.finish(token, 0, PathOutcome::Failed), Ok(Step::Waiting));
+        assert!(g.enter(257, [(-100i64) as u64, 16, 0, 0, 0, 0]).is_err());
+        assert_eq!(g.files.target(&g.table, 1), Err(descriptor::Error::BadFd));
+    }
+    #[test]
+    fn bounded_capture_distinguishes_empty_nul_at_tail_and_missing_nul() {
+        let mut g = Guest::new(1);
+        let token = g.admit(8191, 0);
+        g.capture(token, b"\0");
+        assert_eq!(
+            g.finish(token, 1, PathOutcome::Captured),
+            Ok(Step::Return(-2))
+        );
+        let token = g.admit(8190, 0);
+        g.capture(token, b"/\0");
+        assert_eq!(
+            g.finish(token, 2, PathOutcome::Captured),
+            Ok(Step::Return(0))
+        );
+        let token = g.admit(8189, 0);
+        g.capture(token, b"xxx");
+        assert_eq!(
+            g.finish(token, 3, PathOutcome::Captured),
+            Ok(Step::Return(-14))
+        );
+        let token = g.admit(16, 0);
+        g.capture(token, &vec![b'x'; 4096]);
+        assert_eq!(
+            g.finish(token, 4096, PathOutcome::Captured),
+            Ok(Step::Return(-36))
+        );
+    }
+    #[test]
+    fn wrong_duplicate_and_unstarted_capture_receipts_do_not_end_the_owner() {
+        let mut g = Guest::new(1);
+        let token = g.admit(16, 0);
+        let wrong = Token::from_parts(1303, token.sequence() + 1);
+        assert!(g
+            .call
+            .path_start(&mut g.domain, &g.execution, wrong)
+            .is_err());
+        assert_eq!(g.finish(token, 1, PathOutcome::Captured), Err(Error::State));
+        g.capture(token, b"/program\0");
+        assert!(g
+            .call
+            .path_start(&mut g.domain, &g.execution, token)
+            .is_err());
+        assert_eq!(g.finish(wrong, 9, PathOutcome::Captured), Err(Error::State));
+        assert_eq!(
+            g.finish(token, 4097, PathOutcome::Captured),
+            Err(Error::State)
+        );
+        assert_eq!(g.call.path_view(), Some(token));
+        assert_eq!(
+            g.finish(token, 9, PathOutcome::Captured),
+            Ok(Step::Return(0))
+        );
+        assert_eq!(g.finish(token, 9, PathOutcome::Captured), Err(Error::State));
+        assert!(!g.call.owns(token));
+    }
+    #[test]
+    fn ready_cancellation_releases_bases_but_never_claims_guest_stop() {
+        let mut g = Guest::new(1);
+        let token = g.admit(16, 0);
+        assert!(g
+            .call
+            .abandon(&mut g.files, &mut g.reads, &mut g.domain, &mut g.execution)
+            .unwrap());
+        assert!(!g.call.owns(token));
+        assert!(!g.execution.stopped());
+        assert!(g.enter(3, [0; 6]).is_err());
+        assert!(g.domain.change(g.execution.binding(), 8192).is_err());
+        g.execution
+            .receipt(&mut g.domain, g.invocation, Unwind::Fault)
+            .unwrap();
+        assert!(g.domain.change(g.execution.binding(), 8192).is_ok());
+        let route = g
+            .files
+            .prepare_open_route(&g.table, &g.fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        g.files.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn unknown_capture_is_not_restarted_and_late_stopped_after_cancel_opens_nothing() {
+        let mut g = Guest::new(1);
+        let token = g.admit(16, 0);
+        g.capture(token, b"/program\0");
+        assert_eq!(g.finish(token, 9, PathOutcome::Unknown), Ok(Step::Waiting));
+        assert_eq!(g.call.path_view(), None);
+        assert!(g
+            .call
+            .path_start(&mut g.domain, &g.execution, token)
+            .is_err());
+        assert!(!g
+            .call
+            .abandon(&mut g.files, &mut g.reads, &mut g.domain, &mut g.execution)
+            .unwrap());
+        g.execution
+            .receipt(&mut g.domain, g.invocation, Unwind::Fault)
+            .unwrap();
+        assert!(g.domain.change(g.execution.binding(), 8192).is_err());
+        assert_eq!(g.finish(token, 9, PathOutcome::Captured), Ok(Step::Waiting));
+        assert_eq!(g.files.target(&g.table, 0), Err(descriptor::Error::BadFd));
+        assert!(g.domain.change(g.execution.binding(), 8192).is_ok());
+    }
+    #[test]
+    fn matching_late_stopped_evidence_publishes_at_most_one_fd_without_recopy() {
+        let mut g = Guest::new(1);
+        let token = g.admit(16, 0);
+        g.capture(token, b"/program\0");
+        assert_eq!(g.finish(token, 4, PathOutcome::Unknown), Ok(Step::Waiting));
+        assert_eq!(
+            g.finish(token, 3, PathOutcome::Unknown),
+            Err(Error::Lease(lease::Error::Effect(
+                crate::effect::Error::InvalidProgress
+            )))
+        );
+        assert!(g.call.owns(token));
+        assert_eq!(
+            g.finish(token, 9, PathOutcome::Captured),
+            Ok(Step::Return(0))
+        );
+        assert_eq!(g.finish(token, 9, PathOutcome::Captured), Err(Error::State));
+        assert_eq!(g.files.target(&g.table, 1), Err(descriptor::Error::BadFd));
+    }
+    #[test]
+    fn span_admission_failure_returns_every_namespace_hold_before_retry() {
+        let mut g = Guest::new(1);
+        let busy = g.domain.span(g.execution.binding(), 0, 1).unwrap();
+        assert_eq!(
+            g.enter(257, [(-100i64) as u64, 16, 0, 0, 0, 0]),
+            Ok(Step::Return(-12))
+        );
+        assert!(g.call.opening.is_none());
+        assert!(!g.call.owns(busy));
+        g.domain.cancel(busy).unwrap();
+        g.domain.retire(busy).unwrap();
+        assert_eq!(g.open(b"/program"), 0);
+    }
+    #[test]
+    fn failed_capture_releases_inputs_closes_admission_and_requires_real_stop() {
+        let mut g = Guest::new(1);
+        let token = g.admit(16, 0);
+        g.capture(token, b"partial");
+        assert_eq!(g.finish(token, 0, PathOutcome::Failed), Ok(Step::Waiting));
+        assert!(!g.call.owns(token));
+        assert!(!g.execution.stopped());
+        assert!(g.enter(3, [0; 6]).is_err());
+        assert_eq!(g.files.target(&g.table, 0), Err(descriptor::Error::BadFd));
+        assert!(g.domain.change(g.execution.binding(), 8192).is_err());
+        g.execution
+            .receipt(&mut g.domain, g.invocation, Unwind::Fault)
+            .unwrap();
+        assert!(g.domain.change(g.execution.binding(), 8192).is_ok());
+    }
+    #[test]
+    fn flags_int_abi_cloexec_and_pointer_admission_are_rust_decisions() {
+        let mut g = Guest::new(1);
+        for flags in [1, 2, 0x40, 0x200000, 0x800] {
+            assert_eq!(
+                g.enter(257, [(-100i64) as u64, 0, flags, 0, 0, 0]),
+                Ok(Step::Unsupported(257))
+            );
+        }
+        for at in [0, 8192, u64::MAX] {
+            assert_eq!(
+                g.enter(257, [(-100i64) as u64, at, 0, 0, 0, 0]),
+                Ok(Step::Return(-14))
+            );
+        }
+        assert!(g.call.path_input.is_empty());
+        let token = g.admit(16, (1u64 << 32) | 0x80000 | 0x100 | 0x8000);
+        g.capture(token, b"/program\0");
+        assert_eq!(
+            g.finish(token, 9, PathOutcome::Captured),
+            Ok(Step::Return(0))
+        );
+        assert_eq!(g.files.cloexec(&g.table, 0), Ok(true));
+    }
+    #[test]
+    fn directory_read_and_zero_address_order_match_native_profile_cases() {
+        let mut g = Guest::new(1);
+        assert_eq!(g.open(b"/"), 0);
+        assert_eq!(g.open(b"/program"), 1);
+        for at in [0, 16] {
+            for length in [0, 1] {
+                assert_eq!(g.enter(0, [0, at, length, 0, 0, 0]), Ok(Step::Return(-21)));
+            }
+        }
+        for fd in [0, 1] {
+            assert_eq!(
+                g.enter(0, [fd, u64::MAX, 0, 0, 0, 0]),
+                Ok(Step::Return(-14))
+            );
+        }
+        assert_eq!(g.enter(0, [1, 0, 0, 0, 0, 0]), Ok(Step::Return(0)));
+        assert_eq!(
+            g.enter(0, [999, u64::MAX, 0, 0, 0, 0]),
+            Ok(Step::Return(-9))
+        );
     }
 }

@@ -11,17 +11,18 @@ export async function runManagedProgram(program: string, args: readonly string[]
   const core = new WebAssembly.Module(readFileSync(coreWasm));
   const translator = new WebAssembly.Module(readFileSync(translatorWasm));
   const host = memoryHost(core, 1, 1);
-  // Four inodes (/, /bin, /root, program), three entries and three standards.
-  // One runner/action at a time; Fs root/cwd + program + cwd replacement hold.
+  // Four inodes (/, /bin, /root, program), three entries and borrowed standards.
+  // Explicit finite read-only FD profile. A path capture owns copied root/cwd
+  // and a pinned dirfd; every independent file OFD also owns one mount position.
   // These are logical limits, not exact allocator or Wasm memory ceilings.
   const root = host.preparePreparedFiles({inodes: 4, entries: 3, fileBytes: payload.byteLength,
-    tables: 1, descriptions: 3, slots: 3, reads: 1, contexts: 1, views: 1, holds: 4,
+    tables: 1, descriptions: 64, slots: 64, reads: 1, contexts: 2, views: 1, holds: 71,
     policy: {noExec: false, noSuid: false, noSymfollow: false}});
   const bin = host.directory(root, encode('bin'), 0o755);
   host.directory(root, encode('root'), 0o755);
   const name = basename(program), path = '/bin/' + name;
   host.file(bin, encode(name), payload, 0o755);
-  host.sealFiles(3);
+  host.sealFiles(64);
   const execution = await host.pathExecution(encode(path), [path, ...args].map(encode),
     ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'].map(encode),
     {translator, random: randomBytes(16), cwd: encode('/root'), stdio: true});

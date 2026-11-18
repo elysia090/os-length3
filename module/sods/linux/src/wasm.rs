@@ -1,5 +1,5 @@
-//! Private wasm32 ABI, one managed domain per instance. The read/exit syscall
-//! entry is a limited fixed-memory diagnostic, not the full Linux runtime.
+//! Private wasm32 ABI3, one managed domain per instance. The read-only caller
+//! is a limited fixed-memory profile, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
 //! and read_receipt it performs only intrinsic synchronous copy, no callback/await.
@@ -9,7 +9,7 @@ use crate::execution::{Execution, ImageResult, Unwind};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::read::{ReadCapacity, Reads};
-use crate::syscall::{Continuation, PhysicalResult, Step};
+use crate::syscall::{Continuation, PathOutcome, PhysicalResult, Step};
 use crate::{
     credentials::Credentials,
     fs_context, mount,
@@ -184,7 +184,23 @@ fn read_code(error: crate::read::Error) -> i32 {
         _ => -10,
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Access {
+    Ordinary,
+    Read,
+    PathFinish { execution: u64, action: Token },
+}
 fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
+    with_state_access(
+        if allow_view {
+            Access::Read
+        } else {
+            Access::Ordinary
+        },
+        f,
+    )
+}
+fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
     STATE.with(|cell| {
         let mut outer = cell.borrow_mut();
         let Some(s) = outer.as_mut() else {
@@ -195,7 +211,27 @@ fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) 
         s.auxiliary = 0;
         s.endpoint = 0;
         s.state = 0;
-        if !allow_view && s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) {
+        // A path input view excludes even the old read-view exceptions. Only
+        // its exact owner/action finish can end it; another late finish cannot
+        // allocate while this owner's physical view is still exposed.
+        let path_view = s
+            .executions
+            .iter()
+            .enumerate()
+            .find_map(|(i, slot)| match slot {
+                Slot::Live(slot) => slot
+                    .continuation
+                    .as_ref()
+                    .and_then(|c| c.path_view())
+                    .map(|action| (i as u64 + 1, action)),
+                _ => None,
+            });
+        if path_view
+            .is_some_and(|(execution, action)| access != (Access::PathFinish { execution, action }))
+        {
+            return -4;
+        }
+        if access != Access::Read && s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) {
             return -4;
         }
         match f(s) {
@@ -236,7 +272,7 @@ fn inode(n: u64) -> Inode {
 }
 #[no_mangle]
 pub extern "C" fn linux_abi_version() -> u32 {
-    2
+    3
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -964,6 +1000,16 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = length;
             action.sequence()
         }
+        Step::Path {
+            action,
+            target,
+            length,
+        } => {
+            s.state = 8;
+            s.auxiliary = target;
+            s.length = length;
+            action.sequence()
+        }
         Step::Exit => {
             s.state = 2;
             0
@@ -1039,13 +1085,22 @@ pub extern "C" fn linux_syscall(
         let slot = s.executions[i].live_mut()?;
         let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
         let r = s.sealed.as_mut().ok_or(-9)?;
+        let namespace = match &slot.resources {
+            Resources::Normal {
+                fs: Some(fs),
+                decision,
+                ..
+            } => Some((fs, &decision.credentials)),
+            _ => None,
+        };
         let command = slot
             .continuation
             .as_mut()
             .ok_or(-11)?
-            .enter(
+            .enter_with_namespace(
                 &mut r.files,
                 slot.resources.table()?,
+                namespace,
                 &mut r.reads,
                 &mut s.domain,
                 &mut slot.execution,
@@ -1057,6 +1112,66 @@ pub extern "C" fn linux_syscall(
             .map_err(|_| -12)?;
         Ok(step(s, command))
     })
+}
+/// One-shot bounded pathname capture. The private host may only use captured
+/// synchronous view/copy intrinsics until its exact matching finish call.
+#[no_mangle]
+pub extern "C" fn linux_syscall_path_start(id: u64, action: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let input = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .path_start(&mut s.domain, &slot.execution, token(action))
+            .map_err(|_| -12)?;
+        s.length = input.len() as u64;
+        Ok(input.as_mut_ptr() as u64)
+    })
+}
+/// Every receipt certifies the short core input view has ended. Outcome0 is
+/// captured+stopped,1 failed+stopped,2 unknown guest-span/content completion.
+/// Unknown retains all operation owners and never grants another capture start.
+#[no_mangle]
+pub extern "C" fn linux_syscall_path_finish(
+    id: u64,
+    action: u64,
+    actual: u64,
+    outcome: u32,
+) -> i32 {
+    with_state_access(
+        Access::PathFinish {
+            execution: id,
+            action: token(action),
+        },
+        |s| {
+            let outcome = match outcome {
+                0 => PathOutcome::Captured,
+                1 => PathOutcome::Failed,
+                2 => PathOutcome::Unknown,
+                _ => return Err(-5),
+            };
+            let i = execution_index(s, id)?;
+            let slot = s.executions[i].live_mut()?;
+            let r = s.sealed.as_mut().ok_or(-9)?;
+            let command = slot
+                .continuation
+                .as_mut()
+                .ok_or(-11)?
+                .path_finish(
+                    &mut r.files,
+                    slot.resources.table()?,
+                    &mut s.domain,
+                    &mut slot.execution,
+                    token(action),
+                    actual,
+                    outcome,
+                )
+                .map_err(|_| -12)?;
+            Ok(step(s, command))
+        },
+    )
 }
 /// One physical host operation, never a Linux FD/errno decision in the host.
 #[no_mangle]

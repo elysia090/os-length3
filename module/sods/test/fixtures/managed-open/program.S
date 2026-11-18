@@ -1,0 +1,218 @@
+/* Same raw-syscall ELF under native Linux and the actual --managed CLI.
+ * Open argv[0], retain independent OFDs, use a directory FD, and close/reuse.
+ * No libc, new root API, host path assertions or synthetic syscall runner. */
+.global _start
+.text
+.macro want value
+ cmp $\value,%rax
+ jne bad
+.endm
+.macro nonnegative
+ test %rax,%rax
+ js bad
+.endm
+_start:
+ mov 8(%rsp),%r12
+ mov $257,%eax
+ mov $-100,%edi
+ mov %r12,%rsi
+ mov $0x80000,%edx
+ xor %r10d,%r10d
+ syscall
+ nonnegative
+ mov %rax,%r15
+ mov %rax,%rdi
+ xor %eax,%eax
+ lea buffer(%rip),%rsi
+ mov $4,%edx
+ syscall
+ want 4
+ cmpl $0x464c457f,buffer(%rip)
+ jne bad
+#ifndef SODS_OPEN_NO_OUTPUT
+ mov $1,%eax
+ mov $1,%edi
+ lea buffer(%rip),%rsi
+ mov $4,%edx
+ syscall
+ want 4
+#endif
+ /* A separate open begins at offset zero, not the first OFD's offset four. */
+ mov $257,%eax
+ mov $-100,%edi
+ mov %r12,%rsi
+ xor %edx,%edx
+ syscall
+ nonnegative
+ mov %rax,%rbx
+ mov %rax,%rdi
+ xor %eax,%eax
+ lea buffer(%rip),%rsi
+ mov $4,%edx
+ syscall
+ want 4
+ cmpl $0x464c457f,buffer(%rip)
+ jne bad
+ xor %eax,%eax
+ mov %r15,%rdi
+ lea buffer(%rip),%rsi
+ mov $1,%edx
+ syscall
+ want 1
+ cmpb $2,buffer(%rip)
+ jne bad
+ mov $3,%eax
+ mov %r15,%rdi
+ syscall
+ want 0
+ xor %eax,%eax
+ mov %r15,%rdi
+ lea buffer(%rip),%rsi
+ mov $1,%edx
+ syscall
+ want -9
+ /* High flag bits are int-ABI truncation, not unsupported low flags. */
+ mov $257,%eax
+ mov $-100,%edi
+ mov %r12,%rsi
+ movabs $0x100088100,%rdx
+ syscall
+ cmp %r15,%rax
+ jne bad
+ mov %rax,%rdi
+ xor %eax,%eax
+ mov $-1,%rsi
+ xor %edx,%edx
+ syscall
+ want -14
+ xor %eax,%eax
+ mov %r15,%rdi
+ xor %esi,%esi
+ xor %edx,%edx
+ syscall
+ want 0
+ mov $3,%eax
+ mov %r15,%rdi
+ syscall
+ want 0
+ mov $3,%eax
+ mov %rbx,%rdi
+ syscall
+ want 0
+ /* Capture errors precede a bad dirfd; absolute paths ignore it. */
+ mov $257,%eax
+ mov $999,%edi
+ lea empty(%rip),%rsi
+ xor %edx,%edx
+ syscall
+ want -2
+ mov $257,%eax
+ mov $999,%edi
+ xor %esi,%esi
+ syscall
+ want -14
+ mov $257,%eax
+ mov $999,%edi
+ lea missing(%rip),%rsi
+ syscall
+ want -9
+ mov $257,%eax
+ mov $999,%edi
+ mov %r12,%rsi
+ syscall
+ nonnegative
+ mov %rax,%rdi
+ mov $3,%eax
+ syscall
+ want 0
+ /* Split our actual argv[0] into a parent path and a basename in place. */
+ mov %r12,%rsi
+ xor %r13d,%r13d
+scan:
+ mov (%rsi),%al
+ test %al,%al
+ jz parent
+ cmp $47,%al
+ jne next
+ mov %rsi,%r13
+ lea 1(%rsi),%r14
+next:
+ inc %rsi
+ jmp scan
+parent:
+ test %r13,%r13
+ jz bad
+ movb $0,(%r13)
+ mov $257,%eax
+ mov $-100,%edi
+ mov %r12,%rsi
+ mov $0x10000,%edx
+ syscall
+ nonnegative
+ mov %rax,%rbx
+ xor %eax,%eax
+ mov %rbx,%rdi
+ xor %esi,%esi
+ xor %edx,%edx
+ syscall
+ want -21
+ xor %eax,%eax
+ mov %rbx,%rdi
+ mov $-1,%rsi
+ xor %edx,%edx
+ syscall
+ want -14
+ mov $257,%eax
+ mov %rbx,%rdi
+ movabs $0x100000000,%rax
+ or %rax,%rdi
+ mov $257,%eax
+ mov %r14,%rsi
+ xor %edx,%edx
+ syscall
+ nonnegative
+ mov %rax,%r8
+ movb $47,(%r13)
+ mov $3,%eax
+ mov %rbx,%rdi
+ syscall
+ want 0
+ xor %eax,%eax
+ mov %r8,%rdi
+ lea buffer(%rip),%rsi
+ mov $4,%edx
+ syscall
+ want 4
+ cmpl $0x464c457f,buffer(%rip)
+ jne bad
+ xor %eax,%eax
+ mov %r8,%rdi
+ lea buffer(%rip),%rsi
+ mov $1,%edx
+ syscall
+ want 1
+ cmpb $2,buffer(%rip)
+ jne bad
+ mov $3,%eax
+ mov %r8,%rdi
+ syscall
+ want 0
+ mov $3,%eax
+ mov $999,%edi
+ syscall
+ want -9
+ xor %edi,%edi
+ jmp finish
+bad:
+ mov $1,%edi
+finish:
+ mov $60,%eax
+ syscall
+ ud2
+.section .rodata
+empty: .byte 0
+missing: .asciz "__sods_missing__"
+.bss
+.balign 16
+buffer: .skip 16
+.section .note.GNU-stack,"",@progbits

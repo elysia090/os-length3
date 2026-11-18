@@ -9,18 +9,20 @@ permission before host execution, retains uncertain completion, accepts cumulati
 prefix evidence, and refuses stale/duplicate actions. `Completion::Stopped` requires
 both no further effects and ended access; a confirmed byte count alone does not.
 
-The private wasm32 ABI (version 2) connects that table to `runtime/linux/memory-host.ts`, which
+The private wasm32 ABI (version 3) connects that table to `runtime/linux/memory-host.ts`, which
 creates and retains actual engine memories without exposing raw memory or callbacks.
 Capture/write/grow operations acquire admission before host access. Mutation reserves
 exclusively before execution; successful retirement publishes a new binding identity.
 Unknown completion keeps the obligation and consumes bounded capacity. A memory
 binding is domain-local, not a process identity; ordinary guest writes are not locked.
 
-This is **not yet connected to Linux guest execution or the public runtime**. The
-translator import/operator validation, exec/restore/Worker bindings, full domain
-allocator and caller migration remain absent. No claim of end-to-end guest lifetime
-safety or production TS thinning follows from the adapter. Host artifact checks only
-check import/export shape; they do not validate arbitrary module behavior.
+The admission table alone is not a complete Linux runtime. The later connected
+sections below describe the opt-in managed CLI/Worker and its fixed read-only
+caller, including translator/image/startup validation. The default Node/browser
+runtime, general restore/shared execution and full domain allocator remain separate
+migration gates. No default-production TS thinning follows from the table alone.
+Host artifact checks only check ABI/import/export shape; they do not validate
+arbitrary module behavior.
 
 Memory/action limits allocate bounded records at initialization. Lookups are bounded
 linear scans, O(M + A), not claimed constant-time or optimal. Capture makes one owned
@@ -133,7 +135,7 @@ its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
 
 
-## Resident file to physical memory (private ABI 2)
+## Resident file to physical memory (private ABI 3)
 
 The same Wasm instance now owns Files, memory admission and finite pending reads.
 The component builder uses bounded name/input staging; file input is transferred
@@ -783,3 +785,56 @@ The ordinary CLI without `--managed` remains on the existing runtime. Its root
 import, missing-cwd creation, incremental translation, TTY and broader syscall
 requirements are still migration gates. The old TS semantic implementation is not
 yet deleted; only this selected caller no longer uses it.
+
+
+### Read-only guest openat/read/close
+
+The same opt-in CLI now routes guest openat (257), regular read (0) and close (3)
+through this Rust owner. It can reopen its own canonical `/bin/<basename>` inode,
+keep independent open offsets, use a held directory FD and close/reuse slots.
+It still imports no host root or legacy Vfs. The prepared tree remains sealed.
+
+Read-only access admits CLOEXEC, DIRECTORY and NOFOLLOW, plus NOCTTY and the
+explicit x86-64 LARGEFILE no-ops for regular/directory nodes. Other flags and
+node kinds stop as unsupported profile; no writable/create/O_PATH contract is
+implied. The CLI has an explicit finite 64-FD limit, sparse description/slot
+records, two FsContext records and 71 mount holds. These logical limits are not
+an exact heap/retained-memory bound.
+
+Rust captures held root/cwd, credentials and dirfd position/error before physical
+pathname work. The same numbered FD cannot retarget it after close/reuse. The host
+only scans/copies a bounded NUL prefix using captured synchronous intrinsics;
+Rust revalidates that owned prefix and decides path, permissions, errors and FD
+publication. Input capture performs one L+1-byte inter-memory copy for a length-L
+path, with at most 4096 initialized scratch bytes retained/reused per continuation.
+The extra physical scan, Rust validation, copied lookup context and existing mount/
+FD arena scans are implementation costs, not universal lower bounds. Completed
+execution retirement does not reclaim the whole physical memory/domain arena;
+scratch/allocator capacity follows the finite private host's lifetime.
+
+ABI3 adds required exact-owner pathname start/finish exports. Every nonmatching
+export, including older read-view exceptions, is refused during the core input
+view. Unknown completion retains the span/scratch/bases/invocation without another
+start; its receipt separately certifies the short core view is no longer used.
+Cancellation and a host termination request do not prove guest stop. FD publication
+before lost Worker reply is not rolled back or replayed; existing observed-exit
+retirement closes its table. Old selected ABI2 modules fail rather than falling
+back, including shape-complete modules reporting the obsolete version.
+
+`managed-open.test.ts` runs the same static ELF natively and through the actual
+CLI/Node Worker, and injects reply loss after Rust published FD3 to check physical
+exit/retirement before capacity reuse. `managed-open-abi.test.ts` independently
+probes every exported function with type-correct arguments during a capture and
+exercises stale inputs, exact owner, physical-tail NUL and Unknown/late receipts.
+Raw synthetic stop receipts are not actual Worker-stop evidence. An isolated
+post-import constructor/species tamper test also requires zero callbacks and no
+private guest backing escape: captured subarray was rejected because species
+lookup still calls user code, so capture constructs prefix views directly.
+
+The fixed physical-memory profile does not represent guest unmapped holes or VM
+permissions. Only pathname NULL rejection and the specified numeric range checks
+are established; ordinary Linux EFAULT equivalence is not claimed. Directory read
+ordering follows FD/access, numerical range, then EISDIR (even zero), while regular
+zero reads do not access low pointer payloads. Full writable filesystem, mappings,
+ordinary utilities/shell/muk and default TS authority removal remain later gates.
+See [OPEN-CALLER.md](OPEN-CALLER.md) for the complete admission/failure contract.
