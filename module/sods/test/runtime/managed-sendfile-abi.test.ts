@@ -39,7 +39,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false) {
   assert.equal(call('linux_abi_version'), 7, 'Explicit artifacts must be fresh ABI7, not silently skipped ABI6');
   assert.equal(Object.hasOwn(e, 'linux_sendfile_probe'), probe, 'Normal/probe artifacts must not be interchanged');
   assert.equal(Object.hasOwn(e, 'linux_sendfile_probe_access_ended'), probe);
-  for (const name of ['init', 'publish', 'peek', 'discard']) {
+  for (const name of ['init', 'publish', 'peek', 'discard', 'startup']) {
     assert.equal(Object.hasOwn(e, `linux_queued_output_probe_${name}`), queued);
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
@@ -54,11 +54,14 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false) {
   }
   assert.equal(call('linux_files_seal', 16), 0);
 
-  const live = (): Owner => {
-    const path = bytes('/app'), wire = new Uint8Array(48 + path.length), view = new DataView(wire.buffer);
+  const stageStartup = (program = '/app') => {
+    const path = bytes(program), wire = new Uint8Array(48 + path.length), view = new DataView(wire.buffer);
     view.setBigUint64(0, 1n, true); view.setBigUint64(24, BigInt(path.length), true); wire.set(path, 48);
     put('linux_startup_input', wire);
-    assert.equal(call('linux_startup_begin_stdio'), 0); const id = result();
+  };
+  const live = (captured = false): Owner => {
+    stageStartup();
+    assert.equal(call(captured ? 'linux_queued_output_probe_startup' : 'linux_startup_begin_stdio'), 0); const id = result();
     assert.equal(call('linux_startup_input', 0), 0);
     assert.equal(call('linux_startup_source_start', id), 0); assert.equal(result(), 0n);
     assert.equal(call('linux_startup_bytes', id), 0);
@@ -134,7 +137,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false) {
     assert.equal(call('linux_read_retire', read), 0); return value;
   };
   return {wasm, module, e, call, result, state, length, auxiliary, endpoint, command, put,
-    live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
+    stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
 }
 
 // Parse actual Wasm function parameter types. Type-correct probes must reach the
@@ -462,6 +465,7 @@ test('isolated queue probe retains distinct resident prefixes in actual Sealed a
   assert.equal(publish(0, 1), -4);
   assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), -4);
   assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+  assert.equal(r.call('linux_queued_output_probe_startup'), -4);
   assert.equal(r.call('linux_syscall_path_finish', owner.id, path, BigInt(pathBytes.length), 0), 0);
   // Advance the diagnostic read cursor using a synthetic stopped read receipt.
   // This only sets up real resident EOF; it is not a delivery signal.
@@ -484,4 +488,48 @@ test('isolated queue probe retains distinct resident prefixes in actual Sealed a
   assert.deepEqual(peek(0, 0), {length: 0n, byte: 0n});
   assert.deepEqual(peek(1, 0), {length: 2n, byte: 99n});
   assert.equal(r.call('linux_queued_output_probe_discard', 1), 0); assert.equal(r.result(), 1n);
+});
+
+test('tagged captured stdio in the sealed core refuses physical fallback', {skip: queueSkip}, () => {
+  const r = raw(queueArtifact!, true, true, true);
+  assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
+  r.stageStartup();
+  assert.equal(r.call('linux_queued_output_probe_startup'), -9);
+  assert.equal(r.result(), 0n, 'missing capture registry must not publish a startup owner');
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  r.stageStartup('/not-present');
+  assert.ok(r.call('linux_queued_output_probe_startup') < 0);
+  const failed = r.result();
+  assert.equal(failed, 1n, 'failed program after table installation has a cleanup owner');
+  assert.equal(r.call('linux_startup_cancel', failed), 0);
+  const capture = r.live(true), fd = r.open(capture, '/data');
+  assert.equal(capture.id, 2n, 'startup cancellation does not reuse the failed identity');
+  for (const [nr, args] of [
+    [1n, [1n, 0n, 1n, 0n, 0n, 0n]], [1n, [2n, 0n, 0n, 0n, 0n, 0n]],
+    [18n, [1n, 0n, 1n, 0n, 0n, 0n]], [20n, [1n, 0n, 1n, 0n, 0n, 0n]],
+    [40n, [1n, fd, 0n, 1n, 0n, 0n]], [40n, [2n, fd, 0n, 0n, 0n, 0n]],
+  ] as const) {
+    assert.deepEqual(r.request(capture, nr, args), {tag: 3, value: nr, next: 0n, target: 0n, endpoint: 0n});
+  }
+  assert.deepEqual(r.request(capture, 0n, [1n, 0n, 1n, 0n, 0n, 0n]),
+    {tag: 0, value: -9n, next: 0n, target: 0n, endpoint: 0n});
+  assert.equal(r.call('linux_managed_read_begin', capture.id, Number(fd), 0n, 1n), 0);
+  const read = r.result();
+  assert.equal(r.call('linux_read_load_start', capture.id, read), 0);
+  assert.deepEqual([r.result(), r.length()], [7n, 1n], 'negative route never dispatched a lazy attempt');
+  assert.equal(r.call('linux_read_load_finish', capture.id, read, 1, 0), 0);
+  assert.equal(r.call('linux_read_retire', read), 0);
+  for (const lane of [0, 1]) {
+    assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
+  }
+  assert.equal(r.call('linux_run_receipt', capture.id, capture.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', capture.id), 0); assert.equal(r.result(), 1n);
+
+  // The real dispatcher still admits the ordinary physical stdio command on
+  // another execution. Don't start it or pretend that anything was stopped.
+  const physical = r.live(), c = r.request(physical, 1n, [1n, 0n, 1n, 0n, 0n, 0n]);
+  assert.deepEqual([c.tag, c.endpoint, c.next], [263, 2n, 1n]);
+  assert.equal(r.call('linux_syscall_abandon', physical.id), 0);
+  assert.equal(r.call('linux_run_receipt', physical.id, physical.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', physical.id), 0); assert.equal(r.result(), 1n);
 });

@@ -169,3 +169,9 @@ and positioned writes, read direction, and captured sendfile. No case issues
 a physical command or reserves a source/action; a separate ordinary stdio
 table still issues the expected physical command. No positive guest capture,
 Worker startup/alias profile, or external drain is selected by this fence.
+
+The rejected `queued-output-probe` artifact can install these tags in a real
+sealed Core startup for a raw ABI counterexample. That probe uses fixed,
+independent diagnostic lanes and synthetic image/unwind receipts. It neither
+publishes a captured guest write/sendfile nor runs a Worker. No startup export
+for this mode exists in the normal or older sendfile-only artifact.

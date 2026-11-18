@@ -2305,13 +2305,27 @@ pub extern "C" fn linux_startup_input(length: u32) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn linux_startup_begin() -> i32 {
-    startup_begin(false)
+    startup_begin(StartupTable::Empty)
 }
 #[no_mangle]
 pub extern "C" fn linux_startup_begin_stdio() -> i32 {
-    startup_begin(true)
+    startup_begin(StartupTable::Physical)
 }
-fn startup_begin(stdio: bool) -> i32 {
+/// Actual captured OFD installation only in the already rejected test artifact.
+/// This does not select a Worker, guest output, or a host receiver.
+#[cfg(feature = "queued-output-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_output_probe_startup() -> i32 {
+    startup_begin(StartupTable::CaptureProbe)
+}
+#[derive(Clone, Copy)]
+enum StartupTable {
+    Empty,
+    Physical,
+    #[cfg(feature = "queued-output-probe")]
+    CaptureProbe,
+}
+fn startup_begin(table: StartupTable) -> i32 {
     with_state(false, |s| {
         let wire = &s.startup_input;
         let mut at = 0;
@@ -2353,6 +2367,10 @@ fn startup_begin(stdio: bool) -> i32 {
         .map_err(|_| -5)?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         let root = r.root.as_ref().ok_or(-11)?;
+        #[cfg(feature = "queued-output-probe")]
+        if matches!(table, StartupTable::CaptureProbe) && r.queue_probe.is_none() {
+            return Err(-9);
+        }
         if s.executions.len() >= s.execution_limit {
             return Err(-1);
         }
@@ -2372,14 +2390,17 @@ fn startup_begin(stdio: bool) -> i32 {
         r.files
             .select_cwd(p.fs.as_ref().unwrap(), &Credentials::initial_root(), cwd)
             .map_err(|_| -10)?;
-        p.table = Some(
-            if stdio {
-                r.files.stdio([1, 2, 3], r.fd_limit)
-            } else {
-                r.files.table(r.fd_limit)
-            }
-            .map_err(|_| -10)?,
-        );
+        p.table = Some(match table {
+            StartupTable::Empty => r.files.table(r.fd_limit).map_err(|_| -10)?,
+            StartupTable::Physical => r.files.stdio([1, 2, 3], r.fd_limit).map_err(|_| -10)?,
+            #[cfg(feature = "queued-output-probe")]
+            StartupTable::CaptureProbe => r
+                .queue_probe
+                .as_ref()
+                .expect("validated capture probe")
+                .stdio(&mut r.files, r.fd_limit)
+                .map_err(queue_probe_error)?,
+        });
         p.program = Some(
             r.files
                 .prepare_program(p.fs.as_ref().unwrap(), &Credentials::initial_root(), path)

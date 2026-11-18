@@ -744,6 +744,11 @@ impl QueueProbe {
             consumers: [read_a, read_b],
         })
     }
+    pub(crate) fn stdio(&self, files: &mut Files, limit: u32) -> Result<Table, QueueProbeError> {
+        Ok(self
+            .registry
+            .queued_stdio(files, 1, self.producers.each_ref(), limit)?)
+    }
     pub(crate) fn publish(
         &mut self,
         files: &mut Files,
