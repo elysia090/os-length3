@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 
 const OS = fileURLToPath(new URL('../..', import.meta.url));
 /** why's parts (docs/STRUCTURE.md): each a folder of why/ holding its Rust and its TypeScript side by side. */
-export const CORE_PARTS = ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device'];
+export const CORE_PARTS = ['text', 'agent', 'api', 'ssh', 'repo', 'home', 'shipto', 'prompt', 'device'];
 const TARGET = 'wasm32-wasip1';
 // Its own profile (Cargo.toml [profile.web]): the release's, built small.
 const PROFILE = 'web';

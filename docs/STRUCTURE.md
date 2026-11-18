@@ -9,6 +9,7 @@ translate a program with Sods independently of Why.
 | Path | Owner and entry point |
 | --- | --- |
 | `why/` | The Why Rust core, web and desktop applications, CLI, and hosted Remote. Product decisions include which releases are trusted, what storage and input/output to lend a guest, and how to authorize its operations. |
+| `why/ssh/` | Why’s local SSH policy and host adapter. Guest networking is a separate component in `ricebox/cowboy/`. |
 | `ricebox/distribution/` | The neutral distribution: package recipes, native archive, web layers, and their execution and delivery adapters. See the [distribution guide](../ricebox/distribution/README.md). |
 | `ricebox/sods/` | The translator and its ABI, the guest Linux services, and porting interfaces. See the [public entry points and target table](../ricebox/sods/README.md). |
 | `ricebox/muk/` | The native Linux OCI runner. Its external interface is an OCI bundle and a process, not a library or a root distribution. |

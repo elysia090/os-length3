@@ -3,7 +3,7 @@ import {ago} from '../../../text/format.ts';
 import {isNative} from '../../../api/host.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {connection, deviceWord} from '../../../shipto/connection.ts';
-import * as ssh from '../../../cowboy/ssh.ts';
+import * as ssh from '../../../ssh/host.ts';
 import type {Scope} from '../../../api/ssh-scope.ts';
 import * as told from '../../../shipto/ssh.ts';
 import {copying} from '../kit/common.ts';

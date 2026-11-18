@@ -1,6 +1,6 @@
 // Which of an account's devices listen for SSH, and to whom, as the Remote keeps it (why/shipto/remote/repos/ssh.ts):
 // that much and no more, so any page sees it and can turn one off. The listener itself, and where a device is
-// reached, are that device's own (why/cowboy/ssh.ts).
+// reached, are that device's own (why/ssh/host.ts).
 
 import {json} from './connection.ts';
 import type {Scope} from '../api/ssh-scope.ts';

@@ -16,7 +16,7 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const TREES: {root: string; order: string[]; skip?: string[]; build?: string[]; buildHosts?: string[]}[] = [
   // why's parts (docs/STRUCTURE.md), each a folder of all it is whatever it is written in, then the window: a part
   // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole. build/ composes the release; runtime code must never take from it.
-  {root: 'why', order: ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test'], build: ['build'],
+  {root: 'why', order: ['text', 'agent', 'api', 'ssh', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test'], build: ['build'],
     buildHosts: ['why/app/vite.config.ts', 'why/app/testing/', 'why/test/']},
   // The window: what is drawn with (ui), what a host is asked for a page (host), the pages, and what starts them.
   {root: 'why/app', order: ['ui', 'host', 'pages', 'main', '.'], skip: ['styles', 'shims', 'testing']},

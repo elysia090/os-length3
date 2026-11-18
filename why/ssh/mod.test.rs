@@ -1,4 +1,4 @@
-//! The tests of cowboy/ (mod.rs).
+//! Tests for local SSH listener policy.
 
 use super::*;
 use super::keys::*;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {lan} from './ssh.ts';
+import {lan} from './host.ts';
 
 test('the addresses listened on besides loopback are said after their interfaces, as why address says them', () => {
   assert.deepEqual(lan({bound: ['192.168.1.5', '100.101.102.103', '127.0.0.1', '::1'],

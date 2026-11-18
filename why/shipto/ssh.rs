@@ -1,9 +1,9 @@
 //! Whether this device listens for SSH, as the Remote is told it (why/shipto/remote/repos/ssh.ts): that it listens, and the scope's
 //! word, never an address, a port or a repo name. Pages of the account show "<device> listens for SSH" with its
-//! off switch, and nothing of where. The listener itself is cowboy/'s (and why's: why/cli/src/cmd/ssh.rs).
+//! off switch, and nothing of where. Device policy is in why/ssh; the listener runs in why/cli/src/cmd/ssh.rs.
 
 use super::{Client, Failure};
-use crate::cowboy::Scope;
+use crate::ssh::Scope;
 
 /// Whether the listener goes on after hearing `h`. Out of reach it goes on: SSH on a LAN needs no Internet, and
 /// an off said meanwhile is heard the moment the Remote answers again.

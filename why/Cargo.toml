@@ -29,7 +29,7 @@ ricebox = { path = "../ricebox/distribution" }
 # a safe interface: the core's own code says no unsafe for them.
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1", default-features = false, features = ["std", "fs", "mount", "net", "param", "pipe", "process", "system", "termios", "thread"] }
-# This host's interface addresses (cowboy/reach.rs: getifaddrs, which rustix does not have), through nix's safe call;
+# This host's interface addresses (ssh/reach.rs: getifaddrs, which rustix does not have), through nix's safe call;
 # nix is in the lock already (russh's).
 nix = { version = "0.31", default-features = false, features = ["net"] }
 

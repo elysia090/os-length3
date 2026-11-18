@@ -115,13 +115,13 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-// ---- SSH into this device's Prompts (why/cowboy/; the listener is why's) ----
+// ---- SSH into this device's Prompts (why/ssh/; the listener is why's) ----
 
 /// This device's SSH as its card shows it (core ssh::Here): whether it listens, who may connect, where each repo is
 /// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
 #[cfg(unix)]
 fn ssh_now() -> serde_json::Value {
-    serde_json::to_value(why_core::cowboy::here(&paths::data_dir())).unwrap_or_default()
+    serde_json::to_value(why_core::ssh::here(&paths::data_dir())).unwrap_or_default()
 }
 
 #[cfg(not(unix))]

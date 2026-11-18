@@ -21,7 +21,7 @@ pub mod home;
 pub mod repo;
 pub mod prompt;
 #[cfg(unix)]
-pub mod cowboy;
+pub mod ssh;
 pub mod agent;
 pub mod shipto;
 #[path = "repo/history/mod.rs"]

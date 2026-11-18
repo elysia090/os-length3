@@ -22,7 +22,7 @@ test('the distribution owns native and web execution; Why owns its product adapt
   }
   for (const f of ['start.rs', 'running.rs', 'writes.rs', 'userland.ts']) assert.equal(unitOf(`why/prompt/${f}`)?.name, 'app');
   assert.equal(unitOf('why/api/indexeddb.ts')?.name, 'app');
-  assert.equal(unitOf('why/cowboy/ssh.ts')?.name, 'app');
+  assert.equal(unitOf('why/ssh/host.ts')?.name, 'app');
   assert.equal(unitOf('why/device/storage/free.rs')?.name, 'app');
 });
 
