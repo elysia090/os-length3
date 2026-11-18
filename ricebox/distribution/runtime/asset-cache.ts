@@ -1,7 +1,7 @@
 // Browser Cache Storage, quota policy and off-thread integrity checks for a
 // distribution's derived bytes. The loader owns which release assets are live.
-import {digest} from './download.ts';
-import {prepare, type Segment} from '../../sods/runtime/translate.ts';
+import type {Segment} from '../../sods/runtime/translate.ts';
+import {checkAsset, storedParts} from './check-assets.ts';
 
 export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: {
   base: string;
@@ -94,14 +94,8 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
       if (own) bytes = r.bytes ? new Uint8Array(r.bytes) : bytes;
       if (own && !r.bytes) throw new Error('root: a file could not be checked');
     }
-    const b = unpack ? await gunzip(bytes) : bytes;
-    const sha256 = await digest(b);
-    if (!as) return {bytes: b, sha256};
-    const p = prepare(b, as);
-    return {bytes: p.wasm, sha256, size: b.length, segments: p.segments};
+    return checkAsset(bytes, unpack, as);
   }
-  const gunzip = async (bytes: Uint8Array) =>
-    new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
 
   /** A kept copy of `url`, if it is still exactly the digest it was kept under. */
   async function kept(url: string, sha256: string): Promise<Uint8Array | null> {
@@ -146,8 +140,8 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
         });
         if (r.size === undefined) return false;
       } else {
-        const body = joined(parts);
-        await c.put(url, new Response((seal ? await sealed(body) : body) as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(size)}}));
+        const body = await storedParts(parts, seal);
+        await c.put(url, new Response(body as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(body.length)}}));
       }
       void sizesOf(c).then((m) => m.set(whole(url), size));
       used(url);
@@ -181,15 +175,6 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
     return room() >= size;
   }
 
-  /** `parts` one after another, as one. */
-  function joined(parts: Uint8Array[]): Uint8Array {
-    if (parts.length === 1) return parts[0];
-    const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
-    let at = 0;
-    for (const p of parts) { out.set(p, at); at += p.byteLength; }
-    return out;
-  }
-
   async function keptBytes(c: Cache): Promise<number> {
     let n = 0;
     for (const v of (await sizesOf(c)).values()) n += v;
@@ -213,15 +198,6 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
       for (const k of Object.keys(u)) if (!live(k)) delete u[k];
       localStorage.setItem(usedKey, JSON.stringify(u));
     } catch { /* nothing remembered */ }
-  }
-
-  /** A kept copy's SHA-256 after it. */
-  async function sealed(body: Uint8Array): Promise<Uint8Array> {
-    const {sha256} = await checked(body.slice(), false, true);
-    const out = new Uint8Array(body.length + 32);
-    out.set(body);
-    out.set(Uint8Array.from(sha256.match(/../g)!.map((x) => parseInt(x, 16))), body.length);
-    return out;
   }
 
   return {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers};
