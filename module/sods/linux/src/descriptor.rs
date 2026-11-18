@@ -152,6 +152,18 @@ pub(crate) enum Target {
 #[derive(Debug)]
 #[must_use = "release after host access has stopped; dropping retains the description"]
 pub(crate) struct StreamHold(Id);
+/// Private installation token for one owned physical stdout OFD. It names
+/// the description, not a numeric guest/host fd, and grants no byte access,
+/// file offset, extra refcount or evidence of stopped external access.
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct OwnedStdout(Id);
+#[cfg(test)]
+impl OwnedStdout {
+    pub(crate) fn matches(&self, hold: &StreamHold) -> bool {
+        self.0 == hold.0
+    }
+}
 /// One retained captured OFD, not a consumer or an external access receipt.
 #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
 #[derive(Debug)]
@@ -1248,6 +1260,22 @@ impl Files {
             },
         })
     }
+    /// The private native fixture installs a newly owned, exclusively held
+    /// non-append output alongside separately supplied stdin/stderr endpoints.
+    /// Only startup can mint its token. There is no promotion from a borrowed
+    /// table or fd, and the embedding must retain the same physical File
+    /// through all stopped receipts. The Wasm startup does not select this.
+    #[cfg(test)]
+    pub(crate) fn stdio_with_owned_stdout(
+        &mut self,
+        endpoints: [u64; 3],
+        limit: u32,
+    ) -> Result<(Table, OwnedStdout), Error> {
+        let table = self.stdio(endpoints, limit)?;
+        let stdout = self.description(&table, 1).expect("private installed stdout");
+        Ok((table, OwnedStdout(stdout)))
+    }
+
     /// Only the matching registry calls this with its already validated lanes.
     /// Captured descriptions contain no fallback physical endpoint.
     #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
@@ -2138,6 +2166,40 @@ mod tests {
         f.let_go(t).unwrap();
         assert!(f.descriptions.iter().all(|c| c.value.is_none()));
     }
+    #[test]
+    fn owned_stdout_is_the_exact_ofd_not_an_endpoint_integer() {
+        let (mut f, _) = setup(16);
+        let mut other = Files::new(
+            93,
+            Tree::new(94, 4, 4, 16, root_owned(0o755)).unwrap(),
+            f.limits,
+        );
+        let (t, owned) = f.stdio_with_owned_stdout([11, 12, 13], 8).unwrap();
+        let (foreign, _) = other.stdio_with_owned_stdout([11, 12, 13], 8).unwrap();
+        let foreign_hold = other.hold_stream(&foreign, 1, StreamDirection::Write).unwrap();
+        assert_eq!(owned.0.slot, foreign_hold.0.slot);
+        assert_eq!(owned.0.generation, foreign_hold.0.generation);
+        assert!(!owned.matches(&foreign_hold), "another root can reuse every local number");
+        other.release_stream(foreign_hold).unwrap();
+        other.let_go(foreign).unwrap();
+
+        let alias = f.dup(&t, 1, 3, false).unwrap();
+        let hold = f.hold_stream(&t, alias, StreamDirection::Write).unwrap();
+        f.let_go(t).unwrap();
+        assert!(owned.matches(&hold), "a held alias outlives its original table");
+        assert_eq!(f.stream(&hold), Ok((12, StreamDirection::Write)));
+        f.release_stream(hold).unwrap();
+
+        let borrowed = f.stdio([11, 12, 13], 8).unwrap();
+        let fresh = f.hold_stream(&borrowed, 1, StreamDirection::Write).unwrap();
+        assert_eq!(f.stream(&fresh), Ok((12, StreamDirection::Write)));
+        assert_eq!(owned.0.slot, fresh.0.slot);
+        assert_ne!(owned.0.generation, fresh.0.generation);
+        assert!(!owned.matches(&fresh), "a borrowed reuse does not inherit authority");
+        f.release_stream(fresh).unwrap();
+        f.let_go(borrowed).unwrap();
+    }
+
     #[test]
     fn stdio_pending_survives_dup_fork_close_and_reuse() {
         let (mut f, inode) = setup(32);

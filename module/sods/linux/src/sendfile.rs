@@ -448,6 +448,27 @@ impl Sendfile {
         self.phase = Phase::CapChecking;
         Ok(request)
     }
+    /// Native qualification for a startup-installed owned stdout. Return a
+    /// foreign/stale request intact; neither a matching endpoint number nor
+    /// a capability receipt is permission to rediscover the guest fd.
+    #[cfg(test)]
+    pub(crate) fn approve_owned_stdout(
+        &self,
+        request: CapabilityRequest,
+        output: &descriptor::OwnedStdout,
+    ) -> Result<CapabilityReceipt, CapabilityRequest> {
+        if self.phase != Phase::CapChecking
+            || self.identity().ok() != Some(request.0)
+            || !self.destination.as_ref().is_some_and(|hold| output.matches(hold))
+        {
+            return Err(request);
+        }
+        Ok(CapabilityReceipt {
+            identity: request.0,
+            accepted: true,
+        })
+    }
+
     /// Validate the non-Copy service ticket before a wrapper consumes it.
     pub(crate) fn check_capability(
         &self,

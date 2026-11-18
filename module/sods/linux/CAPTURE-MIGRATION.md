@@ -705,3 +705,24 @@ conservative prefix/access-only receipt still cannot retire it until
 the matching stopped receipt arrives. No byte is replayed. Qualification
 at this raw boundary remains explicitly synthetic; a real Node file and
 real Worker do not turn that probe into product admission.
+
+The Rust-side native installation now issues one opaque owned-stdout token
+from the same operation that constructs that stdio table. It names the
+existing Files incarnation, description slot and generation; it is not a
+lookup key for a numeric host or guest fd. A plain borrowed table cannot
+be promoted by its endpoint number. Exact aliases qualify; another root
+with identical local numbers, a different live OFD using the same endpoint
+number, and a retired slot reused at a new generation do not. Removing the
+generation check fails the reused-borrow counterexample. No private
+registry or duplicate reference count was added.
+
+The Sendfile owner compares this token only to its originally held
+destination before accepting the exact capability request. A mismatch
+returns the request intact and cannot prepare a source. The startup
+token does not own canonical bytes, an offset, a prefix or a stopped
+receipt. Rust retains the active OFD and commits its source only through
+the one existing ledger. The trusted native fixture retains its one File
+handle separately through actual settlement; neither token destruction
+nor table retirement can claim its external effects have ended. This
+binding is still native-test-only; the Node probe's synthetic
+qualification is not an enabled default or a trusted physical host ABI.

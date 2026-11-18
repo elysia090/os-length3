@@ -30,11 +30,10 @@ impl Drop for Scratch {
 // accepts a raw OS fd, flags from an embedder or an existing file path.
 struct OwnedOutput {
     file: File,
-    files: u64,
-    endpoint: u64,
+    binding: descriptor::OwnedStdout,
 }
 impl OwnedOutput {
-    fn create(dir: &Scratch, files: u64, endpoint: u64) -> Self {
+    fn install(dir: &Scratch, files: &mut Files, endpoint: u64) -> (Table, Self) {
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -42,24 +41,10 @@ impl OwnedOutput {
             .open(dir.0.join("out"))
             .unwrap();
         assert!(file.metadata().unwrap().is_file());
-        Self {
-            file,
-            files,
-            endpoint,
-        }
-    }
-
-    fn approve(
-        &mut self,
-        request: CapabilityRequest,
-    ) -> Result<CapabilityReceipt, CapabilityRequest> {
-        if request.0.owner != self.files || request.endpoint() != self.endpoint {
-            return Err(request);
-        }
-        Ok(CapabilityReceipt {
-            identity: request.0,
-            accepted: true,
-        })
+        let (table, binding) = files
+            .stdio_with_owned_stdout([10, endpoint, 30], 16)
+            .unwrap();
+        (table, Self { file, binding })
     }
 }
 
@@ -67,24 +52,34 @@ impl OwnedOutput {
 fn owned_regular_output_uses_the_original_endpoint_and_canonical_offer() {
     for guest_exits_before_receipt in [false, true] {
         let mut h = Harness::new(false, false, 0);
-        let owner = h.f.owner();
-        let alternate_dir = Scratch::new();
-        let mut alternate = OwnedOutput::create(&alternate_dir, owner + 1, 20);
-        let wrong_dir = Scratch::new();
-        let mut wrong_endpoint = OwnedOutput::create(&wrong_dir, owner, 30);
+        let source = h.f.inode(&h.t, h.fd).unwrap();
+        let stale_dir = Scratch::new();
+        let (stale_table, stale) = OwnedOutput::install(&stale_dir, &mut h.f, 20);
+        h.f.let_go(stale_table).unwrap();
         let dir = Scratch::new();
-        let mut sink = OwnedOutput::create(&dir, owner, 20);
+        let (table, mut sink) = OwnedOutput::install(&dir, &mut h.f, 20);
+        let borrowed = std::mem::replace(&mut h.t, table);
+        // A reused registry slot with the identical endpoint number is not
+        // the previous installation's still-retained host token.
+        h.f.let_go(borrowed).unwrap();
+        h.fd = h.f.open(&h.t, source, false).unwrap();
+        let alternate_dir = Scratch::new();
+        let (alternate_table, alternate) = OwnedOutput::install(&alternate_dir, &mut h.f, 20);
         assert_eq!(sink.file.write(b"A").unwrap(), 1);
 
         h.begin(4);
         let request = h.request();
-        let request = alternate.approve(request).unwrap_err();
-        let request = wrong_endpoint.approve(request).unwrap_err();
+        let request =
+            h.s.approve_owned_stdout(request, &alternate.binding)
+                .unwrap_err();
+        let request =
+            h.s.approve_owned_stdout(request, &stale.binding)
+                .unwrap_err();
         assert_eq!(h.s.phase(), Phase::CapChecking);
         assert!(!h.s.viewing());
         assert_eq!(h.s.offered(), 0, "foreign output grants no source view");
         assert_eq!(h.f.offset(&h.t, h.fd), Ok((0, 0)));
-        let proof = sink.approve(request).unwrap();
+        let proof = h.s.approve_owned_stdout(request, &sink.binding).unwrap();
 
         // The live descriptor now names a regular inode, not either physical
         // output. The originally held stream still names the approved sink.
@@ -152,6 +147,7 @@ fn owned_regular_output_uses_the_original_endpoint_and_canonical_offer() {
         assert_eq!(sink.file.write(b"C").unwrap(), 1);
         assert_eq!(std::fs::read(dir.0.join("out")).unwrap(), b"AabcdC");
         assert_eq!(alternate.file.metadata().unwrap().len(), 0);
-        assert_eq!(wrong_endpoint.file.metadata().unwrap().len(), 0);
+        assert_eq!(stale.file.metadata().unwrap().len(), 0);
+        h.f.let_go(alternate_table).unwrap();
     }
 }
