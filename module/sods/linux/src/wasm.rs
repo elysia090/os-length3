@@ -1,4 +1,4 @@
-//! Private wasm32 ABI6, one managed domain per instance. The read-only caller
+//! Private wasm32 ABI7, one managed domain per instance. The read-only caller
 //! is a limited fixed-memory profile, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
@@ -192,7 +192,15 @@ fn read_code(error: crate::read::Error) -> i32 {
 enum Access {
     Ordinary,
     Read,
-    PathFinish { execution: u64, action: Token },
+    PathFinish {
+        execution: u64,
+        action: Token,
+    },
+    SendFinish {
+        execution: u64,
+        sequence: u32,
+        action: Token,
+    },
 }
 fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
     with_state_access(
@@ -215,6 +223,33 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         s.auxiliary = 0;
         s.endpoint = 0;
         s.state = 0;
+        // Canonical source views exclude every old Read exception too. Only
+        // one exact owner/sequence/action may submit evidence. Another valid
+        // Unknown owner's late completion is not permission to allocate here.
+        let mut send_views = s
+            .executions
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot)| match slot {
+                Slot::Live(slot) => slot
+                    .continuation
+                    .as_ref()
+                    .and_then(|c| c.sendfile_view())
+                    .map(|(sequence, action)| (i as u64 + 1, sequence, action)),
+                _ => None,
+            });
+        if let Some((execution, sequence, action)) = send_views.next() {
+            if send_views.next().is_some()
+                || access
+                    != (Access::SendFinish {
+                        execution,
+                        sequence,
+                        action,
+                    })
+            {
+                return -4;
+            }
+        }
         // A path input view excludes even the old read-view exceptions. Only
         // its exact owner/action finish can end it; another late finish cannot
         // allocate while this owner's physical view is still exposed.
@@ -276,7 +311,13 @@ fn inode(n: u64) -> Inode {
 }
 #[no_mangle]
 pub extern "C" fn linux_abi_version() -> u32 {
-    6
+    7
+}
+/// A conspicuous synthetic artifact marker, never a production capability.
+#[cfg(feature = "sendfile-probe")]
+#[no_mangle]
+pub extern "C" fn linux_sendfile_probe() -> u32 {
+    1
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -1017,6 +1058,33 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = u64::from(sequence);
             action.sequence()
         }
+        Step::SendfileCapability {
+            action,
+            sequence,
+            endpoint,
+        } => {
+            s.state = 10;
+            s.auxiliary = u64::from(sequence);
+            s.endpoint = endpoint;
+            action.sequence()
+        }
+        Step::SendfileLoad { action, sequence } => {
+            s.state = 11;
+            s.auxiliary = u64::from(sequence);
+            action.sequence()
+        }
+        Step::SendfileOffer {
+            action,
+            sequence,
+            endpoint,
+            length,
+        } => {
+            s.state = 12;
+            s.auxiliary = u64::from(sequence);
+            s.endpoint = endpoint;
+            s.length = length;
+            action.sequence()
+        }
         Step::Path {
             action,
             target,
@@ -1260,6 +1328,313 @@ pub extern "C" fn linux_register_receipt(
             )
             .map_err(|_| -12)?;
         Ok(step(s, command))
+    })
+}
+
+/// Read-only capability subround; no source view or output permission. The
+/// continuation stores the non-Copy request before its metadata crosses ABI.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_cap_start(id: u64, sequence: u32, action: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let endpoint = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .sendfile_cap_start(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+            )
+            .map_err(|_| -12)?;
+        s.auxiliary = u64::from(sequence);
+        s.endpoint = endpoint;
+        Ok(action)
+    })
+}
+/// Production can only reject until a reviewed physical construction exists.
+/// Code1 is synthetic evidence in the segregated probe artifact ONLY. Shape-
+/// complete raw exports are not a security boundary against a lying embedder.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_cap_finish(
+    id: u64,
+    sequence: u32,
+    action: u64,
+    endpoint: u64,
+    proof: u32,
+) -> i32 {
+    with_state(false, |s| {
+        if proof > 1 {
+            return Err(-5);
+        }
+        #[cfg(not(feature = "sendfile-probe"))]
+        if proof != 0 {
+            return Err(-5);
+        }
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let call = slot.continuation.as_mut().ok_or(-11)?;
+        let command = if proof == 0 {
+            call.sendfile_cap_finish_rejected(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+                endpoint,
+            )
+        } else {
+            #[cfg(feature = "sendfile-probe")]
+            {
+                call.sendfile_cap_finish_synthetic(
+                    &mut r.files,
+                    &mut s.domain,
+                    &mut slot.execution,
+                    sequence,
+                    token(action),
+                    endpoint,
+                )
+            }
+            #[cfg(not(feature = "sendfile-probe"))]
+            {
+                return Err(-5);
+            }
+        }
+        .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_sendfile_load_start(id: u64, sequence: u32, action: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let load = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .sendfile_load_start(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+            )
+            .map_err(|_| -12)?;
+        s.length = u64::from(load.attempt);
+        s.auxiliary = u64::from(sequence);
+        Ok(u64::from(load.source))
+    })
+}
+/// The global source staging turn is synchronous through this exact finish.
+/// Source and attempt are both checked before input adoption; failed/cancelled
+/// delivery is not a capability or output receipt.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_load_finish(
+    id: u64,
+    sequence: u32,
+    action: u64,
+    source: u32,
+    attempt: u32,
+    success: u32,
+) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .sendfile_load_finish(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+                descriptor::LoadRequest { source, attempt },
+                success == 1,
+                &mut r.input,
+            )
+            .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_sendfile_start(id: u64, sequence: u32, action: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let call = slot.continuation.as_mut().ok_or(-11)?;
+        // All fallible metadata preflight precedes the live view interval.
+        let endpoint = call
+            .sendfile_query(&slot.execution)
+            .map_err(|_| -12)?
+            .ok_or(-12)?
+            .endpoint;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (pointer, length) = call
+            .sendfile_start(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+            )
+            .map_err(|_| -12)?;
+        s.length = length;
+        s.auxiliary = u64::from(sequence);
+        s.endpoint = endpoint;
+        Ok(pointer as u64)
+    })
+}
+/// Ended access is separate from prefix certainty. Every shape check and the
+/// exact owner/action guard precedes any Domain, cursor or view transition.
+/// Known zero errors settle ownership but never become guest errno here.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_receipt(
+    id: u64,
+    sequence: u32,
+    action: u64,
+    confirmed: u64,
+    outcome: u32,
+    ended: u32,
+) -> i32 {
+    with_state_access(
+        Access::SendFinish {
+            execution: id,
+            sequence,
+            action: token(action),
+        },
+        |s| {
+            let access = match ended {
+                0 => crate::sendfile::AccessEvidence::NotEnded,
+                1 => crate::sendfile::AccessEvidence::Ended,
+                _ => return Err(-5),
+            };
+            let outcome = match outcome {
+                0 => crate::sendfile::Outcome::Transferred,
+                1 => crate::sendfile::Outcome::Again,
+                2 => crate::sendfile::Outcome::Interrupted,
+                3 => crate::sendfile::Outcome::BadFd,
+                4 => crate::sendfile::Outcome::BrokenPipe,
+                5 => crate::sendfile::Outcome::Io,
+                6 => crate::sendfile::Outcome::Unknown,
+                7 => crate::sendfile::Outcome::PreparationFailed,
+                _ => return Err(-5),
+            };
+            let i = execution_index(s, id)?;
+            let slot = s.executions[i].live_mut()?;
+            let r = s.sealed.as_mut().ok_or(-9)?;
+            let command = slot
+                .continuation
+                .as_mut()
+                .ok_or(-11)?
+                .sendfile_receipt(
+                    &mut r.files,
+                    &mut s.domain,
+                    &mut slot.execution,
+                    sequence,
+                    token(action),
+                    confirmed,
+                    outcome,
+                    access,
+                )
+                .map_err(|_| -12)?;
+            Ok(step(s, command))
+        },
+    )
+}
+/// Synthetic independent lexical-end certificate, absent from normal builds.
+#[cfg(feature = "sendfile-probe")]
+#[no_mangle]
+pub extern "C" fn linux_sendfile_probe_access_ended(id: u64, sequence: u32, action: u64) -> i32 {
+    with_state_access(
+        Access::SendFinish {
+            execution: id,
+            sequence,
+            action: token(action),
+        },
+        |s| {
+            let i = execution_index(s, id)?;
+            let slot = s.executions[i].live_mut()?;
+            let r = s.sealed.as_ref().ok_or(-9)?;
+            slot.continuation
+                .as_mut()
+                .ok_or(-11)?
+                .sendfile_access_ended_synthetic(
+                    &r.files,
+                    &s.domain,
+                    &slot.execution,
+                    sequence,
+                    token(action),
+                )
+                .map_err(|_| -12)?;
+            Ok(0)
+        },
+    )
+}
+/// Closing cleanup needs no action token that may already have retired. It
+/// never restarts an offer or recommits a source prefix.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_cleanup(id: u64, sequence: u32) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .sendfile_cleanup_retry(&mut r.files, &mut s.domain, &mut slot.execution, sequence)
+            .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+/// Private metadata only; cannot bypass a canonical/path/read view. No pending
+/// owner is state0xffff; otherwise state is phase | closed<<8 | finished<<9.
+#[no_mangle]
+pub extern "C" fn linux_sendfile_query(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live()?;
+        let query = slot
+            .continuation
+            .as_ref()
+            .ok_or(-11)?
+            .sendfile_query(&slot.execution)
+            .map_err(|_| -12)?;
+        let Some(q) = query else {
+            s.state = 0xffff;
+            return Ok(0);
+        };
+        use crate::sendfile::Phase;
+        s.state = match q.phase {
+            Phase::Idle => 0,
+            Phase::CapReady => 1,
+            Phase::CapChecking => 2,
+            Phase::LoadingReady => 3,
+            Phase::Loading => 4,
+            Phase::OfferReady => 5,
+            Phase::Started => 6,
+            Phase::Unknown => 7,
+            Phase::Closing => 8,
+            Phase::Terminal => 9,
+        } | (u32::from(q.closed) << 8)
+            | (u32::from(q.finished) << 9);
+        s.length = q.offered;
+        s.auxiliary = u64::from(q.sequence);
+        s.endpoint = q.endpoint;
+        Ok(q.confirmed)
     })
 }
 
@@ -1523,6 +1898,10 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
             }
         }
         if !slot.execution.retireable()
+            || slot
+                .continuation
+                .as_ref()
+                .is_some_and(|c| c.sendfile_pending() || c.sendfile_references(&slot.execution))
             || s.sealed
                 .as_ref()
                 .is_some_and(|r| r.reads.references(&slot.execution))

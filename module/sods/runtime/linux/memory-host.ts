@@ -44,6 +44,14 @@ interface Admission extends WebAssembly.Exports {
   linux_task_registration(id: bigint): number;
   linux_register_start(id: bigint, sequence: number, action: bigint, base: bigint): number;
   linux_register_receipt(id: bigint, sequence: number, action: bigint, base: bigint, outcome: number): number;
+  linux_sendfile_cap_start(id: bigint, sequence: number, action: bigint): number;
+  linux_sendfile_cap_finish(id: bigint, sequence: number, action: bigint, endpoint: bigint, proof: number): number;
+  linux_sendfile_load_start(id: bigint, sequence: number, action: bigint): number;
+  linux_sendfile_load_finish(id: bigint, sequence: number, action: bigint, source: number, attempt: number, success: number): number;
+  linux_sendfile_start(id: bigint, sequence: number, action: bigint): number;
+  linux_sendfile_receipt(id: bigint, sequence: number, action: bigint, count: bigint, outcome: number, ended: number): number;
+  linux_sendfile_cleanup(id: bigint, sequence: number): number;
+  linux_sendfile_query(id: bigint): number;
   linux_syscall_path_start(id: bigint, action: bigint): number;
   linux_syscall_path_finish(id: bigint, action: bigint, actual: bigint, outcome: number): number;
   linux_syscall_complete(id: bigint): number;
@@ -158,7 +166,7 @@ export interface PathExecutionOptions {
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
 }
-const required = ['linux_task_registration', 'linux_syscall_sequenced', 'linux_register_start', 'linux_register_receipt', 'linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+const required = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish', 'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query', 'linux_task_registration', 'linux_syscall_sequenced', 'linux_register_start', 'linux_register_receipt', 'linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_path_start', 'linux_syscall_path_finish', 'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
@@ -242,13 +250,18 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
   const names = new Map(WebAssembly.Module.exports(module).map(e => [e.name, e.kind]));
+  // A probe has synthetic physical truth, never a usable host capability. Reject
+  // before instantiation, even when all required names/version are present.
+  if (names.has('linux_sendfile_probe') || names.has('linux_sendfile_probe_access_ended')) {
+    throw new Error('Synthetic sendfile probe is not a production Linux admission module');
+  }
   if (WebAssembly.Module.imports(module).length || names.get('memory') !== 'memory' || required.some(name => names.get(name) !== 'function')) {
     throw new Error('Unsupported Linux admission module');
   }
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new WebAssembly.Instance(module).exports as Admission;
-  if (core.linux_abi_version() !== 6) throw new Error('Unsupported Linux admission ABI');
+  if (core.linux_abi_version() !== 7) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   const safeNumber = (value: bigint): number => {
     const number = integer(numeric(value));
@@ -373,7 +386,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     const value = result(status);
     const tag = core.linux_result_state();
     return {tag, value, target: unsigned(64, core.linux_result_auxiliary()), next: unsigned(64, core.linux_result_length()),
-      endpoint: (tag & 255) === 7 ? numeric(core.linux_result_endpoint()) : 0};
+      endpoint: (tag & 255) === 7 || tag === 10 || tag === 12 ? numeric(core.linux_result_endpoint()) : 0};
   };
   type Loader = (source: number) => Uint8Array | Promise<Uint8Array>;
   // Shared source dispatcher for inline suspension and Worker synchronous waits.
@@ -430,6 +443,31 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   const abandonWorker = (w: WorkerState): void => {
     try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
     catch (error) { workerFailure(w, error); }
+  };
+  const rejectSourceOutput = (w: WorkerState, sequence: number, c: ReturnType<typeof command>): ReturnType<typeof command> => {
+    if (c.target !== wide(sequence) || c.next !== 0n) throw new Error('Rust source-output sequence mismatch');
+    const action = c.value, endpoint = c.endpoint;
+    // The capability request is retained in Rust, not reconstructed from a JS
+    // boolean or a guest FD. No physical qualifier/loader/output is invoked in
+    // this negative-only production stage. Generic non-TTY stdio is not proof.
+    const started = result(core.linux_sendfile_cap_start(w.id, sequence, action));
+    let attempted = false;
+    try {
+      if (started !== action || core.linux_result_auxiliary() !== wide(sequence) ||
+          core.linux_result_endpoint() !== wide(endpoint) || core.linux_result_length() !== 0n) {
+        throw new Error('Rust source-output capability metadata changed');
+      }
+      attempted = true;
+      return command(core.linux_sendfile_cap_finish(w.id, sequence, action, wide(endpoint), 0));
+    } catch (error) {
+      if (!attempted) {
+        // The read-only local qualification never dispatched IO and has ended.
+        // Settle rejection once; never retry a possibly committed finish export.
+        try { checked(core.linux_sendfile_cap_finish(w.id, sequence, action, wide(endpoint), 0)); }
+        catch (receipt) { throw new AggregateError([error, receipt], 'Source-output qualification and rejection failed'); }
+      }
+      throw error;
+    }
   };
   const transferStream = (w: WorkerState, c: ReturnType<typeof command>): ReturnType<typeof command> => {
     if (!w.stdio) throw new Error('No physical standard-stream capability');
@@ -523,6 +561,12 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
                 physical === 'applied' ? 0 : physical === 'not-applied' ? 1 : 2));
               if (completed.tag !== 0) throw new Error(`Worker register application failed or remains uncertain: ${physical}`);
               return {kind: 'return', value: completed.value};
+            }
+            if (c.tag === 10) {
+              const completed = rejectSourceOutput(w, request.sequence, c);
+              // No accepted production physical capability exists yet. Never
+              // turn a rejected/unknown stage into a successful zero result.
+              throw new Error(`Unsupported Rust Worker command: ${completed.tag} (value ${completed.value}, syscall ${request.nr})`);
             }
             if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);
             const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });

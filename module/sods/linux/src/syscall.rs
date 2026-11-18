@@ -5,6 +5,8 @@
 //! or a claim of normative Linux pointer-fault equivalence.
 //! Only the sequenced Worker entrance additionally admits low-address SET_FS;
 //! its physical register evidence is separate from byte access and run unwind.
+//! Sequenced sendfile retains an exact source/output owner and capability ticket;
+//! current production completes only rejection, never a physical output offer.
 //! TS transports commands; syscall numbers, errors and resume register values
 //! are decided here. The managed owner must not expose the owned ReadId for
 //! independent retirement or manufacture source-failure evidence.
@@ -13,6 +15,7 @@ use crate::effect::{Completion, Token};
 use crate::execution::{self, Execution, Invocation, Phase, Snapshot};
 use crate::lease::{self, Domain};
 use crate::read::{self, Reads};
+use crate::sendfile::{self, AccessEvidence, CapabilityReceipt, CapabilityRequest, Sendfile};
 use crate::single_task::SingleTask;
 use crate::{credentials::Credentials, fs_context::Ticket};
 
@@ -24,6 +27,7 @@ pub(crate) enum Error {
     Read(read::Error),
     Lease(lease::Error),
     Files(descriptor::Error),
+    Sendfile(sendfile::Error),
 }
 impl From<execution::Error> for Error {
     fn from(e: execution::Error) -> Self {
@@ -38,6 +42,11 @@ impl From<read::Error> for Error {
 impl From<lease::Error> for Error {
     fn from(e: lease::Error) -> Self {
         Self::Lease(e)
+    }
+}
+impl From<sendfile::Error> for Error {
+    fn from(e: sendfile::Error) -> Self {
+        Self::Sendfile(e)
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,6 +78,21 @@ pub(crate) enum Step {
         action: Token,
         sequence: u32,
         base: u64,
+    },
+    SendfileCapability {
+        action: Token,
+        sequence: u32,
+        endpoint: u64,
+    },
+    SendfileLoad {
+        action: Token,
+        sequence: u32,
+    },
+    SendfileOffer {
+        action: Token,
+        sequence: u32,
+        endpoint: u64,
+        length: u64,
     },
     Exit,
     Unsupported(u64),
@@ -130,6 +154,22 @@ pub(crate) enum PathOutcome {
     Failed,
     Unknown,
 }
+struct SendfilePending {
+    owner: Sendfile,
+    cap_request: Option<CapabilityRequest>,
+}
+/// Private diagnostic scalars, not a physical capability or guest result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SendfileStatus {
+    pub phase: sendfile::Phase,
+    pub sequence: u32,
+    pub action: Option<Token>,
+    pub endpoint: u64,
+    pub offered: u64,
+    pub confirmed: u64,
+    pub closed: bool,
+    pub finished: bool,
+}
 struct Opening {
     original_nr: u64,
     invocation: Invocation,
@@ -156,6 +196,19 @@ fn file_error(error: descriptor::Error) -> Result<i64, Error> {
         other => Err(Error::Files(other)),
     }
 }
+/// Only callback-free, fully rolled-back sendfile begin errors reach here.
+/// Keep this narrower than all file_error cases; Domain/Busy/identity/source
+/// failures are transport/internal failures, never invented Linux errno.
+fn sendfile_admission_error(error: sendfile::Error) -> Result<Step, Error> {
+    match error {
+        sendfile::Error::Unsupported40
+        | sendfile::Error::Files(descriptor::Error::NotSupported) => Ok(Step::Unsupported(40)),
+        sendfile::Error::Files(
+            error @ (descriptor::Error::BadFd | descriptor::Error::Capacity),
+        ) => file_error(error).map(Step::Return),
+        other => Err(Error::Sendfile(other)),
+    }
+}
 fn open_error(nr: u64, error: OpenError) -> Result<Step, Error> {
     let value = match error {
         OpenError::Files(error) | OpenError::Path(crate::path::Error::Files(error)) => {
@@ -177,6 +230,7 @@ pub(crate) struct Continuation {
     stream: Option<StreamPending>,
     opening: Option<Opening>,
     register: Option<RegisterPending>,
+    sendfile: Option<SendfilePending>,
     path_input: Vec<u8>,
     closed: bool,
     last_sequence: u32,
@@ -190,6 +244,7 @@ impl Continuation {
             stream: None,
             opening: None,
             register: None,
+            sendfile: None,
             path_input: Vec::new(),
             closed: false,
             last_sequence: 0,
@@ -296,6 +351,7 @@ impl Continuation {
             || self.stream.is_some()
             || self.opening.is_some()
             || self.register.is_some()
+            || self.sendfile.is_some()
         {
             return Err(Error::State);
         }
@@ -307,6 +363,38 @@ impl Continuation {
                 return Err(Error::State);
             }
             self.last_sequence = sequence;
+        }
+        if nr == 40 {
+            let Some(sequence) = sequence else {
+                return Ok(Step::Unsupported(40));
+            };
+            let mut owner = Sendfile::new(files);
+            if let Err(error) =
+                owner.begin(files, table, domain, execution, invocation, sequence, args)
+            {
+                if owner.phase() == sendfile::Phase::Idle
+                    || (owner.finished()
+                        && owner.result() == Some(sendfile::ResultValue::AdmissionFailed)
+                        && !owner.closed())
+                {
+                    let mapped = sendfile_admission_error(error);
+                    if mapped.is_err() {
+                        self.closed = true;
+                    }
+                    return mapped;
+                }
+                self.sendfile = Some(SendfilePending {
+                    owner,
+                    cap_request: None,
+                });
+                self.closed = true;
+                return Err(error.into());
+            }
+            self.sendfile = Some(SendfilePending {
+                owner,
+                cap_request: None,
+            });
+            return self.sendfile_step(execution);
         }
         if nr == 218 {
             if sequence.is_none() {
@@ -561,6 +649,305 @@ impl Continuation {
         self.stream.as_ref().is_some_and(|p| p.action == token)
             || self.opening.as_ref().is_some_and(|p| p.action == token)
             || self.register.as_ref().is_some_and(|p| p.action == token)
+            || self.sendfile.as_ref().is_some_and(|p| p.owner.owns(token))
+    }
+    /// Includes terminal observations until removed; unfinished owners must not
+    /// be dropped by execution retirement even if their core view has ended.
+    pub(crate) fn sendfile_pending(&self) -> bool {
+        self.sendfile.is_some()
+    }
+    pub(crate) fn sendfile_references(&self, execution: &Execution) -> bool {
+        self.sendfile
+            .as_ref()
+            .is_some_and(|p| p.owner.references(execution))
+    }
+    pub(crate) fn sendfile_view(&self) -> Option<(u32, Token)> {
+        self.sendfile
+            .as_ref()
+            .filter(|p| p.owner.viewing())
+            .and_then(|p| Some((p.owner.sequence()?, p.owner.action()?)))
+    }
+    pub(crate) fn sendfile_query(
+        &self,
+        execution: &Execution,
+    ) -> Result<Option<SendfileStatus>, Error> {
+        self.owner(execution)?;
+        Ok(self.sendfile.as_ref().map(|p| SendfileStatus {
+            phase: p.owner.phase(),
+            sequence: p.owner.sequence().unwrap_or(0),
+            action: p.owner.action(),
+            endpoint: p.owner.endpoint().unwrap_or(0),
+            offered: p.owner.offered(),
+            confirmed: p.owner.confirmed(),
+            closed: self.closed || p.owner.closed(),
+            finished: p.owner.finished(),
+        }))
+    }
+    fn sync_sendfile_closed(&mut self) {
+        if self
+            .sendfile
+            .as_ref()
+            .is_some_and(|p| p.owner.closed() || p.owner.phase() == sendfile::Phase::Closing)
+        {
+            self.closed = true;
+        }
+    }
+    fn sendfile_step(&mut self, execution: &Execution) -> Result<Step, Error> {
+        self.sync_sendfile_closed();
+        let p = self.sendfile.as_ref().ok_or(Error::State)?;
+        if p.owner.finished() {
+            if p.cap_request.is_some() {
+                return Err(Error::State);
+            }
+            let result = p.owner.result().ok_or(Error::State)?;
+            let command = match result {
+                sendfile::ResultValue::Return(n)
+                    if !self.closed && execution.phase() == Phase::Running =>
+                {
+                    Step::Return(n)
+                }
+                sendfile::ResultValue::Unsupported40 => {
+                    self.closed = true;
+                    Step::Unsupported(40)
+                }
+                sendfile::ResultValue::AdmissionFailed => {
+                    self.closed = true;
+                    return Err(Error::State);
+                }
+                _ => {
+                    self.closed = true;
+                    Step::Waiting
+                }
+            };
+            self.sendfile = None; // Proven finished and no service ticket remains.
+            return Ok(command);
+        }
+        let action = p.owner.action().ok_or(Error::State)?;
+        let sequence = p.owner.sequence().ok_or(Error::State)?;
+        let endpoint = p.owner.endpoint().ok_or(Error::State)?;
+        Ok(match p.owner.phase() {
+            sendfile::Phase::CapReady => Step::SendfileCapability {
+                action,
+                sequence,
+                endpoint,
+            },
+            sendfile::Phase::LoadingReady => Step::SendfileLoad { action, sequence },
+            sendfile::Phase::OfferReady => Step::SendfileOffer {
+                action,
+                sequence,
+                endpoint,
+                length: p.owner.offered(),
+            },
+            _ => Step::Waiting,
+        })
+    }
+    pub(crate) fn sendfile_cap_start(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+    ) -> Result<u64, Error> {
+        self.owner(execution)?;
+        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        if p.cap_request.is_some() {
+            return Err(Error::State);
+        }
+        let result = p
+            .owner
+            .cap_start(files, domain, execution, sequence, action);
+        self.sync_sendfile_closed();
+        let request = result?;
+        let endpoint = request.endpoint();
+        self.sendfile.as_mut().unwrap().cap_request = Some(request);
+        Ok(endpoint)
+    }
+    fn finish_sendfile_cap(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        endpoint: u64,
+        make: impl FnOnce(CapabilityRequest) -> CapabilityReceipt,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        p.owner.check_capability(
+            files,
+            domain,
+            execution,
+            sequence,
+            action,
+            endpoint,
+            p.cap_request.as_ref().ok_or(Error::State)?,
+        )?;
+        let request = p.cap_request.take().unwrap(); // Only after immutable validation.
+        let result = p.owner.cap_finish(files, domain, execution, make(request));
+        self.sync_sendfile_closed();
+        result?;
+        self.sendfile_step(execution)
+    }
+    pub(crate) fn sendfile_cap_finish_rejected(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        endpoint: u64,
+    ) -> Result<Step, Error> {
+        self.finish_sendfile_cap(
+            files,
+            domain,
+            execution,
+            sequence,
+            action,
+            endpoint,
+            CapabilityReceipt::rejected,
+        )
+    }
+    #[cfg(any(test, feature = "sendfile-probe"))]
+    pub(crate) fn sendfile_cap_finish_synthetic(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        endpoint: u64,
+    ) -> Result<Step, Error> {
+        self.finish_sendfile_cap(
+            files,
+            domain,
+            execution,
+            sequence,
+            action,
+            endpoint,
+            CapabilityReceipt::synthetic_accepted,
+        )
+    }
+    pub(crate) fn sendfile_load_start(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+    ) -> Result<descriptor::LoadRequest, Error> {
+        self.owner(execution)?;
+        let result = self
+            .sendfile
+            .as_mut()
+            .ok_or(Error::State)?
+            .owner
+            .load_start(files, domain, execution, sequence, action);
+        self.sync_sendfile_closed();
+        result.map_err(Into::into)
+    }
+    pub(crate) fn sendfile_load_finish(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        load: descriptor::LoadRequest,
+        success: bool,
+        bytes: &mut Vec<u8>,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        let result = self
+            .sendfile
+            .as_mut()
+            .ok_or(Error::State)?
+            .owner
+            .load_finish(
+                files, domain, execution, sequence, action, load, success, bytes,
+            );
+        self.sync_sendfile_closed();
+        result?;
+        self.sendfile_step(execution)
+    }
+    pub(crate) fn sendfile_start(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+    ) -> Result<(usize, u64), Error> {
+        self.owner(execution)?;
+        let result = self
+            .sendfile
+            .as_mut()
+            .ok_or(Error::State)?
+            .owner
+            .start(files, domain, execution, sequence, action);
+        self.sync_sendfile_closed();
+        result.map_err(Into::into)
+    }
+    pub(crate) fn sendfile_receipt(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        confirmed: u64,
+        outcome: sendfile::Outcome,
+        access: AccessEvidence,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        let result = self
+            .sendfile
+            .as_mut()
+            .ok_or(Error::State)?
+            .owner
+            .receipt_with_access(
+                files, domain, execution, sequence, action, confirmed, outcome, access,
+            );
+        self.sync_sendfile_closed();
+        result?;
+        self.sendfile_step(execution)
+    }
+    #[cfg(any(test, feature = "sendfile-probe"))]
+    pub(crate) fn sendfile_access_ended_synthetic(
+        &mut self,
+        files: &Files,
+        domain: &Domain,
+        execution: &Execution,
+        sequence: u32,
+        action: Token,
+    ) -> Result<(), Error> {
+        self.owner(execution)?;
+        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        if p.owner.sequence() != Some(sequence) || p.owner.action() != Some(action) {
+            return Err(Error::State);
+        }
+        let receipt = p.owner.synthetic_access_ended()?;
+        p.owner
+            .access_ended(files, domain, execution, receipt)
+            .map_err(Into::into)
+    }
+    pub(crate) fn sendfile_cleanup_retry(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        if p.owner.sequence() != Some(sequence) || p.cap_request.is_some() {
+            return Err(Error::State);
+        }
+        let result = p.owner.retry_cleanup(files, domain, execution);
+        self.sync_sendfile_closed();
+        result?;
+        self.sendfile_step(execution)
     }
     pub(crate) fn task_registration(
         &self,
@@ -891,6 +1278,26 @@ impl Continuation {
     ) -> Result<bool, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
+        if self.sendfile.is_some() {
+            self.closed = true;
+            let p = self.sendfile.as_mut().unwrap();
+            if !p.owner.finished() {
+                if p.owner.phase() == sendfile::Phase::Closing {
+                    p.owner.retry_cleanup(files, domain, execution)?;
+                } else {
+                    let sequence = p.owner.sequence().ok_or(Error::State)?;
+                    let action = p.owner.action().ok_or(Error::State)?;
+                    if !p.owner.cancel(files, domain, execution, sequence, action)? {
+                        return Ok(false);
+                    }
+                }
+            }
+            if p.owner.finished() && p.cap_request.is_none() {
+                self.sendfile = None;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
         if let Some(p) = self.register.as_ref() {
             self.closed = true;
             domain.cancel(p.action)?;
@@ -2965,5 +3372,812 @@ mod open_tests {
             assert_eq!(g.files.target(&g.table, 1), Err(descriptor::Error::BadFd));
             assert!(g.domain.change(g.execution.binding(), 8192).is_ok());
         }
+    }
+}
+
+#[cfg(test)]
+mod sendfile_continuation_tests {
+    // SYNTHETIC capability/access receipts only. These are Continuation owner
+    // probes, not native endpoint, Wasm global guard, Worker or syscall40 proof.
+    use super::*;
+    use crate::descriptor::{Limits, LoadRequest};
+    use crate::execution::{ImageResult, Unwind};
+    use crate::inode::{Creation, Inode, Tree};
+    use crate::read::ReadCapacity;
+    use crate::sendfile::{AccessEvidence as Access, Outcome, Phase as SendPhase};
+
+    fn creation(mode: u32) -> Creation {
+        Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+    struct Guest {
+        files: Files,
+        table: Table,
+        reads: Reads,
+        domain: Domain,
+        execution: Execution,
+        call: Continuation,
+        invocation: Invocation,
+        fd: u32,
+        other: Inode,
+    }
+    impl Guest {
+        fn new(lazy: bool) -> Self {
+            let mut tree = Tree::new(71, 8, 8, 64, creation(0o755)).unwrap();
+            let inode = if lazy {
+                tree.lazy_file(tree.root(), b"a", creation(0o444), 7, 0)
+                    .unwrap()
+            } else {
+                tree.file_take(tree.root(), b"a", creation(0o444), &mut b"abcdef".to_vec())
+                    .unwrap()
+            };
+            let other = tree
+                .file_take(tree.root(), b"b", creation(0o444), &mut b"xyz".to_vec())
+                .unwrap();
+            let mut files = Files::new(
+                72,
+                tree,
+                Limits {
+                    contexts: 0,
+                    tables: 2,
+                    descriptions: 8,
+                    slots: 16,
+                },
+            );
+            let table = files.stdio([10, 20, 30], 16).unwrap();
+            let fd = files.open(&table, inode, false).unwrap();
+            let reads = Reads::new(&files, ReadCapacity::new(4).unwrap());
+            let mut domain = Domain::new(73, 2, 8).unwrap();
+            let binding = domain.bind(1).unwrap();
+            let mut execution = Execution::new(74, binding);
+            execution.image_begin(&mut domain, 1).unwrap();
+            execution
+                .image_finish(&mut domain, ImageResult::Installed)
+                .unwrap();
+            let call = Continuation::new(&execution).unwrap();
+            let invocation = execution.start(&mut domain).unwrap();
+            Self {
+                files,
+                table,
+                reads,
+                domain,
+                execution,
+                call,
+                invocation,
+                fd,
+                other,
+            }
+        }
+        fn request(&mut self, sequence: u32, nr: u64, args: [u64; 6]) -> Result<Step, Error> {
+            self.call.enter_sequenced(
+                &mut self.files,
+                &self.table,
+                None,
+                &mut self.reads,
+                &mut self.domain,
+                &mut self.execution,
+                self.invocation,
+                sequence,
+                nr,
+                args,
+                100,
+            )
+        }
+        fn admit(&mut self, count: u64) -> Token {
+            match self
+                .request(1, 40, [1, self.fd as u64, 0, count, 0x55, 0x66])
+                .unwrap()
+            {
+                Step::SendfileCapability {
+                    action,
+                    sequence: 1,
+                    endpoint: 20,
+                } => action,
+                other => panic!("unexpected step {other:?}"),
+            }
+        }
+        fn cap_start(&mut self, action: Token) -> Result<u64, Error> {
+            self.call.sendfile_cap_start(
+                &mut self.files,
+                &mut self.domain,
+                &mut self.execution,
+                1,
+                action,
+            )
+        }
+        fn cap(&mut self, action: Token) -> Step {
+            assert_eq!(self.cap_start(action).unwrap(), 20);
+            self.call
+                .sendfile_cap_finish_synthetic(
+                    &mut self.files,
+                    &mut self.domain,
+                    &mut self.execution,
+                    1,
+                    action,
+                    20,
+                )
+                .unwrap()
+        }
+        fn load_start(&mut self, action: Token) -> LoadRequest {
+            self.call
+                .sendfile_load_start(
+                    &mut self.files,
+                    &mut self.domain,
+                    &mut self.execution,
+                    1,
+                    action,
+                )
+                .unwrap()
+        }
+        fn load_finish(
+            &mut self,
+            action: Token,
+            load: LoadRequest,
+            bytes: &mut Vec<u8>,
+        ) -> Result<Step, Error> {
+            self.call.sendfile_load_finish(
+                &mut self.files,
+                &mut self.domain,
+                &mut self.execution,
+                1,
+                action,
+                load,
+                true,
+                bytes,
+            )
+        }
+        fn start(&mut self, action: Token) -> (usize, u64) {
+            self.call
+                .sendfile_start(
+                    &mut self.files,
+                    &mut self.domain,
+                    &mut self.execution,
+                    1,
+                    action,
+                )
+                .unwrap()
+        }
+        fn receipt(
+            &mut self,
+            action: Token,
+            n: u64,
+            outcome: Outcome,
+            access: Access,
+        ) -> Result<Step, Error> {
+            self.call.sendfile_receipt(
+                &mut self.files,
+                &mut self.domain,
+                &mut self.execution,
+                1,
+                action,
+                n,
+                outcome,
+                access,
+            )
+        }
+        fn abandon(&mut self) -> bool {
+            self.call
+                .abandon(
+                    &mut self.files,
+                    &mut self.reads,
+                    &mut self.domain,
+                    &mut self.execution,
+                )
+                .unwrap()
+        }
+        fn status(&self) -> SendfileStatus {
+            self.call.sendfile_query(&self.execution).unwrap().unwrap()
+        }
+    }
+    #[test]
+    fn sequenced_only_typed_rollback_and_common_sequence_consumption() {
+        let mut g = Guest::new(true);
+        assert_eq!(
+            g.call.enter(
+                &mut g.files,
+                &g.table,
+                &mut g.reads,
+                &mut g.domain,
+                &mut g.execution,
+                g.invocation,
+                40,
+                [1, g.fd as u64, 0, 6, 0, 0],
+                100
+            ),
+            Ok(Step::Unsupported(40))
+        );
+        assert!(!g.call.sendfile_pending());
+        for sequence in [0, 2, i32::MAX as u32 + 1] {
+            assert!(g
+                .request(sequence, 40, [1, g.fd as u64, 0, 6, 0, 0])
+                .is_err());
+            assert_eq!(g.call.last_sequence, 0);
+        }
+        assert_eq!(
+            g.request(1, 40, [1, g.fd as u64, 8, 6, 0, 0]),
+            Ok(Step::Unsupported(40))
+        );
+        assert_eq!(g.call.last_sequence, 1);
+        assert!(g.request(1, 40, [1, g.fd as u64, 0, 6, 0, 0]).is_err());
+        assert_eq!(g.request(2, 40, [1, 99, 0, 6, 0, 0]), Ok(Step::Return(-9)));
+        assert!(!g.call.closed);
+        assert!(!g.call.sendfile_pending());
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+        assert_eq!(
+            g.request(3, 40, [0, g.fd as u64, 0, 6, 0, 0]),
+            Ok(Step::Return(-9))
+        );
+        assert_eq!(
+            g.request(4, 40, [1, 0, 0, 6, 0, 0]),
+            Ok(Step::Unsupported(40))
+        );
+        let args = [
+            (99u64 << 32) | 1,
+            (88u64 << 32) | g.fd as u64,
+            0,
+            u64::MAX,
+            0x55,
+            0x66,
+        ];
+        let Step::SendfileCapability {
+            action,
+            sequence: 5,
+            endpoint: 20,
+        } = g.request(5, 40, args).unwrap()
+        else {
+            panic!()
+        };
+        assert!(g.call.owns(action));
+        assert!(g.call.sendfile_references(&g.execution));
+        assert_eq!(g.call.sendfile_view(), None);
+        assert_eq!(
+            g.call.sendfile.as_ref().unwrap().owner.arguments(),
+            Some(args)
+        );
+        assert!(g.execution.hold_call(g.invocation).is_err()); // No second parent hold.
+        assert!(g.request(6, 3, [g.fd as u64, 0, 0, 0, 0, 0]).is_err());
+        assert_eq!(g.call.last_sequence, 5); // Busy request didn't consume next sequence.
+        assert!(g.abandon());
+        assert!(!g.call.sendfile_pending());
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+    }
+    #[test]
+    fn negative_capability_is_opaque_one_shot_and_precedes_any_source_attempt() {
+        let mut g = Guest::new(true);
+        let action = g.admit(6);
+        assert_eq!(g.cap_start(action), Ok(20));
+        assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+        assert!(g.cap_start(action).is_err());
+        for (seq, endpoint) in [(2, 20), (1, 21)] {
+            assert!(g
+                .call
+                .sendfile_cap_finish_rejected(
+                    &mut g.files,
+                    &mut g.domain,
+                    &mut g.execution,
+                    seq,
+                    action,
+                    endpoint
+                )
+                .is_err());
+            assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+            assert_eq!(g.status().phase, SendPhase::CapChecking);
+        }
+        assert_eq!(
+            g.call.sendfile_cap_finish_rejected(
+                &mut g.files,
+                &mut g.domain,
+                &mut g.execution,
+                1,
+                action,
+                20
+            ),
+            Ok(Step::Unsupported(40))
+        );
+        assert!(g.call.closed);
+        assert!(!g.call.sendfile_pending());
+        assert!(!g.call.owns(action));
+        assert!(!g.call.sendfile_references(&g.execution));
+        assert!(g
+            .call
+            .sendfile_cap_finish_rejected(
+                &mut g.files,
+                &mut g.domain,
+                &mut g.execution,
+                1,
+                action,
+                20
+            )
+            .is_err());
+        assert!(g.request(2, 40, [1, g.fd as u64, 0, 6, 0, 0]).is_err());
+        let mut prep = g.files.begin_read(&g.table, g.fd, 6).unwrap();
+        let load = g.files.prepare_read(&mut prep).unwrap().unwrap();
+        assert_eq!(load.attempt, 1);
+        g.files
+            .finish_load(&mut prep, load.attempt, false, &mut Vec::new())
+            .unwrap();
+        g.files.abort_preparation(prep).unwrap();
+    }
+    #[test]
+    fn ready_cancel_and_dispatched_cap_cancel_have_distinct_ticket_lifetimes() {
+        for dispatched in [false, true] {
+            let mut g = Guest::new(true);
+            let action = g.admit(6);
+            if dispatched {
+                g.cap_start(action).unwrap();
+            }
+            assert_eq!(g.abandon(), !dispatched);
+            assert!(g.call.closed);
+            if dispatched {
+                assert!(g.call.sendfile_pending());
+                assert!(g.call.owns(action));
+                assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+                assert!(g.execution.syscall_allowed(g.invocation).is_err());
+                assert_eq!(
+                    g.call.sendfile_cap_finish_synthetic(
+                        &mut g.files,
+                        &mut g.domain,
+                        &mut g.execution,
+                        1,
+                        action,
+                        20
+                    ),
+                    Ok(Step::Waiting)
+                );
+            }
+            assert!(!g.call.sendfile_pending());
+            assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+            assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 0));
+            let mut prep = g.files.begin_read(&g.table, g.fd, 1).unwrap();
+            let load = g.files.prepare_read(&mut prep).unwrap().unwrap();
+            assert_eq!(load.attempt, 1);
+            g.files
+                .finish_load(&mut prep, load.attempt, false, &mut Vec::new())
+                .unwrap();
+            g.files.abort_preparation(prep).unwrap();
+        }
+    }
+    #[test]
+    fn synthetic_loader_pending_both_fd_reuse_then_short_result_uses_sole_call_owner() {
+        let mut g = Guest::new(true);
+        let alias = g.files.dup(&g.table, g.fd, 0, false).unwrap();
+        let action = g.admit(u64::MAX);
+        assert_eq!(
+            g.cap(action),
+            Step::SendfileLoad {
+                action,
+                sequence: 1
+            }
+        );
+        let load = g.load_start(action);
+        g.files.close(&g.table, 1).unwrap();
+        g.files.close(&g.table, g.fd).unwrap();
+        assert_eq!(g.files.open(&g.table, g.other, false).unwrap(), 1);
+        assert_eq!(g.files.open(&g.table, g.other, false).unwrap(), g.fd);
+        let mut bytes = b"abcdef".to_vec();
+        for wrong in [
+            LoadRequest { source: 8, ..load },
+            LoadRequest {
+                attempt: load.attempt + 1,
+                ..load
+            },
+        ] {
+            assert!(g.load_finish(action, wrong, &mut bytes).is_err());
+            assert_eq!(bytes, b"abcdef");
+            assert_eq!(g.status().phase, SendPhase::Loading);
+        }
+        assert_eq!(
+            g.load_finish(action, load, &mut bytes),
+            Ok(Step::SendfileOffer {
+                action,
+                sequence: 1,
+                endpoint: 20,
+                length: 6
+            })
+        );
+        assert!(bytes.is_empty());
+        let mut duplicate = b"duplicate".to_vec();
+        assert!(g.load_finish(action, load, &mut duplicate).is_err());
+        assert_eq!(duplicate, b"duplicate");
+        let (pointer, length) = g.start(action);
+        assert_eq!(length, 6);
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(pointer as *const u8, length as usize) },
+            b"abcdef"
+        );
+        assert_eq!(g.call.sendfile_view(), Some((1, action)));
+        assert_eq!(
+            g.receipt(action, 3, Outcome::Transferred, Access::Ended),
+            Ok(Step::Return(3))
+        );
+        assert!(!g.call.sendfile_pending());
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+        assert_eq!(g.files.offset(&g.table, alias).unwrap(), (3, 1));
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 0));
+        assert_eq!(g.files.offset(&g.table, 1).unwrap(), (0, 0));
+        assert!(g
+            .receipt(action, 4, Outcome::Transferred, Access::Ended)
+            .is_err());
+        assert_eq!(g.files.offset(&g.table, alias).unwrap(), (3, 1));
+        assert!(!g.call.closed);
+    }
+    #[test]
+    fn synthetic_loader_cancel_before_dispatch_settles_attempt_and_after_dispatch_rejects_bytes() {
+        for dispatched in [false, true] {
+            let mut g = Guest::new(true);
+            let action = g.admit(6);
+            g.cap(action);
+            let load = if dispatched {
+                Some(g.load_start(action))
+            } else {
+                None
+            };
+            assert_eq!(g.abandon(), !dispatched);
+            if let Some(load) = load {
+                assert_eq!(g.status().phase, SendPhase::Loading);
+                assert!(g.call.owns(action));
+                assert_eq!(
+                    g.files.set_offset(&g.table, g.fd, 0),
+                    Err(descriptor::Error::Busy)
+                );
+                let mut bytes = b"abcdef".to_vec();
+                assert_eq!(g.load_finish(action, load, &mut bytes), Ok(Step::Waiting));
+                assert_eq!(bytes, b"abcdef");
+            }
+            assert!(!g.call.sendfile_pending());
+            assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 0));
+            let mut prep = g.files.begin_read(&g.table, g.fd, 1).unwrap();
+            let next = g.files.prepare_read(&mut prep).unwrap().unwrap();
+            assert_eq!(next.attempt, 2);
+            g.files
+                .finish_load(&mut prep, next.attempt, false, &mut Vec::new())
+                .unwrap();
+            g.files.abort_preparation(prep).unwrap();
+        }
+    }
+    #[test]
+    fn synthetic_combined_receipt_preflights_before_guard_and_keeps_unknown_closed() {
+        let mut g = Guest::new(false);
+        let action = g.admit(20);
+        g.cap(action);
+        g.start(action);
+        for (count, outcome, access) in [
+            (7, Outcome::Unknown, Access::Ended),
+            (1, Outcome::Again, Access::Ended),
+            (2, Outcome::Transferred, Access::NotEnded),
+        ] {
+            assert!(g.receipt(action, count, outcome, access).is_err());
+            assert_eq!(g.call.sendfile_view(), Some((1, action)));
+            assert_eq!(g.status().confirmed, 0);
+        }
+        assert_eq!(
+            g.receipt(action, 2, Outcome::Unknown, Access::NotEnded),
+            Ok(Step::Waiting)
+        );
+        assert!(g.call.closed);
+        assert_eq!(g.call.sendfile_view(), Some((1, action)));
+        assert!(g
+            .receipt(action, 1, Outcome::Unknown, Access::Ended)
+            .is_err());
+        assert_eq!(g.call.sendfile_view(), Some((1, action)));
+        assert_eq!(
+            g.receipt(action, 3, Outcome::Unknown, Access::Ended),
+            Ok(Step::Waiting)
+        );
+        assert_eq!(g.call.sendfile_view(), None);
+        assert!(g.call.owns(action));
+        assert!(g.call.sendfile_references(&g.execution));
+        assert!(g.call.sendfile_pending());
+        assert_eq!(g.domain.retire(action), Err(lease::Error::Incomplete));
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 0));
+        assert!(g
+            .call
+            .sendfile_start(&mut g.files, &mut g.domain, &mut g.execution, 1, action)
+            .is_err());
+        assert_eq!(
+            g.receipt(action, 4, Outcome::Transferred, Access::Ended),
+            Ok(Step::Waiting)
+        );
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (4, 1));
+        assert!(!g.call.sendfile_pending());
+        assert!(!g.call.owns(action));
+        assert_eq!(g.call.sendfile_query(&g.execution), Ok(None));
+        assert!(g.request(2, 3, [g.fd as u64, 0, 0, 0, 0, 0]).is_err());
+        assert_eq!(g.call.last_sequence, 1);
+    }
+    #[test]
+    fn synthetic_fault_or_cancel_after_start_never_releases_before_late_prefix_or_returns_to_guest()
+    {
+        for fault in [false, true] {
+            let mut g = Guest::new(false);
+            let action = g.admit(6);
+            g.cap(action);
+            g.start(action);
+            if fault {
+                g.execution
+                    .receipt(&mut g.domain, g.invocation, Unwind::Fault)
+                    .unwrap();
+            }
+            assert!(!g.abandon());
+            assert!(g.call.sendfile_references(&g.execution));
+            assert_eq!(g.call.sendfile_view(), Some((1, action)));
+            assert!(g.execution.hold_call(g.invocation).is_err());
+            assert_eq!(
+                g.receipt(action, 2, Outcome::Transferred, Access::Ended),
+                Ok(Step::Waiting)
+            );
+            assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (2, 1));
+            assert!(!g.call.sendfile_pending());
+            if fault {
+                assert!(g.execution.retireable());
+            } else {
+                assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+            }
+        }
+    }
+    #[test]
+    fn finite_domain_failure_rolls_back_but_closes_instead_of_fabricating_errno() {
+        let mut g = Guest::new(true);
+        let mut occupied = Vec::new();
+        for _ in 0..8 {
+            occupied.push(g.domain.effect(g.execution.binding(), 0).unwrap());
+        }
+        assert_eq!(
+            g.request(1, 40, [1, g.fd as u64, 0, 6, 0, 0]),
+            Err(Error::Sendfile(sendfile::Error::Lease(
+                lease::Error::Capacity
+            )))
+        );
+        assert!(g.call.closed);
+        assert!(!g.call.sendfile_pending());
+        assert_eq!(g.call.last_sequence, 1);
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+        g.files.set_offset(&g.table, g.fd, 0).unwrap();
+        assert!(g.request(2, 40, [1, g.fd as u64, 0, 6, 0, 0]).is_err());
+        for action in occupied {
+            g.domain.cancel(action).unwrap();
+            g.domain.retire(action).unwrap();
+        }
+    }
+    #[test]
+    fn synthetic_closing_retry_after_committed_source_never_double_finishes_call_or_exposes_return()
+    {
+        let mut g = Guest::new(false);
+        let action = g.admit(6);
+        g.cap(action);
+        g.start(action);
+        // Internal sole-owner contract violation, injected only to test retained
+        // cleanup recovery. Generic production callers must never steal this.
+        g.execution.finish_call(g.invocation).unwrap();
+        assert!(g
+            .receipt(action, 3, Outcome::Transferred, Access::Ended)
+            .is_err());
+        assert!(g.call.closed);
+        assert_eq!(g.status().phase, SendPhase::Closing);
+        assert!(!g.status().finished);
+        assert_eq!(g.status().action, None);
+        assert!(g.call.sendfile_references(&g.execution));
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (3, 1));
+        assert_eq!(g.call.sendfile_view(), None);
+        g.execution.hold_call(g.invocation).unwrap();
+        assert!(g
+            .call
+            .sendfile_cleanup_retry(&mut g.files, &mut g.domain, &mut g.execution, 2)
+            .is_err());
+        assert_eq!(
+            g.call
+                .sendfile_cleanup_retry(&mut g.files, &mut g.domain, &mut g.execution, 1),
+            Ok(Step::Waiting)
+        );
+        assert!(!g.call.sendfile_pending());
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (3, 1));
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+    }
+    #[test]
+    fn synthetic_zero_does_not_load_and_all_physical_errors_close_without_errno() {
+        let mut g = Guest::new(true);
+        let action = g.admit(0);
+        assert_eq!(
+            g.cap(action),
+            Step::SendfileOffer {
+                action,
+                sequence: 1,
+                endpoint: 20,
+                length: 0
+            }
+        );
+        assert_eq!(g.start(action), (0, 0));
+        assert_eq!(
+            g.receipt(action, 0, Outcome::Transferred, Access::Ended),
+            Ok(Step::Return(0))
+        );
+        for outcome in [
+            Outcome::Again,
+            Outcome::Interrupted,
+            Outcome::Io,
+            Outcome::BadFd,
+            Outcome::BrokenPipe,
+            Outcome::PreparationFailed,
+        ] {
+            let mut g = Guest::new(false);
+            let action = g.admit(6);
+            g.cap(action);
+            g.start(action);
+            assert_eq!(
+                g.receipt(action, 0, outcome, Access::Ended),
+                Ok(Step::Waiting)
+            );
+            assert!(g.call.closed);
+            assert!(!g.call.sendfile_pending());
+            assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 1));
+        }
+    }
+
+    #[test]
+    fn typed_capacity_mapping_is_narrow_and_not_domain_or_busy_errno() {
+        // Direct typed-error classifier probe: current begin only increments
+        // existing description refs, so no false Files-capacity failure is
+        // manufactured from the independently tested finite Domain arena.
+        assert_eq!(
+            sendfile_admission_error(sendfile::Error::Files(descriptor::Error::Capacity)),
+            Ok(Step::Return(-12))
+        );
+        for error in [
+            sendfile::Error::Files(descriptor::Error::Busy),
+            sendfile::Error::Files(descriptor::Error::BadHandle),
+            sendfile::Error::Lease(lease::Error::Capacity),
+            sendfile::Error::Execution(execution::Error::Identity),
+        ] {
+            assert!(sendfile_admission_error(error).is_err());
+        }
+    }
+    #[test]
+    fn synthetic_valid_foreign_continuation_cannot_misdeliver_a_late_receipt_to_live_view() {
+        let mut g = Guest::new(false);
+        let action_a = g.admit(6);
+        g.cap(action_a);
+        let inode = g.files.inode(&g.table, g.fd).unwrap();
+        let fd_b = g.files.open(&g.table, inode, false).unwrap();
+        let binding_b = g.domain.bind(1).unwrap();
+        let mut execution_b = Execution::new(99, binding_b);
+        execution_b.image_begin(&mut g.domain, 1).unwrap();
+        execution_b
+            .image_finish(&mut g.domain, ImageResult::Installed)
+            .unwrap();
+        let mut call_b = Continuation::new(&execution_b).unwrap();
+        let invocation_b = execution_b.start(&mut g.domain).unwrap();
+        let Step::SendfileCapability {
+            action: action_b, ..
+        } = call_b
+            .enter_sequenced(
+                &mut g.files,
+                &g.table,
+                None,
+                &mut g.reads,
+                &mut g.domain,
+                &mut execution_b,
+                invocation_b,
+                1,
+                40,
+                [1, fd_b as u64, 0, 6, 0, 0],
+                100,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_ne!(action_a, action_b);
+        call_b
+            .sendfile_cap_start(&mut g.files, &mut g.domain, &mut execution_b, 1, action_b)
+            .unwrap();
+        call_b
+            .sendfile_cap_finish_synthetic(
+                &mut g.files,
+                &mut g.domain,
+                &mut execution_b,
+                1,
+                action_b,
+                20,
+            )
+            .unwrap();
+        call_b
+            .sendfile_start(&mut g.files, &mut g.domain, &mut execution_b, 1, action_b)
+            .unwrap();
+        call_b
+            .sendfile_receipt(
+                &mut g.files,
+                &mut g.domain,
+                &mut execution_b,
+                1,
+                action_b,
+                0,
+                Outcome::Unknown,
+                Access::Ended,
+            )
+            .unwrap();
+        // Both owners/tokens are real admitted values. B could validly accept
+        // late Stopped; synthetic access-ended evidence ends B's view FIRST.
+        // This tests misdelivery, NOT the not-yet-connected global ABI guard.
+        assert_eq!(call_b.sendfile_view(), None);
+        g.start(action_a);
+        assert!(g
+            .call
+            .sendfile_receipt(
+                &mut g.files,
+                &mut g.domain,
+                &mut g.execution,
+                1,
+                action_b,
+                2,
+                Outcome::Transferred,
+                Access::Ended
+            )
+            .is_err());
+        assert!(g
+            .call
+            .sendfile_receipt(
+                &mut g.files,
+                &mut g.domain,
+                &mut execution_b,
+                1,
+                action_a,
+                2,
+                Outcome::Transferred,
+                Access::Ended
+            )
+            .is_err());
+        assert_eq!(g.call.sendfile_view(), Some((1, action_a)));
+        assert!(g.call.owns(action_a));
+        assert!(call_b.owns(action_b));
+        assert_eq!(g.status().confirmed, 0);
+        assert_eq!(
+            call_b
+                .sendfile_query(&execution_b)
+                .unwrap()
+                .unwrap()
+                .confirmed,
+            0
+        );
+        assert_eq!(
+            g.receipt(action_a, 3, Outcome::Transferred, Access::Ended),
+            Ok(Step::Return(3))
+        );
+        assert_eq!(
+            call_b.sendfile_receipt(
+                &mut g.files,
+                &mut g.domain,
+                &mut execution_b,
+                1,
+                action_b,
+                2,
+                Outcome::Transferred,
+                Access::Ended
+            ),
+            Ok(Step::Waiting)
+        );
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (3, 1));
+        assert_eq!(g.files.offset(&g.table, fd_b).unwrap(), (2, 1));
+    }
+    #[test]
+    fn synthetic_combined_unknown_domain_failure_does_not_clear_view_or_advance_prefix() {
+        let mut g = Guest::new(false);
+        let action = g.admit(6);
+        g.cap(action);
+        g.start(action);
+        // Synthetic internal owner-contract violation to force Domain receipt
+        // failure AFTER component preflight. Generic ABI must prohibit this.
+        g.domain.receipt(action, 0, Completion::Stopped).unwrap();
+        assert!(g
+            .receipt(action, 2, Outcome::Unknown, Access::Ended)
+            .is_err());
+        assert_eq!(g.call.sendfile_view(), Some((1, action)));
+        assert_eq!(g.status().confirmed, 0);
+        assert_eq!(g.files.offset(&g.table, g.fd).unwrap(), (0, 0));
+        assert!(g.call.owns(action));
+        // Retain quarantined owner to fixture end; no fabricated recovery or
+        // inference that this mismatch stopped source-buffer access.
     }
 }

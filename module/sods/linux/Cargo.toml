@@ -10,5 +10,10 @@ description = "Linux execution-domain authority for sods"
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[features]
+# Explicitly synthetic raw-ABI test artifact. The production host refuses its
+# sentinel before instantiation; never install it as a selected caller artifact.
+sendfile-probe = []
+
 [dependencies]
 sods-file-store = { path = "../file-store", default-features = false }

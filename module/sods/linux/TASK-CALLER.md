@@ -32,7 +32,7 @@ image attempt preserves the original snapshot and record. Future per-syscall
 Continuation recreation would require moving this longer-lived task owner into
 the execution resource holder, not resetting it on each syscall.
 
-Private Linux ABI6's read-only task-registration observer makes the full pointer
+Private Linux ABI7's read-only task-registration observer makes the full pointer
 and local TID directly verifiable, including after unwind/fault before retirement.
 It grants no pointer access, does not appear on the managedRoot facade, uses the
 exact retained image/binding identity, and is excluded during live core input/read

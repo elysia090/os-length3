@@ -1,10 +1,11 @@
-//! One finite, private sendfile(40) owner. This is not syscall/wasm/host wiring.
+//! One finite, private sendfile(40) owner retained by the ABI7 continuation.
 //!
 //! Selected scope: NULL offset, readonly regular input OFD to an exact held
 //! HostStream Write description. One non-byte Domain action is reserved before
 //! either external service. No guest span, scratch buffer or FD rediscovery.
-//! Capability acceptance and lexical-access-ended receipts have no production
-//! constructor yet: a reviewed physical adapter must supply that trust boundary.
+//! Production capability acceptance is absent; only negative host admission is
+//! connected. Combined private receipts carry trusted lexical-access evidence;
+//! independent opaque end certificates and accepted caps are test/probe-only.
 //! Unit-test synthetic receipts prove ownership only, not Linux/Node capability.
 use crate::descriptor::{self, Files, LoadRequest, ReadHold, ReadPreparation, StreamHold, Table};
 use crate::effect::{Completion, Token};
@@ -79,6 +80,13 @@ pub(crate) enum Outcome {
     PreparationFailed,
     Unknown,
 }
+/// Trusted lexical-access evidence, independent of cumulative prefix certainty.
+/// Raw callers are trusted embedding code, not application certification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AccessEvidence {
+    NotEnded,
+    Ended,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Capture {
     snapshot: Snapshot,
@@ -120,6 +128,13 @@ pub(crate) struct CapabilityReceipt {
     accepted: bool,
 }
 impl CapabilityReceipt {
+    #[cfg(any(test, feature = "sendfile-probe"))]
+    pub(crate) fn synthetic_accepted(request: CapabilityRequest) -> Self {
+        Self {
+            identity: request.0,
+            accepted: true,
+        }
+    }
     pub(crate) fn rejected(request: CapabilityRequest) -> Self {
         Self {
             identity: request.0,
@@ -427,6 +442,30 @@ impl Sendfile {
         self.phase = Phase::CapChecking;
         Ok(request)
     }
+    /// Validate the non-Copy service ticket before a wrapper consumes it.
+    pub(crate) fn check_capability(
+        &self,
+        files: &Files,
+        domain: &Domain,
+        execution: &Execution,
+        sequence: u32,
+        action: Token,
+        endpoint: u64,
+        request: &CapabilityRequest,
+    ) -> Result<(), Error> {
+        self.check(files, domain, execution, sequence, action)?;
+        if self.phase != Phase::CapChecking
+            || self.identity()? != request.0
+            || request.endpoint() != endpoint
+        {
+            return Err(Error::State);
+        }
+        Ok(())
+    }
+    #[cfg(any(test, feature = "sendfile-probe"))]
+    pub(crate) fn synthetic_access_ended(&self) -> Result<AccessEnded, Error> {
+        Ok(AccessEnded(self.identity()?))
+    }
     pub(crate) fn cap_finish(
         &mut self,
         files: &mut Files,
@@ -639,15 +678,39 @@ impl Sendfile {
         self.viewing = false;
         Ok(())
     }
-    /// Cumulative evidence. Validate shape, exact owner/action/sequence and
-    /// monotonic actual-offer bound BEFORE Domain or view-guard transitions.
-    /// Unknown closes admission, retains every obligation, and cannot replay.
-    /// Late Stopped commits once even after cancellation or actual guest fault.
-    pub(crate) fn receipt(
+    /// Atomic combined receipt boundary for the private trusted host. In
+    /// particular Unknown+Ended validates the ENTIRE count/outcome/access shape
+    /// before Domain mutation or ending the view. A prefix alone never ends it.
+    pub(crate) fn receipt_with_access(
         &mut self,
         files: &mut Files,
         domain: &mut Domain,
         execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        confirmed: u64,
+        outcome: Outcome,
+        access: AccessEvidence,
+    ) -> Result<(), Error> {
+        self.preflight_receipt(
+            files, domain, execution, sequence, action, confirmed, outcome,
+        )?;
+        if outcome != Outcome::Unknown && access != AccessEvidence::Ended {
+            return Err(Error::State);
+        }
+        self.receipt(
+            files, domain, execution, sequence, action, confirmed, outcome,
+        )?;
+        if outcome == Outcome::Unknown && access == AccessEvidence::Ended {
+            self.viewing = false;
+        }
+        Ok(())
+    }
+    fn preflight_receipt(
+        &self,
+        files: &Files,
+        domain: &Domain,
+        execution: &Execution,
         sequence: u32,
         action: Token,
         confirmed: u64,
@@ -663,6 +726,25 @@ impl Sendfile {
         if confirmed != 0 && !matches!(outcome, Outcome::Transferred | Outcome::Unknown) {
             return Err(Error::State);
         }
+        Ok(())
+    }
+    /// Cumulative evidence. Validate shape, exact owner/action/sequence and
+    /// monotonic actual-offer bound BEFORE Domain or view-guard transitions.
+    /// Unknown closes admission, retains every obligation, and cannot replay.
+    /// Late Stopped commits once even after cancellation or actual guest fault.
+    pub(crate) fn receipt(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        confirmed: u64,
+        outcome: Outcome,
+    ) -> Result<(), Error> {
+        self.preflight_receipt(
+            files, domain, execution, sequence, action, confirmed, outcome,
+        )?;
         let completion = if outcome == Outcome::Unknown {
             Completion::Unknown
         } else {

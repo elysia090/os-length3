@@ -15,7 +15,7 @@ Other operations/high bases stop as explicitly Unsupported, not invented Linux
 errno or a request for fallback into the TS Kernel. This is a deliberate selected
 fixed-low-address translation profile, not normative high-address Linux behavior.
 
-The actual Worker path uses private Linux ABI6's sequenced entrance. Rust owns
+The actual Worker path uses private Linux ABI7's sequenced entrance. Rust owns
 every request's snapshot, invocation and monotone1..i32MAX sequence before
 operation admission. A request passing the common owner/phase/pending/sequence
 checks consumes that sequence, including Unsupported or capacity failure, and

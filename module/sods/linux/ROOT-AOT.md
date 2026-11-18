@@ -15,13 +15,14 @@ loaded only when explicitly selected. A selected obsolete Linux core fails its
 required-export/version check, never silently chooses another owner.
 
 The supplied module must be the **trusted matching Linux core**. Its private ABI
-is 6, independently of file-store ABI4. Export shape and version do not prove
+is 7, independently of file-store ABI4. Export shape and version do not prove
 arbitrary Wasm provenance. The current managed caller remains static/non-TTY and
 is not an ordinary utility, shell, muk box, full VM or terminal compatibility
 claim. The low-address Worker FS subround is covered by
 [TLS-CALLER.md](TLS-CALLER.md); the single-task218/231 contract is covered by
-[TASK-CALLER.md](TASK-CALLER.md). Shared guest mm and owned sendfile remain
-separate implementation gates.
+[TASK-CALLER.md](TASK-CALLER.md). Shared guest mm and accepted physical sendfile remain
+separate implementation gates; [SENDFILE-OWNER.md](SENDFILE-OWNER.md) documents
+the negative-capability protocol and segregated synthetic ABI probes.
 
 ## Input and ownership
 

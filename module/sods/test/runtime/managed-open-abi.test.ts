@@ -18,7 +18,7 @@ function raw(preparedRoot = false) {
     assert.equal(call(name, value.length), 0);
     new Uint8Array((e.memory as WebAssembly.Memory).buffer, Number(result()), value.length).set(value);
   };
-  assert.equal(call('linux_abi_version'), 6); assert.equal(call('linux_init', 8, 32), 0);
+  assert.equal(call('linux_abi_version'), 7); assert.equal(call('linux_init', 8, 32), 0);
   if (preparedRoot) {
     // One valid lazy /app and its image association. No payload is supplied.
     const path = bytes('/app'), wire = new Uint8Array(72 + 40 + 40 + path.length + 104 + path.length);
@@ -269,8 +269,8 @@ test('new required export names cannot make an obsolete private ABI acceptable',
   const section = (id: number, payload: number[]) => [id, ...leb(payload.length), ...payload];
   const name = (value: string) => { const b = Array.from(bytes(value)); return [...leb(b.length), ...b]; };
   const exports = [...leb(names.length + 1), ...name('memory'), 2, 0, ...names.flatMap((n, i) => [...name(n), 0, ...leb(i)])];
-  const bodies = names.flatMap(n => { const body = [0, 0x41, n === 'linux_abi_version' ? 3 : 0, 0x0b]; return [...leb(body.length), ...body]; });
-  // Shape-complete controlled stub only tests version admission, not old behavior.
+  const bodies = names.flatMap(n => { const body = [0, 0x41, n === 'linux_abi_version' ? 6 : 0, 0x0b]; return [...leb(body.length), ...body]; });
+  // Shape-complete ABI6 controlled stub tests version admission, not old behavior.
   const old = new WebAssembly.Module(Uint8Array.from([0,97,115,109,1,0,0,0,
     ...section(1,[1,0x60,0,1,0x7f]), ...section(3,[...leb(names.length), ...names.map(() => 0)]),
     ...section(5,[1,0,1]), ...section(7,exports), ...section(10,[...leb(names.length), ...bodies]),

@@ -135,7 +135,7 @@ its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
 
 
-## Resident file to physical memory (private ABI 6)
+## Resident file to physical memory (private ABI 7)
 
 The following sections preserve successive integration stages. Earlier ABI2 or
 unconnected diagnostic limitations describe that stage; the later managed CLI
@@ -849,7 +849,7 @@ See [OPEN-CALLER.md](OPEN-CALLER.md) for the complete admission/failure contract
 The additive asynchronous `managedRoot` entrance in `sods/linux` exposes only a
 readonly root producer/transport and selected execution/lifetime facade. The
 private memory/grow/inode diagnostics are not public, and default Kernel/backend
-selection is unchanged. Its Linux ABI6 is distinct from file-store ABI4.
+selection is unchanged. Its Linux ABI7 is distinct from file-store ABI4.
 
 `prepared_root.rs` validates and seals a captured range-backed namespace/catalog
 without loading payloads. Hardlinks retain one canonical inode; exact root lazy
@@ -890,7 +890,7 @@ The sequenced selected caller retains full-u64 clear_child_tid metadata in a
 snapshot-bound SingleTask, with execution-local guest identity1. One guest mm
 user means no exit-time guest clear/wake; physical SAB sharing is not CLONE_VM.
 The same owned exit request/actual Worker stop/resource-retirement gates apply.
-See [TASK-CALLER.md](TASK-CALLER.md) for native counterexamples, private ABI6
+See [TASK-CALLER.md](TASK-CALLER.md) for native counterexamples, private ABI7
 metadata observation, lost RETURN/LEAVE and the shared-mm compatibility gate.
 
 ### open(2) uses the same captured path/OFD owner
@@ -901,11 +901,13 @@ OFD, slot publication and Unknown cleanup are shared, not copied into a new TS
 implementation. Unsupported results preserve the original syscall number.
 See [OPEN-CALLER.md](OPEN-CALLER.md) for the normalization counterexamples.
 
-### Canonical-source transfer ownership, not yet a caller
+### Canonical-source transfer protocol, negative physical admission
 
-`sendfile.rs` independently models one finite source-OFD/output-description call,
-capability-before-load, exact prefix commit and Unknown/late ownership. Its
-physical trust receipts are synthetic unit-test evidence only; syscall40 remains
-Unsupported and the Wasm ABI/Node Worker are not wired to it. See
-[SENDFILE-OWNER.md](SENDFILE-OWNER.md) for the selected scope, necessary work and
-remaining physical/ABI/actual-caller gates.
+Continuation and private ABI7 retain the finite source-OFD/output-description
+owner, exact non-Copy cap request and sole call hold. The actual Node Worker
+completes a negative capability subround, without source/output or a fake zero,
+and still stops as Unsupported40. The exact global source-view guard and positive
+raw protocol are tested with a segregated synthetic artifact that the production
+host refuses before instantiation. No accepted physical capability, successful
+cat or new default backend is supplied. See [SENDFILE-OWNER.md](SENDFILE-OWNER.md)
+for the actual boundary and the remaining physical/positive-caller gates.
