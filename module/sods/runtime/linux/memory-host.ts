@@ -2,6 +2,7 @@ import {utf8} from './flow.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';
 import {loadTranslator} from '../translation/translator.ts';
+import {isNode, sha256} from '../host.ts';
 import type {createGuest} from '../host/node/execution.ts';
 import type {captureStdio, Endpoint, PhysicalResult} from '../host/node/stdio.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
@@ -102,12 +103,23 @@ interface Admission extends WebAssembly.Exports {
   linux_read_load_finish(execution: bigint, read: bigint, attempt: number, success: number): number;
   linux_managed_read_start(execution: bigint, read: bigint): number;
 }
+interface ResultAdmission extends WebAssembly.Exports {
+  linux_capture_candidate(): number;
+  linux_capture_select(profile: number): number;
+  linux_capture_result_init(): number;
+  linux_capture_result_startup(): number;
+  linux_capture_result_write_start(execution: bigint, sequence: number, action: bigint): number;
+  linux_capture_result_write_finish(execution: bigint, sequence: number, action: bigint, evidence: number, count: number): number;
+  linux_capture_result_head(): number;
+  linux_capture_result_copy_start(slot: number, generation: bigint): number;
+  linux_capture_result_copy_finish(attempt: bigint, evidence: number, count: number): number;
+}
 // Capture the physical operations before any caller can replace their prototypes.
 // The importing realm's intrinsics must be trusted at module initialization.
 const Bytes = Uint8Array, Memory = WebAssembly.Memory, apply = Reflect.apply, freeze = Object.freeze;
 const numeric = Number, wide = BigInt, unsigned = BigInt.asUintN;
 const setBytes = Uint8Array.prototype.set, findByte = Uint8Array.prototype.indexOf;
-const Instance = WebAssembly.Instance, Global = WebAssembly.Global;
+const Instance = WebAssembly.Instance, Module = WebAssembly.Module, Global = WebAssembly.Global;
 const globalValue = Object.getOwnPropertyDescriptor(WebAssembly.Global.prototype, 'value')!.set!;
 const growMemory = WebAssembly.Memory.prototype.grow;
 const memoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
@@ -166,14 +178,30 @@ export interface PathExecutionOptions {
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
 }
-const required = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish', 'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query', 'linux_task_registration', 'linux_syscall_sequenced', 'linux_register_start', 'linux_register_receipt', 'linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+/** Supplied by the trusted build/deployment owner, not by the artifact source. */
+export interface CaptureResultPin {
+  readonly kind: 'sods-linux-capture-result-v1';
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish',
+  'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
+  'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create'];
+const resultOnly = ['linux_capture_candidate', 'linux_capture_select', 'linux_capture_result_init', 'linux_capture_result_startup',
+  'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
+  'linux_capture_result_copy_start', 'linux_capture_result_copy_finish'];
+const checkedResultExtent = (length: number): number => {
+  if (length < 1 || length > 4) throw new Error('Unsupported captured result extent');
+  return length; // The pinned profile 2 wire envelope, not a Linux write limit.
+};
+const required = ['linux_task_registration', 'linux_syscall_sequenced', 'linux_register_start', 'linux_register_receipt', 'linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_path_start', 'linux_syscall_path_finish', 'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
   'linux_read_begin', 'linux_read_start', 'linux_read_receipt', 'linux_read_query',
   'linux_read_cancel', 'linux_read_retire', 'linux_result_length', 'linux_result_state',
-  'linux_execution_create', 'linux_execution_retire', 'linux_execution_unstarted_stopped', 'linux_image_begin', 'linux_image_finish', 'linux_tree_lazy',
+  'linux_execution_retire', 'linux_execution_unstarted_stopped', 'linux_image_begin', 'linux_image_finish', 'linux_tree_lazy',
   'linux_managed_read_begin', 'linux_read_load_start', 'linux_load_input',
   'linux_read_load_finish', 'linux_managed_read_start'];
 const integer = (n: number): number => {
@@ -247,25 +275,69 @@ function startupWire(path: Uint8Array, argv: readonly Uint8Array[], env: readonl
 /** Instantiate once: the Rust instance is private and has no guest/host imports.
  * No memory/view/instance escapes. There is deliberately no arbitrary callback API. */
 export function memoryHost(module: WebAssembly.Module, memories: number, actions: number) {
+  return memoryHostFor(module, memories, actions, false);
+}
+
+/** Internal opt-in, not the default managedRoot or the product's terminal.
+ * The independent pin and exact owned snapshot are verified before any Core
+ * instance exists. No raw Module or structural "verified" value can enter. */
+export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPin, memories: number, actions: number) {
+  if (!isNode || process.platform !== 'linux' || ![22, 24].includes(Number(process.versions.node.split('.')[0]))) {
+    throw new Error('Captured result requires reviewed Linux Node 22 or 24');
+  }
+  const {kind, byteLength, sha256: expected} = pin;
+  if (kind !== 'sods-linux-capture-result-v1' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
+      byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
+    throw new TypeError('Invalid trusted captured result pin');
+  }
+  if (lengthOf(input) !== byteLength) throw new Error('Captured result artifact length mismatch');
+  const bytes = ownedInput(input);
+  if (lengthOf(bytes) !== byteLength) throw new Error('Captured result artifact length changed');
+  const actual = Array.from(await sha256(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+  if (actual !== expected) throw new Error('Captured result artifact digest mismatch');
+  const module = new Module(bytes);
+  const wire = Module.customSections(module, 'sods.linux.capture');
+  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 1, 2, 0];
+  if (wire.length !== 1 || wire[0]!.byteLength !== identity.length ||
+      !new Bytes(wire[0]!).every((byte, i) => byte === identity[i])) {
+    throw new Error('Unsupported captured result artifact identity');
+  }
+  const host = memoryHostFor(module, memories, actions, true);
+  return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
+    runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
+    workerEvidence: host.workerEvidence, takeOutput: host.takeOutput});
+}
+
+function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, captureResult: boolean) {
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
-  const names = new Map(WebAssembly.Module.exports(module).map(e => [e.name, e.kind]));
+  const exports = Module.exports(module);
+  const names = new Map(exports.map(e => [e.name, e.kind]));
   // A probe has synthetic physical truth, never a usable host capability. Reject
   // before instantiation, even when all required names/version are present.
   if (names.has('linux_sendfile_probe') || names.has('linux_sendfile_probe_access_ended')) {
     throw new Error('Synthetic sendfile probe is not a production Linux admission module');
   }
-  if (names.has('linux_capture_candidate')) {
+  if (!captureResult && names.has('linux_capture_candidate')) {
     throw new Error('Linux capture candidate is not an ordinary Linux admission module');
   }
-  if (WebAssembly.Module.imports(module).length || names.get('memory') !== 'memory' || required.some(name => names.get(name) !== 'function')) {
+  if (Module.imports(module).length || names.get('memory') !== 'memory' ||
+      required.some(name => names.get(name) !== 'function') ||
+      (captureResult ? resultOnly : ordinaryOnly).some(name => names.get(name) !== 'function') ||
+      (captureResult && (ordinaryOnly.some(name => names.has(name)) ||
+        exports.some(e => e.name.startsWith('linux_queued_') || e.name.startsWith('linux_sendfile_'))))) {
     throw new Error('Unsupported Linux admission module');
   }
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
-  const core = new WebAssembly.Instance(module).exports as Admission;
+  const core = new Instance(module).exports as Admission;
+  const capture = captureResult ? core as unknown as ResultAdmission : undefined;
   if (core.linux_abi_version() !== 7) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
+  if (capture) {
+    if (capture.linux_capture_candidate() !== 2) throw new Error('Unsupported captured result artifact profile');
+    checked(capture.linux_capture_select(2));
+  }
   const safeNumber = (value: bigint): number => {
     const number = integer(numeric(value));
     if (wide(number) !== value) throw new RangeError('Transport coordinate exceeds safe integer');
@@ -525,7 +597,61 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     // Do not replay a failed/trapped finish: it may already have published an FD.
     return command(core.linux_syscall_path_finish(w.id, c.value, wide(actual), 0));
   };
+  const captureWrite = capture && ((w: WorkerState, sequence: number, c: ReturnType<typeof command>): ReturnType<typeof command> => {
+    const count = checkedResultExtent(safeNumber(c.next)), source = safeNumber(c.target);
+    if (c.endpoint !== 0) throw new Error('Captured write has a physical endpoint');
+    const address = result(capture.linux_capture_result_write_start(w.id, sequence, c.value));
+    try {
+      if (core.linux_result_auxiliary() !== c.target || core.linux_result_length() !== c.next) {
+        throw new Error('Captured write extent changed');
+      }
+      // Synchronous and callback-free. Neither view escapes Rust's lexical fence.
+      apply(setBytes, new Bytes(bufferOf(core.memory), numeric(address), count),
+        [new Bytes(bufferOf(w.memory), source, count)]);
+    } catch (error) {
+      try { checked(capture.linux_capture_result_write_finish(w.id, sequence, c.value, 1, 0)); }
+      catch (receipt) { throw new AggregateError([error, receipt], 'Captured write and stopped receipt failed'); }
+      throw error;
+    }
+    // A failure can have committed already. Never replay a success receipt.
+    return command(capture.linux_capture_result_write_finish(w.id, sequence, c.value, 0, count));
+  });
+  let unsettledOutput: Uint8Array<ArrayBuffer> | undefined;
+  const ensureResultUsable = (): void => {
+    if (unsettledOutput) throw new Error('Captured result access remains unconfirmed');
+  };
+  const takeOutput = (): Uint8Array<ArrayBuffer> | undefined => {
+    if (!capture) throw new Error('This host has no captured result');
+    ensureResultUsable();
+    const generation = result(capture.linux_capture_result_head());
+    if (generation === 0n) return undefined; // Temporarily empty, not EOF or stop evidence.
+    const slot = u32(safeNumber(core.linux_result_auxiliary()));
+    const length = checkedResultExtent(safeNumber(core.linux_result_length()));
+    const output = new Bytes(length);
+    unsettledOutput = output;
+    const start = capture.linux_capture_result_copy_start(slot, generation);
+    if (start !== 0) {
+      // A known rejection, rather than a trap, produced no pointer for this attempt.
+      unsettledOutput = undefined;
+      checked(start);
+    }
+    const attempt = unsigned(64, core.linux_result_auxiliary()), pointer = unsigned(64, core.linux_result());
+    try {
+      if (core.linux_result_length() !== wide(length)) throw new Error('Captured result extent changed');
+      apply(setBytes, output, [new Bytes(bufferOf(core.memory), numeric(pointer), length)]);
+    } catch (error) {
+      try { checked(capture.linux_capture_result_copy_finish(attempt, 1, 0)); unsettledOutput = undefined; }
+      catch (receipt) { throw new AggregateError([error, receipt], 'Captured result copy and stopped receipt failed'); }
+      throw error;
+    }
+    if (result(capture.linux_capture_result_copy_finish(attempt, 0, length)) !== wide(length)) {
+      throw new Error('Captured result publication remains unconfirmed');
+    }
+    unsettledOutput = undefined;
+    return output;
+  };
   const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> => {
+      ensureResultUsable();
       const w = workerOf(handle);
       if (w.entry !== undefined && entry !== w.entry) throw new Error('Entry differs from Rust committed startup');
       if (w.active || w.invocation || w.imagePending || w.bridge.diagnostics().exited || w.bridge.diagnostics().stopping) throw new Error('Worker run unavailable');
@@ -566,12 +692,20 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
               return {kind: 'return', value: completed.value};
             }
             if (c.tag === 10) {
+              if (capture) throw new Error('Captured result rejects physical output');
               const completed = rejectSourceOutput(w, request.sequence, c);
               // No accepted production physical capability exists yet. Never
               // turn a rejected/unknown stage into a successful zero result.
               throw new Error(`Unsupported Rust Worker command: ${completed.tag} (value ${completed.value}, syscall ${request.nr})`);
             }
-            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);
+            if (c.tag !== 1) {
+              if (c.tag === 13 && captureWrite) {
+                const completed = captureWrite(w, request.sequence, c);
+                if (completed.tag !== 0) throw new Error(`Captured write did not return: ${completed.tag}`);
+                return {kind: 'return', value: completed.value};
+              }
+              throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);
+            }
             const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
             if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
             return {kind: 'return', value: completed.value};
@@ -603,14 +737,17 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       } finally { w.active = false; }
     };
   return {
+    takeOutput,
     /** Initial prepared-path profile: empty FD table, fixed memory, one runner.
      * Not default Node/muk startup or a complete Linux syscall environment. */
     async pathExecution(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], options: PathExecutionOptions): Promise<ExecutionBinding> {
+      ensureResultUsable();
       if ('credentials' in options || 'execfn' in options) throw new TypeError('Path startup derives credentials and execfn in Rust');
       const {translator: translatorModule, load, signal, stdio: useStdio, preparedArtifact: artifactLoader} = options;
       if (artifactLoader !== undefined && typeof artifactLoader !== 'function') throw new TypeError('Expected prepared artifact transport');
       if (artifactLoader === undefined && translatorModule === undefined) throw new TypeError('Fresh startup requires a translator');
       if (useStdio !== undefined && useStdio !== true) throw new TypeError('Expected explicit stdio profile');
+      if (capture && useStdio !== undefined) throw new TypeError('Captured result does not borrow physical stdio');
       const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
       const wire = startupWire(path, argv, env, options.random, options.cwd);
@@ -618,7 +755,8 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       const stdio = useStdio ? (await import('../host/node/stdio.ts')).captureStdio() : undefined;
       if (aborted(signal)) throw abortReason(signal);
       put(result(core.linux_startup_input(wire.length)), wire);
-      const begun = stdio ? core.linux_startup_begin_stdio() : core.linux_startup_begin();
+      const begun = capture ? capture.linux_capture_result_startup()
+        : stdio ? core.linux_startup_begin_stdio() : core.linux_startup_begin();
       const id = unsigned(64, core.linux_result());
       checked(core.linux_startup_input(0));
       if (begun !== 0) {
@@ -1045,6 +1183,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         throw error;
       }
       checked(core.linux_prepared_root(values[0]!, values[1]!, values[2]!, values[3]!, values[4]!, values[5]!, values[6]!, values[7]!, values[8]!, values[9]!, flags, values[10]!));
+      if (capture) checked(capture.linux_capture_result_init());
     },
     /** Root-local immutable transport coordinates, not namespace lookup. */
     rootSource(source: number): {pack: number; at: number; stored: number; size: number; raw: boolean} {

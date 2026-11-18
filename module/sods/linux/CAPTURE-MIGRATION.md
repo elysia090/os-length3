@@ -218,6 +218,15 @@ prove host wiring and candidate pin catalog provenance separately; maintain
 default behavior and delete a legacy TS path only after its actual callers
 have switched.
 
+The private result host now reuses the existing prepared-root/Worker path.
+An independently supplied pin is read together with the artifact role; the
+same owned bytes feed SHA-256 and WebAssembly compilation. Wrong role,
+length, digest, backing or ABI cannot construct a result instance. Startup
+does not borrow host stdio. Rust selects the captured command, and the host
+only copies the exact stopped bytes and exposes them after receipt. Polling
+an empty result does not certify Worker exit. No public loader, default
+caller switch or deployment pin catalog is selected by this private witness.
+
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution
 state. There are no borrowed-stdio, captured startup or diagnostic execution
