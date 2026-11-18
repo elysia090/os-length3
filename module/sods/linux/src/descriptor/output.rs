@@ -867,24 +867,68 @@ impl Writer<'_> {
         // R pressure must not consume even a K generation. A no-op
         // reserve/cancel may permanently retire its last generation.
         let reservation = self.queue.reserve_for::<true>(length)?;
-        let source = match self.files.reserve_read(table, fd, length.get() as u64) {
+        self.publish_reserved_resident(table, fd, length, reservation)
+    }
+    fn reserve_resident_source(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        length: NonZeroUsize,
+    ) -> Result<ReadHold, Error> {
+        let source = self.files.reserve_read(table, fd, length.get() as u64)?;
+        if source.length() != length.get() {
+            self.files.abort_read(source);
+            return Err(Error::Length);
+        }
+        Ok(source)
+    }
+    fn publish_reserved_resident(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        length: NonZeroUsize,
+        reservation: Reservation,
+    ) -> Result<NonZeroUsize, Error> {
+        let source = match self.reserve_resident_source(table, fd, length) {
             Ok(source) => source,
             Err(error) => {
                 self.queue
                     .cancel(reservation)
                     .expect("same private reservation");
-                return Err(error.into());
+                return Err(error);
             }
         };
-        if source.length() != length.get() {
-            self.files.abort_read(source);
-            self.queue
-                .cancel(reservation)
-                .expect("same private reservation");
-            return Err(Error::Length);
-        }
         self.queue
             .accept_resident_prefix(self.files, reservation, source, length)
+    }
+    #[cfg(any(test, feature = "capture-result-v1"))]
+    fn reserve_resident_when_room(
+        &mut self,
+        length: NonZeroUsize,
+    ) -> Result<Option<Reservation>, Error> {
+        let queue = &mut self.queue;
+        match queue.reserve_for::<true>(length) {
+            // A queue-consuming receiver can return Q, but K/R may be
+            // permanently exhausted by the last generation or by limits.
+            // Identify a reclaimable published cell only on pressure.
+            Err(Error::Full | Error::Capacity)
+                if queue.head.is_some()
+                    && length.get() <= queue.byte_limit
+                    && (queue.entries.has_room()
+                        || queue.entries.cells.iter().any(|cell| {
+                            cell.generation != u64::MAX
+                                && matches!(cell.state, State::Live(Entry::Queued { .. }))
+                        }))
+                    && (queue.pins.has_room()
+                        || queue.pins.cells.iter().any(|cell| {
+                            cell.generation != u64::MAX
+                                && matches!(&cell.state, State::Live(range) if range.queued)
+                        })) =>
+            {
+                Ok(None)
+            }
+            result => result.map(Some),
+        }
     }
     pub(super) fn publish_copy(
         &mut self,

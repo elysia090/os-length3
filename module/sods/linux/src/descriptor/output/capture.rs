@@ -9,6 +9,11 @@ use crate::lease::{self, Domain};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
+#[cfg(any(test, feature = "capture-result-v1"))]
+mod resident;
+#[cfg(any(test, feature = "capture-result-v1"))]
+pub(crate) use resident::{Resident, Turn as ResidentTurn};
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Error {
     Identity,
@@ -429,6 +434,7 @@ mod tests {
     };
     use super::*;
     use crate::execution::{ImageResult, Unwind};
+    use std::num::NonZeroU64;
 
     struct Guest {
         root: Root,
@@ -441,16 +447,17 @@ mod tests {
     }
     impl Guest {
         fn new() -> Self {
+            Self::with_limits(Limits {
+                bytes: 2,
+                entries: 1,
+                pins: 0,
+            })
+        }
+        fn with_limits(limits: Limits) -> Self {
             let (mut files, _, source, old, _) = files(502);
             files.let_go(old).unwrap();
             let mut root = Root::new(files, 1).ok().unwrap();
-            let (producer, receiver) = root
-                .destination(Limits {
-                    bytes: 2,
-                    entries: 1,
-                    pins: 0,
-                })
-                .unwrap();
+            let (producer, receiver) = root.destination(limits).unwrap();
             let table = root.queued_stdio(1, [&producer, &producer], 8).unwrap();
             let mut domain = Domain::new(505, 1, 4).unwrap();
             let mut execution = Execution::new(1, domain.bind(16).unwrap());
@@ -867,6 +874,129 @@ mod tests {
         ));
         writer.cancel(pending).unwrap();
         g.root.files.release_output(output).unwrap();
+    }
+
+    #[test]
+    fn resident_pressure_keeps_both_descriptions_and_exact_cursor_until_resume_or_cancel() {
+        use crate::syscall::Continuation;
+        for mode in ["accept", "cancel", "fault"] {
+            let mut g = Guest::with_limits(Limits {
+                bytes: 4,
+                entries: 3,
+                pins: 1,
+            });
+            let mut continuation = Continuation::new(&g.execution).unwrap();
+            let invocation = g.invocation;
+            let input = g.root.files.open(&g.table, g.source, false).unwrap();
+            let alias = g.root.files.dup(&g.table, input, 4, false).unwrap();
+            let mut start = |g: &mut Guest, seq| {
+                continuation
+                    .admit_request(&g.domain, &g.execution, invocation, Some(seq))
+                    .unwrap();
+                Resident::admit(
+                    &mut Context {
+                        files: &mut g.root.files,
+                        lanes: &mut g.root.registry,
+                        domain: &mut g.domain,
+                        execution: &mut g.execution,
+                    },
+                    &g.table,
+                    1,
+                    input,
+                    n(1),
+                    invocation,
+                )
+            };
+            assert!(matches!(start(&mut g, 1), Ok(ResidentTurn::Accepted(_))));
+            let ResidentTurn::Waiting(mut waiting) = start(&mut g, 2).unwrap() else {
+                panic!("R is full even though Q/K have room");
+            };
+            let id = waiting.id().unwrap();
+            let stale = NonZeroU64::new(id.get() + 1).unwrap();
+            assert_eq!(
+                waiting.resume(&mut g.context(), stale),
+                Err(Error::Identity)
+            );
+            assert_eq!(waiting.resume(&mut g.context(), id), Ok(None));
+            assert_eq!(g.root.files.offset(&g.table, alias), Ok((1, 1)));
+            assert_eq!(
+                g.root.files.set_offset(&g.table, alias, 3),
+                Err(FilesError::Busy)
+            );
+            assert!(continuation
+                .admit_request(&g.domain, &g.execution, invocation, Some(3))
+                .is_err());
+            g.root.files.close(&g.table, 1).unwrap();
+            assert_eq!(g.root.files.dup(&g.table, 0, 1, false), Ok(1));
+            g.root.files.close(&g.table, input).unwrap();
+            assert_eq!(g.root.files.dup(&g.table, 0, input, false), Ok(input));
+            if mode == "cancel" {
+                waiting.cancel(&mut g.context(), id).unwrap();
+            } else if mode == "fault" {
+                g.execution
+                    .receipt(&mut g.domain, invocation, Unwind::Fault)
+                    .unwrap();
+            }
+            let mut received = Vec::with_capacity(1);
+            assert_eq!(
+                g.root
+                    .reader(&g.receiver)
+                    .unwrap()
+                    .take_front_into(&mut received, 1),
+                Ok(Some(n(1)))
+            );
+            assert_eq!(received, b"b");
+            if mode != "accept" {
+                assert!(waiting.resume(&mut g.context(), id).is_err());
+                if mode == "fault" {
+                    waiting.cancel(&mut g.context(), id).unwrap();
+                }
+                assert_eq!(g.root.files.offset(&g.table, alias), Ok((1, 1)));
+                assert!(
+                    g.root.files.set_offset(&g.table, alias, 0).is_ok(),
+                    "cancel returns the exact cursor hold"
+                );
+                assert_eq!(g.front(), None);
+                assert_eq!(g.execution.stopped(), mode == "fault");
+            } else {
+                assert_eq!(waiting.resume(&mut g.context(), id), Ok(Some(n(1))));
+                assert!(waiting.resume(&mut g.context(), id).is_err());
+                assert_eq!(g.root.files.offset(&g.table, alias), Ok((2, 2)));
+                assert_eq!(g.front().as_deref(), Some(&b"o"[..]));
+            }
+        }
+    }
+
+    #[test]
+    fn resident_pressure_without_reclaimable_pin_does_not_touch_the_file() {
+        let mut g = Guest::new(); // R=0
+        let mut write = g.admit(1, 5).unwrap();
+        let id = write.id();
+        g.fill(&mut write, id, b"AB");
+        write
+            .finish(&mut g.context(), id, receipt(Some(2), Access::BothEnded))
+            .unwrap();
+        let invocation = g.invocation;
+        let input = g.root.files.open(&g.table, g.source, false).unwrap();
+        let next = g.root.files.next_read_reservation;
+        let result = Resident::admit(
+            &mut Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            },
+            &g.table,
+            1,
+            input,
+            n(1),
+            invocation,
+        );
+        assert!(matches!(result, Err(Error::Output(OutputError::Full))));
+        assert_eq!(g.root.files.next_read_reservation, next);
+        assert_eq!(g.root.files.offset(&g.table, input), Ok((0, 0)));
+        assert!(g.execution.syscall_allowed(invocation).is_ok());
+        assert_eq!(g.front().as_deref(), Some(&b"AB"[..]));
     }
 
     #[test]

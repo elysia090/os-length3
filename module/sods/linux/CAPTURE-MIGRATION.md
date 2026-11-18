@@ -270,8 +270,20 @@ same turn as a consume must not stage another write. Worker settlement and
 FD retirement are observed separately; neither takes accepted result bytes
 away. The signal reports pressure, not readiness of every queued result
 or EOF. This is a pull-during-pressure witness, not a product streaming
-subscription or a physical sink adapter. It does not suspend resident
-sendfile, whose source/cursor lifetimes require a different proof.
+subscription or a physical sink adapter. Its raw transport currently only
+suspends mutable writes.
+
+The native resident-sendfile experiment retains an exact original input OFD
+and cursor revision with the existing exclusive read hold, and the original
+output OFD with its lane hold. It does not retain a numeric FD lookup, a view,
+a staged payload, Q/K/R credits or a guest-memory lease. Reclaimable pressure
+must name published capacity, including a pin cell whose generation can
+actually be reused; an absent or permanently exhausted credit is not a reason
+to park. Invalid or lazy sources still fail, never trigger a host load.
+Matching acceptance takes Q/K/R, links one immutable prefix and commits the
+same cursor in one synchronous turn. Cancellation returns both exact holds
+without advancing either cursor or queue. The native controls replace both
+FDs, try an aliased seek and stop the execution before late resume.
 
 The private Linux x64 Node 22/24 distribution reader exercises the pin
 chain end to end with a current-source result artifact and Worker. The
