@@ -65,7 +65,7 @@ test(`${provenance} managed CLI runs a rootless static guest with real stdio`, {
     assert.equal(unsupported.error, undefined);
     assert.equal(unsupported.signal, null);
     assert.notEqual(unsupported.status, 0);
-    assert.match(unsupported.stderr.toString(), /Unsupported Rust Worker command/);
+    assert.match(unsupported.stderr.toString(), /Unsupported Rust Worker command: 3 \(value 39, syscall 39\)/);
     writeFileSync(program, 'not an ELF');
     const rejected = spawnSync(process.execPath, [cli, '--managed', program], {input: '', timeout: 5000, env});
     assert.equal(rejected.error, undefined);

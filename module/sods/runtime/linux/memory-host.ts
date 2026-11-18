@@ -503,7 +503,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
               if (completed.tag !== 0) throw new Error(`Path capture did not return: ${completed.tag}`);
               return {kind: 'return', value: completed.value};
             }
-            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);
+            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag} (value ${c.value}, syscall ${request.nr})`);
             const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
             if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
             return {kind: 'return', value: completed.value};
