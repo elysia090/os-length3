@@ -135,6 +135,15 @@ impl Store {
     pub fn size(&mut self, id: u32) -> Result<usize, Error> {
         Ok(self.slot_mut(id)?.logical_size)
     }
+    /// Observation only: no competing load is started, consumed or poisoned.
+    /// This neither borrows bytes nor promises they cannot later be evicted.
+    pub fn resident_ready(&self, id: u32) -> Result<bool, Error> {
+        let slot = self.files.get(&id).ok_or(Error::BadHandle)?;
+        Ok(slot
+            .source
+            .as_ref()
+            .is_none_or(|source| source.loaded && source.operation.is_none()))
+    }
     pub fn load_source(&mut self, id: u32) -> Result<u32, Error> {
         Ok(self.slot_mut(id)?.source.as_ref().map_or(0, |s| s.id))
     }
@@ -527,6 +536,23 @@ mod tests {
         assert_eq!(f.load_source(id), Ok(12));
         assert_eq!(f.size(id), Ok(4));
         assert_eq!(f.read(id, 0, 8).unwrap(), b"good");
+    }
+    #[test]
+    fn resident_readiness_is_nonmutating_and_not_a_size_guess() {
+        let mut f = Store::new(8);
+        let ordinary_empty = f.create(b"").unwrap();
+        let lazy_empty = f.create_lazy(12, 0).unwrap();
+        assert_eq!(f.resident_ready(ordinary_empty), Ok(true));
+        assert_eq!(f.resident_ready(lazy_empty), Ok(false));
+        assert_eq!(f.resident_ready(999), Err(Error::BadHandle));
+        let attempt = f.load_begin(lazy_empty).unwrap();
+        assert_eq!(f.resident_ready(lazy_empty), Ok(false));
+        assert_eq!(f.resident_ready(lazy_empty), Ok(false));
+        assert_eq!(f.load_finish(lazy_empty, attempt, true, b""), Ok(()));
+        assert_eq!(f.resident_ready(lazy_empty), Ok(true));
+        assert_eq!(f.load_source(lazy_empty), Ok(12));
+        assert_eq!(f.release(lazy_empty), Ok(0));
+        assert_eq!(f.resident_ready(lazy_empty), Ok(false));
     }
     #[test]
     fn lazy_mutation_conflicts_and_failure_retry() {

@@ -1428,6 +1428,14 @@ impl Files {
         fd: u32,
         requested: u64,
     ) -> Result<ReadPreparation, Error> {
+        self.begin_read_with::<false>(table, fd, requested)
+    }
+    fn begin_read_with<const MATERIALIZED: bool>(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        requested: u64,
+    ) -> Result<ReadPreparation, Error> {
         let id = self.description(table, fd)?;
         let d = get(&self.descriptions, self.owner, id)?;
         let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
@@ -1452,6 +1460,14 @@ impl Files {
         {
             return Err(Error::NotSupported);
         }
+        if MATERIALIZED
+            && !self
+                .filesystems
+                .resident_ready(inode)
+                .map_err(Error::Source)?
+        {
+            return Err(Error::NotSupported);
+        }
         let reservation = self.next_read_reservation.ok_or(Error::Overflow)?;
         let d = self.descriptions[id.slot].value.as_mut().unwrap();
         d.refs = refs;
@@ -1464,7 +1480,11 @@ impl Files {
             offset,
             requested,
             next_revision: revision,
-            phase: PreparationPhase::Reserved,
+            phase: if MATERIALIZED {
+                PreparationPhase::Ready
+            } else {
+                PreparationPhase::Reserved
+            },
         })
     }
     /// Resolve, authorize and acquire ownership without callbacks between them.
@@ -1865,6 +1885,24 @@ impl Files {
                 .expect("undispatched resident preparation");
             return Err(error);
         }
+        self.capture_or_abort(prep)
+    }
+
+    /// Sealed Files handoff for an exact, nonempty resident capture. Loaded
+    /// lazy payloads are eligible without starting a loader, and the sealed
+    /// Filesystems interface cannot evict their canonical immutable backing.
+    #[cfg(any(test, feature = "capture-result-v1"))]
+    pub(crate) fn reserve_materialized_read(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        requested: NonZeroUsize,
+    ) -> Result<ReadHold, Error> {
+        let prep = self.begin_read_with::<true>(table, fd, requested.get() as u64)?;
+        self.capture_or_abort(prep)
+    }
+
+    fn capture_or_abort(&mut self, prep: ReadPreparation) -> Result<ReadHold, Error> {
         match self.capture_read(prep) {
             Ok(hold) => Ok(hold),
             Err((error, prep)) => {
@@ -3056,6 +3094,65 @@ mod tests {
         f.finish_read(hold, 5);
         assert_eq!(f.offset(&table, replacement), Ok((5, 1)));
         f.let_go(table).unwrap();
+    }
+    #[test]
+    fn sealed_ready_read_refuses_cold_and_loading_without_touching_the_source() {
+        let (mut f, table, loader_fd, inode) = lazy_setup();
+        let other_fd = f.open(&table, inode, false).unwrap(); // independent OFD, same canonical bytes
+        let count = NonZeroUsize::new(2).unwrap();
+        let before = f.next_read_reservation;
+        assert!(matches!(
+            f.reserve_materialized_read(&table, other_fd, count),
+            Err(Error::NotSupported)
+        ));
+        assert_eq!(f.next_read_reservation, before);
+        let mut loading = f.begin_read(&table, loader_fd, 2).unwrap();
+        let request = f.prepare_read(&mut loading).unwrap().unwrap();
+        let during = f.next_read_reservation;
+        assert!(matches!(
+            f.reserve_materialized_read(&table, other_fd, count),
+            Err(Error::NotSupported)
+        ));
+        assert_eq!(
+            f.next_read_reservation, during,
+            "no new cursor reservation while the exact payload is absent"
+        );
+        let mut bytes = b"ab".to_vec();
+        let backing = bytes.as_ptr();
+        f.finish_load(&mut loading, request.attempt, true, &mut bytes)
+            .unwrap();
+        assert!(
+            bytes.is_empty(),
+            "a mere readiness check cannot poison the first load"
+        );
+        f.abort_preparation(loading).unwrap();
+
+        assert!(
+            matches!(
+                f.reserve_read(&table, other_fd, 2),
+                Err(Error::NotSupported)
+            ),
+            "the legacy resident ABI keeps its existing source policy"
+        );
+        let hold = f
+            .reserve_materialized_read(&table, other_fd, count)
+            .unwrap();
+        let prefix = f.read_prefix(&hold, count).unwrap();
+        f.finish_read(hold, 2);
+        f.let_go(table).unwrap();
+        assert_eq!(f.prefix_bytes(&prefix).unwrap(), b"ab");
+        assert_eq!(
+            f.prefix_bytes(&prefix).unwrap().as_ptr(),
+            backing,
+            "the same immutable backing survives retirement of both OFDs"
+        );
+        let mut stale = b"XX".to_vec();
+        assert!(f
+            .filesystems
+            .load_finish(inode, request.attempt, true, &mut stale)
+            .is_err());
+        assert_eq!(stale, b"XX");
+        assert_eq!(f.prefix_bytes(&prefix).unwrap(), b"ab");
     }
     #[test]
     fn loading_abort_requires_stopped_completion_and_stale_retry_preserves_input() {

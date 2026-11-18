@@ -443,6 +443,9 @@ impl Tree {
     pub(crate) fn size(&mut self, inode: Inode) -> Result<usize, Error> {
         Ok(self.payloads.size(self.payload(inode)?)?)
     }
+    pub(crate) fn resident_ready(&self, inode: Inode) -> Result<bool, Error> {
+        Ok(self.payloads.resident_ready(self.payload(inode)?)?)
+    }
     pub(crate) fn source(&mut self, inode: Inode) -> Result<u32, Error> {
         Ok(self.payloads.load_source(self.payload(inode)?)?)
     }

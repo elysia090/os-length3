@@ -1,7 +1,10 @@
 //! Owned filesystem storage, independent of mount views and namespaces.
 //! Each admitted Tree has one owner here. No replacement/removal or mutable Tree
 //! export exists: descriptions and pending reads cannot outlive their storage.
-//! This retains all storage until Files ends; it is not mount-aware reclamation.
+//! A successfully loaded payload cannot be evicted, rewritten or replaced
+//! through this sealed interface; a matching pending load can only install it
+//! once. This retains all storage until Files ends; it is not mount-aware
+//! reclamation or a guarantee about the general-purpose Store.
 //! The bootstrap Tree stays inline so the existing one-tree constructor remains
 //! allocation-free. A single fallible registry constructor would be more uniform,
 //! but would change existing ABI seal failure/ownership behavior. This inline
@@ -80,6 +83,9 @@ impl Filesystems {
     }
     pub(crate) fn target(&self, inode: Inode) -> Result<&[u8], Error> {
         self.tree(inode)?.target(inode)
+    }
+    pub(crate) fn resident_ready(&self, inode: Inode) -> Result<bool, Error> {
+        self.tree(inode)?.resident_ready(inode)
     }
     pub(crate) fn source(&mut self, inode: Inode) -> Result<u32, Error> {
         self.tree_mut(inode)?.source(inode)

@@ -294,6 +294,15 @@ pinned B allows exactly D and one cursor advance. Stopping first leaves
 AB. This resident-source proof does not promote a lazy packaged file or
 alter Linux's general sendfile or terminal semantics.
 
+A new Store readiness observation does not call read or load_begin; probing
+a cold or active source that way would start or poison the caller's load.
+Its answer is about the current payload, not permission to pin it. Only the
+sealed Files owner can use readiness to retain a canonical immutable range:
+that interface does not expose mutation, eviction or replacement after one
+matching load commits. Ready-only cursor admission leaves a cold or loading
+inode's source, cursor and reservation sequence unchanged. Existing ordinary
+read/load and the old resident-only read ABI keep their source policy.
+
 The separate availability observer watches the selected lane, not the
 producer's numerical FD or a pressure event. Rust marks an acceptance only
 after publication and lexical access end, for both mutable writes and
