@@ -451,10 +451,10 @@ impl Sendfile {
         self.phase = Phase::CapChecking;
         Ok(request)
     }
-    /// Native qualification for a startup-installed owned stdout. Return a
+    /// Qualification for a startup-installed owned stdout. Return a
     /// foreign/stale request intact; neither a matching endpoint number nor
     /// a capability receipt is permission to rediscover the guest fd.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     pub(crate) fn approve_owned_stdout(
         &self,
         request: CapabilityRequest,

@@ -155,10 +155,10 @@ pub(crate) struct StreamHold(Id);
 /// Private installation token for one owned physical stdout OFD. It names
 /// the description, not a numeric guest/host fd, and grants no byte access,
 /// file offset, extra refcount or evidence of stopped external access.
-#[cfg(test)]
+#[cfg(any(test, feature = "queued-worker-probe"))]
 #[derive(Debug)]
 pub(crate) struct OwnedStdout(Id);
-#[cfg(test)]
+#[cfg(any(test, feature = "queued-worker-probe"))]
 impl OwnedStdout {
     pub(crate) fn matches(&self, hold: &StreamHold) -> bool {
         self.0 == hold.0
@@ -1260,12 +1260,12 @@ impl Files {
             },
         })
     }
-    /// The private native fixture installs a newly owned, exclusively held
+    /// The private owned-output fixture installs a newly owned, exclusively held
     /// non-append output alongside separately supplied stdin/stderr endpoints.
     /// Only startup can mint its token. There is no promotion from a borrowed
     /// table or fd, and the embedding must retain the same physical File
-    /// through all stopped receipts. The Wasm startup does not select this.
-    #[cfg(test)]
+    /// through all stopped receipts. Ordinary Wasm startup never selects this.
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     pub(crate) fn stdio_with_owned_stdout(
         &mut self,
         endpoints: [u64; 3],

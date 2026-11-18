@@ -55,6 +55,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   }
   assert.equal(typeof e.linux_queued_worker_probe_startup_shared, workerQueue ? 'function' : 'undefined');
   assert.equal(typeof e.linux_queued_worker_probe_init_joined, workerQueue ? 'function' : 'undefined');
+  for (const name of ['startup_owned_stdout', 'sendfile_owned']) {
+    assert.equal(typeof e[`linux_queued_worker_probe_${name}`], workerQueue ? 'function' : 'undefined');
+  }
   const call = (name: string, ...args: (number | bigint)[]): number => {
     assert.equal(typeof e[name], 'function', `Missing ABI7 export ${name}`);
     return (e[name] as (...values: (number | bigint)[]) => number)(...args);
@@ -120,9 +123,12 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     }
     put('linux_startup_input', wire);
   };
-  const live = (captured = false): Owner => {
+  const live = (captured = false, {owned = false} = {}): Owner => {
+    assert.ok(!(captured && owned));
     stageStartup();
-    assert.equal(call(captured ? 'linux_queued_output_probe_startup' : 'linux_startup_begin_stdio'), 0); const id = result();
+    assert.equal(call(captured ? 'linux_queued_output_probe_startup'
+      : owned ? 'linux_queued_worker_probe_startup_owned_stdout' : 'linux_startup_begin_stdio'), 0);
+    const id = result();
     assert.equal(call('linux_startup_input', 0), 0);
     assert.equal(call('linux_startup_source_start', id), 0); assert.equal(result(), 0n);
     assert.equal(call('linux_startup_bytes', id), 0);
@@ -164,8 +170,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(result(), send.action); assert.equal(auxiliary(), BigInt(send.sequence));
     assert.equal(endpoint(), send.endpoint);
   };
-  const capFinish = (send: Send, proof: number) => {
-    assert.equal(call('linux_sendfile_cap_finish', send.owner.id, send.sequence, send.action, send.endpoint, proof), 0);
+  const capResult = (send: Send) => {
     const c = command();
     if (c.tag === 12) {
       assert.equal(c.value, send.action); assert.equal(c.target, BigInt(send.sequence));
@@ -173,6 +178,12 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     }
     return c;
   };
+  const capFinish = (send: Send, proof: number) => {
+    assert.equal(call('linux_sendfile_cap_finish', send.owner.id, send.sequence, send.action, send.endpoint, proof), 0);
+    return capResult(send);
+  };
+  const capFinishOwned = (send: Send, id = send.owner.id, sequence = send.sequence, action = send.action, endpoint = send.endpoint) =>
+    call('linux_queued_worker_probe_sendfile_owned', id, sequence, action, endpoint);
   const qualify = (send: Send) => { capStart(send); return capFinish(send, 1); };
   const start = (send: Send) => {
     assert.equal(call('linux_sendfile_start', send.owner.id, send.sequence, send.action), 0);
@@ -202,7 +213,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     receive: (lane: number, limit?: number) => transfer(lane, false, limit)?.bytes,
     receiveRecord: (lane: number, limit?: number) => transfer(lane, false, limit),
     transferForSink: (lane: number) => transfer(lane, true),
-    stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
+    stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, capFinishOwned, capResult, qualify, start, finish, genericBlocked, remaining};
 }
 
 // Parse actual Wasm function parameter types. Type-correct probes must reach the
@@ -1149,14 +1160,17 @@ function cancelPreparedImage(r: ReturnType<typeof raw>, id: bigint) {
 
 async function prepareCurrentCapture(
   r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array,
-  {omitPhnum = false, resultProfile = false, physicalProbe = false} = {},
+  {omitPhnum = false, resultProfile = false, physicalProbe}: {
+    omitPhnum?: boolean; resultProfile?: boolean; physicalProbe?: 'owned' | 'borrowed';
+  } = {},
 ) {
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
   assert.ok(!resultProfile || !physicalProbe);
   const begun = resultProfile ? r.call('linux_capture_result_startup', 0)
-    : r.call(physicalProbe ? 'linux_startup_begin_stdio' : 'linux_queued_worker_probe_startup_shared');
+    : r.call(physicalProbe === 'owned' ? 'linux_queued_worker_probe_startup_owned_stdout'
+      : physicalProbe === 'borrowed' ? 'linux_startup_begin_stdio' : 'linux_queued_worker_probe_startup_shared');
   const id = r.result();
   assert.equal(r.call('linux_startup_input', 0), 0);
   if (begun !== 0) {
@@ -1222,25 +1236,73 @@ async function prepareCurrentCapture(
   }
 }
 
-// Test-only transport, not a new guest mode. The fixture installs one exact
-// nonappend handle; the proof integer is still accepted only by the probe
-// artifact, and default memoryHost must reject that artifact.
-for (const stopAfterWrite of [false, true]) test(
-  `real Node Worker capture fixture: physical offer to its owned regular file ${stopAfterWrite ? 'settles only after observed Worker stop' : 'returns the direct confirmed prefix'}`,
+test('owned capability cannot be supplied by another execution with the same endpoint or replayed after stopped cleanup',
+  {skip: workerQueueSkip}, () => {
+    const r = raw(workerQueueArtifact!, true, true, true, true);
+    r.stageStartup('/missing');
+    assert.equal(r.call('linux_queued_worker_probe_startup_owned_stdout'), -10);
+    const failed = r.result();
+    assert.ok(failed > 0n, 'owned startup already installed its private descriptors before path lookup');
+    assert.equal(r.call('linux_startup_cancel', failed), 0);
+    assert.equal(r.result(), 1n);
+
+    const borrowed = r.live(), owned = r.live(false, {owned: true});
+    const borrowFd = r.open(borrowed, '/data'), ownFd = r.open(owned);
+    const left = r.begin(borrowed, borrowFd), right = r.begin(owned, ownFd);
+    assert.deepEqual([left.sequence, left.endpoint], [right.sequence, right.endpoint]);
+    assert.notEqual(left.action, right.action);
+    r.capStart(left); r.capStart(right);
+
+    assert.equal(r.capFinishOwned(left), -12, 'the borrowed OFD has only the same scalar endpoint');
+    assert.equal(r.capFinishOwned(left, owned.id), -12, 'another owned execution does not authorize this action');
+    assert.equal(r.capFinishOwned(right, owned.id, right.sequence + 1), -12);
+    assert.equal(r.capFinishOwned(right, owned.id, right.sequence, right.action, right.endpoint + 1n), -12);
+    assert.equal(r.call('linux_sendfile_cap_finish', owned.id, right.sequence, right.action, right.endpoint, 1), -5);
+    for (const send of [left, right]) {
+      assert.ok(r.call('linux_sendfile_load_start', send.owner.id, send.sequence, send.action) < 0);
+      assert.ok(r.call('linux_sendfile_start', send.owner.id, send.sequence, send.action) < 0);
+    }
+    assert.equal(r.capFinish(left, 0).tag, 3, 'wrong authority did not consume the pending ticket');
+    // The first independent read is still the first loader attempt for this
+    // lazy source; neither the wrong proof nor explicit rejection armed it.
+    assert.equal(r.call('linux_managed_read_begin', borrowed.id, Number(borrowFd), 0n, 6n), 0);
+    const read = r.result();
+    assert.equal(r.call('linux_read_load_start', borrowed.id, read), 0);
+    assert.deepEqual([r.result(), r.length()], [7n, 1n]);
+    assert.equal(r.call('linux_read_load_finish', borrowed.id, read, 1, 0), 0);
+    assert.equal(r.call('linux_read_retire', read), 0);
+    assert.equal(r.call('linux_run_receipt', owned.id, owned.invocation, 2, 0n), 0);
+    assert.equal(r.capFinishOwned(right), 0, 'return the exact ticket despite stopped guest');
+    assert.equal(r.capResult(right).tag, 4, 'no offer for a stopped execution');
+    assert.ok(r.capFinishOwned(right) < 0);
+    assert.equal(r.call('linux_execution_retire', owned.id), 0); assert.equal(r.result(), 1n);
+    assert.ok(r.capFinishOwned(right) < 0);
+  });
+
+// Test-only transport, not a new guest mode. The trusted fixture acquires a
+// fresh nonappend handle before asking Rust to mint the exact token.
+for (const [physicalProbe, stopAfterWrite, scenario] of [
+  ['owned', false, 'returns the direct confirmed prefix'],
+  ['owned', true, 'settles only after observed Worker stop'],
+  ['borrowed', false, 'rejects borrowed stdout with the same endpoint number'],
+] as const) test(
+  `real Node Worker capture fixture: physical output ${scenario}`,
   {skip: currentMixedSkip, timeout: 30_000}, async () => {
     const {elf, translator} = currentCaptureProgram(false, true);
     const r = raw(workerQueueArtifact!, true, false, true, true, elf);
     assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
-    const input = await prepareCurrentCapture(r, translator, elf, {physicalProbe: true});
-    const {id, memory, entry} = input, core = r.e.memory as WebAssembly.Memory;
-    const bridge = createGuest(input);
+    const core = r.e.memory as WebAssembly.Memory;
     const directory = mkdtempSync(join(tmpdir(), 'sods-physical-witness-')), path = join(directory, 'out');
     const fd = openSync(path, 'wx', 0o600);
     let unresolved = false;
+    let guest: ReturnType<typeof createGuest> | undefined;
     let writes = 0, sends = 0, observedStop = false;
     const viewAt = (backing: WebAssembly.Memory, pointer: number, length: number) =>
       new FixtureBytes(fixtureApply(fixtureMemoryBuffer, backing, []), pointer, length);
     try {
+      const input = await prepareCurrentCapture(r, translator, elf, {physicalProbe});
+      const {id, memory, entry} = input;
+      const bridge = guest = createGuest(input);
       await bridge.ready;
       assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
       assert.equal(r.call('linux_run_start', id), 0);
@@ -1281,7 +1343,19 @@ for (const stopAfterWrite of [false, true]) test(
         assert.equal(c.target, BigInt(request.sequence));
         assert.equal(c.endpoint, 2n);
         const send = {owner, action: c.value, sequence: request.sequence, endpoint: 2n, offered: 0n};
-        assert.equal(r.qualify(send).tag, 12, 'synthetic admission exists only in the marker-rejected artifact');
+        r.capStart(send);
+        if (physicalProbe === 'borrowed') {
+          assert.equal(r.capFinishOwned(send), -12, 'the same scalar endpoint is not the owned OFD');
+          assert.ok(r.call('linux_sendfile_start', id, send.sequence, send.action) < 0);
+          assert.equal(r.capFinish(send, 0).tag, 3);
+          assert.deepEqual(r.remaining(owner, 3n), bytes('BD'));
+          // Unsupported ends this limited invocation; do not invent a guest errno
+          // or allow a later write to run after the rejection.
+          return {kind: 'leave'};
+        }
+        assert.equal(r.call('linux_sendfile_cap_finish', id, send.sequence, send.action, send.endpoint, 1), -5);
+        assert.equal(r.capFinishOwned(send), 0);
+        assert.equal(r.capResult(send).tag, 12);
         assert.equal(send.offered, 1n);
         unresolved = true;
         const count = (() => {
@@ -1311,22 +1385,27 @@ for (const stopAfterWrite of [false, true]) test(
         return stopAfterWrite ? {kind: 'leave'} : {kind: 'return', value: complete.value};
       });
       await bridge.requestsSettled();
-      assert.equal(bridge.diagnostics().failureCount, 0);
+      const {failureCount, firstFailure} = bridge.diagnostics();
+      assert.equal(failureCount, 0, String(firstFailure));
+      const borrowed = physicalProbe === 'borrowed';
       if (stopAfterWrite) assert.equal(outcome.kind, 'failed');
       else {
         assert.deepEqual(outcome, {kind: 'left', unwound: true});
-        assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0);
-        assert.equal(r.result(), 42n);
+        if (!borrowed) {
+          assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0);
+          assert.equal(r.result(), 42n);
+        }
         bridge.requestStop();
         assert.equal((await bridge.stopEvidence()).stopped, true);
+        if (borrowed) assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), 0);
       }
       assert.equal(r.call('linux_execution_retire', id), 0);
       assert.equal(r.result(), 1n);
-      assert.deepEqual([writes, sends, observedStop], [stopAfterWrite ? 1 : 2, 1, stopAfterWrite]);
-      assert.deepEqual(readFileSync(path), Buffer.from(stopAfterWrite ? 'AB' : 'ABC'));
+      assert.deepEqual([writes, sends, observedStop], [borrowed || stopAfterWrite ? 1 : 2, borrowed ? 0 : 1, stopAfterWrite]);
+      assert.deepEqual(readFileSync(path), Buffer.from(borrowed ? 'A' : stopAfterWrite ? 'AB' : 'ABC'));
     } finally {
-      bridge.requestStop();
-      await bridge.stopped;
+      guest?.requestStop();
+      await guest?.stopped;
       // A trapped/unknown callback cannot give permission to close/reuse the
       // file. The failing test leaves its isolated process as the last owner.
       if (!unresolved) { closeSync(fd); rmSync(directory, {recursive: true, force: true}); }

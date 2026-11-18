@@ -73,6 +73,8 @@ enum Resources {
         executable: Option<descriptor::Executable>,
         decision: crate::credentials::Decision,
         facts: Facts,
+        #[cfg(feature = "queued-worker-probe")]
+        owned_stdout: Option<descriptor::OwnedStdout>,
     },
     Retired,
 }
@@ -104,6 +106,8 @@ struct Preparing {
     failed_image: Option<Execution>,
     fs: Option<fs_context::Ticket>,
     table: Option<Table>,
+    #[cfg(feature = "queued-worker-probe")]
+    owned_stdout: Option<descriptor::OwnedStdout>,
     random: [u8; 16],
 }
 enum Slot {
@@ -1594,6 +1598,20 @@ pub extern "C" fn linux_sendfile_cap_finish(
         let slot = s.executions[i].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         let call = slot.continuation.as_mut().ok_or(-11)?;
+        // The owned fixture cannot bypass its exact OFD check with the older
+        // generic synthetic proof. Explicit rejection is still always safe.
+        #[cfg(feature = "queued-worker-probe")]
+        if proof == 1
+            && matches!(
+                &slot.resources,
+                Resources::Normal {
+                    owned_stdout: Some(_),
+                    ..
+                }
+            )
+        {
+            return Err(-5);
+        }
         let command = if proof == 0 {
             call.sendfile_cap_finish_rejected(
                 &mut r.files,
@@ -1621,6 +1639,45 @@ pub extern "C" fn linux_sendfile_cap_finish(
             }
         }
         .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+/// This private export belongs only to the marker-rejected Worker probe.
+/// The embedder's already-owned non-append File must remain physically live;
+/// this check proves the held OFD, not host fd identity or stopped access.
+#[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sendfile_owned(
+    id: u64,
+    sequence: u32,
+    action: u64,
+    endpoint: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let Resources::Normal {
+            owned_stdout: Some(output),
+            ..
+        } = &slot.resources
+        else {
+            return Err(-12);
+        };
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .sendfile_cap_finish_owned(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                sequence,
+                token(action),
+                endpoint,
+                output,
+            )
+            .map_err(|_| -12)?;
         Ok(step(s, command))
     })
 }
@@ -2471,6 +2528,13 @@ pub extern "C" fn linux_startup_begin() -> i32 {
 pub extern "C" fn linux_startup_begin_stdio() -> i32 {
     startup_begin(StartupTable::Physical)
 }
+/// The trusted fixture must acquire its exclusive non-append File before
+/// this startup and retain that exact handle through physical settlement.
+#[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_startup_owned_stdout() -> i32 {
+    startup_begin(StartupTable::OwnedStdout)
+}
 /// Actual captured OFD installation only in the already rejected test artifact.
 /// This does not select a Worker, guest output, or a host receiver.
 #[cfg(all(feature = "queued-output-probe", not(feature = "capture-v1")))]
@@ -2508,6 +2572,8 @@ enum StartupTable {
     Empty,
     #[cfg(not(feature = "capture-v1"))]
     Physical,
+    #[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+    OwnedStdout,
     #[cfg(feature = "queued-output-probe")]
     CaptureProbe { shared_output: bool },
     #[cfg(feature = "capture-result-v1")]
@@ -2579,6 +2645,8 @@ fn startup_begin(table: StartupTable) -> i32 {
             failed_image: None,
             fs: None,
             table: None,
+            #[cfg(feature = "queued-worker-probe")]
+            owned_stdout: None,
             random,
         }));
         s.result = id; // Failure after admission leaves an addressable cleanup owner.
@@ -2592,6 +2660,15 @@ fn startup_begin(table: StartupTable) -> i32 {
             StartupTable::Empty => r.files.table(r.fd_limit).map_err(|_| -10)?,
             #[cfg(not(feature = "capture-v1"))]
             StartupTable::Physical => r.files.stdio([1, 2, 3], r.fd_limit).map_err(|_| -10)?,
+            #[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+            StartupTable::OwnedStdout => {
+                let (table, output) = r
+                    .files
+                    .stdio_with_owned_stdout([1, 2, 3], r.fd_limit)
+                    .map_err(|_| -10)?;
+                p.owned_stdout = Some(output);
+                table
+            }
             #[cfg(feature = "queued-output-probe")]
             StartupTable::CaptureProbe { shared_output } => r
                 .queue_probe
@@ -2851,6 +2928,8 @@ pub extern "C" fn linux_startup_image_finish(id: u64, outcome: u32) -> i32 {
                 executable: Some(live.executable),
                 decision: live.decision,
                 facts: live.facts,
+                #[cfg(feature = "queued-worker-probe")]
+                owned_stdout: p.owned_stdout.take(),
             };
             s.executions[i] = Slot::Live(ExecutionSlot {
                 normal: true,

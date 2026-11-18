@@ -703,8 +703,9 @@ the unconsumed source suffix stays `D`. The stop variant shows `AB`:
 the Worker is observed stopped before its host request settles; a
 conservative prefix/access-only receipt still cannot retire it until
 the matching stopped receipt arrives. No byte is replayed. Qualification
-at this raw boundary remains explicitly synthetic; a real Node file and
-real Worker do not turn that probe into product admission.
+was initially synthetic at this raw boundary. The owned fixture now uses
+the separate exact-token route described below; a real Node file and real
+Worker still do not turn the marker-rejected probe into product admission.
 
 The Rust-side native installation now issues one opaque owned-stdout token
 from the same operation that constructs that stdio table. It names the
@@ -724,8 +725,10 @@ receipt. Rust retains the active OFD and commits its source only through
 the one existing ledger. The trusted native fixture retains its one File
 handle separately through actual settlement; neither token destruction
 nor table retirement can claim its external effects have ended. This
-binding is still native-test-only; the Node probe's synthetic
-qualification is not an enabled default or a trusted physical host ABI.
+token is also available to the strong Worker probe, never the ordinary
+startup. The probe moves it from preparation into the existing live
+execution resources; cancellation and resource retirement drop it only
+with those owners. There is no additional destination registry.
 
 The capability and access-ended receipts no longer copy the whole request
 capture. Narrow their stamp to Files owner, the non-reused Domain action,
@@ -748,3 +751,32 @@ the rejection adapter grows 1056 to 1480, and the ledger's finish shrinks
 1696 to 864. These are static sizes, not dynamic instruction counts or a
 time claim. A matching non-reused identity is still necessary; copying
 the immutable argument/image bundle was not.
+
+The current-translator Node Worker fixture now mints a Rust token only
+after it has exclusively opened the non-append File. An owned
+startup cannot use the older synthetic proof. The dedicated probe
+completion rejects borrowed stdout even though the endpoint numbers
+match (only the first write reaches the File; the source remains BD).
+It also rejects a request from another execution, the wrong sequence or
+endpoint, and replay after stopped cleanup. A wrong proof cannot consume
+the outstanding ticket, arm a source load or expose a view. An exact
+response arriving after guest stop settles without returning an offer.
+The positive and stop witnesses still give ABC and AB. An intentionally weakened
+endpoint-only adapter fails both borrowed counterexamples. The marker
+rejects this artifact before it can enter the normal host.
+
+On wasm32 the strong feature's existing resource slot grows by 32
+bytes (1752 to 1784); global State remains 1592 and the single Sendfile
+owner remains 432. The ordinary slot stays 1752 and the five measured
+admission/start/receipt wrappers retain their Node 22 x64 Liftoff
+instruction sizes. The ordinary rejection body changes but is still
+1480 bytes of Liftoff instructions. The two new probe wrappers are 120
+and 200 bytes, without including their callees. These are compiler
+observations, not latency or dynamic-instruction measurements. For a
+positive resident transfer the fixture uses one synchronous physical
+write API call and exact completion, but zero additional owned payload
+copies. The separate probe capability subround is not a lower bound:
+if a trusted production adapter keeps the precise File binding stable,
+Rust can check it before source preparation without asking JS to qualify
+each send. The physical operation and independent access-ended/result
+evidence still cannot be omitted.

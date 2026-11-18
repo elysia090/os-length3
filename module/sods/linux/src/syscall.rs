@@ -922,7 +922,7 @@ impl Continuation {
         sequence: u32,
         action: Token,
         endpoint: u64,
-        make: impl FnOnce(CapabilityRequest) -> CapabilityReceipt,
+        make: impl FnOnce(&Sendfile, CapabilityRequest) -> Result<CapabilityReceipt, CapabilityRequest>,
     ) -> Result<Step, Error> {
         self.owner(execution)?;
         let p = self.sendfile_mut().ok_or(Error::State)?;
@@ -936,7 +936,15 @@ impl Continuation {
             p.cap_request.as_ref().ok_or(Error::State)?,
         )?;
         let request = p.cap_request.take().unwrap(); // Only after immutable validation.
-        let result = p.owner.cap_finish(files, domain, execution, make(request));
+        let receipt = match make(&p.owner, request) {
+            Ok(receipt) => receipt,
+            Err(request) => {
+                // No source load, offer or guest result from a foreign proof.
+                p.cap_request = Some(request);
+                return Err(Error::State);
+            }
+        };
+        let result = p.owner.cap_finish(files, domain, execution, receipt);
         self.sync_sendfile_closed();
         result?;
         self.sendfile_step(execution)
@@ -958,7 +966,7 @@ impl Continuation {
             sequence,
             action,
             endpoint,
-            CapabilityReceipt::rejected,
+            |_, request| Ok(CapabilityReceipt::rejected(request)),
         )
     }
     #[cfg(any(test, feature = "sendfile-probe"))]
@@ -979,7 +987,28 @@ impl Continuation {
             sequence,
             action,
             endpoint,
-            CapabilityReceipt::synthetic_accepted,
+            |_, request| Ok(CapabilityReceipt::synthetic_accepted(request)),
+        )
+    }
+    #[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+    pub(crate) fn sendfile_cap_finish_owned(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        endpoint: u64,
+        output: &descriptor::OwnedStdout,
+    ) -> Result<Step, Error> {
+        self.finish_sendfile_cap(
+            files,
+            domain,
+            execution,
+            sequence,
+            action,
+            endpoint,
+            |send, request| send.approve_owned_stdout(request, output),
         )
     }
     #[cfg(not(feature = "capture-v1"))]
