@@ -68,7 +68,12 @@ test('actual Worker rejects profile/generation/legacy-hot mismatches with visibl
     await host.onmessage!({data:{type:'start',box:{config:'{}',words:[]},cwd:'/'}});
     assert.equal(messages.filter(m=>m.type==='error').length,3);assert.ok(messages.every(m=>m.type!=='threads'));
     assert.match(messages[0]!.message!,/generation/);assert.match(messages[1]!.message!,/executable-only/);assert.match(messages[2]!.message!,/profile|generation/);
-    await host.onmessage!({data:{type:'retire'}});await new Promise(resolve=>setTimeout(resolve,0));
+    // Ready does not acknowledge preparation. This valid, empty admission
+    // awaits the real Readied owner before we retire and restore global self.
+    // Cancellation while preparation is pending is tested separately below.
+    await host.onmessage!({data:{type:'executables',generation,executables:[]}});
+    assert.equal(messages.length,3);
+    await host.onmessage!({data:{type:'retire'}});
     await host.onmessage!({data:{type:'executables',generation,executables:[]}});assert.match(messages.at(-1)!.message!,/retiring/);
   }finally{if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');}
 });
@@ -84,7 +89,7 @@ test('actual Worker captures original source before an ordinary overlay and vali
   try{
     await import(new URL('../worker.ts?prepared-hot-source',import.meta.url).href);
     await host.onmessage!({data:{type:'ready',profile:'canonical-aot-v1',generation,translator:memoryModule,muk:Uint8Array.of(1),root:{index:r.index,url:'https://unused.test/'},files:[{path:r.t.path,bytes:elf(),mode:0o755}],executables:[]}});
-    await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.equal(messages.length,0);
+    await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.deepEqual([...messages],[]);
     await host.onmessage!({data:{type:'executables',generation,executables:[{...executable,key:'wrong'}]}});assert.match(messages.at(-1)!.message!,/match/);
     await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.match(messages.at(-1)!.message!,/Duplicate/);
     await host.onmessage!({data:{type:'retire'}});
