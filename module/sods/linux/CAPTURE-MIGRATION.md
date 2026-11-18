@@ -649,3 +649,46 @@ for the exact call. A sealed resident prefix has the analogous no-staging
 possibility if the original OFD and its short commit remain held. These
 are work bounds and design constraints, not a chosen implementation,
 latency result, or permission to mix the two routes.
+
+### Qualify a physical sendfile endpoint before the source
+
+Independent Linux x64 native controls compare the operations rather than
+assuming that a successful `write` qualifies its endpoint for sendfile.
+On a newly created writable regular file without append, native
+`sendfile(NULL offset)` confirms zero at EOF and for a zero request, or
+advances the original input by the positive prefix. On a writable file
+opened with `O_APPEND`, native sendfile rejects all three with `EINVAL`
+without advancing the cursor, but an ordinary write appends. In particular,
+a regular-file stat, a non-TTY check, and zero offered bytes are not
+qualification. A real nonblocking pipe already full gives `EAGAIN` and
+does not advance the source; giving a pipe one 4096-byte page gives exactly
+the same-sized positive prefix and advances only by that count. These
+tests do not select arbitrary inherited regular files or pipes.
+
+The native Rust witness uses the existing `Sendfile` owner, not another
+cursor or queue. It exclusively creates a writable non-append file owned
+for the full turn. Only the fixture's registered exact Files owner and
+output endpoint can receive its capability response; another root with
+the same endpoint number and a different endpoint of the same root are
+rejected before any view. The originally held output survives replacement
+of the guest FD with an ordinary file. A single synchronous native
+`File::write` receives the canonical pointer without staging and the exact
+receipt advances the source once. Too much confirmed progress cannot end
+the view. Modeling observed guest termination after the real external call but
+before its receipt still cannot settle the output guard.
+A later exact receipt still commits the physically written prefix, without
+replying to the already stopped guest. Surrounding writes give
+`AabcdC` on that same file; the unrelated files stay empty.
+
+That fixture supplies its one immutable live File-to-endpoint association;
+it is not proof that an inherited host descriptor is non-append or that
+two host objects cannot reuse a numeric FD. Do not expose its acceptance
+in the ordinary Wasm exports. The next private host must own an
+unreplaceable qualified handle until exact settlement or quarantine; have
+a narrow creation path, not an application-provided proof boolean; and
+locally exclude any new effect after stopping. A stopped known-zero
+receipt and an unknown receipt remain different. Until the host proves
+that distinction, a positive count is not a Linux-wide errno/pipe/TTY
+contract. This witness demonstrates one physical write API call and no
+additional resident payload copy, not elapsed-time parity or a guarantee
+of one kernel syscall.

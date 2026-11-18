@@ -838,9 +838,12 @@ impl Sendfile {
 
 #[cfg(test)]
 mod tests {
-    // Every capability/access-ended receipt in this module is SYNTHETIC. None
-    // proves Linux endpoint type, Node native behavior, syscall40 or a Worker.
+    // These ABI/state counterexamples use synthetic receipts. The separate
+    // native owned-file witness never grants the production ABI a capability.
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    mod owned_output;
     use crate::descriptor::{Limits, Target};
     use crate::inode::{Inode, Tree};
     fn root_owned(mode: u32) -> crate::inode::Creation {
