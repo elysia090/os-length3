@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {test} from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
 import {createGuest} from '../../runtime/host/node/execution.ts';
+import {fixedTranslatedModule, fixedTranslatedModuleAsync} from '../../runtime/linux/translated-image.ts';
+import {prepare} from '../../runtime/translation/share.ts';
+import {loadTranslator, NotAProgram} from '../../runtime/translation/translator.ts';
 
 // These are real Core ABI probes with synthetic image/capability/output setup.
 // Only the named Node capture cases use a real Worker and its observed stop;
@@ -12,15 +20,18 @@ const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
 const queueArtifact = process.env.SODS_QUEUED_OUTPUT_PROBE_WASM;
 const workerQueueArtifact = process.env.SODS_QUEUED_WORKER_PROBE_WASM;
+const currentTranslatorArtifact = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 const normalSkip = normalArtifact ? false : 'Requires explicit SODS_LINUX_WASM production ABI7 artifact';
 const probeSkip = probeArtifact ? false : 'Requires explicit SODS_SENDFILE_PROBE_WASM feature artifact; normal core cannot accept proof1';
 const queueSkip = queueArtifact ? false : 'Requires the isolated SODS_QUEUED_OUTPUT_PROBE_WASM feature artifact';
 const workerQueueSkip = workerQueueArtifact ? false : 'Requires the stronger SODS_QUEUED_WORKER_PROBE_WASM feature artifact';
+const currentMixedSkip = workerQueueSkip || (!currentTranslatorArtifact || process.platform !== 'linux' || process.arch !== 'x64'
+  ? 'Requires explicit current-source translator and a Linux x86-64 fixture compiler' : false);
 const bytes = (value: string) => new TextEncoder().encode(value);
 type Owner = {id: bigint; invocation: bigint; sequence: number};
 type Send = {owner: Owner; action: bigint; sequence: number; endpoint: bigint; offered: bigint};
 
-function raw(path: string, probe: boolean, lazyData = false, queued = false, workerQueue = false) {
+function raw(path: string, probe: boolean, lazyData = false, queued = false, workerQueue = false, program = bytes('abcdef')) {
   const wasm = new Uint8Array(readFileSync(path)), module = new WebAssembly.Module(wasm);
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
@@ -51,9 +62,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
-  assert.equal(call('linux_prepared_files', 8, 8, 4096, 16, 128, 256, 16, 32, 1, 192, 0), 0);
+  assert.equal(call('linux_prepared_files', 8, 8, Math.max(4096, program.length), 16, 128, 256, 16, 32, 1, 192, 0), 0);
   const root = result();
-  put('linux_name', bytes('app')); put('linux_input', bytes('abcdef'));
+  put('linux_name', bytes('app')); put('linux_input', program);
   assert.equal(call('linux_tree_file', root, 0o755), 0);
   if (lazyData) {
     put('linux_name', bytes('data'));
@@ -65,9 +76,16 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   }
   assert.equal(call('linux_files_seal', 16), 0);
 
-  const stageStartup = (program = '/app') => {
-    const path = bytes(program), wire = new Uint8Array(48 + path.length), view = new DataView(wire.buffer);
-    view.setBigUint64(0, 1n, true); view.setBigUint64(24, BigInt(path.length), true); wire.set(path, 48);
+  const stageStartup = (program = '/app', argv: readonly string[] = []) => {
+    const path = bytes(program), args = argv.map(bytes), inputLength = args.reduce((n, a) => n + 8 + a.length, 0);
+    const wire = new Uint8Array(48 + path.length + inputLength), view = new DataView(wire.buffer);
+    view.setBigUint64(0, 1n, true); view.setBigUint64(8, BigInt(args.length), true);
+    view.setBigUint64(24, BigInt(path.length), true); wire.set(path, 48);
+    let offset = 48 + path.length;
+    for (const arg of args) {
+      view.setBigUint64(offset, BigInt(arg.length), true);
+      wire.set(arg, offset + 8); offset += 8 + arg.length;
+    }
     put('linux_startup_input', wire);
   };
   const live = (captured = false): Owner => {
@@ -83,9 +101,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_run_start', id), 0);
     return {id, invocation: result(), sequence: 0};
   };
-  const request = (owner: Owner, nr: bigint, args: readonly bigint[]) => {
+  const request = (owner: Owner, nr: bigint, args: readonly bigint[], next = 4096n) => {
     assert.equal(args.length, 6);
-    assert.equal(call('linux_syscall_sequenced', owner.id, owner.invocation, ++owner.sequence, nr, ...args, 4096n), 0);
+    assert.equal(call('linux_syscall_sequenced', owner.id, owner.invocation, ++owner.sequence, nr, ...args, next), 0);
     return command();
   };
   const openReady = (owner: Owner) => {
@@ -709,6 +727,108 @@ function copyWorkerInput(guest: WebAssembly.Memory, core: WebAssembly.Memory, at
   fixtureApply(fixtureSet, output, [input]);
 }
 
+let compiledCapture: {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string} | undefined;
+function currentCaptureProgram() {
+  if (compiledCapture) return compiledCapture;
+  const directory = mkdtempSync(join(tmpdir(), 'sods-current-capture-'));
+  try {
+    const source = fileURLToPath(new URL('../fixtures/managed-sendfile/captured-order.S', import.meta.url));
+    const output = join(directory, 'capture.elf');
+    execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
+      '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', output,
+    ], {stdio: 'pipe', timeout: 30_000});
+    const artifact = readFileSync(currentTranslatorArtifact!);
+    compiledCapture = {elf: new Uint8Array(readFileSync(output)), translator: new WebAssembly.Module(artifact),
+      sha: createHash('sha256').update(artifact).digest('hex')};
+    return compiledCapture;
+  } finally { rmSync(directory, {recursive: true, force: true}); }
+}
+
+function cancelPreparedImage(r: ReturnType<typeof raw>, id: bigint) {
+  assert.equal(r.call('linux_startup_image_finish', id, 2), 0);
+  assert.equal(r.call('linux_startup_failed_image', id), 0);
+  assert.equal(r.call('linux_startup_cancel', id), 0); assert.equal(r.result(), 1n);
+}
+
+async function prepareCurrentCapture(r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array) {
+  const translate = await loadTranslator(translator);
+  const core = r.e.memory as WebAssembly.Memory;
+  r.stageStartup('/app', ['mixed']);
+  const begun = r.call('linux_queued_output_probe_startup'), id = r.result();
+  assert.equal(r.call('linux_startup_input', 0), 0);
+  if (begun !== 0) {
+    if (id) assert.equal(r.call('linux_startup_cancel', id), 0);
+    assert.equal(begun, 0);
+  }
+  let translating = false, initializing = false;
+  try {
+    assert.equal(r.call('linux_startup_source_start', id), 0); assert.equal(r.result(), 0n);
+    assert.equal(r.call('linux_startup_bytes', id), 0);
+    translating = true;
+    const pointer = Number(r.result()), length = Number(r.length());
+    const original = (() => {
+      // Only this synchronous scope holds the sealed Core ELF view. The
+      // translator copies it into its own memory, and returned wasm is owned.
+      const canonical = new FixtureBytes(fixtureApply(fixtureMemoryBuffer, core, []), pointer, length);
+      assert.deepEqual(canonical, expectedElf);
+      return translate.whole(canonical);
+    })();
+    const validated = await fixedTranslatedModuleAsync(original);
+    const sections = WebAssembly.Module.customSections(validated, 'sods.facts');
+    assert.equal(sections.length, 1);
+    const facts = JSON.parse(new TextDecoder().decode(sections[0])) as Record<string, unknown>;
+    const fact = (key: string): number => {
+      const value = facts[key];
+      assert.ok(typeof value === 'number' && Number.isSafeInteger(value) && value >= 0, key);
+      return value;
+    };
+    const entry = BigInt(fact('entry')), low = Math.ceil(fact('imageEnd') / 65536) * 65536, top = low + 65536;
+    assert.ok(top <= 0x100000000);
+    const prepared = prepare(original, {shared: true});
+    assert.ok(prepared.segments);
+    const module = fixedTranslatedModule(prepared.wasm, {externalData: true});
+    for (const segment of prepared.segments) {
+      assert.ok(Number.isSafeInteger(segment.offset) && segment.offset >= 0 &&
+        segment.bytes.length <= top - segment.offset);
+      assert.ok(segment.bytes.length === 0 || segment.offset + segment.bytes.length <= low);
+    }
+    translating = false; // Never replay a receipt call of uncertain outcome.
+    assert.equal(r.call('linux_startup_translation_finish', id, 1, entry, BigInt(fact('phdr')),
+      BigInt(fact('phent')), BigInt(fact('phnum')), BigInt(top)), 0);
+    const pages = top / 65536, memory = new WebAssembly.Memory({initial: pages, maximum: pages, shared: true});
+    assert.equal(r.call('linux_bind', BigInt(top)), 0); const binding = r.result();
+    assert.equal(r.call('linux_startup_image_begin', id, binding, BigInt(low), BigInt(top)), 0);
+    initializing = true;
+    assert.equal(r.call('linux_startup_stack', id), 0);
+    const stackFrom = Number(r.result()), stackLength = Number(r.length()), stackPointer = r.auxiliary();
+    assert.ok(stackPointer >= BigInt(low) && stackPointer + BigInt(stackLength) <= BigInt(top));
+    copyWorkerInput(core, memory, stackFrom, Number(stackPointer), stackLength);
+    for (const segment of prepared.segments) {
+      fixtureApply(fixtureSet, new FixtureBytes(fixtureApply(fixtureMemoryBuffer, memory, []),
+        segment.offset, segment.bytes.length), [segment.bytes]);
+    }
+    return {module, memory, stackPointer, id, entry};
+  } catch (error) {
+    if (translating) assert.equal(r.call('linux_startup_translation_finish', id, 0, 0n, 0n, 0n, 0n, 0n), 0);
+    // No actual Worker received this memory, and local lexical initialization
+    // terminated. A failure after handed-off startup uses real exit instead.
+    if (initializing) cancelPreparedImage(r, id);
+    else { assert.equal(r.call('linux_startup_cancel', id), 0); assert.equal(r.result(), 1n); }
+    throw error;
+  }
+}
+
+test('current-source mixed capture rejects malformed canonical ELF before Worker construction', {skip: currentMixedSkip, timeout: 30_000}, async () => {
+  const invalid = bytes('not an ELF'), {translator} = currentCaptureProgram();
+  const r = raw(workerQueueArtifact!, true, false, true, true, invalid);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  await assert.rejects(prepareCurrentCapture(r, translator, invalid), NotAProgram);
+  assert.ok(r.call('linux_run_start', 1n) < 0);
+  for (const lane of [0, 1]) {
+    assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
+  }
+});
+
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
   test(`real Node Worker capture fixture: ${mode}`, {skip: workerQueueSkip, timeout: 30_000}, async t => {
     const r = raw(workerQueueArtifact!, true, false, true, true);
@@ -812,28 +932,43 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
   });
 }
 
-for (const stopBeforeFileReply of [false, true]) {
-  test(`real Node Worker capture fixture: same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : 'write, resident sendfile, write yields ABC'}`, {
-    skip: workerQueueSkip, timeout: 30_000,
+for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false, true]) {
+  test(`real Node Worker capture fixture: ${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : 'write, resident sendfile, write yields ABC'}`, {
+    skip: useCurrent ? currentMixedSkip : workerQueueSkip, timeout: 30_000,
   }, async t => {
-    const r = raw(workerQueueArtifact!, true, false, true, true);
+    const current = useCurrent ? currentCaptureProgram() : undefined;
+    const r = raw(workerQueueArtifact!, true, false, true, true, current?.elf);
+    assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
     assert.equal(r.call('linux_queued_output_probe_init'), 0);
-    const input = captureGuest(true), bridge = createGuest(input);
+    const prepared = current ? await prepareCurrentCapture(r, current.translator, current.elf) : undefined;
+    const input = prepared ?? captureGuest(true), bridge = createGuest(input);
     const onAbort = () => bridge.requestStop();
     t.signal.addEventListener('abort', onAbort, {once: true});
+    let attemptedImageReceipt = false;
     try {
       await bridge.ready;
-      const owner = r.live(true), id = owner.id, guestCalls: bigint[] = [];
+      let owner: Owner;
+      const entry = prepared?.entry ?? 4096n;
+      if (prepared) {
+        assert.equal(bridge.diagnostics().exited, false);
+        const id = prepared.id;
+        attemptedImageReceipt = true;
+        assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+        assert.equal(r.call('linux_startup_entry', id), 0); assert.equal(r.result(), entry);
+        assert.equal(r.call('linux_run_start', id), 0);
+        owner = {id, invocation: r.result(), sequence: 0};
+      } else owner = r.live(true);
+      const id = owner.id, guestCalls: bigint[] = [], writeAddresses: number[] = [];
       const core = r.e.memory as WebAssembly.Memory;
       let firstWriteAction: bigint | undefined, inputCursorChecked = false;
-      const outcome = await bridge.run(owner.invocation, 4096n, async request => {
+      const outcome = await bridge.run(owner.invocation, entry, async request => {
         assert.equal(request.invocation, owner.invocation);
         assert.equal(request.sequence, owner.sequence + 1);
         assert.equal(bridge.diagnostics().exited, false);
         guestCalls.push(request.nr);
         if (request.nr === 2n) {
-          const command = r.request(owner, request.nr, request.args);
-          assert.deepEqual([command.tag, command.target], [8, 64n]);
+          const command = r.request(owner, request.nr, request.args, request.next);
+          assert.deepEqual([command.tag, command.target], [8, request.args[0]]);
           const pathLength = bytes('/source\0').length;
           assert.equal(r.call('linux_syscall_path_start', id, command.value), 0);
           const pointer = Number(r.result());
@@ -860,12 +995,13 @@ for (const stopBeforeFileReply of [false, true]) {
           return {kind: 'return', value: outStep.value} as const;
         }
         if (request.nr === 60n) {
-          assert.equal(r.request(owner, request.nr, request.args).tag, 2);
+          assert.equal(r.request(owner, request.nr, request.args, request.next).tag, 2);
           return {kind: 'leave'} as const;
         }
         assert.equal(request.nr, 1n);
         const [fd, at, length] = request.args;
         assert.equal(fd, 1n); assert.equal(length, 1n);
+        writeAddresses.push(Number(at));
         assert.equal(r.call('linux_queued_worker_probe_write', id, request.invocation, request.sequence, fd, at, length), 0);
         owner.sequence = request.sequence;
         const command = r.command(), action = command.value;
@@ -883,7 +1019,7 @@ for (const stopBeforeFileReply of [false, true]) {
         assert.equal(r.call('linux_queued_worker_probe_finish', id, request.sequence, action, 0, extent), 0);
         const step = r.command();
         assert.deepEqual([step.tag, step.value], [0, 1n]);
-        if (at === 33n) {
+        if (writeAddresses.length === 2) {
           assert.deepEqual(r.remaining(owner, 3n), bytes('D'));
           inputCursorChecked = true;
         }
@@ -900,7 +1036,7 @@ for (const stopBeforeFileReply of [false, true]) {
         assert.deepEqual(guestCalls, [2n, 1n, 40n, 1n, 60n]);
         assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0); assert.equal(r.result(), 42n);
         bridge.requestStop(); await bridge.stopped;
-        assert.deepEqual(Array.from(new Uint8Array(input.memory.buffer, 32, 2)), [88, 89]);
+        assert.deepEqual(writeAddresses.map(at => new Uint8Array(input.memory.buffer, at, 1)[0]), [88, 89]);
       }
       assert.equal(bridge.diagnostics().exited, true);
       assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
@@ -912,6 +1048,9 @@ for (const stopBeforeFileReply of [false, true]) {
       for (const lane of [0, 1]) {
         assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
       }
+      if (current) t.diagnostic(JSON.stringify({translatorSha256: current.sha, elfBytes: current.elf.length,
+        elfSha256: createHash('sha256').update(current.elf).digest('hex'), entry: String(entry),
+        stack: 'Rust-created, guest checked argc and argv0'}));
     } finally {
       t.signal.removeEventListener('abort', onAbort);
       bridge.requestStop();
@@ -919,6 +1058,7 @@ for (const stopBeforeFileReply of [false, true]) {
         const stopped = await bridge.stopEvidence();
         assert.equal(stopped.stopped, true);
         await bridge.requestsSettled();
+        if (prepared && !attemptedImageReceipt) cancelPreparedImage(r, prepared.id);
       }
     }
   });

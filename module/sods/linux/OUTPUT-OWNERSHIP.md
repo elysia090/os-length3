@@ -253,5 +253,13 @@ consumer sees exactly ABC after observed exit and Rust resource retirement.
 When the Worker is stopped after the resident acceptance but before its
 reply, the queue still holds AB and C was never requested. The source cursor
 advanced by B only; the two writes' adjacent action IDs show that resident
-acceptance did not allocate a Domain action. This remains a hand-written
-guest and rejected fixture, not a current-translator or external sink proof.
+acceptance did not allocate a Domain action.
+
+The hand-written guest isolates transport. The current-source case compiles a
+static x86-64 fixture, translates the sealed ELF with the explicit current
+translator, and installs its bounded image/segments and Rust-built stack.
+The actual Worker checks its initial argc/argv0 and the accepted lengths
+before ABC, and the same stop boundary retains AB. A malformed canonical
+ELF fails before Worker construction. The stronger Core is still rejected
+by the ordinary host, and no external sink or delivery evidence is exercised.
+See [CAPTURE-MIGRATION.md](CAPTURE-MIGRATION.md) for the planned boundary.

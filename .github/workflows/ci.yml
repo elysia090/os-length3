@@ -346,9 +346,10 @@ jobs:
         if: matrix.part == 'native'
         env:
           SODS_QUEUED_WORKER_PROBE_WASM: module/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
+          SODS_CURRENT_TRANSLATOR_WASM: module/sods/target/wasm32-unknown-unknown/release/sods.wasm
         run: |
           CARGO_TARGET_DIR=module/sods/linux/target/queued-worker-probe cargo build --locked --target wasm32-unknown-unknown --features queued-worker-probe --manifest-path module/sods/linux/Cargo.toml
-          node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture' module/sods/test/runtime/managed-sendfile-abi.test.ts
+          node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture|current-source mixed capture' module/sods/test/runtime/managed-sendfile-abi.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model
