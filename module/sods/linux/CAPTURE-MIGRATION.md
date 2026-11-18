@@ -780,3 +780,46 @@ if a trusted production adapter keeps the precise File binding stable,
 Rust can check it before source preparation without asking JS to qualify
 each send. The physical operation and independent access-ended/result
 evidence still cannot be omitted.
+
+### Select an owned synchronous caller without replacing borrowed or captured output
+
+No current caller owns such a file by construction. The Node managed CLI
+borrows process stdio. The Ricebox Worker publishes labelled browser
+messages, with a flush epoch and acknowledged final output boundary.
+RemoteKernel drains its Outbox into a Console and separately observes
+Worker termination. None of these proves ownership of a writable physical
+File, even when its apparent endpoint number equals the fixture's.
+
+The first non-probe candidate should therefore be explicitly selected,
+Node-only, and synchronous. Start with one exclusively created non-append
+regular stdout and state separately whether stdin and stderr are borrowed.
+Do not silently reinterpret either inherited output. Validate the pinned
+artifact identity, shape and role before creating an output file; neither
+a capability number nor the mere absence of the probe sentinel suffices.
+Prefer an independent narrow artifact for the first selection so ordinary
+and captured deployments do not pay its slot/export cost. Share startup,
+Worker transport, descriptor holds and the Sendfile ledger in source,
+not two implementations of the operation. Do not add a default CLI flag
+or a release artifact until a caller actually needs and verifies it.
+
+Before any source load or physical call, Rust must match the execution's
+stable binding to the originally held output. If this can happen entirely
+inside the sequenced admission, do not retain the probe's separate
+qualification round in the normal host. The Node adapter owns only the
+physical File and one synchronous transfer, and must keep that same
+handle through exact retirement; it must not retry an unknown effect.
+A successful count is neither an extra fsync nor evidence that an
+independent Worker or receiver stopped. An early startup failure can
+release a handle after proving no access began; uncertainty must not be
+converted into close, recycle or replay.
+
+Check the unchanged borrowed CLI with a real full/short/closed nonblocking
+pipe and an append regular file, and check the selected route against
+existing-path rejection without truncation, wrong artifacts before file
+creation, exact same-file order, cold/ready source behavior, short/zero/
+unknown results and Worker stop races. Keep Ricebox/Remote unchanged
+until real replacements preserve labelled ordered bytes, epochs, drain
+and exact Worker retirement on each supported host. Only then remove the
+superseded TS owners and their imports together. In particular
+`cpu.ts`, `channel.ts` and `worker-stop.ts` remain live today; a Node
+owned-file success does not qualify any of those files for removal.
