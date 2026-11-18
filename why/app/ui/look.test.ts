@@ -35,3 +35,37 @@ test('a look changed is one rule of what was read, and what would not be read is
   assert.match(made.left[0].why, /would not be read/);
   assert.match(made.left.at(-1)!.why, /a colour is written/);
 });
+
+test('active Prompt text and quiet text cannot disappear into the ink background', () => {
+  const ink = THINGS.find(thing => thing.name === 'ink')!.usual;
+  const made = worn(`green: ${ink}\nslot: ${ink}`);
+  assert.deepEqual(made.values, {});
+  assert.equal(made.css, '');
+  assert.deepEqual(made.left.map(line => line.line), [1, 2]);
+  assert.match(made.left[0].why, /green would not be read on ink/);
+  assert.match(made.left[1].why, /slot would not be read on ink/);
+});
+
+test('a coordinated Prompt foreground and background are checked together in either order', () => {
+  // This grey is readable on black, but not on the default ink. The whole
+  // valid choice must survive, even when the foreground line comes first.
+  const ink = THINGS.find(thing => thing.name === 'ink')!.usual;
+  assert.ok(contrast('#777777', ink) < 4.5);
+  for (const lines of [ ['green: #777777', 'slot: #777777', 'ink: #000000'],
+    ['ink: #000000', 'slot: #777777', 'green: #777777'] ]) {
+    const made = worn(lines.join('\n'));
+    assert.deepEqual(made.left, []);
+    assert.deepEqual(made.values, {green: '#777777', slot: '#777777', ink: '#000000'});
+  }
+});
+
+test('an unreadable Prompt pair drops its last change, including a background change', () => {
+  for (const foreground of ['green', 'slot']) {
+    const backgroundLast = worn(`${foreground}: #999999\nink: #444444`);
+    assert.deepEqual(backgroundLast.values, {[foreground]: '#999999'});
+    assert.deepEqual(backgroundLast.left.map(line => line.line), [2]);
+    const foregroundLast = worn(`ink: #444444\n${foreground}: #999999`);
+    assert.deepEqual(foregroundLast.values, {ink: '#444444'});
+    assert.deepEqual(foregroundLast.left.map(line => line.line), [2]);
+  }
+});

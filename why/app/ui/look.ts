@@ -13,6 +13,9 @@ export const NAME = '.everyday';
 
 /** The words that must stay read on their grounds, whatever is changed (each holds as the sheets have them: look.test.ts). */
 export const PAIRS: readonly Pair[] = [
+  // Active/leaving Prompt screens and held/leaving desk terminals use ordinary
+  // text (green) and quiet text (slot) on ink. Both need normal-text contrast.
+  {on: 'green', under: 'ink', least: 4.5}, {on: 'slot', under: 'ink', least: 4.5},
   {on: 'ink', under: 'ground', least: 4.5}, {on: 'ink', under: 'paper', least: 4.5}, {on: 'ink', under: 'raised', least: 4.5},
   {on: 'sub', under: 'ground', least: 4.5}, {on: 'sub', under: 'paper', least: 4.5}, {on: 'sub', under: 'raised', least: 4.5},
   {on: 'edge', under: 'ground', least: 3}, {on: 'ground', under: 'off', least: 4.5}, {on: 'ground', under: 'done', least: 3},
