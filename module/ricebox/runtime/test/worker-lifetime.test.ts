@@ -168,17 +168,29 @@ test('output-send reentry cannot establish a boundary before the send commits it
 });
 
 for (const phase of ['construction', 'capture'] as const) {
-  test(`Mirror ${phase} reentry cannot publish after retirement`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+  test(`Mirror ${phase} reentry cannot publish after retirement`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async t => {
     const {readFileSync} = await import('node:fs');
     const {Mirror, Kernel} = await import('../../../sods/runtime/linux.ts');
     const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
-    const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) { messages.push(message); }};
+    const reached = Promise.withResolvers<void>();
+    void reached.promise.catch(() => {}); // Start can fail before the caller reaches the barrier.
+    const abort = () => reached.reject(t.signal.reason);
+    t.signal.addEventListener('abort', abort, {once: true});
+    let frozen = false, lateHeldReads = 0;
+    const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) {
+      messages.push(message);
+      if (message.type === 'error' && !frozen) reached.reject(new Error(message.message));
+    }};
     const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
     const now = Mirror.prototype.now, changes = Mirror.prototype.changes, held = Kernel.prototype.held;
-    let frozen = false, lateHeldReads = 0;
     Kernel.prototype.held = function () { if (frozen) lateHeldReads++; return held.call(this); };
     let retiring: Promise<void> | undefined;
-    const retire = () => { frozen = true; retiring ??= host.onmessage!({data: {type: 'retire'}}); };
+    const retire = () => {
+      if (frozen) return;
+      frozen = true;
+      retiring = host.onmessage!({data: {type: 'retire'}});
+      reached.resolve();
+    };
     Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
     try {
       await import(new URL(`../worker.ts?mirror-retirement-${phase}`, import.meta.url).href);
@@ -187,8 +199,9 @@ for (const phase of ['construction', 'capture'] as const) {
       if (phase === 'construction') Mirror.prototype.now = function () { const result = now.call(this); retire(); return result; };
       else Mirror.prototype.changes = function () { retire(); return {dirs: ['late'], files: [], removed: []}; };
       await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/', mirror: '/run/box'}});
-      // The inline pump may yield once before reaching report.
-      for (let i = 0; i < 100 && !retiring; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      // Start can return before the Remote Worker first reaches report.
+      // Observe the actual mirror hook, not elapsed time after admission.
+      await reached.promise;
       assert.ok(retiring); await retiring;
       const at = messages.findIndex(m => m.type === 'retiring');
       assert.ok(at >= 0);
@@ -199,8 +212,14 @@ for (const phase of ['construction', 'capture'] as const) {
       assert.equal(messages.at(-1)?.owners?.['prepared-tree'], 1); // still quarantined, not disposed
       assert.equal(lateHeldReads, 0); // late paused callbacks cannot inspect a retired kernel
     } finally {
-      Mirror.prototype.now = now; Mirror.prototype.changes = changes; Kernel.prototype.held = held;
-      if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+      t.signal.removeEventListener('abort', abort);
+      // Also close an admitted root when setup, the barrier, or an assertion
+      // fails. Restoring hooks alone cannot stop its serving Worker.
+      try { await host.onmessage?.({data: {type: 'retire'}}); }
+      finally {
+        Mirror.prototype.now = now; Mirror.prototype.changes = changes; Kernel.prototype.held = held;
+        if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+      }
     }
   });
 }
