@@ -526,14 +526,14 @@ fn said(argv: &[String]) {
 fn perform(ctx: &Ctx, argv: &[String], words_asked: bool) -> (Result<(), Error>, Seen) {
     let call = match args::parse(argv, ctx) {
         Ok(c) => c,
-        Err(e) => { if words_asked { return (Err(e), Seen::default()); } out::fail(&e, false); return (Ok(()), Seen::default()); }
+        Err(e) => { if words_asked { return (Err(e), Seen::default()); } out::report(&e); return (Ok(()), Seen::default()); }
     };
     let (done, seen) = noting(|| cmd::perform(ctx, &call));
     let offline = matches!(done, Err(Error::Offline(_)));
     let result = match done {
         Ok(reply) => { out::emit(reply, false); Ok(()) }
         Err(e) if words_asked && matches!(e, Error::Usage(_) | Error::Refused(_) | Error::NotFound(_)) => Err(e),
-        Err(e) => { out::fail(&e, false); Err(Error::Io(String::new())) }
+        Err(e) => { out::report(&e); Err(Error::Io(String::new())) }
     };
     crate::cmd::sync::after(ctx, &call, offline);
     (result, seen)
@@ -644,7 +644,7 @@ fn read(ctx: &Ctx, lines: &[Vec<String>], print: bool) -> Seen {
         let offline = matches!(done, Err(Error::Offline(_)));
         match done {
             Ok(r) => if print { out::emit(r, false) },
-            Err(e) => if print { out::fail(&e, false); },
+            Err(e) => if print { out::report(&e); },
         }
         crate::cmd::sync::after(ctx, &call, offline);
         all.subjects.extend(seen.subjects);

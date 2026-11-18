@@ -134,15 +134,20 @@ pub fn emit(r: Reply, json: bool) {
     }
 }
 
-/// Say what went wrong (with --json as {"error":{"kind","message"}} on
-/// standard output), and the exit code it means.
+/// Print an error on standard error without choosing a process exit status.
+pub fn report(e: &Error) {
+    let mut lines = e.message().lines();
+    note(lines.next().unwrap_or_default());
+    for l in lines { let _ = writeln!(std::io::stderr().lock(), "{}", plain(l)); }
+}
+
+/// Report a top-level command failure and return its exit status.
+/// JSON mode writes the structured error to standard output.
 pub fn fail(e: &Error, json: bool) -> std::process::ExitCode {
     if json {
         write(&format!("{}\n", serde_json::to_string_pretty(&serde_json::json!({"error": {"kind": e.kind(), "message": e.message()}})).unwrap_or_default()));
     } else {
-        let mut lines = e.message().lines();
-        note(lines.next().unwrap_or_default());
-        for l in lines { let _ = writeln!(std::io::stderr().lock(), "{}", plain(l)); }
+        report(e);
     }
     std::process::ExitCode::from(e.code())
 }
