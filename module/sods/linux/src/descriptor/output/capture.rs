@@ -380,6 +380,7 @@ mod tests {
     struct Guest {
         root: Root,
         table: Table,
+        source: crate::inode::Inode,
         receiver: Consumer,
         domain: Domain,
         execution: Execution,
@@ -387,7 +388,7 @@ mod tests {
     }
     impl Guest {
         fn new() -> Self {
-            let (mut files, _, _, old, _) = files(502);
+            let (mut files, _, source, old, _) = files(502);
             files.let_go(old).unwrap();
             let mut root = Root::new(files, 1).ok().unwrap();
             let (producer, receiver) = root
@@ -408,6 +409,7 @@ mod tests {
             Self {
                 root,
                 table,
+                source,
                 receiver,
                 domain,
                 execution,
@@ -456,6 +458,151 @@ mod tests {
     }
     const fn receipt(complete: Option<usize>, access: Access) -> Receipt {
         Receipt { complete, access }
+    }
+
+    #[test]
+    fn output_slot_switches_arms_only_after_exact_ownership_retires() {
+        use crate::read::{ReadCapacity, Reads};
+        use crate::syscall::{Continuation, Step};
+        let mut g = Guest::new();
+        let mut c = Continuation::new(&g.execution).unwrap();
+        let ordinary = g.root.files.stdio([1, 20, 30], 8).unwrap();
+        let source = g.root.files.open(&ordinary, g.source, false).unwrap();
+        let invocation = g.invocation;
+        let mut reads = Reads::new(&g.root.files, ReadCapacity::new(1).unwrap());
+        let ctx = Context {
+            files: &mut g.root.files,
+            lanes: &mut g.root.registry,
+            domain: &mut g.domain,
+            execution: &mut g.execution,
+        };
+        let Step::CaptureWrite { call, .. } = c
+            .admit_capture_write(
+                ctx,
+                &g.table,
+                Request {
+                    invocation,
+                    sequence: 1,
+                    fd: 1,
+                    at: 5,
+                    length: n(2),
+                },
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(c.has_byte_output());
+        assert_eq!(c.sendfile_query(&g.execution), Ok(None));
+        assert!(c
+            .sendfile_cap_start(
+                &mut g.root.files,
+                &mut g.domain,
+                &mut g.execution,
+                1,
+                call.action
+            )
+            .is_err());
+        assert!(c.owns(call.action));
+        assert!(c
+            .enter_sequenced(
+                &mut g.root.files,
+                &ordinary,
+                None,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution,
+                invocation,
+                2,
+                40,
+                [1, source.into(), 0, 2, 0, 0],
+                16
+            )
+            .is_err());
+        c.fill_native_capture(g.context(), call, b"AB").unwrap();
+        assert_eq!(
+            c.finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::BothEnded)),
+            Ok(Finished::Accepted(n(2)))
+        );
+        assert!(!c.has_byte_output());
+
+        let Step::SendfileCapability {
+            action,
+            sequence: 2,
+            endpoint: 20,
+        } = c
+            .enter_sequenced(
+                &mut g.root.files,
+                &ordinary,
+                None,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution,
+                invocation,
+                2,
+                40,
+                [1, source.into(), 0, 2, 0, 0],
+                16,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(c.has_byte_output());
+        assert_eq!(
+            c.sendfile_cap_start(
+                &mut g.root.files,
+                &mut g.domain,
+                &mut g.execution,
+                2,
+                action
+            ),
+            Ok(20)
+        );
+        let same_scalars = CallId {
+            sequence: 2,
+            action,
+        };
+        assert!(c.cancel_capture(&mut g.context(), same_scalars).is_err());
+        assert!(c
+            .finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::BothEnded))
+            .is_err());
+        assert!(!c
+            .abandon(
+                &mut g.root.files,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution
+            )
+            .unwrap());
+        assert!(
+            c.has_byte_output() && c.owns(action),
+            "abandon did not destroy the in-flight capability ticket"
+        );
+        assert!(c
+            .sendfile_cap_finish_rejected(
+                &mut g.root.files,
+                &mut g.domain,
+                &mut g.execution,
+                2,
+                action,
+                21
+            )
+            .is_err());
+        assert!(c.owns(action));
+        assert!(c
+            .sendfile_cap_finish_rejected(
+                &mut g.root.files,
+                &mut g.domain,
+                &mut g.execution,
+                2,
+                action,
+                20
+            )
+            .is_ok());
+        assert!(!c.has_byte_output() && !c.owns(action));
+        assert_eq!(g.root.files.offset(&ordinary, source), Ok((0, 0)));
+        assert_eq!(g.front().as_deref(), Some(&b"AB"[..]));
     }
 
     #[test]

@@ -228,6 +228,25 @@ exclusive continuation owner layout or a bounded exact-ticket pool against
 this fixture. Neither can be selected merely from the size estimate: late
 settlement and pre-start closure must still retain the same exact owner.
 
+Compare three shapes against that proof. A capture-only ready artifact can
+omit the incompatible physical sendfile owner at compilation, but only if
+startup and syscall policy prevent a physical sendfile route on every captured
+descriptor. The mixed diagnostic artifact needs both behaviors for controls;
+its byte-output owners can occupy a tagged union because a physical capability
+ticket, including an unobserved terminal receipt, blocks new admission just as
+a captured write does. Using an accessor for the wrong arm must neither see
+nor replace the live owner. A bounded pool can save memory when execution
+high-water greatly exceeds simultaneous output, but adds an exact lookup,
+retirement and generation proof each time plus a new capacity policy. Measure
+the union before paying or specifying that extra pool work. Keep the ordinary
+physical-only artifact on its existing representation and compare its code.
+
+The mixed fixture's measured wasm32 representation is now 616 bytes for the
+optional tagged owner, the same as the physical owner alone. Its execution
+slot is back to 1,888 bytes and the global lexical fence stays small. These
+are compiler layout observations, not serialized ABI promises. This finding
+does not select a pool or establish actual startup in the ready profile.
+
 A product sink session must retain the whole exact Core and native/JS owners
 through an ambiguous state and expose a bounded failure/retirement API. The
 diagnostic helper is not that API: it simply refuses reuse on ambiguity.

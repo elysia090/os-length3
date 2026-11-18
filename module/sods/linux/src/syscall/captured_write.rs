@@ -1,6 +1,6 @@
 //! One sequenced continuation owns its captured call. The probe transport no
 //! longer stores the call itself; only an exact raw lexical-view fence.
-use super::{capture, Continuation, Error, Step, Table};
+use super::{capture, Continuation, Error, OutputOwner, Step, Table};
 use capture::{CallId, Context, Finished, Request, WriteCall};
 
 impl Continuation {
@@ -20,15 +20,24 @@ impl Continuation {
         let (at, length) = (request.at, request.length.get() as u64);
         let pending = WriteCall::admit(&mut ctx, table, request).map_err(Error::Capture)?;
         let call = pending.id();
-        self.captured_write = Some(pending);
+        assert!(
+            !self.has_byte_output(),
+            "admitted captured owner requires an empty slot"
+        );
+        self.output = Some(OutputOwner::Captured(pending));
         Ok(Step::CaptureWrite { call, at, length })
     }
 
     fn capture_call_mut(&mut self, id: CallId) -> Result<&mut WriteCall, Error> {
-        self.captured_write
-            .as_mut()
-            .filter(|p| p.id() == id)
-            .ok_or(Error::State)
+        match &mut self.output {
+            Some(OutputOwner::Captured(owner)) if owner.id() == id => Ok(owner),
+            _ => Err(Error::State),
+        }
+    }
+
+    fn clear_capture(&mut self) {
+        assert!(matches!(&self.output, Some(OutputOwner::Captured(_))));
+        self.output = None;
     }
 
     #[cfg(test)]
@@ -65,7 +74,7 @@ impl Continuation {
             .map_err(Error::Capture)?;
         self.closed = true;
         if ended {
-            self.captured_write = None;
+            self.clear_capture();
         }
         Ok(ended)
     }
@@ -76,7 +85,7 @@ impl Continuation {
     ) -> Result<Finished, Error> {
         let finish = result.map_err(Error::Capture)?;
         if finish != Finished::Waiting {
-            self.captured_write = None;
+            self.clear_capture();
         }
         Ok(finish)
     }

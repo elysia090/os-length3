@@ -170,6 +170,16 @@ struct SendfilePending {
     owner: Sendfile,
     cap_request: Option<CapabilityRequest>,
 }
+// The whole physical owner participates, including a terminal receipt whose
+// capability ticket has not yet been observed. Ordinary builds retain their
+// exact Option<SendfilePending> representation, with no additional tag.
+#[cfg(any(test, feature = "queued-worker-probe"))]
+enum OutputOwner {
+    Physical(SendfilePending),
+    Captured(capture::WriteCall),
+}
+#[cfg(not(any(test, feature = "queued-worker-probe")))]
+type OutputOwner = SendfilePending;
 /// Private diagnostic scalars, not a physical capability or guest result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SendfileStatus {
@@ -242,9 +252,7 @@ pub(crate) struct Continuation {
     stream: Option<StreamPending>,
     opening: Option<Opening>,
     register: Option<RegisterPending>,
-    sendfile: Option<SendfilePending>,
-    #[cfg(any(test, feature = "queued-worker-probe"))]
-    captured_write: Option<capture::WriteCall>,
+    output: Option<OutputOwner>,
     path_input: Vec<u8>,
     closed: bool,
     last_sequence: u32,
@@ -258,9 +266,7 @@ impl Continuation {
             stream: None,
             opening: None,
             register: None,
-            sendfile: None,
-            #[cfg(any(test, feature = "queued-worker-probe"))]
-            captured_write: None,
+            output: None,
             path_input: Vec::new(),
             closed: false,
             last_sequence: 0,
@@ -279,6 +285,50 @@ impl Continuation {
             return Err(Error::Execution(execution::Error::Identity));
         }
         Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn has_byte_output(&self) -> bool {
+        self.output.is_some()
+    }
+
+    #[inline(always)]
+    fn sendfile(&self) -> Option<&SendfilePending> {
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        return match &self.output {
+            Some(OutputOwner::Physical(owner)) => Some(owner),
+            _ => None,
+        };
+        #[cfg(not(any(test, feature = "queued-worker-probe")))]
+        self.output.as_ref()
+    }
+
+    #[inline(always)]
+    fn sendfile_mut(&mut self) -> Option<&mut SendfilePending> {
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        return match &mut self.output {
+            Some(OutputOwner::Physical(owner)) => Some(owner),
+            _ => None,
+        };
+        #[cfg(not(any(test, feature = "queued-worker-probe")))]
+        self.output.as_mut()
+    }
+
+    #[inline(always)]
+    fn install_sendfile(&mut self, owner: SendfilePending) {
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        let owner = {
+            assert!(self.output.is_none(), "admitted physical owner requires an empty slot");
+            OutputOwner::Physical(owner)
+        };
+        self.output = Some(owner);
+    }
+
+    #[inline(always)]
+    fn clear_sendfile(&mut self) {
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        assert!(matches!(&self.output, Some(OutputOwner::Physical(_))));
+        self.output = None;
     }
     pub(crate) fn enter(
         &mut self,
@@ -358,16 +408,12 @@ impl Continuation {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         execution.syscall_allowed(invocation)?;
-        #[cfg(any(test, feature = "queued-worker-probe"))]
-        if self.captured_write.is_some() {
-            return Err(Error::State);
-        }
         if self.closed
             || self.pending.is_some()
             || self.stream.is_some()
             || self.opening.is_some()
             || self.register.is_some()
-            || self.sendfile.is_some()
+            || self.has_byte_output()
         {
             return Err(Error::State);
         }
@@ -416,14 +462,14 @@ impl Continuation {
                     }
                     return mapped;
                 }
-                self.sendfile = Some(SendfilePending {
+                self.install_sendfile(SendfilePending {
                     owner,
                     cap_request: None,
                 });
                 self.closed = true;
                 return Err(error.into());
             }
-            self.sendfile = Some(SendfilePending {
+            self.install_sendfile(SendfilePending {
                 owner,
                 cap_request: None,
             });
@@ -691,27 +737,30 @@ impl Continuation {
     }
     pub(crate) fn owns(&self, token: Token) -> bool {
         #[cfg(any(test, feature = "queued-worker-probe"))]
-        if self.captured_write.as_ref().is_some_and(|p| p.id().action == token) {
-            return true;
+        if let Some(OutputOwner::Captured(owner)) = &self.output {
+            if owner.id().action == token {
+                return true;
+            }
         }
         self.stream.as_ref().is_some_and(|p| p.action == token)
             || self.opening.as_ref().is_some_and(|p| p.action == token)
             || self.register.as_ref().is_some_and(|p| p.action == token)
-            || self.sendfile.as_ref().is_some_and(|p| p.owner.owns(token))
+            || self.sendfile().is_some_and(|p| p.owner.owns(token))
     }
     /// Includes terminal observations until removed; unfinished owners must not
     /// be dropped by execution retirement even if their core view has ended.
     pub(crate) fn sendfile_pending(&self) -> bool {
-        self.sendfile.is_some()
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        return matches!(&self.output, Some(OutputOwner::Physical(_)));
+        #[cfg(not(any(test, feature = "queued-worker-probe")))]
+        self.has_byte_output()
     }
     pub(crate) fn sendfile_references(&self, execution: &Execution) -> bool {
-        self.sendfile
-            .as_ref()
+        self.sendfile()
             .is_some_and(|p| p.owner.references(execution))
     }
     pub(crate) fn sendfile_view(&self) -> Option<(u32, Token)> {
-        self.sendfile
-            .as_ref()
+        self.sendfile()
             .filter(|p| p.owner.viewing())
             .and_then(|p| Some((p.owner.sequence()?, p.owner.action()?)))
     }
@@ -720,7 +769,7 @@ impl Continuation {
         execution: &Execution,
     ) -> Result<Option<SendfileStatus>, Error> {
         self.owner(execution)?;
-        Ok(self.sendfile.as_ref().map(|p| SendfileStatus {
+        Ok(self.sendfile().map(|p| SendfileStatus {
             phase: p.owner.phase(),
             sequence: p.owner.sequence().unwrap_or(0),
             action: p.owner.action(),
@@ -733,8 +782,7 @@ impl Continuation {
     }
     fn sync_sendfile_closed(&mut self) {
         if self
-            .sendfile
-            .as_ref()
+            .sendfile()
             .is_some_and(|p| p.owner.closed() || p.owner.phase() == sendfile::Phase::Closing)
         {
             self.closed = true;
@@ -742,7 +790,7 @@ impl Continuation {
     }
     fn sendfile_step(&mut self, execution: &Execution) -> Result<Step, Error> {
         self.sync_sendfile_closed();
-        let p = self.sendfile.as_ref().ok_or(Error::State)?;
+        let p = self.sendfile().ok_or(Error::State)?;
         if p.owner.finished() {
             if p.cap_request.is_some() {
                 return Err(Error::State);
@@ -767,7 +815,7 @@ impl Continuation {
                     Step::Waiting
                 }
             };
-            self.sendfile = None; // Proven finished and no service ticket remains.
+            self.clear_sendfile(); // Proven finished and no service ticket remains.
             return Ok(command);
         }
         let action = p.owner.action().ok_or(Error::State)?;
@@ -798,7 +846,7 @@ impl Continuation {
         action: Token,
     ) -> Result<u64, Error> {
         self.owner(execution)?;
-        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        let p = self.sendfile_mut().ok_or(Error::State)?;
         if p.cap_request.is_some() {
             return Err(Error::State);
         }
@@ -808,7 +856,7 @@ impl Continuation {
         self.sync_sendfile_closed();
         let request = result?;
         let endpoint = request.endpoint();
-        self.sendfile.as_mut().unwrap().cap_request = Some(request);
+        self.sendfile_mut().unwrap().cap_request = Some(request);
         Ok(endpoint)
     }
     fn finish_sendfile_cap(
@@ -822,7 +870,7 @@ impl Continuation {
         make: impl FnOnce(CapabilityRequest) -> CapabilityReceipt,
     ) -> Result<Step, Error> {
         self.owner(execution)?;
-        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        let p = self.sendfile_mut().ok_or(Error::State)?;
         p.owner.check_capability(
             files,
             domain,
@@ -886,9 +934,7 @@ impl Continuation {
         action: Token,
     ) -> Result<descriptor::LoadRequest, Error> {
         self.owner(execution)?;
-        let result = self
-            .sendfile
-            .as_mut()
+        let result = self.sendfile_mut()
             .ok_or(Error::State)?
             .owner
             .load_start(files, domain, execution, sequence, action);
@@ -907,9 +953,7 @@ impl Continuation {
         bytes: &mut Vec<u8>,
     ) -> Result<Step, Error> {
         self.owner(execution)?;
-        let result = self
-            .sendfile
-            .as_mut()
+        let result = self.sendfile_mut()
             .ok_or(Error::State)?
             .owner
             .load_finish(
@@ -928,9 +972,7 @@ impl Continuation {
         action: Token,
     ) -> Result<(usize, u64), Error> {
         self.owner(execution)?;
-        let result = self
-            .sendfile
-            .as_mut()
+        let result = self.sendfile_mut()
             .ok_or(Error::State)?
             .owner
             .start(files, domain, execution, sequence, action);
@@ -949,9 +991,7 @@ impl Continuation {
         access: AccessEvidence,
     ) -> Result<Step, Error> {
         self.owner(execution)?;
-        let result = self
-            .sendfile
-            .as_mut()
+        let result = self.sendfile_mut()
             .ok_or(Error::State)?
             .owner
             .receipt_with_access(
@@ -971,7 +1011,7 @@ impl Continuation {
         action: Token,
     ) -> Result<(), Error> {
         self.owner(execution)?;
-        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        let p = self.sendfile_mut().ok_or(Error::State)?;
         if p.owner.sequence() != Some(sequence) || p.owner.action() != Some(action) {
             return Err(Error::State);
         }
@@ -988,7 +1028,7 @@ impl Continuation {
         sequence: u32,
     ) -> Result<Step, Error> {
         self.owner(execution)?;
-        let p = self.sendfile.as_mut().ok_or(Error::State)?;
+        let p = self.sendfile_mut().ok_or(Error::State)?;
         if p.owner.sequence() != Some(sequence) || p.cap_request.is_some() {
             return Err(Error::State);
         }
@@ -1335,14 +1375,17 @@ impl Continuation {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         #[cfg(any(test, feature = "queued-worker-probe"))]
-        if self.captured_write.is_some() {
+        if matches!(&self.output, Some(OutputOwner::Captured(_))) {
             // Captured cancellation needs the exact lane/registry context.
             // This generic path cannot certify retirement of that owner.
             return Ok(false);
         }
-        if self.sendfile.is_some() {
+        if self.output.is_some() {
             self.closed = true;
-            let p = self.sendfile.as_mut().unwrap();
+            #[cfg(not(any(test, feature = "queued-worker-probe")))]
+            let p = self.output.as_mut().unwrap();
+            #[cfg(any(test, feature = "queued-worker-probe"))]
+            let p = self.sendfile_mut().unwrap();
             if !p.owner.finished() {
                 if p.owner.phase() == sendfile::Phase::Closing {
                     p.owner.retry_cleanup(files, domain, execution)?;
@@ -1355,7 +1398,7 @@ impl Continuation {
                 }
             }
             if p.owner.finished() && p.cap_request.is_none() {
-                self.sendfile = None;
+                self.output = None;
                 return Ok(true);
             }
             return Ok(false);
@@ -3717,7 +3760,7 @@ mod sendfile_continuation_tests {
         assert!(g.call.sendfile_references(&g.execution));
         assert_eq!(g.call.sendfile_view(), None);
         assert_eq!(
-            g.call.sendfile.as_ref().unwrap().owner.arguments(),
+            g.call.sendfile().unwrap().owner.arguments(),
             Some(args)
         );
         assert!(g.execution.hold_call(g.invocation).is_err()); // No second parent hold.
@@ -3732,7 +3775,7 @@ mod sendfile_continuation_tests {
         let mut g = Guest::new(true);
         let action = g.admit(6);
         assert_eq!(g.cap_start(action), Ok(20));
-        assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+        assert!(g.call.sendfile().unwrap().cap_request.is_some());
         assert!(g.cap_start(action).is_err());
         for (seq, endpoint) in [(2, 20), (1, 21)] {
             assert!(g
@@ -3746,7 +3789,7 @@ mod sendfile_continuation_tests {
                     endpoint
                 )
                 .is_err());
-            assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+            assert!(g.call.sendfile().unwrap().cap_request.is_some());
             assert_eq!(g.status().phase, SendPhase::CapChecking);
         }
         assert_eq!(
@@ -3797,7 +3840,7 @@ mod sendfile_continuation_tests {
             if dispatched {
                 assert!(g.call.sendfile_pending());
                 assert!(g.call.owns(action));
-                assert!(g.call.sendfile.as_ref().unwrap().cap_request.is_some());
+                assert!(g.call.sendfile().unwrap().cap_request.is_some());
                 assert!(g.execution.syscall_allowed(g.invocation).is_err());
                 assert_eq!(
                     g.call.sendfile_cap_finish_synthetic(
