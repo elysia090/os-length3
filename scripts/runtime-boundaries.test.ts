@@ -86,6 +86,10 @@ test('distribution format is below execution, without host or product capabiliti
 
 test('deployment is independent of composition and integrations',()=>{
   const assets='module/ricebox/deployment/assets.ts';
+  const capture='module/ricebox/deployment/capture-result.ts';
+  assert.equal(allowed(capture,'node:zlib'),true);
+  for(const target of ['node:fs','node:worker_threads','../runtime/root.ts','../../sods/runtime/linux/memory-host.ts']) assert.equal(allowed(capture,target),false,target);
+  assert.equal(allowed('module/ricebox/runtime/root.ts','../deployment/capture-result.ts'),false);
   for(const target of ['../build/prepare.ts','../integrations/vite.ts','../runtime/root.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(assets,target),false,target);
   assert.equal(allowed(assets,'../distribution/manifest.ts'),true);
   assert.equal(allowed(assets,'node:fs'),true);

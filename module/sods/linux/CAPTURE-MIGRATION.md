@@ -237,10 +237,18 @@ into a streaming consumer. To admit one, specify the bounded consumer
 handoff or resumption mechanism, signal pressure without claiming success,
 and prove that cancellation cannot renew a used request or discard output.
 
-An eventual release should pin the specific role, version and expanded
-artifact identity from an already authenticated deployment descriptor,
-separate from the blob provider. The result artifact itself does not get
-to choose that descriptor or a larger memory budget.
+The private Linux x64 Node 22/24 distribution reader exercises the pin
+chain end to end with a current-source result artifact and Worker. The
+deployment owner must independently choose the current index SHA-256 and
+size. That exact index names one capture role, content-addressed stored
+gzip, and expanded Wasm SHA-256 and size. The transport validates index
+and gzip identities and caps expansion at the declared size. The host
+checks the exact expanded snapshot against the index's pin before
+compiling that same snapshot. Neither a cache plan nor a blob reader
+can change the selected role, digest or limits. This is not a signature
+or rollback policy: the current index pin must come from the deployment
+owner, not from the same untrusted provider. The fixture is not emitted
+by the release builder, and no default or production caller selects it.
 
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution

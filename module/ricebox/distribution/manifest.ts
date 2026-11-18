@@ -26,7 +26,15 @@ export interface FileStoreDescriptor extends Blob {
   wasm: string;
   maxFileBytes: number;
 }
+/** Private opt-in Node capture slot. Ordinary distribution loading ignores it. */
+export interface CaptureResultDescriptor extends Blob {
+  kind: 'sods-linux-capture-result-v1';
+  host: 'linux-x64-node22-24';
+  /** Expanded executable digest, independent of the content-addressed gzip. */
+  wasm: string;
+}
 export interface Index {
+  captureResult?: CaptureResultDescriptor;
   /** When present this release requires the matching Rust file owner. */
   fileStore?: FileStoreDescriptor;
   name: string; version: string; sha256: string; codec: string;

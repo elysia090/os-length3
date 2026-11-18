@@ -12,10 +12,11 @@ import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {gzipSync, gunzipSync} from 'node:zlib';
 import {managedRoot, type ExecutionBinding, type PreparedArtifactRequest} from '../../../sods/runtime/linux.ts';
-import {capturedResultHost, type CaptureResultPin} from '../../../sods/runtime/linux/memory-host.ts';
+import {capturedResultHost} from '../../../sods/runtime/linux/memory-host.ts';
 import {loadTranslator} from '../../../sods/runtime/translate.ts';
 import {canonicalExecutableSource} from '../../distribution/executable-source.ts';
-import type {Blob, Index} from '../../distribution/manifest.ts';
+import {readCapturedResultRelease} from '../../deployment/capture-result.ts';
+import type {Blob, CaptureResultDescriptor, Index} from '../../distribution/manifest.ts';
 import {checkedRange, packOf} from '../../distribution/pack.ts';
 import {managedRootWire} from '../managed-root-wire.ts';
 
@@ -29,7 +30,7 @@ const digest = (bytes: Uint8Array) => new Uint8Array(createHash('sha256').update
 const guestPath = '/bin/program.elf';
 const descriptions = {
   lazy: 'root AOT startup leaves canonical ELF lazy, then the actual guest opens/reads/closes it',
-  capture: 'pinned captured result uses the prepared root and an actual Worker without physical output',
+  capture: 'pinned captured result uses the current release, prepared root and actual Worker without physical output',
   'capture-pressure': 'pinned captured result preserves the first write through full-queue refusal and stop',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
@@ -78,7 +79,17 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     files: [{path: guestPath, mode: 0o755, size: elf.length, pack: 0, at: sourceAt, len: elf.length, raw: true}],
     translator: {...blob(translatorBytes), name: 'sods', version: 'current-fixture', wasm: hash(translatorBytes)},
     translations: [translation]};
-  const generation = hash(encode(JSON.stringify(index)));
+  let storedCapture: ReturnType<typeof gzipSync> | undefined;
+  if (scenario === 'capture' || scenario === 'capture-pressure') {
+    assert.ok(resultPath);
+    storedCapture = gzipSync(readFileSync(resultPath));
+    const sha256 = hash(storedCapture);
+    index.captureResult = {kind: 'sods-linux-capture-result-v1', host: 'linux-x64-node22-24',
+      path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
+      bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
+  }
+  const indexBytes = encode(JSON.stringify(index));
+  const generation = hash(indexBytes);
   assert.notEqual(generation, index.sha256);
   assert.equal(canonicalExecutableSource(index, translation).binding, 'explicit');
   const prepared = managedRootWire(index, generation, true);
@@ -93,13 +104,23 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
   // physical bindings are reclaimed by run retirement; table/context limits
   // below remain one/two, so their reuse is tested independently of history.
   const core = new WebAssembly.Module(readFileSync(corePath));
-  const captured = scenario === 'capture' || scenario === 'capture-pressure' ? await (async () => {
-    assert.ok(resultPath);
-    const bytes = new Uint8Array(readFileSync(resultPath));
-    const pin: CaptureResultPin = {kind: 'sods-linux-capture-result-v1',
-      byteLength: Number(process.env.SODS_CAPTURE_RESULT_BYTES), sha256: process.env.SODS_CAPTURE_RESULT_SHA256!};
+  const captured = storedCapture ? await (async () => {
+    const readStored = async (path: string, size: number) => {
+      assert.equal(path, index.captureResult!.path);
+      assert.equal(size, storedCapture.length);
+      return storedCapture;
+    };
+    const pinnedIndex = {sha256: generation, size: indexBytes.length};
+    const {pin, bytes, indexSha256} = await readCapturedResultRelease(pinnedIndex, indexBytes, readStored);
+    assert.equal(indexSha256, generation, 'root and capture selection must use the same generation');
     if (scenario === 'capture') {
-      const mutated = bytes.slice();
+      const wrong: CaptureResultDescriptor = {...index.captureResult!, wasm: '0'.repeat(64)};
+      const wrongIndex = encode(JSON.stringify({...index, captureResult: wrong}));
+      const wrongSelected = await readCapturedResultRelease({sha256: hash(wrongIndex), size: wrongIndex.length},
+        wrongIndex, readStored);
+      await assert.rejects(capturedResultHost(wrongSelected.bytes, wrongSelected.pin, 4, 16), /digest mismatch/,
+        'transit through an authenticated gzip cannot replace the expanded index digest');
+      const mutated = new Uint8Array(bytes); // Decoded bytes may be a Node Buffer.
       mutated[mutated.length - 1] ^= 1;
       await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
       const ordinary = new Uint8Array(readFileSync(corePath));

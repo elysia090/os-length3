@@ -282,8 +282,8 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
  * The independent pin and exact owned snapshot are verified before any Core
  * instance exists. No raw Module or structural "verified" value can enter. */
 export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPin, memories: number, actions: number) {
-  if (!isNode || process.platform !== 'linux' || ![22, 24].includes(Number(process.versions.node.split('.')[0]))) {
-    throw new Error('Captured result requires reviewed Linux Node 22 or 24');
+  if (!isNode || process.platform !== 'linux' || process.arch !== 'x64' || ![22, 24].includes(Number(process.versions.node.split('.')[0]))) {
+    throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
   }
   const {kind, byteLength, sha256: expected} = pin;
   if (kind !== 'sods-linux-capture-result-v1' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
