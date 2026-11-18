@@ -87,3 +87,84 @@ Check visible output, input, resize, output loss and cancellation, recording ver
 protocols and ownership. In an environment with no such session or clients, report
 that gate as blocked. Do not install tools, create a new desktop session or operate a
 shared display just to convert an untested claim into a green fixture test.
+
+## Borrowed-session proof runbook
+
+This is a manual native-Linux acceptance exercise, not an installed everyday API.
+The offline fixture `test/native-panel.ts CONNECTOR` only prints JSON. It requires
+one literal connector (letters/digits, dots, underscores and hyphens), rejects broad
+or multiple selectors, and neither reads display variables nor launches clients.
+Its tests prove that configuration contract, not Wayland support.
+
+Before running graphical commands, obtain authorization for the **existing session,
+execution domain and output**. Record the versions, protocol inventory and client
+requirements above. Select an available font and shell. Do not infer authorization
+from inherited environment variables or silently substitute a host shell for a guest.
+The following commands are for that authorized native domain only. Supply exact
+values for `session_dir`, `display`, `output` and `shell_path` from its inventory;
+these are not defaults or discovery commands.
+
+```sh
+# From the repository root, in the explicitly authorized session/domain:
+: "${session_dir:?}" "${display:?}" "${output:?}" "${shell_path:?}"
+proof=$(mktemp -d) || exit 1
+node ricebox/everyday/test/native-panel.ts "$output" > "$proof/panel.json" || exit 1
+# Inspect its JSON before launching.
+printf '# Isolated proof configuration; installed defaults only.\n' > "$proof/foot.ini"
+printf 'window#waybar { background: #222222; color: #ffffff; }\n' > "$proof/panel.css"
+```
+
+Run each client in its own supervised foreground shell, using the same `proof`
+directory and selected session values. Do not use foot's server mode or a session
+manager/autostart entry. Keep the logs and exact configuration with the observation.
+These examples select a socket by name. Clear `WAYLAND_SOCKET` locally because
+[libwayland's descriptor selection](https://wayland.pages.freedesktop.org/wayland.freedesktop.org/docs/html/apb.html)
+otherwise takes precedence over the chosen display.
+
+```sh
+# Terminal test:
+(
+  unset WAYLAND_SOCKET
+  XDG_RUNTIME_DIR="$session_dir" WAYLAND_DISPLAY="$display" \
+    exec foot -c "$proof/foot.ini" --app-id=everyday-native-proof "$shell_path"
+) 2> "$proof/foot.log"
+
+# Panel test, run separately:
+(
+  unset WAYLAND_SOCKET
+  XDG_RUNTIME_DIR="$session_dir" WAYLAND_DISPLAY="$display" GDK_BACKEND=wayland \
+    exec waybar -c "$proof/panel.json" -s "$proof/panel.css"
+) 2> "$proof/waybar.log"
+```
+
+The panel requests one output, a top layer, no reserved space, pointer pass-through,
+no Sway IPC and only a built-in clock. No custom commands or optional panel modules
+are configured. This is **not** a sandbox: GTK and other client libraries can still
+consult their ordinary settings, accessibility or session services. Inventory those
+connections; do not claim the fixture disables them or disconnect shared services.
+Foot's data-device support likewise does not authorize a clipboard exercise.
+
+Record pass/fail/untested separately for:
+
+- Visible terminal text, focus, key entry/repeat; shell job control and interrupt;
+  `stty size` before/after an ordinary window resize; normal shell exit.
+- One visible clock on the chosen output, advancing with time; no other output gets
+  this panel; windows retain their usable area and pointer events reach underneath.
+  The app-id labels foot; it does not force terminal output placement.
+- Closing each owned client and repeating the run, with no surviving owned process
+  or unexpected restart. Stop/reap only the clients started for this proof; never
+  use broad process-name kills. Remove the temporary configs only after they stop.
+- Output changes/loss, session disconnection and cancellation only on explicitly
+  authorized disposable connections/outputs. Otherwise mark those cases untested;
+  never stop the borrowed compositor or alter another person's display for a test.
+
+An alive PID, clean log or frame callback is not rendering/input or buffer-release
+proof. Failure names its component and stage; no fallback desktop is started.
+Native success does not prove guest socket/FD/mapping transport, translated clients
+or browser presentation. Keep those separate gates as described above.
+
+The pinned [Waybar configuration manual](https://github.com/Alexays/Waybar/blob/5b36b1a82f9630576dca2840b8dca15b2aca2cff/man/waybar.5.scd.in)
+and [foot 1.13.1 command manual](https://gitlab.com/dnkl/foot/-/raw/1.13.1/doc/foot.1.scd)
+plus Waybar’s [CLI option definitions](https://github.com/Alexays/Waybar/blob/5b36b1a82f9630576dca2840b8dca15b2aca2cff/src/client.cpp)
+are interface references, not a selected or jointly verified stack. Check the installed
+clients' `--help` and manuals before using these options. No release lock is added.
