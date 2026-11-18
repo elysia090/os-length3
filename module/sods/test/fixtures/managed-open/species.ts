@@ -23,7 +23,7 @@ for (const kind of ['species', 'constructor']) {
   const constructor = Object.getOwnPropertyDescriptor(Uint8Array.prototype, 'constructor')!;
   const atomics = Object.getOwnPropertyDescriptor(Atomics, 'store')!, store = Atomics.store;
   let callbacks = 0, reply = false, escaped: ArrayBufferLike | undefined;
-  class Observer extends Uint8Array {
+  class Observer extends Uint8Array<ArrayBufferLike> {
     constructor(buffer: ArrayBufferLike, offset: number, length: number) {
       super(buffer, offset, length); escaped = buffer;
     }
