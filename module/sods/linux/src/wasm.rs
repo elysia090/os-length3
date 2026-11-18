@@ -1,4 +1,4 @@
-//! Private wasm32 ABI3, one managed domain per instance. The read-only caller
+//! Private wasm32 ABI4, one managed domain per instance. The read-only caller
 //! is a limited fixed-memory profile, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
@@ -8,6 +8,7 @@ use crate::effect::{Completion, Token};
 use crate::execution::{Execution, ImageResult, Unwind};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
+use crate::prepared_root::{Limits as RootLimits, RootCatalog, RootImage};
 use crate::read::{ReadCapacity, Reads};
 use crate::syscall::{Continuation, PathOutcome, PhysicalResult, Step};
 use crate::{
@@ -149,6 +150,9 @@ struct StackTransport {
 }
 struct State {
     startup_input: Vec<u8>,
+    root_input: Vec<u8>,
+    root_catalog: Option<RootCatalog>,
+    artifact_info: [u8; 160],
     stack: Option<StackTransport>,
     domain: Domain,
     executions: Vec<Slot>,
@@ -272,7 +276,7 @@ fn inode(n: u64) -> Inode {
 }
 #[no_mangle]
 pub extern "C" fn linux_abi_version() -> u32 {
-    3
+    4
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -292,6 +296,9 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
         };
         *outer = Some(State {
             startup_input: Vec::new(),
+            root_input: Vec::new(),
+            root_catalog: None,
+            artifact_info: [0; 160],
             stack: None,
             domain,
             executions: Vec::new(),
@@ -1499,6 +1506,143 @@ pub extern "C" fn linux_prepared_files(
         Ok(1)
     })
 }
+const ROOT_WIRE_MAX: usize = 16 * 1024 * 1024;
+#[no_mangle]
+pub extern "C" fn linux_root_input(length: u32) -> i32 {
+    with_state(false, |s| {
+        if s.builder.is_some() || s.sealed.is_some() || !s.executions.is_empty() {
+            return Err(-9);
+        }
+        if length as usize > ROOT_WIRE_MAX {
+            return Err(-5);
+        }
+        let mut input = Vec::new();
+        input.try_reserve_exact(length as usize).map_err(|_| -1)?;
+        input.resize(length as usize, 0);
+        s.root_input = input;
+        Ok(if length == 0 {
+            0
+        } else {
+            s.root_input.as_mut_ptr() as u64
+        })
+    })
+}
+/// Build and seal locally, then publish once. No component-builder alias or
+/// partial namespace is exposed, and no source callback/image can run here.
+#[no_mangle]
+pub extern "C" fn linux_prepared_root(
+    inodes: u32,
+    entries: u32,
+    file_bytes: u32,
+    tables: u32,
+    descriptions: u32,
+    slots: u32,
+    reads: u32,
+    contexts: u32,
+    views: u32,
+    holds: u32,
+    policy: u32,
+    fd_limit: u32,
+) -> i32 {
+    with_state(false, |s| {
+        // Every attempted seal consumes its private staging, including failure.
+        let input = std::mem::take(&mut s.root_input);
+        if s.builder.is_some() || s.sealed.is_some() || !s.executions.is_empty() {
+            return Err(-9);
+        }
+        if policy & !7 != 0 || contexts == 0 || views == 0 || holds == 0 {
+            return Err(-5);
+        }
+        let capacity = ReadCapacity::new(reads as usize).map_err(read_code)?;
+        let image = RootImage::build(
+            TREE,
+            &input,
+            RootLimits {
+                inodes: inodes as usize,
+                entries: entries as usize,
+                file_bytes: file_bytes as usize,
+            },
+        )
+        .map_err(|_| -10)?;
+        let (tree, catalog) = image.into_parts();
+        let mut files = Files::new(
+            FILES,
+            tree,
+            descriptor::Limits {
+                contexts: contexts as usize,
+                tables: tables as usize,
+                descriptions: descriptions as usize,
+                slots: slots as usize,
+            },
+        );
+        let view = files
+            .bootstrap_mount(
+                inode(1),
+                mount::Limits {
+                    views: views as usize,
+                    holds: holds as usize,
+                },
+                mount::ViewPolicy {
+                    no_exec: policy & 1 != 0,
+                    no_suid: policy & 2 != 0,
+                    no_symfollow: policy & 4 != 0,
+                },
+            )
+            .map_err(|_| -10)?;
+        let root = files.view_root(&view).map_err(|_| -10)?;
+        let reads = Reads::new(&files, capacity);
+        s.sealed = Some(Sealed {
+            files,
+            table: None,
+            root: Some(root),
+            root_view: Some(view),
+            fd_limit,
+            reads,
+            input: Vec::new(),
+            file_limit: file_bytes as usize,
+        });
+        s.root_catalog = Some(catalog);
+        Ok(0)
+    })
+}
+/// Immutable transport locator, not guest path/FD selection or a read attempt.
+#[no_mangle]
+pub extern "C" fn linux_root_source(source: u32) -> i32 {
+    with_state(false, |s| {
+        let source = s
+            .root_catalog
+            .as_ref()
+            .ok_or(-9)?
+            .source(source)
+            .ok_or(-10)?;
+        s.length = source.size;
+        s.auxiliary = source.at;
+        s.endpoint = source.stored;
+        s.state = u32::from(source.raw);
+        Ok(source.pack as u64)
+    })
+}
+/// Fixed metadata snapshot. Host copies synchronously before any export/await.
+#[no_mangle]
+pub extern "C" fn linux_root_artifact(artifact: u32) -> i32 {
+    with_state(false, |s| {
+        let catalog = s.root_catalog.as_ref().ok_or(-9)?;
+        let artifact = catalog.artifact(artifact).ok_or(-10)?;
+        let source = catalog.source(artifact.source).ok_or(-10)?;
+        let out = &mut s.artifact_info;
+        out[..32].copy_from_slice(catalog.generation());
+        out[32..64].copy_from_slice(&artifact.source_digest);
+        out[64..96].copy_from_slice(&artifact.artifact_digest);
+        out[96..128].copy_from_slice(&artifact.translator_digest);
+        out[128..132].copy_from_slice(&artifact.source.to_le_bytes());
+        out[132..136].copy_from_slice(&u32::from(artifact.shared).to_le_bytes());
+        out[136..144].copy_from_slice(&source.size.to_le_bytes());
+        out[144..152].copy_from_slice(&artifact.inode.number().to_le_bytes());
+        out[152..].fill(0);
+        s.length = out.len() as u64;
+        Ok(out.as_ptr() as u64)
+    })
+}
 const STARTUP_WIRE_MAX: usize = 2 * 1024 * 1024;
 fn startup_limits() -> crate::stack::Limits {
     crate::stack::Limits {
@@ -1659,6 +1803,73 @@ pub extern "C" fn linux_startup_check(id: u64) -> i32 {
         if !p.startup.as_ref().is_some_and(|v| v.continuable()) {
             return Err(-11);
         }
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_artifact_start(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let startup = s.executions[i]
+            .preparing_mut()?
+            .startup
+            .as_mut()
+            .ok_or(-11)?;
+        let files = &mut s.sealed.as_mut().ok_or(-9)?.files;
+        let identity = startup.selected_identity(files).map_err(|_| -10)?;
+        let catalog = s.root_catalog.as_ref().ok_or(-9)?;
+        let (artifact, record) = catalog.artifact_for(identity.inode).ok_or(-11)?;
+        let source = catalog.source(record.source).ok_or(-10)?;
+        if record.source != identity.source || source.size != identity.size as u64 || !record.shared
+        {
+            return Err(-10);
+        }
+        startup
+            .artifact_start(files, artifact, identity)
+            .map_err(|_| -10)?;
+        Ok(artifact as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_artifact_finish(
+    id: u64,
+    artifact: u32,
+    success: u32,
+    entry: u64,
+    phdr: u64,
+    phent: u64,
+    phnum: u64,
+    extent: u64,
+) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = slot_index(s, id)?;
+        let startup = s.executions[i]
+            .preparing_mut()?
+            .startup
+            .as_mut()
+            .ok_or(-11)?;
+        let files = &mut s.sealed.as_mut().ok_or(-9)?.files;
+        startup
+            .artifact_finish(
+                files,
+                id,
+                artifact,
+                if success == 1 {
+                    Some(Facts {
+                        entry,
+                        phdr,
+                        phent,
+                        phnum,
+                        extent,
+                    })
+                } else {
+                    None
+                },
+            )
+            .map_err(|_| -10)?;
         Ok(0)
     })
 }

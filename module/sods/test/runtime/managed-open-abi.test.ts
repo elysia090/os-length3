@@ -7,7 +7,7 @@ const artifact = process.env.SODS_LINUX_WASM;
 const bytes = (s: string) => new TextEncoder().encode(s);
 // Real ABI with synthetic image/stop receipts, not evidence of physical Worker
 // execution. managed-open.test.ts exercises the actual translated CLI/Worker.
-function raw() {
+function raw(preparedRoot = false) {
   const wasm = new Uint8Array(readFileSync(artifact!)), module = new WebAssembly.Module(wasm);
   const e = new WebAssembly.Instance(module).exports;
   const call = (name: string, ...args: (number | bigint)[]) => (e[name] as (...args: (number | bigint)[]) => number)(...args);
@@ -18,18 +18,38 @@ function raw() {
     assert.equal(call(name, value.length), 0);
     new Uint8Array((e.memory as WebAssembly.Memory).buffer, Number(result()), value.length).set(value);
   };
-  assert.equal(call('linux_abi_version'), 3); assert.equal(call('linux_init', 8, 32), 0);
-  assert.equal(call('linux_prepared_files', 4, 4, 4096, 8, 64, 64, 8, 16, 1, 96, 0), 0);
-  const root = result(); put('linux_name', bytes('app')); put('linux_input', bytes('elf'));
-  assert.equal(call('linux_tree_file', root, 0o755), 0); assert.equal(call('linux_files_seal', 8), 0);
+  assert.equal(call('linux_abi_version'), 4); assert.equal(call('linux_init', 8, 32), 0);
+  if (preparedRoot) {
+    // One valid lazy /app and its image association. No payload is supplied.
+    const path = bytes('/app'), wire = new Uint8Array(72 + 40 + 40 + path.length + 104 + path.length);
+    const view = new DataView(wire.buffer); wire.set(bytes('SODSROOT'));
+    view.setUint32(8, 1, true); view.setUint32(48, 1, true);
+    view.setUint32(60, 1, true); view.setUint32(64, 1, true);
+    view.setBigUint64(104, 3n, true);
+    view.setUint32(112, path.length, true); view.setUint32(116, 0o755, true);
+    view.setBigUint64(120, 3n, true); view.setUint32(132, 1, true); view.setBigUint64(144, 3n, true);
+    wire.set(path, 152); const aot = 152 + path.length;
+    view.setUint32(aot, path.length, true); view.setUint32(aot + 4, 1, true); wire.set(path, aot + 104);
+    put('linux_root_input', wire);
+    assert.equal(call('linux_prepared_root', 4, 4, 4096, 8, 64, 64, 8, 16, 1, 96, 0, 8), 0);
+  } else {
+    assert.equal(call('linux_prepared_files', 4, 4, 4096, 8, 64, 64, 8, 16, 1, 96, 0), 0);
+    const root = result(); put('linux_name', bytes('app')); put('linux_input', bytes('elf'));
+    assert.equal(call('linux_tree_file', root, 0o755), 0); assert.equal(call('linux_files_seal', 8), 0);
+  }
   function live() {
     const path = bytes('/app'), wire = new Uint8Array(48 + path.length), view = new DataView(wire.buffer);
     view.setBigUint64(0, 1n, true); view.setBigUint64(24, BigInt(path.length), true); wire.set(path, 48);
     put('linux_startup_input', wire); assert.equal(call('linux_startup_begin'), 0); const id = result();
     assert.equal(call('linux_startup_input', 0), 0);
-    assert.equal(call('linux_startup_source_start', id), 0); assert.equal(result(), 0n);
-    assert.equal(call('linux_startup_bytes', id), 0);
-    assert.equal(call('linux_startup_translation_finish', id, 1, 4096n, 0n, 56n, 0n, 131072n), 0);
+    if (preparedRoot) {
+      assert.equal(call('linux_startup_artifact_start', id), 0); const artifact = result(); assert.equal(artifact, 1n);
+      assert.equal(call('linux_startup_artifact_finish', id, Number(artifact), 1, 4096n, 0n, 56n, 0n, 131072n), 0);
+    } else {
+      assert.equal(call('linux_startup_source_start', id), 0); assert.equal(result(), 0n);
+      assert.equal(call('linux_startup_bytes', id), 0);
+      assert.equal(call('linux_startup_translation_finish', id, 1, 4096n, 0n, 56n, 0n, 131072n), 0);
+    }
     assert.equal(call('linux_bind', 131072n), 0); const binding = result();
     assert.equal(call('linux_startup_image_begin', id, binding, 65536n, 131072n), 0);
     assert.equal(call('linux_startup_image_finish', id, 0), 0);
@@ -82,6 +102,21 @@ test('pathname capture excludes every nonmatching core export, including read-vi
   assert.equal(r.call('linux_syscall_path_finish', owner.id, action + 1n, 5n, 0), -4);
   assert.equal(r.call('linux_syscall_path_finish', owner.id + 1n, action, 5n, 0), -4);
   assert.equal(r.call('linux_syscall_path_finish', owner.id, action, 5n, 0), 0); assert.equal(r.result(), 0n);
+});
+
+test('live pathname capture rejects valid root catalog queries while retaining its exact input view', {skip: !artifact}, () => {
+  const r = raw(true);
+  assert.equal(r.call('linux_root_source', 1), 0); assert.equal(r.length(), 3n);
+  assert.equal(r.call('linux_root_artifact', 1), 0); assert.equal(r.length(), 160n);
+  const owner = r.live(), action = r.open(owner); r.capture(owner, action, bytes('/app\0'));
+  const pointer = r.result();
+  assert.equal(r.call('linux_root_source', 1), -4); assert.equal(r.call('linux_root_artifact', 1), -4);
+  // Rejected calls may clear scalar result slots, but cannot replace/move the
+  // owned input or drop its guard. The host captured this view before dispatch.
+  assert.deepEqual(new Uint8Array((r.e.memory as WebAssembly.Memory).buffer, Number(pointer), 5), bytes('/app\0'));
+  assert.equal(r.call('linux_syscall_path_finish', owner.id, action, 5n, 0), 0);
+  assert.equal(r.call('linux_root_source', 1), 0); assert.equal(r.length(), 3n);
+  assert.equal(r.call('linux_root_artifact', 1), 0); assert.equal(r.length(), 160n);
 });
 
 test('another Unknown capture finish cannot allocate while a different owner exposes its input view', {skip: !artifact}, () => {
@@ -141,7 +176,7 @@ test('new required export names cannot make an obsolete private ABI acceptable',
   const section = (id: number, payload: number[]) => [id, ...leb(payload.length), ...payload];
   const name = (value: string) => { const b = Array.from(bytes(value)); return [...leb(b.length), ...b]; };
   const exports = [...leb(names.length + 1), ...name('memory'), 2, 0, ...names.flatMap((n, i) => [...name(n), 0, ...leb(i)])];
-  const bodies = names.flatMap(n => { const body = [0, 0x41, n === 'linux_abi_version' ? 2 : 0, 0x0b]; return [...leb(body.length), ...body]; });
+  const bodies = names.flatMap(n => { const body = [0, 0x41, n === 'linux_abi_version' ? 3 : 0, 0x0b]; return [...leb(body.length), ...body]; });
   // Shape-complete controlled stub only tests version admission, not old behavior.
   const old = new WebAssembly.Module(Uint8Array.from([0,97,115,109,1,0,0,0,
     ...section(1,[1,0x60,0,1,0x7f]), ...section(3,[...leb(names.length), ...names.map(() => 0)]),

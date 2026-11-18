@@ -9,7 +9,7 @@ permission before host execution, retains uncertain completion, accepts cumulati
 prefix evidence, and refuses stale/duplicate actions. `Completion::Stopped` requires
 both no further effects and ended access; a confirmed byte count alone does not.
 
-The private wasm32 ABI (version 3) connects that table to `runtime/linux/memory-host.ts`, which
+The private wasm32 ABI (version 4) connects that table to `runtime/linux/memory-host.ts`, which
 creates and retains actual engine memories without exposing raw memory or callbacks.
 Capture/write/grow operations acquire admission before host access. Mutation reserves
 exclusively before execution; successful retirement publishes a new binding identity.
@@ -135,7 +135,7 @@ its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
 
 
-## Resident file to physical memory (private ABI 3)
+## Resident file to physical memory (private ABI 4)
 
 The following sections preserve successive integration stages. Earlier ABI2 or
 unconnected diagnostic limitations describe that stage; the later managed CLI
@@ -842,3 +842,23 @@ ordering follows FD/access, numerical range, then EISDIR (even zero), while regu
 zero reads do not access low pointer payloads. Full writable filesystem, mappings,
 ordinary utilities/shell/muk and default TS authority removal remain later gates.
 See [OPEN-CALLER.md](OPEN-CALLER.md) for the complete admission/failure contract.
+
+
+### Managed root and source-free prepared AOT
+
+The additive asynchronous `managedRoot` entrance in `sods/linux` exposes only a
+readonly root producer/transport and selected execution/lifetime facade. The
+private memory/grow/inode diagnostics are not public, and default Kernel/backend
+selection is unchanged. Its Linux ABI4 is distinct from file-store ABI4.
+
+`prepared_root.rs` validates and seals a captured range-backed namespace/catalog
+without loading payloads. Hardlinks retain one canonical inode; exact root lazy
+files reject wrong-length delivery without adopting it. Prepared artifact work
+leaves canonical source unloaded and uses an `ImageProgram` distinct from fresh
+source-delivered `ReadyProgram`. The same owned Wasm snapshot feeds module checks,
+facts and external segments before actual Worker image publication.
+
+See [ROOT-AOT.md](ROOT-AOT.md) for trusted-artifact requirements, typed ownership,
+local SourceId scope, finite admission history, cancellation and retirement. This
+connects a selected fixed static caller, not the ordinary BusyBox/shell/muk/TTY
+profile. TLS, clear-tid, sendfile and Linux signal/VM compatibility remain gates.

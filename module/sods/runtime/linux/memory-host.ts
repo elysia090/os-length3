@@ -11,6 +11,12 @@ import type {captureStdio, Endpoint, PhysicalResult} from '../host/node/stdio.ts
  * not the Node caller, ELF loader or complete Linux syscall implementation. */
 interface Admission extends WebAssembly.Exports {
   linux_prepared_files(inodes: number, entries: number, fileBytes: number, tables: number, descriptions: number, slots: number, reads: number, contexts: number, views: number, holds: number, policy: number): number;
+  linux_root_input(length: number): number;
+  linux_prepared_root(inodes: number, entries: number, fileBytes: number, tables: number, descriptions: number, slots: number, reads: number, contexts: number, views: number, holds: number, policy: number, fdLimit: number): number;
+  linux_root_source(source: number): number;
+  linux_root_artifact(artifact: number): number;
+  linux_startup_artifact_start(id: bigint): number;
+  linux_startup_artifact_finish(id: bigint, artifact: number, success: number, entry: bigint, phdr: bigint, phent: bigint, phnum: bigint, extent: bigint): number;
   linux_startup_input(length: number): number;
   linux_startup_begin(): number;
   linux_startup_begin_stdio(): number;
@@ -96,6 +102,15 @@ const memoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototyp
 const mapGet = Map.prototype.get, mapSet = Map.prototype.set, mapDelete = Map.prototype.delete;
 const bufferOf = (memory: WebAssembly.Memory): ArrayBufferLike => apply(memoryBuffer, memory, []);
 const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length')!.get!;
+const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
+const arrayByteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
+// Stronger selected ingress: reject shared backing rather than claiming an
+// atomic snapshot of concurrent writes. Built-in conversion also avoids Buffer.slice.
+const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
+  apply(arrayByteLength, apply(typedBuffer, input, []), []);
+  return new Bytes(input);
+};
+
 const lengthOf = (bytes: Uint8Array): number => apply(typedLength, bytes, []);
 const signalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
 const signalReason = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'reason')!.get!;
@@ -115,8 +130,20 @@ export interface PreparedFileLimits extends FileLimits {
   contexts: number; views: number; holds: number;
   policy: {noExec: boolean; noSuid: boolean; noSymfollow: boolean};
 }
+export interface PreparedArtifactRequest {
+  readonly rootGeneration: string;
+  readonly sourceSha256: string;
+  readonly artifactSha256: string;
+  readonly translatorSha256: string;
+  readonly source: number;
+  readonly sourceBytes: number;
+  readonly shared: boolean;
+}
 export interface PathExecutionOptions {
-  translator: WebAssembly.Module;
+  translator?: WebAssembly.Module;
+  /** Trusted transport: authenticate the requested stored blob/generation, then
+   * return its decoded Wasm bytes. No arbitrary compiled Module/segments input. */
+  preparedArtifact?: (request: PreparedArtifactRequest) => Uint8Array | Promise<Uint8Array>;
   load?: (source: number) => Uint8Array | Promise<Uint8Array>;
   random: Uint8Array;
   stackBytes?: number;
@@ -127,7 +154,7 @@ export interface PathExecutionOptions {
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
 }
-const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+const required = ['linux_root_input', 'linux_prepared_root', 'linux_root_source', 'linux_root_artifact', 'linux_startup_artifact_start', 'linux_startup_artifact_finish', 'linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_path_start', 'linux_syscall_path_finish', 'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
@@ -217,8 +244,26 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new WebAssembly.Instance(module).exports as Admission;
-  if (core.linux_abi_version() !== 3) throw new Error('Unsupported Linux admission ABI');
+  if (core.linux_abi_version() !== 4) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
+  const safeNumber = (value: bigint): number => {
+    const number = integer(numeric(value));
+    if (wide(number) !== value) throw new RangeError('Transport coordinate exceeds safe integer');
+    return number;
+  };
+  const artifactRequest = (artifact: number): PreparedArtifactRequest => {
+    const pointer = result(core.linux_root_artifact(artifact));
+    const length = safeNumber(core.linux_result_length());
+    if (length !== 160) throw new Error('Invalid prepared artifact metadata');
+    // The core view ends synchronously before digest conversion or callbacks.
+    const bytes = new Bytes(new Bytes(bufferOf(core.memory), safeNumber(pointer), length));
+    const view = new DataView(bytes.buffer);
+    const hex = (at: number) => { let out = ''; const digits = '0123456789abcdef'; for (let i = 0; i < 32; i++) { const b = bytes[at + i]!; out += digits[b >>> 4]! + digits[b & 15]!; } return out; };
+    const source = view.getUint32(128, true), mode = view.getUint32(132, true);
+    if (!source || mode !== 1 || view.getBigUint64(152, true) !== 0n) throw new Error('Unsupported prepared artifact metadata');
+    return freeze({rootGeneration: hex(0), sourceSha256: hex(32), artifactSha256: hex(64), translatorSha256: hex(96),
+      source, sourceBytes: safeNumber(view.getBigUint64(136, true)), shared: true});
+  };
   const objects = new Map<MemoryBinding, {id: bigint; memory: WebAssembly.Memory}>();
   const get = (binding: MemoryBinding): {id: bigint; memory: WebAssembly.Memory} => {
     const entry = apply(mapGet, objects, [binding]);
@@ -494,7 +539,9 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
      * Not default Node/muk startup or a complete Linux syscall environment. */
     async pathExecution(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], options: PathExecutionOptions): Promise<ExecutionBinding> {
       if ('credentials' in options || 'execfn' in options) throw new TypeError('Path startup derives credentials and execfn in Rust');
-      const {translator: translatorModule, load, signal, stdio: useStdio} = options;
+      const {translator: translatorModule, load, signal, stdio: useStdio, preparedArtifact: artifactLoader} = options;
+      if (artifactLoader !== undefined && typeof artifactLoader !== 'function') throw new TypeError('Expected prepared artifact transport');
+      if (artifactLoader === undefined && translatorModule === undefined) throw new TypeError('Fresh startup requires a translator');
       if (useStdio !== undefined && useStdio !== true) throw new TypeError('Expected explicit stdio profile');
       const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
@@ -512,7 +559,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         catch (cleanup) { throw new AggregateError([failure, cleanup], 'Startup admission and cleanup failed'); }
         throw failure;
       }
-      let cancelled = false, translating = false, imagePending = false;
+      let cancelled = false, translating = false, preparingArtifact = false, artifact = 0, imagePending = false;
       let memory: WebAssembly.Memory | undefined, bridge: ReturnType<typeof createGuest> | undefined;
       let admittedMemory: MemoryBinding | undefined;
       let physicalOwner: {id: bigint; memory: WebAssembly.Memory} | undefined;
@@ -541,40 +588,52 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         if (signal) apply(addListener, signal, ['abort', cancel, {once: true}]);
         if (aborted(signal)) cancel();
         check();
-        const source = numeric(result(core.linux_startup_source_start(id)));
-        const attempt = numeric(core.linux_result_auxiliary());
-        if (source) {
-          let success = false, failed = false, failure: unknown;
-          try {
-            if (!load) throw new Error('No program source loader');
-            const returned = await load(source);
-            // A cancelled callback still completes exactly once, without
-            // adopting its late bytes. Cancellation never asserts callback stop.
-            if (!cancelled && !aborted(signal)) {
-              const bytes = new Bytes(returned);
-              put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
-              success = true;
-            }
-          } catch (error) { failed = true; failure = error; }
-          const failures: unknown[] = failed ? [failure] : [];
-          // One matching receipt attempt only, even if it reports failure after
-          // changing Rust state. Staging cleanup never hides the loader error.
-          try { checked(core.linux_startup_source_finish(id, attempt, success ? 1 : 0)); }
-          catch (error) { failures.push(error); }
-          try { checked(core.linux_load_input(0)); }
-          catch (error) { failures.push(error); }
-          if (failures.length === 1) throw failures[0];
-          if (failures.length) throw new AggregateError(failures, 'Program source and completion cleanup failed');
+        let wasm: Uint8Array;
+        if (artifactLoader) {
+          artifact = u32(numeric(result(core.linux_startup_artifact_start(id))));
+          preparingArtifact = true;
+          const request = artifactRequest(artifact);
+          const returned = await artifactLoader(request);
           check();
+          // This private owned snapshot feeds BOTH validator and segment/facts
+          // preparation. No supplied Module or separately supplied data is accepted.
+          wasm = ownedInput(returned);
+        } else {
+          const source = numeric(result(core.linux_startup_source_start(id)));
+          const attempt = numeric(core.linux_result_auxiliary());
+          if (source) {
+            let success = false, failed = false, failure: unknown;
+            try {
+              if (!load) throw new Error('No program source loader');
+              const returned = await load(source);
+              // A cancelled callback still completes exactly once, without
+              // adopting its late bytes. Cancellation never asserts callback stop.
+              if (!cancelled && !aborted(signal)) {
+                const bytes = new Bytes(returned);
+                put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
+                success = true;
+              }
+            } catch (error) { failed = true; failure = error; }
+            const failures: unknown[] = failed ? [failure] : [];
+            // One matching receipt attempt only, even if it reports failure after
+            // changing Rust state. Staging cleanup never hides the loader error.
+            try { checked(core.linux_startup_source_finish(id, attempt, success ? 1 : 0)); }
+            catch (error) { failures.push(error); }
+            try { checked(core.linux_load_input(0)); }
+            catch (error) { failures.push(error); }
+            if (failures.length === 1) throw failures[0];
+            if (failures.length) throw new AggregateError(failures, 'Program source and completion cleanup failed');
+            check();
+          }
+          const translator = await loadTranslator(translatorModule!);
+          check();
+          const pointer = result(core.linux_startup_bytes(id));
+          const length = numeric(core.linux_result_length());
+          translating = true;
+          // whole synchronously copies the canonical bytes into translator memory.
+          // No view is stored across an export, callback or await in this adapter.
+          wasm = translator.whole(new Bytes(bufferOf(core.memory), numeric(pointer), length));
         }
-        const translator = await loadTranslator(translatorModule);
-        check();
-        const pointer = result(core.linux_startup_bytes(id));
-        const length = numeric(core.linux_result_length());
-        translating = true;
-        // whole synchronously copies the canonical bytes into translator memory.
-        // No view is stored across an export, callback or await in this adapter.
-        const wasm = translator.whole(new Bytes(bufferOf(core.memory), numeric(pointer), length));
         const originalModule = await fixedTranslatedModuleAsync(wasm);
         check();
         const sections = WebAssembly.Module.customSections(originalModule, 'sods.facts');
@@ -596,8 +655,15 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
           if (!Number.isSafeInteger(segment.offset) || segment.offset < 0 || end > top) throw new RangeError('Worker image segment exceeds memory');
           if (lengthOf(segment.bytes) && segment.offset < top && end > low) throw new RangeError('Stack overlaps image segment');
         }
-        translating = false; // Matching receipt is attempted only once.
-        checked(core.linux_startup_translation_finish(id, 1, wide(entry), wide(phdr), wide(phent), wide(phnum), wide(top)));
+        // Attempt exactly one matching receipt even if the export fails after
+        // changing Rust state. Never replay an uncertain completion.
+        if (preparingArtifact) {
+          preparingArtifact = false;
+          checked(core.linux_startup_artifact_finish(id, artifact, 1, wide(entry), wide(phdr), wide(phent), wide(phnum), wide(top)));
+        } else {
+          translating = false;
+          checked(core.linux_startup_translation_finish(id, 1, wide(entry), wide(phdr), wide(phent), wide(phnum), wide(top)));
+        }
         const guestHost = await import('../host/node/execution.ts');
         check();
         checked(core.linux_binding_room());
@@ -660,6 +726,11 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       } catch (error) {
         const cleanup: unknown[] = [];
         if (w) workerFailure(w, error);
+        if (preparingArtifact) {
+          preparingArtifact = false;
+          try { checked(core.linux_startup_artifact_finish(id, artifact, 0, 0n, 0n, 0n, 0n, 0n)); }
+          catch (failure) { cleanup.push(failure); }
+        }
         if (translating) {
           translating = false;
           try { checked(core.linux_startup_translation_finish(id, 0, 0n, 0n, 0n, 0n, 0n)); }
@@ -781,10 +852,10 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     },
     workerSettled(handle: ExecutionBinding): Promise<void> { return workerOf(handle).bridge.requestsSettled(); },
     runWorker,
-    runPath(handle: ExecutionBinding): Promise<{status: number; sourceFailures: number}> {
+    runPath(handle: ExecutionBinding, load?: Loader): Promise<{status: number; sourceFailures: number}> {
       const w = workerOf(handle);
       if (w.entry === undefined) throw new Error('Not a Rust path startup');
-      return runWorker(handle, w.entry);
+      return runWorker(handle, w.entry, load);
     },
     /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
     translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {
@@ -888,6 +959,32 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         catch (cleanup) { throw new AggregateError([error, cleanup], 'Translated execution failed and cleanup could not be confirmed'); }
         throw error;
       } finally { state.active = false; }
+    },
+    /** Neutral readonly root ingress. Rust seals one namespace atomically;
+     * no TS inode graph, path resolver or SourceId assignment is created here. */
+    prepareRoot(wire: Uint8Array<ArrayBuffer>, limits: PreparedFileLimits, fdLimit: number): void {
+      const {inodes, entries, fileBytes, tables, descriptions, slots, reads, contexts, views, holds, policy} = limits;
+      const values = [inodes, entries, fileBytes, tables, descriptions, slots, reads, contexts, views, holds, fdLimit].map(u32);
+      if ([policy.noExec, policy.noSuid, policy.noSymfollow].some(v => typeof v !== 'boolean')) throw new TypeError('Expected immutable view policy');
+      const flags = (policy.noExec ? 1 : 0) | (policy.noSuid ? 2 : 0) | (policy.noSymfollow ? 4 : 0);
+      if (lengthOf(wire) > 16 * 1024 * 1024) throw new RangeError('Prepared root wire exceeds profile budget');
+      const bytes = ownedInput(wire);
+      const pointer = result(core.linux_root_input(lengthOf(bytes)));
+      try { put(pointer, bytes); }
+      catch (error) {
+        try { checked(core.linux_root_input(0)); }
+        catch (cleanup) { throw new AggregateError([error, cleanup], 'Root staging and cleanup failed'); }
+        throw error;
+      }
+      checked(core.linux_prepared_root(values[0]!, values[1]!, values[2]!, values[3]!, values[4]!, values[5]!, values[6]!, values[7]!, values[8]!, values[9]!, flags, values[10]!));
+    },
+    /** Root-local immutable transport coordinates, not namespace lookup. */
+    rootSource(source: number): {pack: number; at: number; stored: number; size: number; raw: boolean} {
+      const pack = u32(numeric(result(core.linux_root_source(u32(source)))));
+      const size = safeNumber(core.linux_result_length()), at = safeNumber(core.linux_result_auxiliary()), stored = safeNumber(core.linux_result_endpoint());
+      const raw = core.linux_result_state();
+      if (raw > 1) throw new Error('Invalid root source storage mode');
+      return {pack, at, stored, size, raw: raw === 1};
     },
     /** Prepared namespace, not diagnostic preopened-table fallback. */
     preparePreparedFiles(limits: PreparedFileLimits): InodeBinding {

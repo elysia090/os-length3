@@ -34,7 +34,17 @@ test('standalone tarball exposes only sods entrances and complete JS/Worker clos
       const source=readFileSync(path,'utf8');
       for(const m of source.matchAll(/['"](\.[^'"\n]+\.(?:ts|js))['"]/g)) assert.ok(existsSync(resolve(dirname(path),m[1])),`${path}: ${m[1]}`);
     }
-    writeFileSync(join(consumer,'check.mjs'),`for(const name of ['translate','linux','host','targets']) await import('sods/'+name); console.log('ok');`);
+    writeFileSync(join(consumer,'check.mjs'),`
+      import assert from 'node:assert/strict';
+      for(const name of ['translate','linux','host','targets']) await import('sods/'+name);
+      const {managedRoot}=await import('sods/linux');
+      assert.equal(typeof managedRoot,'function');
+      // Execute the deferred installed-JS closure too, not merely its export.
+      // The empty module must be rejected before any physical guest admission.
+      await assert.rejects(managedRoot(new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0])),
+        {memories:1,actions:1}),/Unsupported Linux admission module|Managed root profile requires reviewed Linux Node/);
+      console.log('ok');
+    `);
     assert.match(execFileSync(process.execPath,['--no-experimental-strip-types','check.mjs'],{cwd:consumer,encoding:'utf8',timeout:30_000}),/ok/);
     assert.throws(()=>execFileSync(process.execPath,[builder,join(work,'built')],{stdio:'pipe'}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
