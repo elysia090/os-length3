@@ -266,14 +266,14 @@ export function createCapturedResultHost(module: WebAssembly.Module, memories: n
     waitForCaptureOutput: host.waitForCaptureOutput});
 }
 
-function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, policy?: CaptureResultPolicy) {
+function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, resultPolicy?: CaptureResultPolicy) {
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
-  validateLinuxMemorySurface(module, policy !== undefined);
+  validateLinuxMemorySurface(module, resultPolicy !== undefined);
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new Instance(module).exports as Admission;
-  const capture = policy ? core as unknown as ResultAdmission : undefined;
+  const capture = resultPolicy ? core as unknown as ResultAdmission : undefined;
   if (core.linux_abi_version() !== 7) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   if (capture) {
@@ -574,7 +574,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     return command(core.linux_syscall_path_finish(w.id, c.value, wide(actual), 0));
   };
   const captureWrite = capture && ((w: WorkerState, sequence: number, c: ReturnType<typeof command>): ReturnType<typeof command> => {
-    const count = checkedResultExtent(safeNumber(c.next), policy!.maximumRequest), source = safeNumber(c.target);
+    const count = checkedResultExtent(safeNumber(c.next), resultPolicy!.maximumRequest), source = safeNumber(c.target);
     if (c.endpoint !== 0) throw new Error('Captured write has a physical endpoint');
     const address = result(capture.linux_capture_result_write_start(w.id, sequence, c.value));
     try {
@@ -602,7 +602,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     const generation = result(capture.linux_capture_result_head());
     if (generation === 0n) return undefined; // Temporarily empty, not EOF or stop evidence.
     const slot = u32(safeNumber(core.linux_result_auxiliary()));
-    const length = checkedResultExtent(safeNumber(core.linux_result_length()), policy!.maximumRequest);
+    const length = checkedResultExtent(safeNumber(core.linux_result_length()), resultPolicy!.maximumRequest);
     const origin = core.linux_result_endpoint();
     const output = freeze({stream: resultStream(origin), bytes: new Bytes(length)});
     unsettledOutput = output;
@@ -766,7 +766,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
       const wire = startupWire(path, argv, env, options.random, options.cwd);
       if (aborted(signal)) throw abortReason(signal);
-      const physical = useStdio || policy?.borrowStdin ? await import('../host/node/stdio.ts') : undefined;
+      const physical = useStdio || resultPolicy?.borrowStdin ? await import('../host/node/stdio.ts') : undefined;
       const stdio = useStdio ? physical!.captureStdio() : physical?.captureStdin();
       if (aborted(signal)) throw abortReason(signal);
       put(result(core.linux_startup_input(wire.length)), wire);
@@ -1231,7 +1231,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         throw error;
       }
       checked(core.linux_prepared_root(values[0]!, values[1]!, values[2]!, values[3]!, values[4]!, values[5]!, values[6]!, values[7]!, values[8]!, values[9]!, flags, values[10]!));
-      if (capture) checked(capture.linux_capture_result_init(policy!.maximumRequest, policy!.queueBytes));
+      if (capture) checked(capture.linux_capture_result_init(resultPolicy!.maximumRequest, resultPolicy!.queueBytes));
     },
     /** Root-local immutable transport coordinates, not namespace lookup. */
     rootSource(source: number): {pack: number; at: number; stored: number; size: number; raw: boolean} {
