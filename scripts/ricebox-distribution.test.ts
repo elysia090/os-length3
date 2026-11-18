@@ -78,7 +78,11 @@ test('why composes its CLI, identity and shell extension without putting them in
     assert.match(name, /^os-length3-linux-0\.6\.5-x86_64-/);
     const archive = join(out, name);
     assert.equal(read(archive, 'root/usr/bin/why'), 'product-command');
-    assert.match(read(archive, 'root/etc/os-release'), /ID=length3/);
+    const identity = read(archive, 'root/etc/os-release');
+    assert.match(identity, /^NAME="ricebox"$/m);
+    assert.match(identity, /^ID=ricebox$/m);
+    assert.match(identity, /^VERSION_ID=0\.6\.5$/m);
+    assert.match(identity, /^PRETTY_NAME="ricebox 0\.6\.5"$/m);
     assert.match(read(archive, 'root/etc/profile.d/why.sh'), /Remote/);
     assert.match(read(archive, 'manifest'), /why.sha256=/);
     assert.match(read(archive, 'root/etc/apk/world'), /why/);

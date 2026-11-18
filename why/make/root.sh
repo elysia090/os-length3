@@ -1,6 +1,6 @@
 #!/bin/sh
-# why's composition of ricebox: the product command and shell policy are additions,
-# not dependencies of the distributor. Existing why releases retain their names.
+# Add the Why command and shell policy without replacing Ricebox's identity.
+# The archive name is kept for release and download compatibility.
 # sh why/make/root.sh PACKAGES OUT VERSION
 set -eu
 [ "$#" -eq 3 ] || { echo 'usage: root.sh PACKAGES OUT VERSION' >&2; exit 2; }
@@ -19,7 +19,6 @@ why="$here/target/x86_64-unknown-linux-musl/prompt/why"
 mkdir -p "$work/why/tree/usr/bin" "$work/why/tree/etc/profile.d"
 install -m 0644 "$here/why/make/shell.sh" "$work/why/tree/etc/profile.d/why.sh"
 install -m 0755 "$why" "$work/why/tree/usr/bin/why"
-printf '%s\n' 'NAME="OS Length3 Linux"' 'ID=length3' "VERSION=\"$version\"" "VERSION_ID=$version" "PRETTY_NAME=\"OS Length3 Linux $version\"" 'HOME_URL="https://github.com/elysia090/os-length3"' > "$work/why/tree/etc/os-release"
 sha=$(sha256sum "$why" | cut -d' ' -f1)
 source=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)
 if git -C "$here" status --porcelain -- why ':!why/app' ':!why/desktop' ':!why/test' ':!why/shipto/remote' 2>/dev/null | grep -q .; then source="$source+changed"; fi

@@ -45,7 +45,7 @@ const src = readFileSync(rsAt, 'utf8');
 const head = 'pub const RELEASES: &[Release] = &[';
 if (!src.includes(head)) throw new Error(`${rsAt} has no "${head}"`);
 const entry = `Release {
-    name: "OS Length3 Linux",
+    name: "ricebox",
     version: "${version}",
     sha256: "${sha256}",
     bytes: ${bytes},
@@ -58,7 +58,7 @@ const before = new RegExp(`Release \\{\\s*name: "[^"]*",\\s*version: "[^"]*",\\s
 if (before) {
   if (before[1] === webSha || !webSha) { console.log(`${name}: pinned already${before[1] ? ` (web ${before[1]})` : ''}`); process.exit(0); }
   if (before[1]) throw new Error(`${name} is pinned with web ${before[1]}; this one is ${webSha}: a released index is never changed`);
-  writeFileSync(rsAt, src.replace(before[0], entry));
+  writeFileSync(rsAt, src.replace(before[0], before[0].replace('web: ""', `web: "${webSha}"`)));
 } else {
   const end = src.indexOf('}];', src.indexOf(head));
   if (end < 0) throw new Error(`${rsAt}: RELEASES has no end ("}];")`);

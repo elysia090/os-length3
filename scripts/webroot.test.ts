@@ -135,13 +135,19 @@ test('one entry pins why for both: the root, and the index the browser reads it 
   copyFileSync(join(os, 'why/prompt/roots/pins.rs'), rs);
   const r = node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]);
   assert.equal(r.status, 0, r.stderr);
-  const pins = pinnedRoots(readFileSync(rs, 'utf8'));
+  const pinnedRicebox = readFileSync(rs, 'utf8');
+  assert.match(pinnedRicebox, /name: "ricebox"/);
+  const pins = pinnedRoots(pinnedRicebox);
   const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
   // Only the release made is pinned: a device installs the newest pin alone, and the releases before it are deleted.
   assert.equal(pins.length, 1);
   assert.deepEqual([pins[0]?.version, pins[0]?.sha256, pins[0]?.web, pins[0]?.bytes], ['9.9.9', about.sha256, about.index.sha256, statSync(rootFile).size]);
   // Again: nothing changes. Another index for a root pinned with one: refused, never changed.
   assert.match(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]).stdout, /pinned already/);
+  const historical = pinnedRicebox.replace('name: "ricebox"', 'name: "OS Length3 Linux"');
+  writeFileSync(rs, historical.replace(`web: "${about.index.sha256}"`, 'web: ""'));
+  assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]).status, 0);
+  assert.equal(readFileSync(rs, 'utf8'), historical, 'adding a web pin does not rename a historical root');
   const other = join(work, 'other');
   cpSync(out, other, {recursive: true});
   const json = Buffer.concat([readFileSync(join(other, about.index.path)), Buffer.from(' ')]);
