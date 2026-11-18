@@ -137,10 +137,17 @@ pub(crate) enum Target {
         endpoint: u64,
         direction: StreamDirection,
     },
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    CapturedOutput,
 }
 #[derive(Debug)]
 #[must_use = "release after host access has stopped; dropping retains the description"]
 pub(crate) struct StreamHold(Id);
+/// One retained captured OFD, not a consumer or an external access receipt.
+#[cfg(any(test, feature = "queued-output-probe"))]
+#[derive(Debug)]
+#[must_use = "return the held output description through Files"]
+pub(crate) struct OutputHold(Id);
 struct Description {
     refs: u64,
     target: DescriptionTarget,
@@ -151,6 +158,8 @@ enum DescriptionTarget {
         endpoint: u64,
         direction: StreamDirection,
     },
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    CapturedOutput(output::DestinationId),
 }
 struct FileDescription {
     place: Option<mount::Hold>,
@@ -1214,28 +1223,57 @@ impl Files {
         if endpoints.contains(&0) {
             return Err(Error::BadHandle);
         }
+        self.stdio_targets(limit, |i| DescriptionTarget::HostStream {
+            endpoint: endpoints[i],
+            direction: if i == 0 {
+                StreamDirection::Read
+            } else {
+                StreamDirection::Write
+            },
+        })
+    }
+    /// Only the matching registry calls this with its already validated lanes.
+    /// Captured descriptions contain no fallback physical endpoint.
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    fn queued_stdio(
+        &mut self,
+        stdin: u64,
+        outputs: [output::DestinationId; 2],
+        limit: u32,
+    ) -> Result<Table, Error> {
+        if stdin == 0 {
+            return Err(Error::BadHandle);
+        }
+        self.stdio_targets(limit, |i| {
+            if i == 0 {
+                DescriptionTarget::HostStream {
+                    endpoint: stdin,
+                    direction: StreamDirection::Read,
+                }
+            } else {
+                DescriptionTarget::CapturedOutput(outputs[i - 1])
+            }
+        })
+    }
+    fn stdio_targets(
+        &mut self,
+        limit: u32,
+        target: impl Fn(usize) -> DescriptionTarget,
+    ) -> Result<Table, Error> {
         if limit < 3 {
             return Err(Error::Capacity);
         }
         let table = self.table(limit)?;
-        for (i, endpoint) in endpoints.into_iter().enumerate() {
+        for i in 0..3 {
             let result = (|| {
                 let fd = self.admit_fd(&table, 0)?;
                 let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
-                let direction = if i == 0 {
-                    StreamDirection::Read
-                } else {
-                    StreamDirection::Write
-                };
                 publish(
                     &mut self.descriptions,
                     id,
                     Description {
                         refs: 1,
-                        target: DescriptionTarget::HostStream {
-                            endpoint,
-                            direction,
-                        },
+                        target: target(i),
                     },
                 );
                 self.tables[table.0.slot]
@@ -1271,6 +1309,8 @@ impl Files {
                 endpoint: *endpoint,
                 direction: *direction,
             },
+            #[cfg(any(test, feature = "queued-output-probe"))]
+            DescriptionTarget::CapturedOutput(_) => Target::CapturedOutput,
         })
     }
     pub(crate) fn hold_stream(
@@ -1303,6 +1343,32 @@ impl Files {
     }
     pub(crate) fn release_stream(&mut self, hold: StreamHold) -> Result<(), (Error, StreamHold)> {
         if let Err(error) = self.stream(&hold) {
+            return Err((error, hold));
+        }
+        self.release(hold.0);
+        Ok(())
+    }
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    pub(crate) fn hold_output(&mut self, table: &Table, fd: u32) -> Result<OutputHold, Error> {
+        let id = self.description(table, fd)?;
+        let d = get(&self.descriptions, self.owner, id)?;
+        if !matches!(d.target, DescriptionTarget::CapturedOutput(_)) {
+            return Err(Error::NotSupported);
+        }
+        let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
+        self.descriptions[id.slot].value.as_mut().unwrap().refs = refs;
+        Ok(OutputHold(id))
+    }
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    fn held_output(&self, hold: &OutputHold) -> Result<output::DestinationId, Error> {
+        match get(&self.descriptions, self.owner, hold.0)?.target {
+            DescriptionTarget::CapturedOutput(lane) => Ok(lane),
+            _ => Err(Error::BadHandle),
+        }
+    }
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    pub(crate) fn release_output(&mut self, hold: OutputHold) -> Result<(), (Error, OutputHold)> {
+        if let Err(error) = self.held_output(&hold) {
             return Err((error, hold));
         }
         self.release(hold.0);

@@ -149,3 +149,23 @@ closure, emptiness, discarded records, a stop request and a reported count
 cannot replace a matching sink receipt. Unknown external effects or access
 must retain their pending backing and cannot be retried. None is started by
 these private operations.
+
+## Held captured destination fence
+
+In the private capture foundation, a Files description can carry a captured
+destination instead of a physical endpoint. Only the exact matching registry
+can install its producer lanes into the private stdio table; installation
+rolls back the private table on failure. The two outputs use separate lanes
+unless explicitly bound to the same lane. Stdin remains a physical read.
+
+A non-copyable output hold retains the specific OFD, including through dup,
+table copies and numeric FD reuse. Resolving the hold checks that live OFD
+and the exact registry/lane without re-reading a current FD. The hold cannot
+be resolved as a physical stream. Releasing it does not close the lane,
+discard data, or prove the consumer or a host effect has stopped.
+
+Native continuation tests cover nonzero and zero captured writes, vectored
+and positioned writes, read direction, and captured sendfile. No case issues
+a physical command or reserves a source/action; a separate ordinary stdio
+table still issues the expected physical command. No positive guest capture,
+Worker startup/alias profile, or external drain is selected by this fence.

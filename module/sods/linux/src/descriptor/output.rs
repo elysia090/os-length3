@@ -1,6 +1,6 @@
 //! Private finite publication of retained file prefixes and owned copies.
 //! Not a guest pipe, cancellation gate, or external output/drain adapter.
-use super::{Error as FilesError, Files, ReadHold, ReadPrefix, Table};
+use super::{Error as FilesError, Files, OutputHold, ReadHold, ReadPrefix, Table};
 use std::num::{NonZeroU64, NonZeroUsize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +40,7 @@ struct RegistryId {
     serial: NonZeroU64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct DestinationId {
+pub(super) struct DestinationId {
     registry: RegistryId,
     lane: usize,
 }
@@ -546,11 +546,38 @@ impl LaneRegistry {
         files: &'a mut Files,
         id: DestinationId,
     ) -> Result<(&'a mut Files, &'a mut Queue), Error> {
-        if id.registry != self.id || id.registry.files != files.owner() {
+        if !self.owns(files, id) {
             return Err(Error::BadDestination);
         }
         let queue = self.lanes.get_mut(id.lane).ok_or(Error::BadDestination)?;
         Ok((files, queue))
+    }
+    fn owns(&self, files: &Files, id: DestinationId) -> bool {
+        id.registry == self.id && self.id.files == files.owner()
+    }
+    fn queued_stdio(
+        &self,
+        files: &mut Files,
+        stdin: u64,
+        outputs: [&Producer; 2],
+        limit: u32,
+    ) -> Result<Table, Error> {
+        let destinations = outputs.map(|producer| producer.0);
+        for destination in destinations {
+            if !self.owns(files, destination) || self.lanes.get(destination.lane).is_none() {
+                return Err(Error::BadDestination);
+            }
+        }
+        Ok(files.queued_stdio(stdin, destinations, limit)?)
+    }
+    fn held_writer<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        hold: &'a OutputHold,
+    ) -> Result<Writer<'a>, Error> {
+        let id = files.held_output(hold)?;
+        let (files, queue) = self.lane(files, id)?;
+        Ok(Writer { files, queue })
     }
     fn writer<'a>(
         &'a mut self,
@@ -590,6 +617,18 @@ impl Root {
     }
     pub(super) fn writer<'a>(&'a mut self, producer: &'a Producer) -> Result<Writer<'a>, Error> {
         self.registry.writer(&mut self.files, producer)
+    }
+    pub(super) fn queued_stdio(
+        &mut self,
+        stdin: u64,
+        outputs: [&Producer; 2],
+        limit: u32,
+    ) -> Result<Table, Error> {
+        self.registry
+            .queued_stdio(&mut self.files, stdin, outputs, limit)
+    }
+    pub(super) fn held_writer<'a>(&'a mut self, hold: &'a OutputHold) -> Result<Writer<'a>, Error> {
+        self.registry.held_writer(&mut self.files, hold)
     }
     pub(super) fn reader<'a>(&'a mut self, consumer: &'a Consumer) -> Result<Reader<'a>, Error> {
         self.registry.reader(&mut self.files, consumer)
@@ -1689,6 +1728,263 @@ mod tests {
             ));
         }
         files.let_go(table).unwrap();
+    }
+
+    #[test]
+    fn held_captured_output_survives_aliases_and_fd_reuse_without_becoming_physical() {
+        use super::super::{StreamDirection, Target};
+        let (mut files, _, _, old_table, _) = files(502);
+        files.let_go(old_table).unwrap();
+        let mut root = Root::new(files, 2).ok().unwrap();
+        let limits = || Limits {
+            bytes: 2,
+            entries: 2,
+            pins: 0,
+        };
+        let (stdout, consumer) = root.destination(limits()).unwrap();
+        let (stderr, error_consumer) = root.destination(limits()).unwrap();
+        let mut other = LaneRegistry::new(&mut root.files, 1).unwrap();
+        let (foreign, _) = other.destination(limits()).unwrap();
+        assert_eq!(stdout.0.lane, foreign.0.lane);
+        let table = root.queued_stdio(1, [&stdout, &stderr], 8).unwrap();
+        assert_eq!(root.files.target(&table, 1), Ok(Target::CapturedOutput));
+        assert_eq!(
+            root.files
+                .hold_stream(&table, 1, StreamDirection::Write)
+                .unwrap_err(),
+            FilesError::NotSupported,
+        );
+        assert_eq!(
+            root.files.hold_output(&table, 0).unwrap_err(),
+            FilesError::NotSupported
+        );
+        let alias = root.files.dup(&table, 1, 3, false).unwrap();
+        let forked = root.files.fork(&table).unwrap();
+        let held = root.files.hold_output(&table, 1).unwrap();
+        let via_alias = root.files.hold_output(&forked, alias).unwrap();
+        let different = root.files.hold_output(&forked, 2).unwrap();
+        assert!(matches!(
+            other.held_writer(&mut root.files, &held),
+            Err(Error::BadDestination)
+        ));
+
+        root.files.close(&table, 1).unwrap();
+        assert_eq!(root.files.dup(&table, 0, 1, false), Ok(1));
+        assert_eq!(
+            root.files.target(&table, 1),
+            Ok(Target::HostStream {
+                endpoint: 1,
+                direction: StreamDirection::Read
+            }),
+        );
+        assert_eq!(
+            root.files.hold_output(&table, 1).unwrap_err(),
+            FilesError::NotSupported
+        );
+        root.files.let_go(table).unwrap();
+        root.files.let_go(forked).unwrap();
+        drop((stdout, stderr));
+        for (hold, byte) in [(&held, b"A"), (&via_alias, b"B"), (&different, b"!")] {
+            let mut writer = root.held_writer(hold).unwrap();
+            let reservation = writer.reserve(n(1)).unwrap();
+            writer.publish_copy(reservation, byte).unwrap();
+        }
+        let (mut foreign_files, _, _, other_table, _) = self::files(504);
+        let (error, held) = foreign_files.release_output(held).unwrap_err();
+        assert_eq!(error, FilesError::BadHandle);
+        foreign_files.let_go(other_table).unwrap();
+        for hold in [held, via_alias, different] {
+            root.files.release_output(hold).unwrap();
+        }
+        let mut reader = root.reader(&consumer).unwrap();
+        for expected in [b"A", b"B"] {
+            assert_eq!(reader.front_bytes(), Ok(Some(&expected[..])));
+            assert!(reader.discard_front());
+        }
+        assert_eq!(reader.front_bytes(), Ok(None));
+        assert_eq!(
+            root.reader(&error_consumer).unwrap().front_bytes(),
+            Ok(Some(&b"!"[..]))
+        );
+    }
+
+    #[test]
+    fn captured_stdio_refuses_foreign_or_partial_install_and_can_explicitly_share_a_lane() {
+        let (mut files, _, _, old_table, _) = files(502);
+        files.let_go(old_table).unwrap();
+        let mut root = Root::new(files, 1).ok().unwrap();
+        let spec = || Limits {
+            bytes: 2,
+            entries: 2,
+            pins: 0,
+        };
+        let (a, consumer) = root.destination(spec()).unwrap();
+        let mut second = LaneRegistry::new(&mut root.files, 1).unwrap();
+        let (b, _) = second.destination(spec()).unwrap();
+        assert_eq!(
+            root.queued_stdio(1, [&a, &b], 8).unwrap_err(),
+            Error::BadDestination
+        );
+        assert_eq!(
+            root.queued_stdio(0, [&a, &a], 8).unwrap_err(),
+            Error::Source(FilesError::BadHandle)
+        );
+        assert_eq!(
+            root.queued_stdio(1, [&a, &a], 2).unwrap_err(),
+            Error::Source(FilesError::Capacity)
+        );
+        root.files.limits.descriptions = 2;
+        assert_eq!(
+            root.queued_stdio(1, [&a, &a], 8).unwrap_err(),
+            Error::Source(FilesError::Capacity)
+        );
+        assert_eq!(root.files.live_slots, 0);
+        assert!(root.files.descriptions.iter().all(|c| c.value.is_none()));
+        assert!(root.files.tables.iter().all(|c| c.value.is_none()));
+        root.files.limits.descriptions = 8;
+        let table = root.queued_stdio(1, [&a, &a], 8).unwrap();
+        let stdout = root.files.hold_output(&table, 1).unwrap();
+        let stderr = root.files.hold_output(&table, 2).unwrap();
+        for (hold, byte) in [(stdout, b"1"), (stderr, b"2")] {
+            let mut writer = root.held_writer(&hold).unwrap();
+            let reservation = writer.reserve(n(1)).unwrap();
+            writer.publish_copy(reservation, byte).unwrap();
+            root.files.release_output(hold).unwrap();
+        }
+        let mut reader = root.reader(&consumer).unwrap();
+        assert_eq!(reader.front_bytes(), Ok(Some(&b"1"[..])));
+        assert!(reader.discard_front());
+        assert_eq!(reader.front_bytes(), Ok(Some(&b"2"[..])));
+        root.files.let_go(table).unwrap();
+    }
+
+    #[test]
+    fn captured_output_continuation_never_issues_a_physical_command_or_source_preparation() {
+        use crate::execution::{Execution, ImageResult};
+        use crate::lease::Domain;
+        use crate::read::{ReadCapacity, Reads};
+        use crate::syscall::{Continuation, Step};
+        let mut tree = Tree::new(501, 8, 8, 32, made(0o755)).unwrap();
+        let input = tree
+            .lazy_file(tree.root(), b"lazy", made(0o600), 7, 2)
+            .unwrap();
+        let files = Files::new(
+            502,
+            tree,
+            FilesLimits {
+                contexts: 0,
+                tables: 4,
+                descriptions: 8,
+                slots: 12,
+            },
+        );
+        let mut root = Root::new(files, 1).ok().unwrap();
+        let (producer, consumer) = root
+            .destination(Limits {
+                bytes: 2,
+                entries: 1,
+                pins: 1,
+            })
+            .unwrap();
+        let captured = root.queued_stdio(1, [&producer, &producer], 8).unwrap();
+        let input_fd = root.files.open(&captured, input, false).unwrap() as u64;
+        let alias = root.files.dup(&captured, 1, 4, false).unwrap() as u64;
+        let physical = root.files.stdio([1, 2, 3], 8).unwrap();
+        let before = root.files.next_read_reservation;
+        let mut reads = Reads::new(&root.files, ReadCapacity::new(1).unwrap());
+        let mut domain = Domain::new(503, 1, 4).unwrap();
+        let binding = domain.bind(16).unwrap();
+        let mut execution = Execution::new(1, binding);
+        execution.image_begin(&mut domain, 16).unwrap();
+        execution
+            .image_finish(&mut domain, ImageResult::Installed)
+            .unwrap();
+        let mut continuation = Continuation::new(&execution).unwrap();
+        let invocation = execution.start(&mut domain).unwrap();
+        let marker = domain.effect(execution.binding(), 0).unwrap();
+        domain.cancel(marker).unwrap();
+        domain.retire(marker).unwrap();
+        let cases = [
+            (0, [alias, 0, 1, 0, 0, 0], Step::Return(-9)),
+            (1, [alias, 0, 1, 0, 0, 0], Step::Unsupported(1)),
+            (1, [alias, 0, 0, 0, 0, 0], Step::Unsupported(1)),
+            (20, [alias, 0, 1, 0, 0, 0], Step::Unsupported(20)),
+            (18, [alias, 0, 1, 0, 0, 0], Step::Unsupported(18)),
+            (40, [alias, input_fd, 0, 1, 0, 0], Step::Unsupported(40)),
+            (40, [alias, input_fd, 0, 0, 0, 0], Step::Unsupported(40)),
+        ];
+        let mut sequence = 1;
+        for (nr, args, expected) in cases {
+            assert_eq!(
+                continuation.enter_sequenced(
+                    &mut root.files,
+                    &captured,
+                    None,
+                    &mut reads,
+                    &mut domain,
+                    &mut execution,
+                    invocation,
+                    sequence,
+                    nr,
+                    args,
+                    0,
+                ),
+                Ok(expected)
+            );
+            assert!(!continuation.sendfile_pending());
+            assert!(execution.syscall_allowed(invocation).is_ok());
+            sequence += 1;
+        }
+        assert_eq!(root.files.next_read_reservation, before);
+        assert_eq!(root.files.offset(&captured, input_fd as u32), Ok((0, 0)));
+        assert_eq!(root.reader(&consumer).unwrap().front_bytes(), Ok(None));
+        assert!(continuation
+            .enter_sequenced(
+                &mut root.files,
+                &captured,
+                None,
+                &mut reads,
+                &mut domain,
+                &mut execution,
+                invocation,
+                sequence - 1,
+                1,
+                [1, 0, 1, 0, 0, 0],
+                0,
+            )
+            .is_err());
+        let Step::Stream {
+            endpoint,
+            action,
+            write,
+            ..
+        } = continuation
+            .enter_sequenced(
+                &mut root.files,
+                &physical,
+                None,
+                &mut reads,
+                &mut domain,
+                &mut execution,
+                invocation,
+                sequence,
+                1,
+                [1, 0, 1, 0, 0, 0],
+                0,
+            )
+            .unwrap()
+        else {
+            panic!("physical control");
+        };
+        assert_eq!(
+            (endpoint, write, action.sequence()),
+            (2, true, marker.sequence() + 1)
+        );
+        assert!(continuation
+            .abandon(&mut root.files, &mut reads, &mut domain, &mut execution)
+            .unwrap());
+        root.files.let_go(captured).unwrap();
+        root.files.let_go(physical).unwrap();
     }
 
     #[test]

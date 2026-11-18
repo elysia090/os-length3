@@ -527,6 +527,17 @@ impl Continuation {
                 Err(descriptor::Error::BadFd) => return Ok(Step::Return(-9)),
                 Err(error) => return Err(Error::Files(error)),
             };
+            // The staged captured target has no physical endpoint. Until a
+            // real captured write route exists it cannot become a host command,
+            // including zero-count writes. It is not readable.
+            #[cfg(any(test, feature = "queued-output-probe"))]
+            if target == descriptor::Target::CapturedOutput {
+                return Ok(if nr == 0 {
+                    Step::Return(-9)
+                } else {
+                    Step::Unsupported(nr)
+                });
+            }
             if let descriptor::Target::HostStream {
                 endpoint,
                 direction,
