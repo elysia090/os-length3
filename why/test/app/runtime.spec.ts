@@ -355,12 +355,21 @@ test('a look changed in .everyday is worn, what would not be read left out, and 
   await app.runtime.makeDotfile('.everyday', 'ground: #e9e4d8\npace: 0.5\nink: #e9e4d8\nnonsense; } body { display: none\n');
   await expect.poll(worn).toBe(':root { --ground: #e9e4d8; --pace: 0.5; }');
   expect(await ground()).toBe('#e9e4d8');
+  const notes = app.runtime.dotfiles.getByRole('status').filter({hasText: 'Theme lines not applied'});
+  await expect(notes).toContainText('Line 3: ink would not be read on ground');
+  await expect(notes).toContainText('Line 4: not a change');
 
   await app.open();
   await expect.poll(ground).toBe('#e9e4d8');
 
   await app.runtime.open('Dotfiles');
   await app.runtime.dotfile('.everyday').click();
+  await expect(notes).toContainText('Line 3: ink would not be read on ground');
+  await app.runtime.text('.everyday').fill('ground: #e9e4d8\npace: 0.5\n');
+  await app.runtime.dotfiles.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(notes).toHaveCount(0);
+  expect(await ground()).toBe('#e9e4d8');
+
   const ask = await app.runtime.askRemove('.everyday');
   await app.answer(ask.getByRole('button', {name: 'Remove', exact: true}), ask);
   await expect.poll(worn).toBeNull();

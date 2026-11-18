@@ -7,6 +7,7 @@ import {allSessions, type Prompt} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
 import {onState} from '../../../home/state.ts';
 import {unfold} from '../../ui/glide.ts';
+import {NAME as LOOK, worn} from '../../ui/look.ts';
 import {button} from './parts.ts';
 
 // Runtime's Dotfiles: what every Prompt starts with in /root, in one box, a row each, the one open lit with its text
@@ -106,12 +107,24 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   const close = button(t('Close'));
   close.addEventListener('click', () => w.paint());
   const acts = h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save);
-  const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, error, acts);
+  const notes = !fresh && name === LOOK ? themeNotes(text) : null;
+  const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, notes, error, acts);
   remove.addEventListener('click', () => askRemove(name, box, acts, remove, error, w));
   // Saved while Prompts run: they have what they started with until they start again. Under the box, so Save stays put.
   const now = saved ? running() : [];
   if (now.length) box.append(startAgain(now, w));
   return box;
+}
+
+/** What's left out of this file, whether it is applied here or still waits to be taken. */
+function themeNotes(text: string): HTMLElement | null {
+  const {left} = worn(text);
+  if (!left.length) return null;
+  const shown = left.slice(0, 8), more = left.length - shown.length;
+  return h('div', {class: 'muted small', role: 'status'},
+    h('p', {class: 'dot-note'}, t('Theme lines not applied')),
+    ...shown.map(({line, why}) => h('p', {class: 'dot-note'}, line ? t('Line {n}: {reason}', {n: line, reason: why}) : why)),
+    more ? h('p', {class: 'dot-note'}, tn('{n} more line', '{n} more lines', more)) : null);
 }
 
 /** Asked in the box, where its deeds were: it goes from every device. Remove stays under the pointer, Not now at the right. */

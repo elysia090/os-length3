@@ -106,6 +106,8 @@ export default {
   'Dotfiles': 'dotfile',
   'Dotfiles must begin with a dot (e.g. .profile)': 'dotfile の名前は「.」から始めてください（例：.profile）',
   'A dotfile named "{name}" already exists': '「{name}」という名前の dotfile は既に存在します',
+  'Theme lines not applied': 'テーマに反映されない行',
+  'Line {n}: {reason}': '{n}行目：{reason}',
   '"{name}" will be removed across all devices.': '{name}はすべてのデバイスから削除されます。',
   'Active Prompts retain current configuration until restarted.': '実行中の Prompt には、再起動するまで設定が残ります。',
   'Prompt in {list} applies updates on restart': '{list}の Prompt には、次回起動時に反映されます',
