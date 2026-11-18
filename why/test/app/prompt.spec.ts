@@ -1,7 +1,6 @@
 import {existsSync} from 'node:fs';
-import {join} from 'node:path';
 import {expect, test} from './fixtures.ts';
-import {OS} from './paths.ts';
+import {WEBROOT_MANIFEST} from './paths.ts';
 
 // The prompt box and the Prompt (the repo's sh) behind it. Tab completes a
 // path from the repo's tree as the store has it, so it needs no Prompt. The
@@ -11,7 +10,6 @@ import {OS} from './paths.ts';
 // or `node scripts/prompt-files.ts` from the release), which the build then
 // carries.
 
-const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 
 // Each test opens the app on 'hello', made from C's files and left open in Forge: made once for the worker and kept
 // (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
@@ -52,7 +50,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
     // Asked for, it is run: without the Prompt's files that is a failure, not a skip.
-    expect(existsSync(PROMPT), 'this build carries no why (why/app/public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(WEBROOT_MANIFEST), 'Build or stage the app web root before running Prompt selftests').toBe(true);
     test.setTimeout(300_000);
     await app.forge.startPrompt('hello');
   });

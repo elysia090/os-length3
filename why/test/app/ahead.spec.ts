@@ -1,9 +1,9 @@
 import {existsSync} from 'node:fs';
-import {basename, join} from 'node:path';
+import {basename} from 'node:path';
 import {aheadFor} from '../../../ricebox/distribution/runtime/pretranslate.ts';
 import type {Index} from '../../prompt/userland.ts';
 import {expect, test} from './fixtures.ts';
-import {OS} from './paths.ts';
+import {WEBROOT_MANIFEST} from './paths.ts';
 
 // What a Prompt is likely to run next, translated by the browser while it waits for a line (ricebox/distribution/runtime/pretranslate.ts): the
 // light programs of the root, what its shell runs itself as one moves first, then what anyone reaches for. Kept before
@@ -17,7 +17,7 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
 
   test('what is likely run next is translated while a Prompt waits, a C repo\'s compiler not', async ({app}) => {
-    expect(existsSync(join(OS, 'why/app/public', 'webroot', 'webroot.json')), 'this build carries no why (why/app/public/webroot)').toBe(true);
+    expect(existsSync(WEBROOT_MANIFEST), 'Build or stage the app web root before running Prompt selftests').toBe(true);
     test.setTimeout(600_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

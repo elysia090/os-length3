@@ -38,7 +38,7 @@ import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
-import {OS, OUT, LOGS} from './paths.ts';
+import {OS, OUT, LOGS, WEBROOT_MANIFEST} from './paths.ts';
 import {CORE_PARTS} from '../../../scripts/core-wasm.ts';
 import {scratch} from '../../../scripts/scratch.ts';
 
@@ -74,7 +74,7 @@ const SOURCES = ['why/app', 'why/lib.rs', ...CORE_PARTS.map((part) => `why/${par
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when the app has a web root to serve. */
-const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'why/app/public', 'webroot', 'webroot.json'))});
+const carries = () => JSON.stringify({prompt: existsSync(WEBROOT_MANIFEST)});
 
 /** Build unless why/test/app/.dist is newer than everything it is made from, and carries the same. */
 async function build() {
