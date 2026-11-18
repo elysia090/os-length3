@@ -4,14 +4,14 @@ import {test} from 'node:test';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE} from '../../runtime/linux/process.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
+import {translatorWasm as wasm} from '../fixtures/runtime.ts';
 
-// tests/programs/reexec.c as run.sh builds it (stripped: its first translation cannot see what it calls through pointers),
+// test/programs/reexec.c as run.sh builds it (stripped: its first translation cannot see what it calls through pointers),
 // here with the counts that say what happened to it: the code it reached later gathered into one module once it ran
 // again, memories taken from the processes before (one with its program's read-only bytes in it already), and what
 // it printed the same as it printed natively.
 
 const out = new URL('../programs/out/', import.meta.url);
-const wasm = new URL('../../target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url);
 const have = existsSync(new URL('reexec', out)) && existsSync(new URL('reexec.native', out)) && existsSync(wasm);
 
 test('a program run again is one module, on a memory let go of, and says what it said natively', {skip: !have}, async () => {

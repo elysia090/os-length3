@@ -236,10 +236,31 @@ sh test/programs/run.sh                          every test program, native besi
 sh test/muk/run.sh BUSYBOX                       muk's own corpus, with muk on this Linux (a static busybox its shell)
 sh test/prompt/run.sh                            prompt's own check, with prompt on this Linux
 cargo test --locked --release                    the translator's own, the identity's and the cache's
+node --test --test-concurrency=3 test/runtime/*.test.ts
 SODS_INLINE=1 node runtime/run.ts PROGRAM        its threads in turn on one thread, not each in a Worker
 SODS_SYSCALLS=1 SODS_FAULTS=1 SODS_TIMING=1 node runtime/run.ts PROGRAM
 # Optional syscall, fault and timing diagnostics.
 ```
+
+The runtime tests can run without a guest root. Build the translator and the
+native fixtures with `test/programs/run.sh` for the executable integration
+cases. To use translators built in another directory, set `SODS_NATIVE`,
+`SODS_TRANSLATOR_WASM`, and `SODS_CURRENT_TRANSLATOR_WASM` to the matching files.
+The last variable explicitly opts in to assertions about the current source.
+
+BusyBox integration tests need an ELF, its whole-program translation, and
+the translator that prepared the release. Run the following from the
+repository root with a prepared web root and a new output directory:
+
+```sh
+node ricebox/distribution/verification/test/fixtures/stage-sods-userland.ts WEB_ROOT target/sods-release-fixture
+SODS_TEST_USERLAND_DIR=target/sods-release-fixture node --test --test-concurrency=3 ricebox/sods/test/runtime/*.test.ts
+```
+
+An explicitly selected fixture must contain `busybox`, `busybox.wasm`, and
+`sods.wasm`. A developer checkout with an existing `target/userland/` can
+use it without the environment variable. If neither is present, only the
+BusyBox-dependent cases skip.
 
 ### Arithmetic flags across calls
 

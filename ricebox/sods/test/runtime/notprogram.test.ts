@@ -5,12 +5,12 @@ import {E, FsError} from '../../runtime/linux/fs.ts';
 import {Kernel} from '../../runtime/linux/process.ts';
 import {NotAProgram, loadTranslator} from '../../runtime/translation/translator.ts';
 import {have, shell} from './busybox.ts';
+import {translatorWasm as translator} from '../fixtures/runtime.ts';
 
 // A file that is run and is no program the translator takes: the exec's own failure (ENOEXEC, as Linux says of a
 // file it cannot run), not the host's error, and the shell that ran it goes on. The numbers in the names are the
 // issues'.
 
-const translator = new URL('../../target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url);
 const built = existsSync(translator);
 const quiet = {write() {}, read: () => null};
 
@@ -90,7 +90,7 @@ test('the sods wrapper supplies its rejected-input test without taking a kernel 
   assert.equal(translate.notProgram('NotAProgram'), false);
 });
 
-test('#143: an ELF cut short, of another class or machine, not an executable, or dynamically linked is ENOEXEC', {skip: !built && 'needs the translator built (tests/programs/run.sh)'}, async () => {
+test('#143: an ELF cut short, of another class or machine, not an executable, or dynamically linked is ENOEXEC', {skip: !built && 'needs the built Sods translator'}, async () => {
   const kernel = new Kernel({console: quiet, translate: await loadTranslator(readFileSync(translator))});
   const cases: [string, Uint8Array][] = [
     ['six bytes of a header', new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1])],
@@ -113,7 +113,7 @@ test('#143: an ELF cut short, of another class or machine, not an executable, or
   assert.notEqual(refused(kernel, header()), E.NOEXEC);
 });
 
-test('#143: a shell that runs such a file is told, and goes on to its next command', {skip: !have && 'needs BusyBox staged (scripts/userland.sh)'}, async () => {
+test('#143: a shell that runs such a file is told, and goes on to its next command', {skip: !have && 'needs the staged Sods userland fixture'}, async () => {
   const {kernel, out} = await shell('/bad-elf; echo "status $?"; echo survived', ['sh', 'echo']);
   kernel.vfs.writeFile('/bad-elf', new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1]), 0o755);
   // (Before: the translator's error was thrown out of the kernel, and nothing after the file ran.)

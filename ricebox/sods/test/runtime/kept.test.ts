@@ -5,13 +5,12 @@ import {File, Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE, type Image, type Keeper} from '../../runtime/linux/process.ts';
 import type {Taken} from '../../runtime/translation/kept.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
-import {have} from './busybox.ts';
+import {hasUserland as have, userland} from '../fixtures/runtime.ts';
 
 // What one run translated, kept for the next: the code a program reached later (Image.adopt), and a whole program's
 // translation taken from a keeper (Kernel.image) instead of being made again. The next run says the same and
 // translates nothing.
 
-const stage = new URL('../../../../target/userland/', import.meta.url);
 // One shell, no program run again by exec: a program run again is translated again as one module once it has reached
 // enough later (Kernel.consolidate), and what it reaches after follows on from that one, not from its first.
 const SCRIPT = 'echo one; for x in a b c; do echo $x; done | while read l; do echo "$l"; done; printf "%s-%d\\n" two 2; test -d / && echo three';
@@ -23,7 +22,7 @@ const SCRIPT = 'echo one; for x in a b c; do echo $x; done | while read l; do ec
  */
 async function kernel({keeper = null}: {keeper?: Keeper | null} = {}): Promise<{k: Kernel; vfs: Vfs; reads: {n: number}; out: () => string}> {
   const vfs = new Vfs();
-  const elf = readFileSync(new URL('busybox', stage));
+  const elf = readFileSync(userland.busybox);
   const busybox = vfs.writeFile('/bin/busybox', elf, 0o755);
   for (const a of ['sh', 'cat', 'printf', 'test']) vfs.symlink('busybox', `/bin/${a}`);
   // As a pack's file is (pack.ts): its bytes read when it is first read, its origin where they are.
@@ -33,7 +32,7 @@ async function kernel({keeper = null}: {keeper?: Keeper | null} = {}): Promise<{
   file.origin = 'pack_0_1';
   vfs.mkdirp('/usr/bin').entries.set('echo', file);
   let out = '';
-  const translate = await loadTranslator(readFileSync(new URL('sods.wasm', stage)));
+  const translate = await loadTranslator(readFileSync(userland.translator));
   const k = new Kernel({
     vfs, keeper, translate,
     console: {interactive: false, write: (_, b) => { out += new TextDecoder().decode(b); }, read: () => null, ready: () => false},
@@ -105,9 +104,9 @@ test('kept: a root program translated once is taken from the keeper by the next 
 
 test('kept: a root program translated ahead (ahead.ts, as the page does while a person reads) is run from that, never translated or read', {skip: !have}, async () => {
   const {translatedAhead} = await import('../../runtime/translation/ahead.ts');
-  const elf = readFileSync(new URL('busybox', stage));
+  const elf = readFileSync(userland.busybox);
   // As its pack holds it, zstd's frame or as it is: here as it is.
-  const {wasm, segments} = await translatedAhead(readFileSync(new URL('sods.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});
+  const {wasm, segments} = await translatedAhead(readFileSync(userland.translator), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});
   const kept: Taken = {module: new WebAssembly.Module(wasm), segments, size: wasm.length, more: []};
   let asked = 0;
   const keeper: Keeper = {has: (origin) => origin === 'pack_0_1', take: () => (++asked === 1 ? undefined : kept)};

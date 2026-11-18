@@ -7,24 +7,23 @@ import {CH, OP, Outbox, REPLY} from '../../runtime/linux/channel.ts';
 import {Process} from '../../runtime/linux/process.ts';
 import {prepare} from '../../runtime/translation/share.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
-import {have} from './busybox.ts';
+import {hasUserland as have, userland} from '../fixtures/runtime.ts';
 
 // Each thread in a Worker of its own, memory shared: what a cross-origin
 // isolated page runs. Here a thread that never makes a call cannot hold
 // the others, and one killed while it computes ends at once.
 
-const stage = new URL('../../../../target/userland/', import.meta.url);
 
 async function shell(script: string, {input = null, said = null, files = {}, observe}: {input?: string | null; said?: [number, string][] | null;
   files?: Record<string, Uint8Array>; observe?: (kernel: RemoteKernel) => void} = {}): Promise<{status: number; out: string; ms: number}> {
   const vfs = new Vfs();
   for (const [path, bytes] of Object.entries(files)) vfs.writeFile(path, bytes, 0o755);
-  const busybox = vfs.writeFile('/bin/busybox', readFileSync(new URL('busybox', stage)), 0o755);
+  const busybox = vfs.writeFile('/bin/busybox', readFileSync(userland.busybox), 0o755);
   for (const a of ['sh', 'sleep', 'cat', 'kill', 'echo', 'dd', 'wc', 'sha256sum', 'yes', 'head']) vfs.symlink('busybox', `/bin/${a}`);
   let out = '';
   const typed = input ? [new TextEncoder().encode(input)] : [];
   const kernel = new RemoteKernel({
-    vfs, translate: await loadTranslator(readFileSync(new URL('sods.wasm', stage))),
+    vfs, translate: await loadTranslator(readFileSync(userland.translator)),
     console: {
       interactive: false,
       write: (fd, b) => { const text = new TextDecoder().decode(b); out += text; said?.push([fd, text]); },
@@ -33,7 +32,7 @@ async function shell(script: string, {input = null, said = null, files = {}, obs
     },
   });
   observe?.(kernel);
-  const {wasm, segments} = prepare(readFileSync(new URL('busybox.wasm', stage)), {shared: true});
+  const {wasm, segments} = prepare(readFileSync(userland.translated), {shared: true});
   kernel.prebuilt(busybox, new WebAssembly.Module(wasm), segments);
   const t0 = performance.now();
   const status = await kernel.spawn('/bin/sh', ['/bin/sh', '-c', script], ['PATH=/bin'], '/');

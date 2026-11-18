@@ -154,6 +154,12 @@ jobs:
         env:
           RICEBOX_RELEASE_DIR: why/app/public/webroot
         run: node --test ricebox/distribution/verification/test/release-shell.integration.ts
+      - name: Test Sods with the BusyBox shipped in the web root
+        env:
+          SODS_TEST_USERLAND_DIR: target/sods-release-fixture
+        run: |
+          node ricebox/distribution/verification/test/fixtures/stage-sods-userland.ts why/app/public/webroot "$SODS_TEST_USERLAND_DIR"
+          node --test --test-concurrency=3 ricebox/sods/test/runtime/{interrupt,kept,notprogram,proc,remote,tty,waiting}.test.ts
       # Each line's box is made by muk on both sides (ricebox/distribution/verification/programs.ts), natively in a user namespace
       # of the runner's own, which Ubuntu's AppArmor restricts by default.
       - name: Allow user namespaces
@@ -356,11 +362,13 @@ jobs:
       - name: Test sods
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path ricebox/sods/Cargo.toml
-      - name: Test current translator branches and call flags
+      - name: Test the Sods runtime with current translators
         if: matrix.part == 'native'
         env:
           SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
-        run: node --test ricebox/sods/test/runtime/branch-counter-current.test.ts ricebox/sods/test/runtime/call-flags-current.test.ts
+          SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          SODS_NATIVE: ricebox/sods/target/release/sods
+        run: node --test --test-concurrency=3 ricebox/sods/test/runtime/*.test.ts
       # Verify the distribution against the translator binaries this job just built.
       - name: Test Ricebox with real Sods and Muk
         if: matrix.part == 'native'

@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-// node tests/proc-parity.ts [--table FILE] [NAME...]
+// node test/runtime/proc-parity.ts [--table FILE] [NAME...]
 //
 // The process and I/O cases, each run by the same BusyBox ELF on this Linux
-// and under muk (runtime/run.ts), compared on stdout and exit status,
+// and under Sods (runtime/run.ts), compared on stdout and exit status,
 // with the time each took and when its first line came (a background job
 // that holds its shell shows there). Prints a Markdown table; exits 1 if
-// any case differs. BusyBox is the one the Prompt has (scripts/userland.sh
-// stages it).
+// any case differs. It takes the ELF from the staged userland fixture.
 import {spawn} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {constants, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {userland} from '../fixtures/runtime.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const BUSYBOX = fileURLToPath(new URL('../../../../target/userland/busybox', import.meta.url));
+const BUSYBOX = userland.busybox;
 const RUN = join(here, '..', '..', 'runtime', 'run.ts');
 
 /** A case: what runs, and whether it is slow (left out unless PARITY_SLOW). */
@@ -60,7 +60,7 @@ export async function runCase(c: Case, bin: string): Promise<{native: Ran; box: 
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  if (!existsSync(BUSYBOX)) { console.error(`no BusyBox at ${BUSYBOX} (scripts/userland.sh stages it)`); process.exit(2); }
+  if (!existsSync(BUSYBOX)) { console.error(`no BusyBox at ${BUSYBOX} (see the Sods test fixture instructions)`); process.exit(2); }
   const args = process.argv.slice(2);
   let table = null;
   if (args[0] === '--table') { args.shift(); table = args.shift(); }
@@ -70,7 +70,7 @@ if (isMain) {
   const bin = mkdtempSync(join(tmpdir(), 'proc-parity-'));
   symlinkSync(BUSYBOX, join(bin, 'busybox'));
   const f = (ms: number | null): string => (ms === null ? '-' : `${(ms / 1000).toFixed(3)} s`);
-  const rows = ['| case | native | muk | same | first line native / muk |', '|---|---|---|---|---|'];
+  const rows = ['| case | native | Sods | same | first line native / Sods |', '|---|---|---|---|---|'];
   let bad = 0;
   try {
     for (const c of want) {
