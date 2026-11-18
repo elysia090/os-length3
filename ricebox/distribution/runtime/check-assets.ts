@@ -2,6 +2,11 @@
 import {prepare, type Segment} from '../../sods/runtime/translate.ts';
 import {digest} from './download.ts';
 
+export type AssetCheck = {bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}};
+export type AssetStore = {keep: {url: string; cache: string; parts: Uint8Array[]; seal: boolean}};
+export type AssetRequest = AssetCheck | AssetStore;
+export type AssetReply = {bytes?: ArrayBuffer; sha256?: string; size?: number; segments?: Segment[] | null; error?: string};
+
 export interface CheckedAsset {
   bytes: Uint8Array;
   sha256: string;

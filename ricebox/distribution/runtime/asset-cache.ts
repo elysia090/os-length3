@@ -1,7 +1,7 @@
 // Browser Cache Storage, quota policy and off-thread integrity checks for a
 // distribution's derived bytes. The loader owns which release assets are live.
 import type {Segment} from '../../sods/runtime/translate.ts';
-import {checkAsset, storedParts} from './check-assets.ts';
+import {checkAsset, storedParts, type AssetReply, type AssetRequest} from './check-assets.ts';
 
 export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: {
   base: string;
@@ -60,17 +60,44 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
   /** Start the byte-check Worker on demand; the main thread is the fallback. */
   let checker: Worker | null | undefined;
   let asking = 0;
-  type Reply = {bytes?: ArrayBuffer; sha256?: string; size?: number; segments?: Segment[] | null; error?: string};
-  const answers = new Map<number, (reply: Reply) => void>();
+  const answers = new Map<number, (reply: AssetReply) => void>();
   const worker = (): Worker | null => {
     if (checker !== undefined) return checker;
     try {
-      checker = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
-      checker.addEventListener('message', (e) => { answers.get(e.data.id)?.(e.data); answers.delete(e.data.id); });
-      checker.addEventListener('error', () => { checker = null; for (const f of answers.values()) f({error: 'stopped'}); answers.clear(); });
+      const w = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
+      checker = w;
+      w.addEventListener('message', e => {
+        const reply = e.data as AssetReply & {id: number};
+        const answer = answers.get(reply.id);
+        answers.delete(reply.id);
+        answer?.(reply);
+      });
+      const lost = () => {
+        if (checker !== w) return;
+        checker = null;
+        for (const answer of answers.values()) answer({error: 'Worker response lost'});
+        answers.clear();
+        try { w.terminate(); } catch { /* termination was not confirmed */ }
+      };
+      w.addEventListener('error', lost);
+      w.addEventListener('messageerror', lost);
     } catch { checker = null; }
     return checker;
   };
+
+  /** Null means sending failed before the Worker took ownership. */
+  function send(to: Worker, message: AssetRequest, transfer: ArrayBuffer[]): Promise<AssetReply | null> {
+    const id = ++asking;
+    return new Promise(resolve => {
+      answers.set(id, resolve);
+      try { to.postMessage({id, ...message}, transfer); }
+      catch {
+        answers.delete(id);
+        resolve(null);
+      }
+    });
+  }
+
   /**
    * Hash the bytes, optionally after decompression. A caller that lends its
    * buffer must use the returned bytes. If the Worker stops while holding that
@@ -82,17 +109,18 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
   async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean, as?: {shared: boolean}): Promise<{bytes: Uint8Array; sha256: string; size?: number; segments?: Segment[] | null}> {
     const w = worker();
     if (w) {
-      const own = lend && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
-      const buf = (own ? bytes.buffer : bytes.slice().buffer) as ArrayBuffer;
-      const id = ++asking;
-      const r = await new Promise<Reply>((resolve) => {
-        answers.set(id, resolve);
-        w.postMessage({id, bytes: buf, unpack, ...(as ? {prepare: as} : {})}, [buf]);
-      });
-      if (r.bytes && r.sha256) return {bytes: new Uint8Array(r.bytes), sha256: r.sha256, ...(as ? {size: r.size, segments: r.segments ?? null} : {})};
-      // Not worked out there: here, with what was lent back (or the caller's own, when it was a copy that went).
-      if (own) bytes = r.bytes ? new Uint8Array(r.bytes) : bytes;
-      if (own && !r.bytes) throw new Error('root: a file could not be checked');
+      const own = lend && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+      const buffer = own ? bytes.buffer as ArrayBuffer : new Uint8Array(bytes).buffer;
+      const reply = await send(w, {bytes: buffer, unpack, ...(as ? {prepare: as} : {})}, [buffer]);
+      if (reply?.bytes && reply.sha256) {
+        return {bytes: new Uint8Array(reply.bytes), sha256: reply.sha256, ...(as ? {size: reply.size, segments: reply.segments ?? null} : {})};
+      }
+      // Retry locally when the original is still here. After a handoff a
+      // lent buffer must have been returned explicitly before it can be used.
+      if (own && reply) {
+        if (!reply.bytes) throw new Error('root: a file could not be checked');
+        bytes = new Uint8Array(reply.bytes);
+      }
     }
     return checkAsset(bytes, unpack, as);
   }
@@ -130,15 +158,10 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
     try {
       if (!await roomFor(c, url, size)) return false;
       const w = worker();
-      if (w) {
-        const id = ++asking;
-        const r = await new Promise<Reply>((resolve) => {
-          answers.set(id, resolve);
-          // (A shared buffer is not moved: it goes as itself, as shared memory does.)
-          const moved = lend ? [...new Set(parts.map((p) => p.buffer))].filter((b): b is ArrayBuffer => b instanceof ArrayBuffer) : [];
-          w.postMessage({id, keep: {url: whole(url), cache: cache(), parts, seal}}, moved);
-        });
-        if (r.size === undefined) return false;
+      const moved = lend ? [...new Set(parts.map(p => p.buffer))].filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer) : [];
+      const reply = w ? await send(w, {keep: {url: whole(url), cache: cache(), parts, seal}}, moved) : null;
+      if (reply) {
+        if (reply.size === undefined) return false;
       } else {
         const body = await storedParts(parts, seal);
         await c.put(url, new Response(body as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(body.length)}}));

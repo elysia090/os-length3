@@ -1,11 +1,8 @@
 // Off-thread integrity checks and Cache Storage writes for the page. Returned
 // bytes travel back by transfer; the page decides which assets are retained.
-import {checkAsset, storedParts} from './check-assets.ts';
+import {checkAsset, storedParts, type AssetRequest, type AssetStore} from './check-assets.ts';
 
-type Keep = {id: number; keep: {url: string; cache: string; parts: Uint8Array[]; seal: boolean}};
-type Check = {id: number; bytes: ArrayBuffer; unpack: boolean; prepare?: {shared: boolean}};
-
-async function keep({id, keep: k}: Keep) {
+async function keep({id, keep: k}: AssetStore & {id: number}) {
   try {
     const out = await storedParts(k.parts, k.seal);
     const c = await caches.open(k.cache);
@@ -16,7 +13,7 @@ async function keep({id, keep: k}: Keep) {
   }
 }
 
-addEventListener('message', async (e: MessageEvent<Check | Keep>) => {
+addEventListener('message', async (e: MessageEvent<AssetRequest & {id: number}>) => {
   if ('keep' in e.data) { void keep(e.data); return; }
   const {id, bytes: lent, unpack, prepare} = e.data;
   try {

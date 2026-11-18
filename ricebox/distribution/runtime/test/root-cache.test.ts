@@ -183,3 +183,60 @@ test('both execution profiles require the Muk descriptor to name its digest', as
   }
   assert.equal(f.requests.includes(f.url(base + path)), false);
 });
+
+test('asset checks copy shared buffers instead of trying to transfer them', async t => {
+  const base = '/layers/', f = fixture(t, base);
+  class CheckingWorker extends EventTarget {
+    postMessage(data: {id: number; bytes: ArrayBuffer}, transfer: ArrayBuffer[]) {
+      const received = structuredClone(data, {transfer});
+      const bytes = new Uint8Array(received.bytes);
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', {
+        data: {id: received.id, bytes: received.bytes, sha256: hash(bytes)},
+      })));
+    }
+  }
+  f.install('Worker', CheckingWorker);
+  const storage = createAssetCache({base, usedKey: 'used'});
+  const source = new Uint8Array(new SharedArrayBuffer(4));
+  source.set([1, 2, 3, 4]);
+  const answer = await storage.checked(source, false, true);
+  assert.deepEqual(answer.bytes, source);
+  assert.equal(answer.sha256, hash(source));
+  assert.equal(source.byteLength, 4);
+  assert.ok(answer.bytes.buffer instanceof ArrayBuffer);
+});
+
+test('asset operations fall back locally only when a Worker rejected the handoff', async t => {
+  const base = '/layers/', f = fixture(t, base);
+  class RejectingWorker extends EventTarget {
+    postMessage() { throw new Error('handoff rejected'); }
+  }
+  f.install('Worker', RejectingWorker);
+  const storage = createAssetCache({base, usedKey: 'used'});
+  const source = Uint8Array.of(1, 2, 3), sha256 = hash(source);
+  const answer = await storage.checked(source, false, true);
+  assert.equal(answer.bytes, source);
+  assert.equal(answer.sha256, sha256);
+  assert.equal(await storage.keep(base + 'file', source), true);
+  assert.deepEqual(new Uint8Array(await (await f.cache.match(base + 'file'))!.arrayBuffer()), source);
+});
+
+test('a lost Worker reply fails the lent check without reusing detached bytes', {timeout: 5_000}, async t => {
+  const base = '/layers/', f = fixture(t, base);
+  let stopped = 0;
+  class UnreadableWorker extends EventTarget {
+    postMessage(message: unknown, transfer: ArrayBuffer[]) {
+      structuredClone(message, {transfer});
+      queueMicrotask(() => this.dispatchEvent(new Event('messageerror')));
+    }
+    terminate() { stopped++; }
+  }
+  f.install('Worker', UnreadableWorker);
+  const storage = createAssetCache({base, usedKey: 'used'});
+  const lent = Uint8Array.of(1, 2);
+  await assert.rejects(storage.checked(lent, false, true), /could not be checked/);
+  assert.equal(lent.byteLength, 0, 'the original buffer belongs to the retired Worker');
+  assert.equal(stopped, 1);
+  const usable = Uint8Array.of(3, 4);
+  assert.deepEqual(await storage.checked(usable, false, false), {bytes: usable, sha256: hash(usable)});
+});
