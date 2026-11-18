@@ -195,3 +195,26 @@ trusted lexical transfer evidence; it cannot publish merely initialized bytes.
 External consumers need their own offer identity, ended access and stopped
 effects. Neither all confirmed bytes, queue acceptance, nor an observed
 Worker exit establishes any external delivery or stop.
+
+## Exact private captured-write handoff
+
+The native call owner binds the current invocation and retained execution
+snapshot, captured request sequence, one Domain span, one captured OFD, and
+the initialized Q/K stage. Start checks the exact owner and open reservation,
+consumes the span once, and gives the trusted native caller a short copy
+guard. Only an exact slice copy through that guard proves native fill; an
+initialized buffer, byte count, or a dropped guard alone does not.
+
+End of access to the guest source and the Core stage are both necessary.
+Unproved or one-sided access keeps the provisional backing and owners
+alive. Once access is uncertain, publication is permanently disabled. An
+exact later proof that both accesses ended may discard unpublished storage
+after cancel or producer exit. It is not a sink-stop receipt. Successful
+capture also requires a still-live call at acceptance, and late exit cannot
+undo an accepted record. Publication rejection after a settled copy is an
+explicit terminal result, distinct from an invalid receipt.
+
+This native owner neither exposes a raw view nor admits a guest syscall. Its
+caller must still bind the trusted input slice to the admitted source and
+enforce sequence admission; a future raw relay needs a separately guarded
+lexical interval. No Worker or external consumer is connected by this step.

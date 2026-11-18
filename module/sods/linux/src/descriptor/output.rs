@@ -4,6 +4,8 @@ use super::{Error as FilesError, Files, OutputHold, ReadHold, ReadPrefix, Table}
 use std::marker::PhantomData;
 use std::num::{NonZeroU64, NonZeroUsize};
 
+mod capture;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Error {
     Source(FilesError),
@@ -1006,7 +1008,7 @@ mod tests {
         }
     }
 
-    fn n(length: usize) -> NonZeroUsize {
+    pub(super) fn n(length: usize) -> NonZeroUsize {
         NonZeroUsize::new(length).unwrap()
     }
     fn made(mode: u32) -> Creation {
@@ -1016,7 +1018,7 @@ mod tests {
             gid: 0,
         }
     }
-    fn files(owner: u64) -> (Files, Inode, Inode, Table, u32) {
+    pub(super) fn files(owner: u64) -> (Files, Inode, Inode, Table, u32) {
         let mut tree = Tree::new(owner - 1, 8, 8, 32, made(0o755)).unwrap();
         let root = tree.root();
         let file = tree
