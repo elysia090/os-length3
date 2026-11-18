@@ -384,3 +384,47 @@ test('every stopped-zero physical error closes transport instead of manufacturin
     assert.ok(r.call('linux_syscall_sequenced', owner.id, owner.invocation, 3, 3n, fd, 0n, 0n, 0n, 0n, 0n, 4096n) < 0);
   }
 });
+
+test('nonempty stopped0 settles once but closes transport instead of claiming qualified EOF', {skip: probeSkip}, () => {
+  const r = raw(probeArtifact!, true), owner = r.live(), fd = r.open(owner), send = r.begin(owner, fd);
+  assert.equal(r.qualify(send).tag, 12); assert.equal(send.offered, 6n); r.start(send);
+  assert.equal(r.call('linux_load_input', 0), -4, 'the actual nonempty offer owns the canonical view');
+  const done = r.finish(send, 0n);
+  assert.equal(done.tag, 4, 'physical stopped0 is valid settlement, not proved sendfile Return0 for nonempty input');
+  assert.equal(r.call('linux_sendfile_query', owner.id), 0); assert.equal(r.state(), 0xffff);
+  assert.equal(r.result(), 0n); assert.equal(r.length(), 0n); assert.equal(r.auxiliary(), 0n); assert.equal(r.endpoint(), 0n);
+  assert.equal(r.call('linux_load_input', 0), 0, 'known stopped/ended receipt released lexical access');
+  for (const [name, args] of [
+    ['linux_start', [send.action]], ['linux_cancel', [send.action]],
+    ['linux_receipt', [send.action, 0n, 0]], ['linux_retire', [send.action]],
+    ['linux_sendfile_start', [owner.id, send.sequence, send.action]],
+    ['linux_sendfile_receipt', [owner.id, send.sequence, send.action, 0n, 0, 1]],
+  ] as const) assert.ok(r.call(name, ...args) < 0, `${name}: settled action cannot replay or settle twice`);
+  assert.ok(r.call('linux_syscall_sequenced', owner.id, owner.invocation, 3, 3n, fd, 0n, 0n, 0n, 0n, 0n, 4096n) < 0);
+  // These private reads observe the original execution's OFD, not linux_offset's
+  // separate normal table. Each observation itself commits read0/revision; only
+  // native owner tests assert the exact sendfile-only revision increment.
+  assert.deepEqual(r.remaining(owner, fd), bytes('abcdef'));
+  assert.ok(r.call('linux_sendfile_receipt', owner.id, send.sequence, send.action, 0n, 0, 1) < 0);
+  assert.deepEqual(r.remaining(owner, fd), bytes('abcdef'), 'duplicate did not advance the captured cursor');
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+});
+
+test('actual resident EOF stays qualified offered0 and returns0 without closing the guest', {skip: probeSkip}, () => {
+  const r = raw(probeArtifact!, true), owner = r.live(), fd = r.open(owner), positive = r.begin(owner, fd);
+  assert.equal(r.qualify(positive).tag, 12); assert.equal(positive.offered, 6n); r.start(positive);
+  const prefix = r.finish(positive, 6n); assert.equal(prefix.tag, 0); assert.equal(prefix.value, 6n);
+  // The same held source OFD is now truly at its materialized resident EOF.
+  // Count is still6: this is neither count0 nor a provisional lazy size hint.
+  const eof = r.begin(owner, fd);
+  assert.ok(r.call('linux_sendfile_start', owner.id, eof.sequence, eof.action) < 0, 'EOF cannot bypass capability');
+  assert.equal(r.qualify(eof).tag, 12); assert.equal(eof.offered, 0n); assert.equal(r.start(eof), 0n);
+  const done = r.finish(eof, 0n); assert.equal(done.tag, 0); assert.equal(done.value, 0n);
+  assert.equal(r.call('linux_sendfile_query', owner.id), 0); assert.equal(r.state(), 0xffff);
+  assert.deepEqual(r.remaining(owner, fd), new Uint8Array());
+  const close = r.request(owner, 3n, [fd, 0n, 0n, 0n, 0n, 0n]);
+  assert.equal(close.tag, 0); assert.equal(close.value, 0n, 'qualified EOF did not close continuation admission');
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+});

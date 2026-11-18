@@ -4180,4 +4180,93 @@ mod sendfile_continuation_tests {
         // Retain quarantined owner to fixture end; no fabricated recovery or
         // inference that this mismatch stopped source-buffer access.
     }
+
+    #[test]
+    fn synthetic_nonempty_stopped_zero_closes_without_guest_resume_but_settles_real_zero_effect() {
+        let mut g = Guest::new(false);
+        let alias = g.files.dup(&g.table, g.fd, 0, false).unwrap();
+        let action = g.admit(6);
+        g.cap(action);
+        g.start(action);
+        assert_eq!(g.status().offered, 6);
+        assert_eq!(
+            g.files.set_offset(&g.table, alias, 0),
+            Err(descriptor::Error::Busy)
+        );
+        assert_eq!(
+            g.receipt(action, 0, Outcome::Transferred, Access::Ended),
+            Ok(Step::Waiting)
+        );
+        assert!(g.call.closed);
+        assert!(!g.call.sendfile_pending());
+        assert!(!g.call.sendfile_references(&g.execution));
+        assert_eq!(g.call.sendfile_view(), None);
+        assert!(!g.call.owns(action));
+        assert_eq!(g.call.sendfile_query(&g.execution), Ok(None));
+        assert_eq!(g.files.offset(&g.table, alias).unwrap(), (0, 1));
+        assert_eq!(g.domain.retire(action), Err(lease::Error::UnknownAction));
+        assert_eq!(g.domain.start(action), Err(lease::Error::UnknownAction));
+        assert_eq!(
+            g.domain.receipt(action, 0, Completion::Stopped),
+            Err(lease::Error::UnknownAction)
+        );
+        assert!(g
+            .receipt(action, 0, Outcome::Transferred, Access::Ended)
+            .is_err());
+        assert!(g
+            .call
+            .sendfile_start(&mut g.files, &mut g.domain, &mut g.execution, 1, action)
+            .is_err());
+        assert_eq!(g.files.offset(&g.table, alias).unwrap(), (0, 1));
+        let prep = g.files.begin_read(&g.table, alias, 1).unwrap();
+        g.files.abort_preparation(prep).unwrap();
+        // No artificial pending-call Busy keeps this safe: the call really was
+        // finished. The closed Continuation itself refuses a new guest call.
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+        assert_eq!(
+            g.request(2, 40, [1, g.fd as u64, 0, 6, 0, 0]),
+            Err(Error::State)
+        );
+        assert_eq!(g.call.last_sequence, 1);
+        g.execution
+            .receipt(&mut g.domain, g.invocation, Unwind::Fault)
+            .unwrap();
+        assert!(g.execution.retireable());
+        assert!(g.abandon());
+        let change = g.domain.change(g.execution.binding(), 1).unwrap();
+        g.domain.cancel(change).unwrap();
+        g.domain.retire(change).unwrap();
+    }
+    #[test]
+    fn synthetic_qualified_empty_offers_and_positive_prefix_keep_their_success_results() {
+        for (count, offset, offered, prefix, expected) in [
+            (0, 0, 0, 0, Step::Return(0)),
+            (6, 6, 0, 0, Step::Return(0)), // Actual resident EOF, not provisional metadata.
+            (6, 0, 6, 3, Step::Return(3)),
+        ] {
+            let mut g = Guest::new(false);
+            if offset != 0 {
+                g.files.set_offset(&g.table, g.fd, offset).unwrap();
+            }
+            let action = g.admit(count);
+            assert_eq!(
+                g.cap(action),
+                Step::SendfileOffer {
+                    action,
+                    sequence: 1,
+                    endpoint: 20,
+                    length: offered
+                }
+            );
+            assert_eq!(g.start(action).1, offered);
+            assert_eq!(
+                g.receipt(action, prefix, Outcome::Transferred, Access::Ended),
+                Ok(expected)
+            );
+            assert!(!g.call.closed);
+            assert!(!g.call.sendfile_pending());
+            assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+            assert_eq!(g.files.offset(&g.table, g.fd).unwrap().0, offset + prefix);
+        }
+    }
 }

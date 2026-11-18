@@ -77,6 +77,12 @@ Stopped evidence includes both ended access and no further effect beyond the
 confirmed prefix. It commits the held OFD once, including a late prefix after
 cancellation or guest fault. A closed/lost guest never receives a resurrected
 successful return. A short positive result is not retransmitted internally.
+Known stopped zero with a **nonempty offered source** still settles the physical
+prefix0 and releases the operation once, but closes as TransportFailed rather
+than returning a guessed EOF to the guest. Only qualified offered0 (count0 or
+actual captured EOF) admits Return0. A native write0 alone does not prove Linux
+sendfile0 equivalence. This deliberately narrow first profile does not claim
+that non-EOF zero is impossible in general Linux splice/sendfile paths.
 Physical write errors known to have stopped at zero settle ownership but close
 transport; this initial component does not relabel write errno as proved Linux
 sendfile errno or emulate SIGPIPE. Preparation failure is also a transport

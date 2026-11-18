@@ -771,6 +771,14 @@ impl Sendfile {
         self.action = None;
         if !self.closed {
             self.result = Some(match outcome {
+                Outcome::Transferred if confirmed == 0 && self.offered != 0 => {
+                    // Truthful stopped physical zero still settles all owners,
+                    // but write-zero/sendfile-zero equivalence is unproved for
+                    // this profile's nonempty offer. This is not a Linux-wide
+                    // claim that non-EOF sendfile zero is impossible.
+                    self.closed = true;
+                    ResultValue::TransportFailed
+                }
                 Outcome::Transferred => ResultValue::Return(confirmed as i64),
                 Outcome::Again
                 | Outcome::Interrupted
@@ -1520,15 +1528,17 @@ mod tests {
     }
     #[test]
     fn synthetic_known_short_zero_and_transport_errors_settle_once_without_retry() {
-        for (count, outcome, value) in [(2, Outcome::Transferred, 2), (0, Outcome::Transferred, 0)]
-        {
+        for (count, outcome, value) in [
+            (2, Outcome::Transferred, ResultValue::Return(2)),
+            (0, Outcome::Transferred, ResultValue::TransportFailed),
+        ] {
             let mut h = Harness::new(false, false, 0);
             h.begin(6);
             h.cap();
             h.start();
             h.receipt(count, outcome).unwrap();
-            assert_eq!(h.s.result(), Some(ResultValue::Return(value)));
-            assert!(!h.s.closed());
+            assert_eq!(h.s.result(), Some(value));
+            assert_eq!(h.s.closed(), count == 0);
             assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (count, 1));
             h.assert_released();
         }
@@ -2229,5 +2239,104 @@ mod tests {
             .is_err());
         assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (3, 1));
         assert_eq!(h.f.offset(&h.t, fd_b).unwrap(), (0, 1));
+    }
+
+    #[test]
+    fn synthetic_nonempty_stopped_zero_settles_once_without_qualifying_guest_zero() {
+        for (mode, expected) in [
+            (0, ResultValue::TransportFailed),
+            (1, ResultValue::TransportFailed),
+            (2, ResultValue::Cancelled),
+            (3, ResultValue::GuestLost),
+        ] {
+            let mut h = Harness::new(false, false, 0);
+            let alias = h.f.dup(&h.t, h.fd, 0, false).unwrap();
+            h.begin(6);
+            h.cap();
+            h.start();
+            let action = h.token();
+            assert_eq!(h.s.offered(), 6);
+            assert_eq!(h.f.set_offset(&h.t, alias, 0), Err(descriptor::Error::Busy));
+            match mode {
+                1 => {
+                    h.receipt(0, Outcome::Unknown).unwrap();
+                    assert!(h.s.viewing());
+                    assert_eq!(h.d.retire(action), Err(lease::Error::Incomplete));
+                    h.s.access_ended(&h.f, &h.d, &h.e, h.s.synthetic_access_ended().unwrap())
+                        .unwrap();
+                    assert!(!h.s.viewing());
+                    assert!(h.s.source.is_some());
+                    assert!(h.s.destination.is_some());
+                    assert!(h.s.held_call);
+                    assert_eq!(h.f.set_offset(&h.t, alias, 0), Err(descriptor::Error::Busy));
+                }
+                2 => {
+                    assert!(!h.cancel());
+                }
+                3 => {
+                    h.e.receipt(&mut h.d, h.invocation, execution::Unwind::Fault)
+                        .unwrap();
+                }
+                _ => {}
+            }
+            // Valid stopped evidence is accepted, not rejected as malformed or
+            // turned into Unknown merely because its guest result is unqualified.
+            h.receipt(0, Outcome::Transferred).unwrap();
+            assert_eq!(h.s.confirmed(), 0);
+            assert_eq!(h.s.phase(), Phase::Terminal);
+            assert_eq!(h.s.result(), Some(expected));
+            assert!(h.s.closed());
+            h.assert_released();
+            assert_eq!(h.f.offset(&h.t, alias).unwrap(), (0, 1));
+            assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (0, 1));
+            assert_eq!(h.d.retire(action), Err(lease::Error::UnknownAction));
+            assert_eq!(h.d.start(action), Err(lease::Error::UnknownAction));
+            assert!(h.s.start(&mut h.f, &mut h.d, &mut h.e, 9, action).is_err());
+            assert!(h
+                .s
+                .receipt(
+                    &mut h.f,
+                    &mut h.d,
+                    &mut h.e,
+                    9,
+                    action,
+                    0,
+                    Outcome::Transferred
+                )
+                .is_err());
+            assert_eq!(h.f.offset(&h.t, alias).unwrap(), (0, 1));
+            // Clear reading reservation without manufacturing another revision.
+            let prep = h.f.begin_read(&h.t, alias, 1).unwrap();
+            h.f.abort_preparation(prep).unwrap();
+            assert_eq!(h.f.offset(&h.t, alias).unwrap(), (0, 1));
+            assert_eq!(
+                h.e.finish_call(h.invocation),
+                Err(execution::Error::Identity)
+            );
+            if mode != 3 {
+                assert!(h.e.syscall_allowed(h.invocation).is_ok());
+                h.e.receipt(&mut h.d, h.invocation, execution::Unwind::Fault)
+                    .unwrap();
+            }
+            assert!(h.e.retireable());
+            let change = h.d.change(h.e.binding(), 1).unwrap();
+            h.d.cancel(change).unwrap();
+            h.d.retire(change).unwrap();
+            // After both source slots and destination slot close, exactly the
+            // other two stdio descriptions remain. All six spare records admit:
+            // neither source nor destination operation refs leaked on Stopped0.
+            h.f.close(&h.t, h.fd).unwrap();
+            h.f.close(&h.t, alias).unwrap();
+            h.f.close(&h.t, 1).unwrap();
+            let mut admitted = 0;
+            loop {
+                match h.f.open(&h.t, h.other, false) {
+                    Ok(_) => admitted += 1,
+                    Err(descriptor::Error::Capacity) => break,
+                    other => panic!("unexpected description admission {other:?}"),
+                }
+            }
+            assert_eq!(admitted, 6);
+        }
     }
 }
