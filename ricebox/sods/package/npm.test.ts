@@ -39,7 +39,9 @@ test('standalone tarball exposes only sods entrances and complete JS/Worker clos
     assert.throws(()=>execFileSync(process.execPath,[builder,join(work,'built')],{stdio:'pipe'}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
 });
-const translator=process.env.SODS_TRANSLATOR_WASM;
+const selectedTranslator=process.env.SODS_TRANSLATOR_WASM;
+// The installed consumer has a different cwd from the fixture's caller.
+const translator=selectedTranslator && resolve(selectedTranslator);
 test('installed package runs real ELF inline and in Node CPU Worker with ordinary Vfs storage',{skip:!translator},()=>{
   const work=mkdtempSync(join(tmpdir(),'sods-execution-'));
   try {
