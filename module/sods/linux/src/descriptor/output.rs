@@ -354,12 +354,22 @@ impl Queue {
         Ok(())
     }
     fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
+        self.reserve_for::<false>(length)
+    }
+    fn reserve_for<const PIN: bool>(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
         if self.closed {
             return Err(Error::Closed);
         }
         let used = self.used.checked_add(length.get()).ok_or(Error::Overflow)?;
         if used > self.byte_limit {
             return Err(Error::Full);
+        }
+        if PIN && !self.pins.has_room() {
+            return Err(if self.entries.has_room() {
+                Error::Capacity
+            } else {
+                Error::Full
+            });
         }
         let key = self
             .entries
@@ -854,13 +864,9 @@ impl Writer<'_> {
         fd: u32,
         length: NonZeroUsize,
     ) -> Result<NonZeroUsize, Error> {
-        let reservation = self.queue.reserve(length)?;
-        if !self.queue.pins.has_room() {
-            self.queue
-                .cancel(reservation)
-                .expect("same private reservation");
-            return Err(Error::Capacity);
-        }
+        // R pressure must not consume even a K generation. A no-op
+        // reserve/cancel may permanently retire its last generation.
+        let reservation = self.queue.reserve_for::<true>(length)?;
         let source = match self.files.reserve_read(table, fd, length.get() as u64) {
             Ok(source) => source,
             Err(error) => {
@@ -2332,12 +2338,19 @@ mod tests {
         );
         assert_eq!(root.files.offset(&table, input_alias), Ok((1, 1)));
         let next = root.files.next_read_reservation;
+        let mut writer = root.held_writer(&out).unwrap();
+        let spare = writer.queue.entries.free.expect("K has room");
+        writer.queue.entries.cells[spare].generation = u64::MAX - 1;
         assert_eq!(
-            root.held_writer(&out)
-                .unwrap()
-                .publish_resident(&table, input, n(1)),
+            writer.publish_resident(&table, input, n(1)),
             Err(Error::Capacity),
         );
+        assert_eq!(
+            writer.queue.entries.free,
+            Some(spare),
+            "R pressure cannot retire a free K record by allocating and canceling its last generation"
+        );
+        assert_eq!(writer.queue.entries.cells[spare].generation, u64::MAX - 1);
         assert_eq!(
             root.files.next_read_reservation, next,
             "R preflight rejects before File preparation"
