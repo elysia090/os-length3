@@ -331,6 +331,34 @@ impl ReadHold {
     }
 }
 
+/// An exact immutable resident prefix, not a storage lease or an OFD reference.
+/// Only the originating Files resolves it; a pin owner must retain that Files.
+#[derive(Debug)]
+struct ReadPrefix {
+    owner: u64,
+    reservation: NonZeroU64,
+    inode: Inode,
+    start: usize,
+    length: NonZeroUsize,
+}
+
+/// Last preflight for a coordinated prefix commit. Moving the source here and
+/// exclusively borrowing Files rule out replacing the hold or its description
+/// between validation and commit. There must be no fallible work in between.
+#[must_use = "commit after the already admitted destination takes the prefix"]
+struct PrefixCommit<'a> {
+    files: &'a mut Files,
+    source: ReadHold,
+    length: NonZeroUsize,
+}
+
+impl PrefixCommit<'_> {
+    fn commit(self) {
+        self.files
+            .finish_reserved_read(self.source, self.length.get() as u64);
+    }
+}
+
 pub(crate) struct Files {
     owner: u64,
     filesystems: Filesystems,
@@ -1769,11 +1797,79 @@ impl Files {
             .expect("pinned resident source")
     }
 
+    /// Snapshot an exact nonempty range. No ownership, cursor or output changes.
+    /// The inode is a backing incarnation here: Files never removes or replaces
+    /// its Trees and they expose no mutation or eviction of a resident payload.
+    fn read_prefix(&mut self, hold: &ReadHold, length: NonZeroUsize) -> Result<ReadPrefix, Error> {
+        self.check_read_hold(hold)?;
+        if length.get() > hold.length {
+            return Err(Error::State);
+        }
+        let start = usize::try_from(hold.offset).map_err(|_| Error::Overflow)?;
+        start.checked_add(length.get()).ok_or(Error::Overflow)?;
+        let prefix = ReadPrefix {
+            owner: self.owner,
+            reservation: hold.reservation,
+            inode: hold.inode,
+            start,
+            length,
+        };
+        // Store::read clips short requests at EOF. This witness promises exact
+        // *resident* bytes, not a provisional length or a clipped slice.
+        self.prefix_bytes(&prefix)?;
+        Ok(prefix)
+    }
+
+    /// Resolve the immutable range without going through a potentially retired
+    /// OFD. The returned slice borrows Files, not the source hold or its table.
+    fn prefix_bytes(&mut self, prefix: &ReadPrefix) -> Result<&[u8], Error> {
+        if prefix.owner != self.owner {
+            return Err(Error::BadHandle);
+        }
+        let bytes = self
+            .filesystems
+            .read(prefix.inode, prefix.start, prefix.length.get())
+            .map_err(Error::Source)?;
+        if bytes.len() != prefix.length.get() {
+            return Err(Error::Payload);
+        }
+        Ok(bytes)
+    }
+
+    fn prepare_prefix_commit(
+        &mut self,
+        source: ReadHold,
+        prefix: &ReadPrefix,
+    ) -> Result<PrefixCommit<'_>, (Error, ReadHold)> {
+        if let Err(error) = self.check_read_hold(&source) {
+            return Err((error, source));
+        }
+        if prefix.owner != self.owner {
+            return Err((Error::BadHandle, source));
+        }
+        if prefix.reservation != source.reservation
+            || prefix.inode != source.inode
+            || prefix.start as u64 != source.offset
+            || prefix.length.get() > source.length
+        {
+            return Err((Error::State, source));
+        }
+        Ok(PrefixCommit {
+            files: self,
+            source,
+            length: prefix.length,
+        })
+    }
+
     /// Infallible after receipt validation: refs, revision and maximal offset
     /// were reserved before any copy; no conflicting offset writer is admitted.
     pub(crate) fn finish_read(&mut self, hold: ReadHold, copied: u64) {
         assert!(copied <= hold.length as u64);
         self.check_read_hold(&hold).expect("held read owner");
+        self.finish_reserved_read(hold, copied);
+    }
+
+    fn finish_reserved_read(&mut self, hold: ReadHold, copied: u64) {
         let d = self.descriptions[hold.description.slot]
             .value
             .as_mut()
@@ -4079,6 +4175,113 @@ mod read_reservation_tests {
         assert_eq!(b.check_read_hold(&bh), Ok(()));
         a.abort_read(ah);
         b.finish_read(bh, 1);
+        assert_eq!(a.offset(&at, af).unwrap(), (0, 0));
+        assert_eq!(b.offset(&bt, bf).unwrap(), (1, 1));
+    }
+
+    #[test]
+    fn a_prefix_cannot_commit_another_read_at_the_same_place_after_abort() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        let two = NonZeroUsize::new(2).unwrap();
+        let first = f.reserve_read(&table, fd, 4).unwrap();
+        let old = f.read_prefix(&first, two).unwrap();
+        let original = f.read_bytes(&first).as_ptr();
+        f.abort_read(first);
+        let second = f.reserve_read(&table, fd, 4).unwrap();
+        assert_eq!(f.prefix_bytes(&old).unwrap().as_ptr(), original);
+        let (error, second) = f.prepare_prefix_commit(second, &old).err().unwrap();
+        assert_eq!(error, Error::State);
+        assert_eq!(f.offset(&table, fd).unwrap(), (0, 0));
+        assert_eq!(f.set_offset(&table, fd, 3), Err(Error::Busy));
+        let exact = f.read_prefix(&second, two).unwrap();
+        f.prepare_prefix_commit(second, &exact)
+            .ok()
+            .unwrap()
+            .commit();
+        assert_eq!(f.offset(&table, fd).unwrap(), (2, 1));
+        assert_eq!(f.prefix_bytes(&old).unwrap(), b"bo");
+    }
+
+    #[test]
+    fn a_prefix_survives_close_same_fd_reuse_and_table_retirement() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        f.set_offset(&table, fd, 1).unwrap();
+        let source = f.reserve_read(&table, fd, 100).unwrap();
+        let description = source.description;
+        let length = NonZeroUsize::new(3).unwrap();
+        let prefix = f.read_prefix(&source, length).unwrap();
+        assert_eq!(f.prefix_bytes(&prefix).unwrap(), b"ody");
+        assert_eq!(f.offset(&table, fd).unwrap(), (1, 1));
+        let address = f.read_bytes(&source).as_ptr();
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.open(&table, inode, false).unwrap(), fd);
+        f.prepare_prefix_commit(source, &prefix)
+            .ok()
+            .unwrap()
+            .commit();
+        assert_eq!(f.offset(&table, fd).unwrap(), (0, 0));
+        assert!(matches!(
+            get(&f.descriptions, f.owner, description),
+            Err(Error::BadHandle)
+        ));
+        f.let_go(table).unwrap();
+        let bytes = f.prefix_bytes(&prefix).unwrap();
+        assert_eq!(bytes.as_ptr(), address);
+        assert_eq!(bytes, b"ody");
+    }
+
+    #[test]
+    fn no_prefix_at_empty_or_outside_actual_resident_bounds() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        let zero = f.reserve_read(&table, fd, 0).unwrap();
+        assert!(matches!(
+            f.read_prefix(&zero, NonZeroUsize::MIN),
+            Err(Error::State)
+        ));
+        f.abort_read(zero);
+        f.set_offset(&table, fd, u64::MAX).unwrap();
+        let eof = f.reserve_read(&table, fd, u64::MAX).unwrap();
+        assert!(matches!(
+            f.read_prefix(&eof, NonZeroUsize::MIN),
+            Err(Error::State)
+        ));
+        f.abort_read(eof);
+        f.set_offset(&table, fd, 3).unwrap();
+        let tail = f.reserve_read(&table, fd, u64::MAX).unwrap();
+        let two = NonZeroUsize::new(2).unwrap();
+        assert!(matches!(f.read_prefix(&tail, two), Err(Error::State)));
+        let exact = f.read_prefix(&tail, NonZeroUsize::MIN).unwrap();
+        assert_eq!(f.prefix_bytes(&exact).unwrap(), b"y");
+        // Test-only inconsistent metadata must not become a clipped witness.
+        let mut impossible = exact;
+        impossible.length = two;
+        assert_eq!(f.prefix_bytes(&impossible), Err(Error::Payload));
+        f.abort_read(tail);
+    }
+
+    #[test]
+    fn foreign_prefix_rejects_resolving_or_committing_even_with_matching_local_read_number() {
+        let (mut a, ai) = setup(1402, 8);
+        let at = a.table(8).unwrap();
+        let af = a.open(&at, ai, false).unwrap();
+        let ah = a.reserve_read(&at, af, 2).unwrap();
+        let (mut b, bi) = setup(1404, 8);
+        let bt = b.table(8).unwrap();
+        let bf = b.open(&bt, bi, false).unwrap();
+        let bh = b.reserve_read(&bt, bf, 2).unwrap();
+        assert_eq!(ah.reservation, bh.reservation);
+        let prefix = b.read_prefix(&bh, NonZeroUsize::MIN).unwrap();
+        assert_eq!(a.prefix_bytes(&prefix), Err(Error::BadHandle));
+        let (error, ah) = a.prepare_prefix_commit(ah, &prefix).err().unwrap();
+        assert_eq!(error, Error::BadHandle);
+        a.abort_read(ah);
+        b.prepare_prefix_commit(bh, &prefix).ok().unwrap().commit();
         assert_eq!(a.offset(&at, af).unwrap(), (0, 0));
         assert_eq!(b.offset(&bt, bf).unwrap(), (1, 1));
     }

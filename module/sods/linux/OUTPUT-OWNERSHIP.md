@@ -18,6 +18,22 @@ checks and finish/abort match the exact incarnation. Identity exhaustion refuses
 admission before changing description refs or locks and never wraps. This is
 internal provenance, not a new guest result, syscall or action issuer.
 
+## Exact prefix witness
+
+The private descriptor witness binds the Files incarnation, nonreused read
+incarnation, inode and an exact nonempty resident byte range. Files exposes no
+removal, replacement or eviction of resident payloads, so an admitted inode
+identifies the same backing throughout this Files lifetime. The witness can
+resolve after OFD retirement, but does not own any lifetime itself. A pin owner
+must retain the matching Files; a destroyed owner cannot resolve it.
+
+Preparation checks actual resident length, not just offset and provisional
+size. Reading through the witness creates neither an output nor a cursor
+effect. Commit preflight accepts only the original live hold, not a new read of
+the same bytes after abort. It consumes that hold and exclusively borrows Files
+until the infallible cursor update. It is the last fallible step: the future
+destination owner must finish all other admission checks before requesting it.
+
 The range-pin/finite queue connection is a separate next slice. Pin preparation
 must not commit the source cursor or create output. Only publication of its exact
 held source prefix into a real owned destination may do that. Public delivery,
