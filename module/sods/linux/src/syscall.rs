@@ -112,7 +112,7 @@ pub(crate) enum Step {
         at: u64,
         length: u64,
     },
-    #[cfg(test)]
+    #[cfg(any(test, feature = "capture-result-v1"))]
     CapturePressure {
         call: capture::CallId,
     },

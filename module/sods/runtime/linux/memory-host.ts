@@ -108,6 +108,7 @@ interface ResultAdmission extends WebAssembly.Exports {
   linux_capture_select(profile: number): number;
   linux_capture_result_init(): number;
   linux_capture_result_startup(): number;
+  linux_capture_result_write_resume(execution: bigint, sequence: number, action: bigint): number;
   linux_capture_result_write_start(execution: bigint, sequence: number, action: bigint): number;
   linux_capture_result_write_finish(execution: bigint, sequence: number, action: bigint, evidence: number, count: number): number;
   linux_capture_result_head(): number;
@@ -180,7 +181,7 @@ export interface PathExecutionOptions {
 }
 /** Supplied by the trusted build/deployment owner, not by the artifact source. */
 export interface CaptureResultPin {
-  readonly kind: 'sods-linux-capture-result-v1';
+  readonly kind: 'sods-linux-capture-result-v2';
   readonly byteLength: number;
   readonly sha256: string;
 }
@@ -188,7 +189,7 @@ const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', '
   'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
   'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create'];
 const resultOnly = ['linux_capture_candidate', 'linux_capture_select', 'linux_capture_result_init', 'linux_capture_result_startup',
-  'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
+  'linux_capture_result_write_resume', 'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
   'linux_capture_result_copy_start', 'linux_capture_result_copy_finish'];
 const checkedResultExtent = (length: number): number => {
   if (length < 1 || length > 4) throw new Error('Unsupported captured result extent');
@@ -286,7 +287,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
     throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
   }
   const {kind, byteLength, sha256: expected} = pin;
-  if (kind !== 'sods-linux-capture-result-v1' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
+  if (kind !== 'sods-linux-capture-result-v2' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
       byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
     throw new TypeError('Invalid trusted captured result pin');
   }
@@ -297,7 +298,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
   if (actual !== expected) throw new Error('Captured result artifact digest mismatch');
   const module = new Module(bytes);
   const wire = Module.customSections(module, 'sods.linux.capture');
-  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 1, 2, 0];
+  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0];
   if (wire.length !== 1 || wire[0]!.byteLength !== identity.length ||
       !new Bytes(wire[0]!).every((byte, i) => byte === identity[i])) {
     throw new Error('Unsupported captured result artifact identity');
@@ -699,6 +700,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
               throw new Error(`Unsupported Rust Worker command: ${completed.tag} (value ${completed.value}, syscall ${request.nr})`);
             }
             if (c.tag !== 1) {
+              if (c.tag === 14 && capture) throw new Error('Captured result queue is full and no draining consumer is attached');
               if (c.tag === 13 && captureWrite) {
                 const completed = captureWrite(w, request.sequence, c);
                 if (completed.tag !== 0) throw new Error(`Captured write did not return: ${completed.tag}`);

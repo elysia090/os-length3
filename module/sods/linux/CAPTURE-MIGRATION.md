@@ -247,8 +247,17 @@ releases that exact unstarted action and hold; it neither revokes accepted
 heads nor asserts that the Worker stopped. Rust also checks R before
 reserving a K record for resident sends, so a pin shortage cannot consume
 its last generation on a reserve/cancel round trip. A waiting resident send
-needs its own exact source/cursor contract; no raw or host wake is wired by
-the native tests.
+needs its own exact source/cursor contract.
+
+Private result wire version 2 carries the retained write's sequence and
+action, not a new syscall, address, FD or payload view. The resume operation
+matches that tuple and the same execution and performs no capture until
+there really is Q/K room. A confirmed owned receive frees capacity; a peek,
+an active view or an ended-but-unpublished receive cannot. A first live
+view still excludes other Core operations. Artifact wire version 1 cannot
+be replayed as matching the new command surface, even with a correct digest.
+The non-draining private Worker host still refuses at capacity and closes the
+exact held request; no consumer is scheduled by this raw connection.
 
 The private Linux x64 Node 22/24 distribution reader exercises the pin
 chain end to end with a current-source result artifact and Worker. The

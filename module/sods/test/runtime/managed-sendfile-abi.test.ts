@@ -49,7 +49,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (resultProfile) {
     const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
     assert.equal(marker.length, 1);
-    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 1, 2, 0]);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0]);
     assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
     for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
   }
@@ -1302,6 +1302,64 @@ test('non-probe capture result cannot start or borrow before its exact receiver'
   assert.ok(r.call('linux_run_start', failed) < 0);
   assert.equal(r.call('linux_startup_cancel', failed), 0);
   assert.equal(r.result(), 1n);
+  assert.equal(r.receive(0), undefined);
+});
+
+test('non-probe capture result resumes the exact write only after confirmed result consumption', {
+  skip: currentResultSkip, timeout: 30_000,
+}, async () => {
+  const current = currentCaptureProgram();
+  const r = raw(resultArtifact!, false, false, false, false, current.elf, true);
+  const resume = 'linux_capture_result_write_resume';
+  assert.equal(r.call('linux_capture_result_init'), 0);
+  const input = await prepareCurrentCapture(r, current.translator, current.elf, {resultProfile: true});
+  const {id, memory} = input;
+  assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+  assert.equal(r.call('linux_run_start', id), 0);
+  const invocation = r.result();
+  const at = 64n;
+  new Uint8Array(memory.buffer, Number(at), 5).set(bytes('ABCDE'));
+  const request = (seq: number, fd: bigint, addr: bigint, size: bigint) =>
+    r.call('linux_syscall_sequenced', id, invocation, seq, 1n, fd, addr, size, 0n, 0n, 0n, 0n);
+  const start = 'linux_capture_result_write_start', finish = 'linux_capture_result_write_finish';
+  const settle = (sequence: number, action: bigint, length: number) => {
+    assert.equal(r.call(start, id, sequence, action), 0);
+    const core = r.e.memory as WebAssembly.Memory;
+    copyWorkerInput(memory, core, Number(r.auxiliary()), Number(r.result()), length);
+    assert.equal(r.call(finish, id, sequence, action, 0, length), 0);
+    assert.deepEqual([r.state(), r.result()], [0, BigInt(length)]);
+  };
+  assert.equal(request(1, 1n, at, 4n), 0);
+  assert.equal(r.state(), 13);
+  const prior = r.result();
+  settle(1, prior, 4);
+  assert.equal(request(2, 2n, at + 4n, 1n), 0);
+  const held = r.command();
+  assert.deepEqual(held, {tag: 14, value: prior + 1n, next: 0n, target: 2n, endpoint: 0n});
+  assert.equal(r.call(start, id, 2, held.value), -12, 'room pressure exposes no staging pointer');
+  assert.equal(r.call(resume, id + 1n, 2, held.value), -4);
+  assert.equal(r.call(resume, id, 1, held.value), -4);
+  assert.equal(r.call(resume, id, 2, prior), -4);
+  assert.equal(request(2, 2n, at + 4n, 1n), -4, 'the same request is not reissued');
+  assert.equal(request(3, 2n, at + 4n, 1n), -4, 'later requests cannot overtake');
+  assert.equal(r.call('linux_capture_result_head'), 0);
+  const slot = Number(r.auxiliary()), generation = r.result();
+  assert.equal(r.call('linux_capture_result_copy_start', slot, generation), 0);
+  const receiver = r.auxiliary();
+  assert.equal(r.call(resume, id, 2, held.value), -4, 'a lexical receive view fences all other dispatch');
+  assert.equal(r.call('linux_capture_result_copy_finish', receiver, 1, 0), 0, 'unpublished ended access preserves the head');
+  assert.equal(r.call(resume, id, 2, held.value), 0);
+  assert.deepEqual(r.command(), held);
+  assert.deepEqual(r.receive(0), bytes('ABCD'));
+  assert.equal(r.call(resume, id, 2, held.value), 0);
+  assert.deepEqual(r.command(), {tag: 13, value: held.value, next: 1n, target: at + 4n, endpoint: 0n});
+  assert.equal(r.call(resume, id, 2, held.value), -12, 'only one ready staged copy');
+  settle(2, held.value, 1);
+  assert.equal(r.call(resume, id, 2, held.value), -4);
+  assert.equal(r.call('linux_run_receipt', id, invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', id), 0);
+  assert.equal(r.result(), 1n);
+  assert.deepEqual(r.receive(0), bytes('E'));
   assert.equal(r.receive(0), undefined);
 });
 

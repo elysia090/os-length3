@@ -15,7 +15,7 @@ impl Continuation {
         self.admit_capture::<false>(ctx, table, request)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "capture-result-v1"))]
     pub(crate) fn admit_waitable_capture_write(
         &mut self,
         ctx: Context<'_>,
@@ -41,7 +41,7 @@ impl Continuation {
         let (at, length) = (request.at, request.length.get() as u64);
         let pending = WriteCall::admit::<WAIT>(&mut ctx, table, request).map_err(Error::Capture)?;
         let call = pending.id();
-        #[cfg(test)]
+        #[cfg(any(test, feature = "capture-result-v1"))]
         let waiting = WAIT && pending.awaiting_room();
         assert!(
             !self.has_byte_output(),
@@ -50,14 +50,14 @@ impl Continuation {
         #[cfg(not(feature = "capture-v1"))]
         let pending = OutputOwner::Captured(pending);
         self.output = Some(pending);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "capture-result-v1"))]
         if waiting {
             return Ok(Step::CapturePressure { call });
         }
         Ok(Step::CaptureWrite { call, at, length })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "capture-result-v1"))]
     pub(crate) fn resume_capture_write(
         &mut self,
         ctx: Context<'_>,

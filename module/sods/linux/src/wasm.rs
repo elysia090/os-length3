@@ -1261,6 +1261,12 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = length;
             call.action.sequence()
         }
+        #[cfg(feature = "capture-result-v1")]
+        Step::CapturePressure { call } => {
+            s.state = 14;
+            s.auxiliary = u64::from(call.sequence);
+            call.action.sequence()
+        }
         Step::Path {
             action,
             target,

@@ -84,7 +84,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
-    index.captureResult = {kind: 'sods-linux-capture-result-v1', host: 'linux-x64-node22-24',
+    index.captureResult = {kind: 'sods-linux-capture-result-v2', host: 'linux-x64-node22-24',
       path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
       bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
   }
@@ -123,6 +123,12 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const mutated = new Uint8Array(bytes); // Decoded bytes may be a Node Buffer.
       mutated[mutated.length - 1] ^= 1;
       await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
+      const oldWire = Buffer.from(bytes);
+      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 2, 2, 0]));
+      assert.notEqual(marker, -1);
+      oldWire[marker + 9] = 1;
+      await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16),
+        /artifact identity/, 'a valid digest for the closed old wire is not a resume-capable artifact');
       const ordinary = new Uint8Array(readFileSync(corePath));
       await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16),
         /artifact identity/, 'a matching hash for the wrong role is not admission');
@@ -295,7 +301,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const execution = await start();
       assert.equal(loads, 0);
       try {
-        await assert.rejects(host.runPath(execution, load), /Linux memory admission failed: -12/);
+        await assert.rejects(host.runPath(execution, load), /Captured result queue is full and no draining consumer is attached/);
       } finally { await stopped(host, execution); }
     } else {
       await succeed();

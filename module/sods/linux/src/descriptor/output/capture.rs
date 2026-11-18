@@ -212,7 +212,7 @@ impl WriteCall {
     /// No new syscall, pointer or OFD lookup. The exact owner may test the
     /// credit frontier after a consumer settles a head. Testing it early
     /// cannot create a reservation or make the wrong request eligible.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "capture-result-v1"))]
     pub(crate) fn resume_room(
         &mut self,
         ctx: Context<'_>,

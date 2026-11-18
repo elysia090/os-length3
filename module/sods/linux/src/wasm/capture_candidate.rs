@@ -17,7 +17,7 @@ static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x01\x01\x00";
 #[used]
 #[link_section = "sods.linux.capture"]
 #[cfg(feature = "capture-result-v1")]
-static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x01\x02\x00";
+static CAPTURE_ID: [u8; 12] = *b"SODSCAP\0\x07\x02\x02\x00";
 
 #[no_mangle]
 pub extern "C" fn linux_capture_candidate() -> u32 {

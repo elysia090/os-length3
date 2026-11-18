@@ -8,7 +8,7 @@ const wasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
 const stored = gzipSync(wasm);
 const sha = sha256(stored);
 const descriptor = {
-  kind: 'sods-linux-capture-result-v1', host: 'linux-x64-node22-24',
+  kind: 'sods-linux-capture-result-v2', host: 'linux-x64-node22-24',
   path: `blobs/${sha}.bin`, sha256: sha, size: stored.length, bytes: wasm.length, wasm: sha256(wasm),
 };
 const index = (captureResult: unknown) => new TextEncoder().encode(JSON.stringify({captureResult}));

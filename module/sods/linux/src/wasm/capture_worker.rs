@@ -102,30 +102,65 @@ extern "C" fn write(
         let length = exact_length(length)?;
         // Reuse the exact continuation gate, not a physical command or an
         // earlier raw Unsupported sentinel.
-        let command = slot
-            .continuation
-            .as_mut()
-            .ok_or(-11)?
-            .admit_capture_write(
-                output.context(files, &mut s.domain, &mut slot.execution),
-                table,
-                Request {
-                    invocation,
-                    sequence,
-                    fd,
-                    at,
-                    length,
-                },
-            )
-            .map_err(|_| -12)?;
-        let Step::CaptureWrite { call, .. } = command else {
-            unreachable!("installed exact write")
+        let continuation = slot.continuation.as_mut().ok_or(-11)?;
+        let context = output.context(files, &mut s.domain, &mut slot.execution);
+        let request = Request {
+            invocation,
+            sequence,
+            fd,
+            at,
+            length,
+        };
+        #[cfg(feature = "capture-result-v1")]
+        let command = continuation.admit_waitable_capture_write(context, table, request);
+        #[cfg(not(feature = "capture-result-v1"))]
+        let command = continuation.admit_capture_write(context, table, request);
+        let command = command.map_err(|_| -12)?;
+        let call = match command {
+            Step::CaptureWrite { call, .. } => call,
+            #[cfg(feature = "capture-result-v1")]
+            Step::CapturePressure { call } => call,
+            _ => unreachable!("installed exact captured call"),
         };
         s.capture_write = Some(Active {
             execution,
             call,
             viewing: false,
         });
+        Ok(step(s, command))
+    })
+}
+
+/// Resume only the call already retained in Rust. An early wake does not
+/// create queue credit. The consumer removes an exact head separately.
+#[cfg(feature = "capture-result-v1")]
+#[no_mangle]
+pub extern "C" fn linux_capture_result_write_resume(
+    execution: u64,
+    sequence: u32,
+    action: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let id = CallId {
+            sequence,
+            action: token(action),
+        };
+        s.capture_write
+            .as_ref()
+            .filter(|p| p.execution == execution && p.call == id && !p.viewing)
+            .ok_or(-4)?;
+        let index = execution_index(s, execution)?;
+        let slot = s.executions[index].live_mut()?;
+        let (files, output) = s.sealed.as_mut().ok_or(-9)?.capture_parts()?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .resume_capture_write(
+                output.context(files, &mut s.domain, &mut slot.execution),
+                id,
+            )
+            .map_err(|_| -12)?;
         Ok(step(s, command))
     })
 }
