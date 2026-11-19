@@ -1,8 +1,10 @@
 # ricebox distribution
 
-ricebox builds a product-independent Linux root from pinned package sources and
-produces integrity-checked layers for deployment. `RELEASE` names the source
-version; `packages/` contains recipes and `pins/` their source selections.
+Ricebox builds a product-independent Linux root from pinned package sources and
+produces integrity-checked layers for deployment. `RELEASE` sets the default
+version for new Ricebox artifacts, currently `0.0.1`. The legacy OS Length3
+release remains `0.6.5`; Why sources that version from `why/LEGACY_RELEASE` and
+consumes existing artifacts only through its unchanged pins.
 
 Native execution uses [muk](../muk/) to create a Linux container and the
 [terminal helper](terminal/) to attach its terminal. Browser execution uses
@@ -23,9 +25,11 @@ npm pack --ignore-scripts
 ```
 
 The output directory must not exist. This creates a private local package, not a
-registry publication. Its declared Node requirement is `>=22.18`; Node 24 is the
-source-package generation guidance. Browser consumers need a bundler with
-module-Worker support and must serve the distribution assets separately.
+registry publication. Install the generated tarball with `npm install --offline
+--ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes no Why, Everyday, demo,
+or site files. Its declared Node requirement is `>=22.18`; use Node 24 to generate
+the package. Browser consumers need a bundler with module-Worker support and
+must serve the distribution assets separately.
 
 The package exports `ricebox` (`createRoot` and its types), `ricebox/prepare`
 (composition), and `ricebox/vite` (the Vite integration, including

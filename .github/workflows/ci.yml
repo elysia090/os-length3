@@ -84,7 +84,7 @@ jobs:
             ${{ hashFiles('.cargo/config.toml',
             'why/prompt/roots/pins.rs', 'why/shipto/release-pins.ts',
             'why/shipto/desktop-releases.json', 'why/build/fetch-root.ts',
-            'why/build/webroot.sh', 'ricebox/distribution/RELEASE',
+            'why/build/webroot.sh', 'why/LEGACY_RELEASE',
             'ricebox/distribution/build/**', 'ricebox/distribution/format/**',
             'ricebox/distribution/host/node/**', 'ricebox/distribution/deployment/**',
             'ricebox/distribution/verification/distribution.ts',

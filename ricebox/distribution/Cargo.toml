@@ -1,6 +1,6 @@
 [package]
 name = "ricebox"
-version = "0.1.0"
+version = "0.0.1"
 description = "ricebox where it is used: a root on a device, and a root run in a box"
 edition = "2021"
 publish = false

@@ -33,7 +33,7 @@ is welcome, and so is a Remote of your own (`node why/shipto/remote/serve/dev.ts
 
 ## Supported versions
 
-Only the latest release is supported: the release `ricebox/distribution/RELEASE` names, which
+Only the latest release is supported: the release `why/LEGACY_RELEASE` names, which
 the web app at `os.length3.com` always is. Fixes go into the next release.
 Older desktop apps and `why` builds are asked to update. Nothing earlier is
 patched.

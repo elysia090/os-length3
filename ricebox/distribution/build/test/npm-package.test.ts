@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtempSync, readFileSync, readdirSync, existsSync, rmSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -15,6 +15,8 @@ test('built npm package contains builder dependencies and imports public JS with
     execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
     const pkg=JSON.parse(readFileSync(join(out,'package.json'),'utf8'));
     assert.equal(pkg.private,true);
+    assert.equal(pkg.version,'0.0.1');
+    assert.equal(readFileSync(join(out,'ricebox/distribution/RELEASE'),'utf8').trim(),pkg.version);
     for(const path of ['make','maintenance','test/fixtures']) assert.equal(existsSync(join(out,'ricebox/distribution',path)),false,path+' is not package content');
     assert.equal(existsSync(join(out,'ricebox/distribution/verification')),false,'comparison harnesses are not package entries');
     assert.equal(existsSync(join(out,'ricebox/otter')),false);
@@ -38,10 +40,22 @@ test('built npm package contains builder dependencies and imports public JS with
     const result=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',
       `for (const url of ${JSON.stringify(imports)}) await import(url); console.log('imports-ok');`],{encoding:'utf8',timeout:30_000});
     assert.match(result,/imports-ok/);
+    const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--offline','--json','--pack-destination',work],
+      {cwd:out,env:{...process.env,npm_config_cache:join(work,'npm-cache')},encoding:'utf8',timeout:30_000}));
+    assert.ok(existsSync(join(work,packed[0].filename)));
+    assert.ok(!packed[0].files.some((f:{path:string})=>/file-store|file-scope/.test(f.path)), 'retired file ownership implementations are not package content');
+    assert.ok(!packed[0].files.some((f:{path:string})=>/(^|\/)(why|site|demos?|examples?|playground|everyday|test|verification)(\/|$)/.test(f.path)), 'products and demos are not package content');
+    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/format/executable-source.ts'));
+    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/integrations/vite.js'));
+    const consumer=join(work,'consumer'); mkdirSync(consumer);
+    writeFileSync(join(consumer,'package.json'),'{"private":true}\n');
+    execFileSync('npm',['install','--ignore-scripts','--offline','--no-audit','--no-fund',join(work,packed[0].filename)],
+      {cwd:consumer,env:{...process.env,npm_config_cache:join(work,'empty-consumer-cache')},encoding:'utf8',timeout:30_000});
     const composed=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',`
-      import {mkdirSync,writeFileSync} from 'node:fs'; import {join} from 'node:path'; import {createHash} from 'node:crypto';
-      const {prepareDistribution}=await import(${JSON.stringify(imports[2])});
-      const {distributionAssets}=await import(${JSON.stringify(imports[1])});
+      import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'; import {join} from 'node:path'; import {createHash} from 'node:crypto';
+      await import('ricebox');
+      const {prepareDistribution}=await import('ricebox/prepare');
+      const {distributionAssets}=await import('ricebox/vite');
       const work=${JSON.stringify(work)}, cache=join(work,'selected-cache'), base=join(cache,'base');
       mkdirSync(join(base,'tree/usr/share'),{recursive:true});writeFileSync(join(base,'tree/usr/share/base'),'package');
       for(const [key,value] of Object.entries({version:'1',source:'fixture',key:'fixture'}))writeFileSync(join(base,key),value);
@@ -51,15 +65,10 @@ test('built npm package contains builder dependencies and imports public JS with
       }));
       globalThis.fetch=()=>{throw Error('package composition must not acquire');};
       const output=join(work,'composed');await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
+      if(JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')).version!==${JSON.stringify(pkg.version)})throw Error('wrong packaged version');
       if(!distributionAssets(output).has('ricebox/muk.json'))throw Error('missing maker');console.log('composition-ok');
-    `],{encoding:'utf8',timeout:30_000});
+    `],{cwd:consumer,encoding:'utf8',timeout:30_000});
     assert.match(composed,/composition-ok/);
-    const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--offline','--json','--pack-destination',work],
-      {cwd:out,env:{...process.env,npm_config_cache:join(work,'npm-cache')},encoding:'utf8',timeout:30_000}));
-    assert.ok(existsSync(join(work,packed[0].filename)));
-    assert.ok(!packed[0].files.some((f:{path:string})=>/file-store|file-scope/.test(f.path)), 'retired file ownership implementations are not package content');
-    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/format/executable-source.ts'));
-    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/integrations/vite.js'));
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
 });

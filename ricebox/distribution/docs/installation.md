@@ -7,6 +7,35 @@ an existing local cache. Otter’s repository entry is
 [`catalog/artifacts.ts`](../../otter/catalog/artifacts.ts); Ricebox does not
 include it in its npm package.
 
+## Local artifacts
+
+`ricebox/distribution/RELEASE` supplies `0.0.1` for newly built artifacts. From
+the checkout, assemble a native archive using a prepared package selection:
+
+```sh
+sh ricebox/distribution/build/assemble.sh SELECTED_PACKAGES NEW_NATIVE_DIR
+```
+
+The output contains `ricebox-0.0.1-x86_64-<sha256>.tar.zst`, `SHA256SUMS`,
+and `manifest`. The archive contains the selected guest tree and its manifest.
+The assembler does not add a launcher or site/demo files from the checkout.
+The `length3-root-v3` format and guest inventory
+paths are compatibility identifiers, not release names. Why uses its own
+composition step to add its overlay; that is not a Ricebox artifact.
+
+For browser use, `prepareDistribution` builds static layers from a supplied
+package cache and pinned tools without acquisition. To derive layers from an
+existing archive instead, use `build/distribution.sh ARCHIVE NEW_LAYER_DIR`
+with the local Rust/C toolchain and dependencies already available. The generated
+`webroot.json` records the source archive's version, exact size and SHA-256.
+Serve its files at a caller-chosen URL; the archive itself is a separate output.
+
+These are local build instructions, not a download URL for Ricebox 0.0.1.
+Verify an externally supplied artifact against a digest and size from a trusted
+source. Do not rename or repin old OS Length3 artifacts under the Ricebox name.
+Public release remains subject to the target readiness check:
+`node ricebox/sods/runtime/targets.ts --owed`.
+
 ## Prerequisites
 
 The generated local npm package declares Node `>=22.18`. Use Node 24 to generate

@@ -10,12 +10,13 @@ function fixture(t: TestContext) {
   t.after(() => rmSync(work, {recursive: true, force: true}));
   const checkout = join(work, 'checkout with spaces');
   const source = join(checkout, 'why/build');
-  const version = join(checkout, 'ricebox/distribution');
+  const ricebox = join(checkout, 'ricebox/distribution');
   mkdirSync(source, {recursive: true});
-  mkdirSync(version, {recursive: true});
+  mkdirSync(ricebox, {recursive: true});
   const publisher = join(source, 'publish-release.ts');
   copyFileSync(new URL('./publish-release.ts', import.meta.url), publisher);
-  writeFileSync(join(version, 'RELEASE'), '0.6.5\n');
+  writeFileSync(join(checkout, 'why/LEGACY_RELEASE'), '0.6.5\n');
+  writeFileSync(join(ricebox, 'RELEASE'), '0.0.1\n');
   const preload = join(work, 'fake-fetch.mjs');
   writeFileSync(preload, `
 globalThis.fetch = async (url, {method = 'GET'} = {}) => {
@@ -44,7 +45,7 @@ globalThis.fetch = async (url, {method = 'GET'} = {}) => {
   return {run};
 }
 
-test('the publisher reads the Ricebox release version from its checkout and leaves existing releases alone', t => {
+test('the publisher reads the legacy Why root version, not the independent Ricebox version', t => {
   const {run} = fixture(t);
   const result = run(200);
   assert.equal(result.status, 0, result.stderr);

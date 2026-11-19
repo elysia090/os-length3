@@ -237,7 +237,7 @@ is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
 the same thing for the desktop app and for the web.
 
 - **Name and version.** `why X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
-  (the version in `ricebox/distribution/RELEASE`).
+  (the version in `why/LEGACY_RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `why/prompt/roots/pins.rs` RELEASES pins it, for both ways in: `sha256` and

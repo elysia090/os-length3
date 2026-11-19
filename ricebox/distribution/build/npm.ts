@@ -7,11 +7,13 @@ import {packageTypeScript} from '../../toolchain/package-typescript.ts';
 import {readFileSync, mkdirSync, writeFileSync, existsSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {releaseVersion} from './version.ts';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const out = process.argv[2] && resolve(process.argv[2]);
 if (!out) throw new Error('usage: node ricebox/distribution/build/npm.ts OUT');
 if (existsSync(out)) throw new Error(`Refusing to replace an existing directory: ${out}`);
+const version = releaseVersion();
 const entry = 'ricebox/distribution/runtime/root.ts';
 const modules = packageTypeScript(repository, out, [
   entry, 'ricebox/distribution/integrations/vite.ts', 'ricebox/distribution/build/prepare.ts',
@@ -19,19 +21,19 @@ const modules = packageTypeScript(repository, out, [
   'ricebox/distribution/build/distribution.ts', 'ricebox/distribution/build/package-database.ts',
   'ricebox/distribution/build/script-interpreters.ts',
 ], path => {
-  if (!/^ricebox\/(distribution\/(?:runtime|format|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts') || /\/(?:test|verification)\/|\.(?:test|spec)\.ts$/.test(path)) {
+  if (!/^ricebox\/(distribution\/(?:runtime|format|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts') || /\/(?:test|verification|site|demos?|examples?|playground)\/|\.(?:test|spec)\.ts$/.test(path)) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
 });
 // Shell and data inputs are not TypeScript graph edges.
-for (const path of ['build/assemble.sh', 'etc/os-release', 'pins/sources.env']) {
+for (const path of ['RELEASE', 'build/assemble.sh', 'etc/os-release', 'pins/sources.env']) {
   const name = 'ricebox/distribution/' + path;
   mkdirSync(dirname(join(out, name)), {recursive: true});
   writeFileSync(join(out, name), readFileSync(join(repository, name)));
 }
 writeFileSync(join(out, 'ricebox/sods/Cargo.toml'), readFileSync(join(repository, 'ricebox/sods/Cargo.toml')));
 writeFileSync(join(out, 'package.json'), JSON.stringify({
-  name: 'ricebox', version: '0.0.1', private: true, type: 'module',
+  name: 'ricebox', version, private: true, type: 'module',
   description: 'The product-independent ricebox distribution loader',
   exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': {types: './ricebox/distribution/integrations/vite.ts', import: './ricebox/distribution/integrations/vite.js'}, './prepare': {types: './ricebox/distribution/build/prepare.ts', import: './ricebox/distribution/build/prepare.js'}},
   engines: {node: '>=22.18'},

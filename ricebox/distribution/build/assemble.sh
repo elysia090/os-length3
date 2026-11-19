@@ -6,10 +6,12 @@
 # The same root is used directly or served as layers. No persistence is implied.
 set -eu
 [ "$#" -ge 2 ] && [ "$#" -le 4 ] || { echo "usage: assemble.sh PACKAGES OUT [VERSION [NAME]]" >&2; exit 2; }
-pkgs=$1; out=$2; version=${3:-0.0.1}; name=${4:-ricebox}
-case $name in ''|*[!a-zA-Z0-9._-]*) echo 'assemble: invalid distribution name' >&2; exit 2 ;; esac
-echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo 'assemble: invalid version' >&2; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)
+pkgs=$1; out=$2; version=${3:-$(cat "$here/RELEASE")}; name=${4:-ricebox}
+case $name in ''|*[!a-zA-Z0-9._-]*) echo 'assemble: invalid distribution name' >&2; exit 2 ;; esac
+bad_version() { echo 'assemble: invalid version' >&2; exit 2; }
+case $version in *[!a-zA-Z0-9.-]*) bad_version ;; esac
+printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || bad_version
 pkgs=$(cd "$pkgs" && pwd)
 say() { echo "root-assemble: $*" >&2; }
 [ -s "$pkgs/record" ] || { say "$pkgs has no record: run ricebox/distribution/build/packages.sh first"; exit 1; }
@@ -64,8 +66,12 @@ while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source"
 install -m 0644 "$here/pins/sources.env" "$root/usr/share/length3/sources.env"
 mkdir -p "$root/etc/apk"
 printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$root/etc/apk/repositories"
-node "$here/build/script-interpreters.ts" "$root"
-node "$here/build/package-database.ts" "$root" "$work/list"
+# The npm package has JavaScript next to its sources. Node does not strip
+# TypeScript in node_modules; a source checkout has only the .ts files.
+ext=ts
+if [ -f "$here/build/script-interpreters.js" ] && [ -f "$here/build/package-database.js" ]; then ext=js; fi
+node "$here/build/script-interpreters.$ext" "$root"
+node "$here/build/package-database.$ext" "$root" "$work/list"
 
 {
   echo "format=length3-root-v3"

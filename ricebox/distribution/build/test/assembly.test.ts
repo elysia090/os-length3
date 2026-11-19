@@ -9,7 +9,7 @@ import {packageCache, readArchive} from '../../test/fixtures/package-cache.ts';
 import {openDistribution} from '../../deployment/local.ts';
 
 function assemble(pkgs: string, out: string) {
-  const result = spawnSync('sh', [fileURLToPath(new URL('../assemble.sh', import.meta.url)), pkgs, out, '0.0.1'], {encoding: 'utf8'});
+  const result = spawnSync('sh', [fileURLToPath(new URL('../assemble.sh', import.meta.url)), pkgs, out], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
   const archive = readdirSync(out).find((p) => p.endsWith('.tar.zst'))!;
   assert.match(archive, /^ricebox-0\.0\.1-x86_64-[0-9a-f]{64}\.tar\.zst$/);
@@ -22,8 +22,10 @@ test('ricebox assembles without a why binary, compiler, or all optional recipes'
     const one = assemble(pkgs, join(at, 'one')), two = assemble(pkgs, join(at, 'two'));
     assert.equal(one.archive.split('/').at(-1), two.archive.split('/').at(-1));
     assert.match(readArchive(one.archive, 'root/etc/os-release'), /ID=ricebox/);
+    assert.match(readArchive(one.archive, 'root/etc/os-release'), /^VERSION_ID=0\.0\.1$/m);
     assert.equal(readArchive(one.archive, 'root/usr/bin/tool'), 'a neutral tool\n');
     assert.match(one.manifest, /package.base=/);
+    assert.match(one.manifest, /^version=0\.0\.1$/m);
     assert.doesNotMatch(one.manifest, /why\./);
     const list = spawnSync('tar', ['--zstd', '-tf', one.archive], {encoding: 'utf8'}).stdout;
     assert.doesNotMatch(list, /usr\/bin\/why/);
@@ -57,6 +59,11 @@ test('the same neutral root becomes static layers without requiring why or optio
     const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
     assert.equal(about.name, 'ricebox');
     const index = JSON.parse(readFileSync(join(out, about.index.path), 'utf8'));
+    assert.equal(about.version, '0.0.1');
+    assert.equal(about.file, archive.split('/').at(-1));
+    assert.equal(about.sha256, /([0-9a-f]{64})\.tar\.zst$/.exec(archive)?.[1]);
+    assert.equal(index.version, about.version);
+    assert.equal(index.sha256, about.sha256);
     assert.equal(index.translations.length, 0);
     assert.ok(index.files.some((f: {path: string}) => f.path === '/usr/bin/tool'));
     const {nativeTree, webTree} = await import('../../verification/inventory.ts');

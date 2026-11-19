@@ -4,7 +4,7 @@
 //
 //   GITHUB_TOKEN=… node why/build/publish-release.ts OUT
 //
-// The version is ricebox/distribution/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
+// The version is why/LEGACY_RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
 // names the repository when it is not this one (and GITHUB_API_URL the API, as on GitHub Actions).
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
@@ -15,7 +15,7 @@ const here = fileURLToPath(new URL('../..', import.meta.url));
 const [outArg] = process.argv.slice(2);
 if (!outArg) { console.error('usage: node why/build/publish-release.ts OUT'); process.exit(2); }
 const out = resolve(outArg);
-const version = process.env.VERSION || readFileSync(join(here, 'ricebox/distribution/RELEASE'), 'utf8').trim();
+const version = process.env.VERSION || readFileSync(join(here, 'why/LEGACY_RELEASE'), 'utf8').trim();
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version)) throw new Error(`Not a release version: ${version}`);
 const sha = process.env.GITHUB_SHA || execFileSync('git', ['-C', here, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';

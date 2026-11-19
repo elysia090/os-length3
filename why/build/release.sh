@@ -20,7 +20,7 @@
 #
 #   sh why/build/release.sh OUT
 #
-# The version is ricebox/distribution/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
+# The version is why/LEGACY_RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
 # ROOT_PACKAGES, what ricebox/distribution/build/packages.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
 # keeps them from release to release; see why/docs/operations.md for the manual build). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
@@ -31,7 +31,7 @@ here=$(cd "$(dirname "$0")/../.." && pwd)
 [ $# -eq 1 ] || { echo "usage: sh why/build/release.sh OUT" >&2; exit 2; }
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
-version=${VERSION:-$(tr -d ' \n' < "$here/ricebox/distribution/RELEASE")}
+version=${VERSION:-$(tr -d ' \n' < "$here/why/LEGACY_RELEASE")}
 why_version=$(cat "$here/why/VERSION")
 sha=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD)}
 echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "release: not a version: $version" >&2; exit 1; }
@@ -39,9 +39,8 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
   echo "release: the tree has changes; a release is made from a commit as it is" >&2; exit 1
 fi
 cd "$here"
-# ricebox's own line (0.0.1 on; 0.6.x is the line before the name) is released owing nothing: every input, machine
-# and host verified or excluded with its reason, every call muk makes answered where there is no Linux, and a box and
-# a terminal made by muk and prompt alone (ricebox/sods/runtime/targets.ts). While anything is owed it is not made.
+# Do not publish under a new-line version via the legacy pipeline while the
+# Ricebox target matrix still has unverified or unimplemented entries.
 case "$version" in 0.[0-5].*) node ricebox/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.

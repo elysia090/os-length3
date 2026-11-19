@@ -6,6 +6,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {requireStandardFileOwner} from '../format/manifest.ts';
 import {fileURLToPath} from 'node:url';
+import {releaseVersion} from './version.ts';
 
 export interface PinnedTool { path: string; size: number; sha256: string }
 export interface PrepareOptions {
@@ -53,7 +54,7 @@ export async function prepareDistribution(options: PrepareOptions) {
   requireStandardFileOwner(options);
   // Do not silently accept the former network-acquiring API in JavaScript callers.
   if ('catalog' in options) throw new Error('ricebox: acquire catalog packages first, then pass packages, packageCache and tools');
-  const {packages, packageCache, toolchain, tools, output, version = '0.0.1', cache, hot = []} = options;
+  const {packages, packageCache, toolchain, tools, output, version = releaseVersion(), cache, hot = []} = options;
   if (!packageCache || !output) throw new Error('ricebox: packageCache and output are required for package composition');
   if (!toolchain && !tools) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
   if (!Array.isArray(hot) || hot.some(p => typeof p !== 'string' || !p.startsWith('/') || /[\s,]/.test(p))) throw new Error('ricebox: hot must contain absolute guest program paths');
@@ -67,7 +68,9 @@ export async function prepareDistribution(options: PrepareOptions) {
     const archives = readdirSync(join(work, 'root')).filter(n => n.endsWith('.tar.zst'));
     if (archives.length !== 1) throw new Error('ricebox: assembler did not produce exactly one root');
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));
-    const args = [join(source, verified ? 'ricebox/distribution/build/distribution.ts' : 'ricebox/distribution/build/distribution.sh'), join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
+    const base = join(source, 'ricebox/distribution/build/distribution');
+    const producer = verified ? (existsSync(`${base}.js`) ? `${base}.js` : `${base}.ts`) : `${base}.sh`;
+    const args = [producer, join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
     if (verified) args.push('--translator', verified.translator.path, '--sods', verified.sods.path);
     if (cache !== undefined) args.push('--cache', cache === '' ? '' : resolve(cache));
     if (hot.length) args.push('--hot', hot.join(','));
