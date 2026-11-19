@@ -15,6 +15,7 @@ import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.t
 import {take} from './mount.ts';
 import * as pty from './pty.ts';
 import {TimerFd, capTimerTime} from './timerfd.ts';
+import {clocks} from './clock.ts';
 import {byNr, nrIn} from './space.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
@@ -1215,10 +1216,24 @@ function putTimer(p: Proc, at: number, [interval, remaining]: [bigint, bigint]):
   put(at, interval);
   put(at + 16, remaining);
 }
+const {monotonic} = clocks();
+
 function timerfd(p: Proc, clock: number, flags: number): number {
   if (clock !== 1 || (flags & ~(O.CLOEXEC | O.NONBLOCK))) fail(E.INVAL);
   const d = new Description('timerfd', {flags: O.RDWR | (flags & O.NONBLOCK)});
-  const timer = d.timer = new TimerFd(p.kernel);
+  const k = p.kernel;
+  const timer = d.timer = new TimerFd({
+    now: monotonic,
+    schedule(deadline, fire) {
+      // The guest clock shares the queue's origin but can round differently.
+      // Wait at least a microsecond before rechecking, and stay within setTimeout's limit.
+      const host = steady();
+      const at = Math.min(host + 0x7fffffff, Math.max(Number(deadline) / 1e6, host + 0.001));
+      const wake = k.addTimer(at, fire);
+      return () => k.removeTimer(wake);
+    },
+    notifyReady() { k.dirty = true; },
+  });
   d.gone = () => timer.close();
   const fd = p.fds.install(d, {cloexec: !!(flags & O.CLOEXEC)});
   return fd < 0 ? fail(E.MFILE) : fd;
