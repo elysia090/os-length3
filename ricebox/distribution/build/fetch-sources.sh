@@ -9,6 +9,11 @@ source_urls() {
         "https://mirror.csclub.uwaterloo.ca/gnu/${1#https://ftp.gnu.org/gnu/}" ;;
   esac
   printf '%s\n' "$1"
+  case $1 in
+    https://download.samba.org/pub/rsync/src/rsync-3.5.2.tar.gz)
+      # The project's uploaded release tarball has the same pin, not the generated tag archive.
+      printf '%s\n' 'https://github.com/RsyncProject/rsync/releases/download/v3.5.2/rsync-3.5.2.tar.gz' ;;
+  esac
 }
 
 # URL FILE DIGEST ALGORITHM: only a complete download with the pinned digest replaces FILE. curl writes to a
