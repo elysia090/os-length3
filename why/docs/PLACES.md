@@ -1525,11 +1525,10 @@ or goes).
   (a Prompt's card's size), beside the desktop app's (SSH, then it, then the
   desktop app, in one row; on the web SSH's one line is a card wide; where
   the row has no room, each goes under). The one in
-  effect is the card's head: why, with its version (in the mono face, as a
-  version is), what it is here (in the app, the root installed, on this
-  device's kernel; in a browser, the same root through muk) and its
-  digest: the same version and digest in both, the root's (why: the one
-  base). Under it the others, a row each, quiet:
+  effect is the card's head: Ricebox or the chosen distribution, with its
+  version in the mono face, what it is here (in the app, the root installed
+  on this device's kernel; in a browser, Ricebox through Muk), and its digest.
+  Those identify the root, not the Why app. Under it the others, a row each, quiet:
   Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
@@ -1685,16 +1684,16 @@ or goes).
   after the environments, on one row (what this device runs on, and can be
   reached by or become), its card the SSH card's size, the cards ending
   level; where the row has no room, it goes under. Few words: its title,
-  `why*`, and the version `ricebox/distribution/RELEASE` names apart from it in the mono face (a
-  name and a number are two things); quietly, x86-64 Linux, which file and
-  its size (what it is goes without saying). At its bottom left, Download
+  `why*`, and the current Why build's version (`why/VERSION`) apart from it
+  in the mono face; quietly, x86-64 Linux, which file, its size, and the
+  distribution release that supplied the installer. At its bottom left, Download
   (ダウンロード), the one download: a primary button a size smaller than a
   small one (its word 13, its mark 12, still 32 high to press) with the
   download mark (an arrow into a tray, `icons.ts`) and the word. It is at
   the left because it leaves the page for this computer, as Forge does on
   Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
   AppImage when the Remote has no .deb (the release still has both). They are
-  the files `why/shipto/desktop-releases.json` pins for that version, served by
+  the files `why/shipto/desktop-releases.json` pins for the published distribution release, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
   puts them from the release (`why/shipto/remote/bytes/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,

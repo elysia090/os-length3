@@ -54,7 +54,7 @@ for await (const m of tarMembers(Readable.from([tar]))) {
 }
 const about: About | null = JSON.parse(members.get('webroot.json')?.toString('utf8') ?? 'null');
 if (!about) throw new Error(`${asset} has no webroot.json`);
-if (about.version !== version || about.sha256 !== pin.sha256) throw new Error(`${asset}: webroot.json is why ${about.version} from root ${about.sha256}; this tree pins ${version} from ${pin.sha256}`);
+if (about.version !== version || about.sha256 !== pin.sha256) throw new Error(`${asset}: webroot.json is distribution release ${about.version} from root ${about.sha256}; this tree pins ${version} from ${pin.sha256}`);
 const descriptor = releaseIndexAsset(about);
 if (descriptor.sha256 !== pin.web) throw new Error(`${asset}: webroot.json names index ${descriptor.sha256}; this tree pins ${pin.web}`);
 const indexBytes = members.get(descriptor.path);
@@ -96,4 +96,4 @@ try {
   }
   publishTree(next, join(here, 'why/app/public/webroot'), dirname(work));
 } finally { rmSync(work, {recursive: true, force: true}); }
-console.log(`why ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in why/app/public/webroot`);
+console.log(`Distribution release ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in why/app/public/webroot`);

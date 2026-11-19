@@ -28,8 +28,10 @@ const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (why/shipto/release-pins.ts shipped, the newest pinned; not ricebox/distribution/RELEASE, which names the one being
-// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/shipto/remote/bytes/mirror.ts).
+// The app being built and the published installer offered by Runtime have
+// separate identities. Keep the installer on the published pin.
+const WHY_VERSION = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
+process.env.VITE_LENGTH3_WHY_VERSION = WHY_VERSION;
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
@@ -54,7 +56,7 @@ function commit(): string {
 }
 
 /**
- * The page says which build it is (`<meta name="why-build">`: the release and the commit; boot.js puts it in
+ * The page says which build it is (`<meta name="why-build">`: the Why version and the commit; boot.js puts it in
  * what it shows when the app cannot start), so the page a site serves can be told from the tree. On the web its
  * script is marked data-cfasync="false": a CDN that defers scripts (Cloudflare's Rocket Loader) rewrites a
  * module script into one its own loader runs, which this page's policy never lets run, leaving the page blank.
@@ -65,7 +67,7 @@ const buildStamp = (): Plugin => ({
   transformIndexHtml: {
     order: 'post',
     handler(html) {
-      const stamped = html.replace('<head>', `<head>\n    <meta name="why-build" content="${`${process.env.VITE_LENGTH3_RELEASE} ${commit()}`.trim()}">`);
+      const stamped = html.replace('<head>', `<head>\n    <meta name="why-build" content="${`${WHY_VERSION} ${commit()}`.trim()}">`);
       return HOST === 'native' ? stamped : stamped.replace(/<script(?=[^>]*\stype="module")/g, '<script data-cfasync="false"');
     },
   },

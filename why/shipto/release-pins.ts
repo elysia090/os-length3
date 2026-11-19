@@ -38,7 +38,7 @@ export function pinnedRoots(rootRs: string): RootPin[] {
   return roots;
 }
 
-/** The newest desktop version pinned for shipping, not the version being built. */
+/** The newest published distribution release with pinned desktop installers. */
 export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {
   return Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1) ?? '';
 }

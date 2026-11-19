@@ -11,9 +11,17 @@ test("why's version is why/VERSION's in each of its manifests", () => {
   const version = read('why/VERSION').trim();
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.equal(JSON.parse(read('package.json')).version, version);
+  const npmLock = JSON.parse(read('package-lock.json'));
+  assert.equal(npmLock.version, version, 'npm lock');
+  assert.equal(npmLock.packages[''].version, version, 'npm lock root package');
   assert.equal(JSON.parse(read('why/desktop/tauri.conf.json')).version, version);
   for (const crate of ['why', 'why/api/web', 'why/cli', 'why/desktop']) {
     assert.equal(/^version = "([^"]+)"/m.exec(read(`${crate}/Cargo.toml`))?.[1], version, crate);
+  }
+  const cargoLock = read('Cargo.lock').split('[[package]]');
+  for (const name of ['why', 'why-core', 'why-core-web', 'why-desktop']) {
+    const entry = cargoLock.find(section => section.includes(`\nname = "${name}"\n`));
+    assert.equal(/^version = "([^"]+)"/m.exec(entry ?? '')?.[1], version, `Cargo.lock: ${name}`);
   }
 });
 

@@ -108,6 +108,12 @@ The .deb and the AppImage carry why beside the app (`why/build/desktop.sh`): the
 `why app` work at once, and the app runs that why for its Prompts and SSH. It
 is static (musl), with SSH; the root's own `/usr/bin/why` is built without it.
 
+Why's product and package version comes from `why/VERSION`. Published filenames
+and download links use the distribution release that supplied the installer;
+changing Why's version does not rename or replace those published files. A
+future Why package at `0.0.1` compares lower than an already installed historical
+`0.6.5` package in Debian version ordering. This is not an automatic upgrade.
+
 What the machine needs: x86-64 Linux with glibc 2.39 or newer (Ubuntu 24.04,
 Debian 13, Fedora 40 and later; the app is built on Ubuntu 24.04), an X11 or
 Wayland desktop, and its graphics: libEGL with a driver (`libegl1` and Mesa's
@@ -452,7 +458,7 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | the repository's own (empty) |
-| Build command | `npm run build:cloudflare`: the web root from the release of the newest why `why/prompt/roots/pins.rs` pins (`why/build/fetch-webroot.ts`, taken only at the index pinned for it), then the app |
+| Build command | `npm run build:cloudflare`: the newest distribution root pinned by `why/prompt/roots/pins.rs` (`why/build/fetch-webroot.ts`, taken only at the index pinned for it), then the app |
 | Deploy command | `npm run deploy:cloudflare` (`why/shipto/remote/ship/deploy.ts`): the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`why/shipto/remote/bytes/mirror.ts`): each root `why/prompt/roots/pins.rs` pins and the newest desktop app `why/shipto/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
 | Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`why/shipto/remote/ship/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
@@ -464,7 +470,7 @@ Actions, `why/build/release.sh` and `why/build/publish-release.ts` by hand), the
 the release proposes (Pin vX.Y.Z): why's one entry in `why/prompt/roots/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `why/shipto/desktop-releases.json`. A build
-takes only the why this tree pins, and a deploy puts on the Remote only the roots and
+takes only the pinned distribution root, and a deploy puts on the Remote only the roots and
 desktop files this tree pins, so a release made under that tag by anyone
 else is not what production serves. The Remote serves them to anyone, the
 roots by digest (`/v1/os/<sha256>`, what the app and why fetch first) and

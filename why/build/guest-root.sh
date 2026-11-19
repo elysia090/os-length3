@@ -6,6 +6,7 @@ set -eu
 [ "$#" -eq 3 ] || { echo 'usage: guest-root.sh PACKAGES OUT VERSION' >&2; exit 2; }
 pkgs=$(cd "$1" && pwd); out=$2; version=$3
 here=$(cd "$(dirname "$0")/../.." && pwd)
+why_version=$(cat "$here/why/VERSION")
 work=$(mktemp -d "${TMPDIR:-/tmp}/why-root.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT
 cp "$pkgs/record" "$work/record"
@@ -22,10 +23,10 @@ install -m 0755 "$why" "$work/why/tree/usr/bin/why"
 sha=$(sha256sum "$why" | cut -d' ' -f1)
 source=$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)
 if git -C "$here" status --porcelain -- why ':!why/app' ':!why/desktop' ':!why/test' ':!why/shipto/remote' 2>/dev/null | grep -q .; then source="$source+changed"; fi
-printf '%s\n' "$version" > "$work/why/version"
+printf '%s\n' "$why_version" > "$work/why/version"
 printf '%s\n' "$source" > "$work/why/source"
 printf '%s\n' "$sha" > "$work/why/key"
 printf '%s\n' 'https://github.com/elysia090/os-length3' > "$work/why/url"
-printf 'why %s %s\n' "$version" "$source" >> "$work/record"
+printf 'why %s %s\n' "$why_version" "$source" >> "$work/record"
 printf 'why.sha256=%s\nwhy.source=%s\n' "$sha" "$source" > "$work/manifest"
 sh "$here/ricebox/distribution/build/assemble.sh" "$work" "$out" "$version" os-length3-linux

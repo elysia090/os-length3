@@ -1,4 +1,6 @@
 import type {Locator} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {shipped} from '../../shipto/release-pins.ts';
 import {expect, test} from './fixtures.ts';
 import {desktopPolicy} from '../../shipto/policy.ts';
 
@@ -127,6 +129,7 @@ test('the environments are one card two wide, the desktop app at its right and S
   const others = panel.getByRole('list', {name: 'Other environments'});
   await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 26\.04\.1 LTS.*App only/, /^Debian 13\.7.*App only/, /^Custom.*Not yet/]);
   const env = others.locator('xpath=..');
+  await expect(env.locator('.card-title')).toHaveText(/^Ricebox(?: \d+\.\d+\.\d+)?$/);
   const app_ = panel.getByRole('region', {name: 'Desktop App'});
   await expect(app_).toBeVisible();
   const [e, d] = [(await env.boundingBox())!, (await app_.locator('.card').boundingBox())!];
@@ -140,7 +143,9 @@ test('the environments are one card two wide, the desktop app at its right and S
   expect(Math.abs(ssh.x - e.x)).toBeLessThan(2);
   // One download: the .deb, which says what it is; no AppImage beside it.
   await expect(app_.getByRole('link')).toHaveCount(1);
-  await expect(app_.getByRole('link', {name: 'Download'})).toHaveAttribute('href', /\.deb$/);
+  const release = shipped();
+  await expect(app_.getByRole('link', {name: 'Download'})).toHaveAttribute('href', `/v1/desktop/os-length3-linux-${release}-desktop-amd64.deb`);
+  await expect(app_).toContainText(`Installer from distribution release ${release}`);
   await expect(app_).not.toContainText('AppImage');
   await expect(app_).toContainText('x86-64 Linux · .deb');
   // At the words' size (DESIGN §3: what says less is quieter, never smaller), 32 high to press.
@@ -150,7 +155,10 @@ test('the environments are one card two wide, the desktop app at its right and S
   const title = app_.getByText(/^why\* \d/);
   await expect(title).not.toContainText('OS');
   const version = title.locator('.version');
-  await expect(version).toHaveText(/^\d+\.\d+\.\d+$/);
+  const whyVersion = readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim();
+  await expect(version).toHaveText(whyVersion);
+  const build = await app.page.locator('meta[name="why-build"]').getAttribute('content');
+  expect(build?.split(' ')[0]).toBe(whyVersion);
   const face = (l: Locator) => l.evaluate((el) => getComputedStyle(el).fontFamily);
   expect(await face(version)).not.toBe(await face(title));
 });

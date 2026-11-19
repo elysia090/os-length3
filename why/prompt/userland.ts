@@ -13,7 +13,7 @@ const root = createRoot({
   base: isNative ? `${REMOTE_URL}/webroot/` : '/webroot/',
   usedKey: 'why.webroot.used', planKey: 'why.webroot.start',
   oldKeys: ['why.l3.used', 'why.l3.start'], oldCaches: ['l3', 'root3-userland', 'webroot'],
-  message: t, missing: () => t('why missing (run: npm run webroot)'), errorText,
+  message: t, missing: () => t('Ricebox root missing (run: npm run webroot)'), errorText,
 });
 export const {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex: whyIndex, loadWebroot, warmWebroot, filesNow,
   rootWorker: promptWorker, readyWorker: readyPrompt, takeReady, hearAhead, holdAhead, translateAhead} = root;

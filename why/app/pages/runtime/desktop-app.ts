@@ -7,8 +7,10 @@ import desktopPins from '../../../shipto/desktop-releases.json' with {type: 'jso
 
 // Runtime's desktop app, offered on the web beside the environments: the app itself is it.
 
-/** The release this build ships (the newest pinned, through vite.config.ts). */
-const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
+const env = (import.meta as {env?: Record<string, string>}).env;
+const WHY_VERSION = env?.VITE_LENGTH3_WHY_VERSION ?? '';
+/** The published distribution release that supplies the installer. */
+const INSTALLER_RELEASE = env?.VITE_LENGTH3_RELEASE ?? '';
 
 /**
  * The desktop app, on the web only: one small card, saying what it is (why*,
@@ -22,7 +24,7 @@ const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH
  */
 export function desktopApp(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'app-title', hidden: ''});
-  const pins = (desktopPins as Record<string, Partial<Record<'deb' | 'appimage', {file: string; bytes: number}>>>)[RELEASE] ?? {};
+  const pins = (desktopPins as Record<string, Partial<Record<'deb' | 'appimage', {file: string; bytes: number}>>>)[INSTALLER_RELEASE] ?? {};
   const url = (file: string) => `${REMOTE_URL}/v1/desktop/${encodeURIComponent(file)}`;
   const there = async (file: string) => { try { return (await fetch(url(file), {method: 'HEAD'})).ok; } catch { return false; } };
   void (async () => {
@@ -36,8 +38,9 @@ export function desktopApp(): HTMLElement {
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop App')),
       h('div', {class: 'card small-card app-card'},
         // The product's name, and its version apart: a name and a number are two things.
-        h('span', {class: 'card-title'}, 'why*', ' ', h('span', {class: 'version'}, RELEASE)),
+        h('span', {class: 'card-title'}, 'why*', ' ', h('span', {class: 'version'}, WHY_VERSION)),
         h('span', {class: 'muted small'}, what),
+        h('span', {class: 'muted small'}, t('Installer from distribution release {version}', {version: INSTALLER_RELEASE})),
         h('div', {class: 'card-foot'}, get, h('span', {class: 'grow'}))));
     section.hidden = false;
   })();

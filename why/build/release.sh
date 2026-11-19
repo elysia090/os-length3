@@ -32,6 +32,7 @@ here=$(cd "$(dirname "$0")/../.." && pwd)
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
 version=${VERSION:-$(tr -d ' \n' < "$here/ricebox/distribution/RELEASE")}
+why_version=$(cat "$here/why/VERSION")
 sha=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD)}
 echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "release: not a version: $version" >&2; exit 1; }
 if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; then
@@ -75,11 +76,13 @@ mv why-web.zip "$out/$web"
 rm -f why-web.zip.sha256
 # The app with why beside it (why/build/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
 # Prompt on the machine, from the root it installs: its build leaves the web root out (vite.config.ts).
-sh why/build/desktop.sh "$version"
+sh why/build/desktop.sh
 deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
-cp target/release/bundle/deb/*_"$version"_*.deb "$out/$deb"
-cp target/release/bundle/appimage/*_"$version"_*.AppImage "$out/$appimage"
+# Tauri names the local packages by Why's version; published files are
+# named by this distribution release, like the other assets and its pins.
+cp target/release/bundle/deb/*_"$why_version"_*.deb "$out/$deb"
+cp target/release/bundle/appimage/*_"$why_version"_*.AppImage "$out/$appimage"
 # Started as a machine without the build's extra libraries starts it (#37): a window, or no release.
 sh why/build/desktop-smoke.sh "$out/$appimage"
 mv "$out/smoke.png" "$out/../smoke.png"
@@ -108,13 +111,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "why $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`why/prompt/roots/pins.rs\` RELEASES pins both; the release pinned it:"
+  echo "Why is $why_version. The distribution release $version contains the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`why/prompt/roots/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
   awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/why/prompt/roots/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`why/shipto/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`why/build/fetch-webroot.ts\`)."
+  echo "and its desktop app in \`why/shipto/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes the root from \`$webroot\` only at the pinned index (\`why/build/fetch-webroot.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

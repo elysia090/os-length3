@@ -13,7 +13,7 @@ test('why composes its CLI, identity and shell extension without putting them in
   try {
     writeFileSync(join(pkgs, 'record'), 'base 1.0 base-source\n');
     const root = join(at, 'source');
-    for (const path of ['why/build/guest-root.sh', 'why/build/profile.sh', 'ricebox/distribution/build/assemble.sh', 'ricebox/distribution/build/package-database.ts', 'ricebox/distribution/build/script-interpreters.ts', 'ricebox/distribution/etc/os-release', 'ricebox/distribution/pins/sources.env']) {
+    for (const path of ['why/VERSION', 'why/build/guest-root.sh', 'why/build/profile.sh', 'ricebox/distribution/build/assemble.sh', 'ricebox/distribution/build/package-database.ts', 'ricebox/distribution/build/script-interpreters.ts', 'ricebox/distribution/etc/os-release', 'ricebox/distribution/pins/sources.env']) {
       mkdirSync(dirname(join(root, path)), {recursive: true}); writeFileSync(join(root, path), readFileSync(join(repo, path)));
     }
     const bin = join(at, 'bin'); mkdirSync(bin);
@@ -32,7 +32,10 @@ test('why composes its CLI, identity and shell extension without putting them in
     assert.match(identity, /^VERSION_ID=0\.6\.5$/m);
     assert.match(identity, /^PRETTY_NAME="ricebox 0\.6\.5"$/m);
     assert.match(readArchive(archive, 'root/etc/profile.d/why.sh'), /Remote/);
-    assert.match(readArchive(archive, 'manifest'), /why.sha256=/);
+    const manifest = readArchive(archive, 'manifest');
+    assert.match(manifest, /^version=0\.6\.5$/m);
+    assert.match(manifest, /^package\.why=0\.0\.1 /m);
+    assert.match(manifest, /^why\.sha256=/m);
     assert.match(readArchive(archive, 'root/etc/apk/world'), /why/);
   } finally { rmSync(at, {recursive: true, force: true}); }
 });

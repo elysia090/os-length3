@@ -1,4 +1,4 @@
-// Pin the why this tree releases: its entry is why/prompt/roots/pins.rs's RELEASES,
+// Pin the root this distribution release ships: its entry is why/prompt/roots/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
 // index the browser reads the same root by (ricebox/distribution/build/distribution.ts, made from that
@@ -38,7 +38,7 @@ const bytes = native.length.toLocaleString('en').replace(/,/g, '_');
 let webSha = '';
 if (web) {
   const about: About = JSON.parse(readFileSync(join(web, 'webroot.json'), 'utf8'));
-  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is why ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
+  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is distribution release ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
   const asset = releaseIndexAsset(about);
   const index = readFileSync(join(web, asset.path)), got = sha(index);
   if (got !== asset.sha256 || index.length !== asset.size) throw new Error(`${web}/${asset.path}: not the index webroot.json names`);
