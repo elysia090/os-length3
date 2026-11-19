@@ -133,3 +133,19 @@ test('duplicate descriptors share the queue entry; the last close removes it', (
   assert.equal(call(p, 3, copy), 0n);
   assert.equal(p.kernel.deadline(), undefined);
 });
+
+test('last close cancels a timer wake already in the same retry snapshot', t => {
+  let now = 100;
+  t.mock.method(performance, 'now', () => now);
+  const p = guest(), fd = call(p, CREATE, 1, NONBLOCK), k = p.kernel;
+  const checkpoint = now + 0x7fffffff;
+  k.addTimer(checkpoint, () => assert.equal(call(p, 3, fd), 0n));
+  // A deadline beyond the queue's maximum host delay needs a recheck at
+  // the checkpoint. Closing first must prevent that same-pass recheck.
+  spec(p, (0x7fffffffn + 1000n) * 1_000_000n);
+  assert.equal(call(p, SET, fd, 0, SPEC), 0n);
+  now = checkpoint;
+  k.retry();
+  assert.equal(call(p, GET, fd, OLD), BADF);
+  assert.equal(k.deadline(), undefined, 'a canceled wake must not requeue after last close');
+});

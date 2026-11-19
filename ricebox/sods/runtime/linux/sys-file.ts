@@ -1229,8 +1229,10 @@ function timerfd(p: Proc, clock: number, flags: number): number {
       // Wait at least a microsecond before rechecking, and stay within setTimeout's limit.
       const host = steady();
       const at = Math.min(host + 0x7fffffff, Math.max(Number(deadline) / 1e6, host + 0.001));
-      const wake = k.addTimer(at, fire);
-      return () => k.removeTimer(wake);
+      // A retry may already hold this wake in its snapshot of the queue.
+      let cancelled = false;
+      const wake = k.addTimer(at, () => { if (!cancelled) fire(); });
+      return () => { cancelled = true; k.removeTimer(wake); };
     },
     notifyReady() { k.dirty = true; },
   });
