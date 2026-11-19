@@ -140,6 +140,37 @@ digest and runs the release’s shell through Sods. It does not publish anything
 For BusyBox-based Sods tests, [stage the verified release fixture](../sods/README.md#runtime-tests)
 explicitly; the distribution producer does not write test outputs.
 
+### Native installed-root socket check
+
+The Linux x86-64 `Commands` CI job reuses its staged, digest-checked static
+BusyBox and runs the proof as an unprivileged user. On an already compatible
+runner, from the repository root:
+
+```sh
+node ricebox/distribution/verification/test/fixtures/stage-sods-userland.ts \
+  /path/to/prepared/webroot target/sods-release-fixture
+cargo run --locked -p ricebox --example native-socket-proof -- target/sods-release-fixture/busybox
+```
+
+The staging destination must not exist. The test needs Rust, Node, a C compiler
+with static libc, GNU tar, zstd and a runner that allows Muk's normal native
+namespaces/mounts and pathname AF_UNIX sockets. A missing prerequisite fails the
+test. Do not change host security settings to make it pass.
+
+The proof assembles a synthetic native archive, rejects a wrong digest, installs
+and selects the matching archive in temporary state, and runs its BusyBox shell
+with Muk built explicitly from this checkout. A baseline checks for a missing
+guest path. After the synthetic host peer starts listening, the guest with no
+lend must get `ENOENT` on connect. A second launch grants one read-only socket
+path, verifies that the neighboring canary is absent and the `/run` mount is
+not marked read-only, and connects to the peer. Both endpoints pass size-sealed memfds and verify shared
+writes after their creator closes the FD.
+
+The test requests a separate network namespace rather than sharing the host's
+network. It does not audit network or filesystem isolation. There is no
+persistent installation, real display or real host service access, and no claim
+about a released installer, Wayland, Everyday UI, or Sods-to-host transport.
+
 ## Dependency maintenance
 
 `maintenance/updates.py` checks upstream releases and writes verified candidate

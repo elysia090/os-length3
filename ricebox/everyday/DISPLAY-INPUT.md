@@ -59,6 +59,10 @@ coherent client/library/config set and verify it before adopting a release lock.
   behavior for the chosen compositor/bridge. A native socket name copied into sods is
   not a bridge. Keep the existing AF_UNIX/SCM_RIGHTS/memfd/mapping implementation as
   evidence to test, not proof that Wayland works.
+  The [native installed-root socket check](../distribution/README.md#native-installed-root-socket-check)
+  exercises a synthetic peer before any compositor is lent. Its success would
+  establish the native transport prerequisite only, not rendering, input, resize
+  or compositor-specific lifetime behavior.
 
 ## Necessary resources versus representation costs
 
