@@ -63,7 +63,9 @@ int main(void) {
   if (now.tv_nsec < 0) { now.tv_sec--; now.tv_nsec += 1000 * 1000 * 1000; }
   struct itimerspec repeat = {.it_interval = {0, 1000 * 1000}, .it_value = now};
   assert(timerfd_settime(copy, TFD_TIMER_ABSTIME, &repeat, &got) == 0 && !got.it_value.tv_sec && !got.it_value.tv_nsec);
-  assert(epoll_wait(ep, &event, 1, 0) == 1);
+  // Even a past deadline can be delivered after timerfd_settime returns.
+  assert(epoll_wait(ep, &event, 1, 1000) == 1);
+  assert(event.events == EPOLLIN && event.data.u64 == 0x1234);
   assert(timerfd_gettime(copy, &got) == 0 && got.it_interval.tv_nsec == repeat.it_interval.tv_nsec);
   assert(read(copy, &ticks, sizeof(ticks)) == sizeof(ticks) && ticks >= 10);
   assert(timerfd_settime(copy, 0, &off, NULL) == 0);
