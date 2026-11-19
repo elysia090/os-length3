@@ -29,6 +29,7 @@ const hostImports: Record<string, readonly string[]> = {
   'ricebox/distribution/build/package-database.ts': ['node:crypto','node:fs','node:path'],
   'ricebox/distribution/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
   'ricebox/distribution/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
+  'ricebox/distribution/build/version.ts': ['node:fs'],
   'ricebox/distribution/deployment/assets.ts': ['node:crypto','node:fs','node:path'],
   'ricebox/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
   // The existing CLI is executable but must not become an importable runtime dependency.
