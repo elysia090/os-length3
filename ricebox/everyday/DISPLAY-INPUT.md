@@ -84,6 +84,12 @@ Unsupported write/execute seals are rejected, not reported as enforced. Native
 Linux and translated Sods parity tests cover these file operations, not a running
 Wayland client, compositor, or a guest-to-host descriptor bridge.
 
+The Sods guest implements the monotonic timer descriptor that
+[foot 1.13.1 uses while binding its seat](https://sources.debian.org/src/foot/1.13.1-2%2Bdeb12u1/wayland.c/#L2945).
+The same descriptor supplies the eight-byte expiration count to its epoll
+key-repeat loop. A static native-versus-translated test exercises the Linux
+descriptor; it does not run foot, bind a seat or deliver a key.
+
 Do not move native protocol handling into TS merely because the current theme parser
 is TS, or replace existing clients in Rust as an end in itself. Language placement
 follows the concrete missing work. Existing parser tests validate that parser only.

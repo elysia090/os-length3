@@ -242,6 +242,24 @@ SODS_SYSCALLS=1 SODS_FAULTS=1 SODS_TIMING=1 node runtime/run.ts PROGRAM
 # Optional syscall, fault and timing diagnostics.
 ```
 
+### Monotonic timer descriptors
+
+The guest supports `timerfd_create(CLOCK_MONOTONIC)` with `TFD_NONBLOCK` and
+`TFD_CLOEXEC`, timerfd set/get, blocking and nonblocking expiration reads, and
+read readiness through poll/select/epoll. Relative and absolute monotonic
+timers can be one-shot or periodic. `TFD_TIMER_CANCEL_ON_SET` has no effect
+on this clock. The open file description owns the timer and its pending count;
+closing its last reference cancels its scheduled wake. The guest services
+clock and timer queue drive it without a host descriptor.
+
+Other clock IDs and unknown flags are rejected (`EINVAL`). Wall-clock
+cancellation, suspend-aware/alarm clocks, checkpoint tick injection and
+timer-specific proc fdinfo are not implemented. Vectored reads follow
+the timerfd `read_iter` in Linux 6.12. The shared epoll table
+still keys subscriptions by numeric fd: reusing a closed descriptor's number
+in the same epoll instance is not supported. The static [`timerfd.c`](test/programs/timerfd.c) fixture compares guest and native
+behavior without a display.
+
 ### Runtime tests
 
 The development runner reads its default artifacts under `CARGO_TARGET_DIR`

@@ -1,5 +1,6 @@
 // Open file descriptions and per-process descriptor tables.
 
+import type {TimerFd} from './timerfd.ts';
 import type {Dir, Entry, Mount} from './fs.ts';
 
 declare module './fs.ts' {
@@ -154,7 +155,7 @@ export function unflock(d: Description): void {
 
 /** One open file description, shared by dup'd and inherited descriptors. */
 /** What a description is of. */
-export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'socket' | 'pty-m' | 'pty-s' | 'signalfd';
+export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'timerfd' | 'socket' | 'pty-m' | 'pty-s' | 'signalfd';
 
 /** An eventfd's counter (and whether it is a semaphore's), and how often it changed. */
 export interface Counter { count: bigint; semaphore: boolean; changes: number }
@@ -192,10 +193,12 @@ export class Description {
   declare signals?: bigint;
   /** An eventfd's counter. */
   declare event?: Counter;
+  /** A timerfd's open timer, shared across descriptor aliases. */
+  declare timer?: TimerFd;
   /** An epoll instance's interest list. */
   declare interest?: Map<number, Interest>;
   constructor(kind: Kind, {node = null, pipe = null, flags = 0, path = '', mnt = null, dir = null, name = ''}: {node?: Entry | null; pipe?: Pipe | null; flags?: number; path?: string; mnt?: Mount | null; dir?: Dir | null; name?: string} = {}) {
-    this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll | socket (`sock`: sys-net.ts)
+    this.kind = kind;
     this.node = node;
     this.pipe = pipe;
     this.flags = flags;

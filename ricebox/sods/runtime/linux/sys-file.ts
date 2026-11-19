@@ -14,6 +14,7 @@ import {Dir, Device, E, ending, Fifo, File, FILE_MOST, FsError, Link, Memfd, MNT
 import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.ts';
 import {take} from './mount.ts';
 import * as pty from './pty.ts';
+import {TimerFd, capTimerTime} from './timerfd.ts';
 import {byNr, nrIn} from './space.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
@@ -489,6 +490,10 @@ function reach(p: Proc, d: Description, address: number, length: number, taking 
 
 function readInto(p: Proc, d: Description, address: number, length: number, offset: number | null = null): number {
   const into = p.bytes;
+  if (d.timer) {
+    if (offset !== null) fail(offset < 0 ? E.INVAL : E.SPIPE);
+    return readTimer(p, d, length, [[address, length]]);
+  }
   // (All of it the guest's memory, as nearly always: nothing more is asked.)
   if (!(length > 0 && address >= 0 && address + length <= into.length)) length = reach(p, d, address, length, true);
   return readTo(p, d, into, address, length, offset);
@@ -503,6 +508,7 @@ function readInto(p: Proc, d: Description, address: number, length: number, offs
 function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | null = null): number {
   const length = data.length, nonblock = d.flags & O.NONBLOCK;
   if (d.flags & O_PATH) fail(E.BADF);
+  if (d.timer) fail(offset === null ? E.INVAL : E.SPIPE);
   // What is written to a file made as it is read (/proc's, the cgroups') is told to what made it, whole.
   const of = d.kind === 'file' ? madeOf(d.node) : undefined;
   if (of?.put) { of.put(utf8(data)); return length; }
@@ -640,10 +646,15 @@ const MAX_RW_COUNT = 0x7ffff000;
 
 /** readv: one read for all of it (so a pipe or the console waits once), scattered. */
 function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: number | null = null): number {
+  if (d.timer && N(count) > 0 && N(count) <= 1024 && N(address) < 4096) fail(E.FAULT);
   const parts = vectors(p, address, count), total = parts.reduce((n, [, l]) => n + l, 0);
   if (d.kind === 'file' || d.kind === 'device') {
     let at = offset;
     return iov(p, address, count, (b, l) => { const n = readInto(p, d, b, l, at); if (at !== null) at += n; return n; });
+  }
+  if (d.timer) {
+    if (offset !== null) fail(offset < 0 ? E.INVAL : E.SPIPE);
+    return total ? readTimer(p, d, total, parts) : 0;
   }
   // What it will be put in is the guest's memory before anything is taken: what a pipe or a socket gave up and could
   // not be put there would be lost. Every part; of a pipe's read, as far as what the pipe holds reaches (Linux's).
@@ -1006,6 +1017,7 @@ function readiness(p: Proc, d: Description): number {
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
     case 'socket': r = net.ready(d); break;
     case 'pty-m': case 'pty-s': r = pty.ready(d); break;
+    case 'timerfd': return d.timer?.ready() ? POLL.IN : 0;
     case 'signalfd': r = signalReady(p, d) ? POLL.IN : 0; break;
     default: r = POLL.IN | POLL.OUT;
   }
@@ -1015,7 +1027,7 @@ function readiness(p: Proc, d: Description): number {
 }
 
 /** A counter that moves whenever `d`'s readiness may have (epoll's edge). */
-const changes = (p: Proc, d: Description): number => (d.kind === 'socket' ? net.changes(d) : d.pty?.changes ?? d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
+const changes = (p: Proc, d: Description): number => (d.kind === 'socket' ? net.changes(d) : d.pty?.changes ?? d.pipe?.changes ?? d.event?.changes ?? d.timer?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
 
 /** The calling thread's mask is `set` while the call waits (ppoll, pselect6, epoll_pwait), as rt_sigsuspend does. */
 function swapMask(p: Proc, address: number): void {
@@ -1159,6 +1171,57 @@ function eventfd(p: Proc, initval: number, flags: number): number {
   const fd = p.fds.install(d, {cloexec: !!(flags & O.CLOEXEC)});
   if (fd < 0) fail(E.MFILE);
   return fd;
+}
+
+function readTimer(p: Proc, d: Description, length: number, parts: [number, number][]): number {
+  // Reject addresses outside the Linux user range before waiting or
+  // consuming ticks. A copy to unmapped memory inside that range is later.
+  for (const [base, len] of parts) {
+    if (len < 0 || base < 0 || base + len > TASK_SIZE) fail(E.FAULT);
+  }
+  if (length < 8) fail(E.INVAL);
+  const ticks = (d.timer ?? fail(E.INVAL)).read();
+  if (!ticks) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+  const bytes = new Uint8Array(8), into = p.bytes;
+  new DataView(bytes.buffer).setBigUint64(0, ticks, true);
+  let copied = 0;
+  for (const [base, len] of parts) {
+    const wanted = Math.min(len, 8 - copied);
+    if (!wanted) continue;
+    // As Linux's read_iter: return the short copy if it reached any bytes.
+    const available = base < 4096 ? 0 : Math.max(0, Math.min(wanted, into.length - base));
+    if (available) into.set(bytes.subarray(copied, copied + available), base);
+    copied += available;
+    if (available < wanted) return copied || fail(E.FAULT);
+    if (copied === 8) break;
+  }
+  return copied;
+}
+
+// The x86-64 timerfd ABI uses two signed 64-bit timespecs, interval first.
+const BILLION = 1_000_000_000n;
+function timerSpec(p: Proc, at: number): bigint {
+  const seconds = p.view.getBigInt64(at, true), nanos = p.view.getBigInt64(at + 8, true);
+  if (seconds < 0n || nanos < 0n || nanos >= BILLION) fail(E.INVAL);
+  return capTimerTime(seconds * BILLION + nanos);
+}
+function putTimer(p: Proc, at: number, [interval, remaining]: [bigint, bigint]): void {
+  if (at < 4096) fail(E.FAULT);
+  whole(p, at, 32);
+  const put = (offset: number, ns: bigint) => {
+    p.view.setBigInt64(offset, ns / BILLION, true);
+    p.view.setBigInt64(offset + 8, ns % BILLION, true);
+  };
+  put(at, interval);
+  put(at + 16, remaining);
+}
+function timerfd(p: Proc, clock: number, flags: number): number {
+  if (clock !== 1 || (flags & ~(O.CLOEXEC | O.NONBLOCK))) fail(E.INVAL);
+  const d = new Description('timerfd', {flags: O.RDWR | (flags & O.NONBLOCK)});
+  const timer = d.timer = new TimerFd(p.kernel);
+  d.gone = () => timer.close();
+  const fd = p.fds.install(d, {cloexec: !!(flags & O.CLOEXEC)});
+  return fd < 0 ? fail(E.MFILE) : fd;
 }
 
 /** A timespec at `at` as milliseconds (null: none given, so no timeout). */
@@ -1367,6 +1430,22 @@ export const FILE_CALLS: Calls = {
   232(epfd, events, max, timeout) { return epollWait(this, epfd, events, max, Number(BigInt.asIntN(32, timeout))); },
   281(epfd, events, max, timeout, mask) { return epollWait(this, epfd, events, max, Number(BigInt.asIntN(32, timeout)), N(mask)); },
   441(epfd, events, max, ts, mask) { return epollWait(this, epfd, events, max, timespecMs(this, N(ts)) ?? -1, N(mask)); },
+  283(clock, flags) { return timerfd(this, Number(BigInt.asIntN(32, clock)), Number(BigInt.asIntN(32, flags))); },
+  286(fd, flags, source, previous) { // timerfd_settime
+    const at = N(source), mode = Number(BigInt.asIntN(32, flags));
+    if (at < 4096) fail(E.FAULT);
+    whole(this, at, 32);
+    // CANCEL_ON_SET can be passed, but is inert with a monotonic clock.
+    if (mode & ~3) fail(E.INVAL);
+    const interval = timerSpec(this, at), value = timerSpec(this, at + 16);
+    const old = (descriptor(this, fd).timer ?? fail(E.INVAL)).set(value, interval, !!(mode & 1));
+    if (previous) putTimer(this, N(previous), old);
+    return 0;
+  },
+  287(fd, out) { // timerfd_gettime
+    putTimer(this, N(out), (descriptor(this, fd).timer ?? fail(E.INVAL)).get());
+    return 0;
+  },
   284(initval) { return eventfd(this, N(initval), 0); },
   290(initval, flags) { return eventfd(this, N(initval), N(flags)); },
   436(first, last, flags) { // close_range
@@ -1385,6 +1464,7 @@ export const FILE_CALLS: Calls = {
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
+    if (d.timer) return N(whence) >= 0 && N(whence) <= 4 ? 0 : fail(E.INVAL);
     if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw' || d.kind === 'socket' || d.kind === 'console') fail(E.SPIPE);
     if (d.kind === 'dir') { if (N(offset) === 0 && N(whence) === 0) { d.offset = 0; d.after = undefined; return 0; } return fail(E.INVAL); }
     const start = [0, d.offset, d.node instanceof File ? d.node.size : 0][N(whence)];
