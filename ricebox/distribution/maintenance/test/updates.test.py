@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import json
 import os
 import subprocess
 import sys
@@ -178,6 +179,128 @@ class BuilderProfile(unittest.TestCase):
         finally:
             os.chdir(before)
             nxt.alpine.cache_clear()
+
+
+class Rsync(unittest.TestCase):
+    listing = 'https://api.github.com/repos/RsyncProject/rsync/releases?per_page=30'
+    samba = 'https://download.samba.org/pub/rsync/src/'
+    pinned = samba + 'rsync-3.5.2.tar.gz'
+    attached = 'https://github.com/RsyncProject/rsync/releases/download/v3.5.2/rsync-3.5.2.tar.gz'
+    pins = f'RSYNC_VERSION=3.5.2\nRSYNC_URL={pinned}\nRSYNC_SHA256={sha(GOOD)}\n'
+
+    @staticmethod
+    def release(version, *, draft=False, prerelease=False, asset_url=None, state='uploaded'):
+        name = f'rsync-{version}.tar.gz'
+        return dict(tag_name=f'v{version}', draft=draft, prerelease=prerelease,
+                    assets=[dict(name=name, state=state, browser_download_url=asset_url or
+                                 f'https://github.com/RsyncProject/rsync/releases/download/v{version}/{name}')])
+
+    def check_release(self, responses):
+        """Run the real CLI/lookup/mirror/digest paths with only curl's responses replaced."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'sources.env').write_text(self.pins)
+            (root / 'responses.json').write_text(json.dumps(responses))
+            curl = root / 'curl'
+            curl.write_text(f'#!{sys.executable}\n' + '''\
+import json, sys
+from pathlib import Path
+url = sys.argv[-1]
+with open('urls', 'a') as log:
+    print(url, file=log)
+code, body = json.loads(Path('responses.json').read_text()).get(url, [22, 'unexpected URL'])
+out = Path(sys.argv[sys.argv.index('-o') + 1])
+if out.exists():
+    print('previous partial download was not discarded', file=sys.stderr)
+    sys.exit(99)
+out.write_text(body)
+if code:
+    print(f'curl: ({code}) {body}', file=sys.stderr)
+sys.exit(code)
+''')
+            curl.chmod(0o755)
+            result = subprocess.run([sys.executable, spec.origin, 'sources.env'], cwd=root,
+                                    env={**os.environ, 'PATH': f'{folder}{os.pathsep}{os.environ["PATH"]}'},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.stderr, '')
+            self.assertEqual((root / 'sources.env').read_text(), self.pins)
+            return result, (root / 'sources.env.next').read_text(), (root / 'urls').read_text().splitlines()
+
+    def test_only_the_exact_rsync_pin_has_the_official_asset_fallback(self):
+        self.assertEqual(nxt.source_urls(self.pinned), [self.pinned, self.attached])
+        for url in (self.pinned + '.asc', self.pinned + '?x=1', self.pinned.replace('3.5.2', '3.5.1'),
+                    self.pinned.replace('samba.org', 'samba.org.example'), self.samba):
+            self.assertEqual(nxt.source_urls(url), [url])
+
+    def test_samba_503_checks_the_existing_pin_on_the_official_asset(self):
+        result, proposal, calls = self.check_release({
+            self.listing: [0, json.dumps([self.release('3.5.2')])], self.pinned: [22, 'HTTP 503'],
+            self.attached: [0, GOOD.decode()]})
+        self.assertEqual(calls, [self.listing, self.pinned, self.attached])
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('0 pins broken, 0 pins not reached, 0 whose newest is not known', result.stdout)
+        self.assertIn('pin checked', result.stdout)
+        self.assertEqual(proposal, self.pins)
+
+    def test_invalid_or_missing_official_asset_does_not_pass_the_gate(self):
+        for code, body, failure in ((0, 'wrong tarball', 'PIN BROKEN'), (28, 'timed out', 'PIN NOT REACHED')):
+            with self.subTest(code=code):
+                result, proposal, calls = self.check_release({
+                    self.listing: [0, json.dumps([self.release('3.5.2')])], self.pinned: [22, 'HTTP 503'],
+                    self.attached: [code, body]})
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(failure, result.stdout)
+                if code:
+                    self.assertIn(self.pinned, result.stdout)
+                    self.assertIn(self.attached, result.stdout)
+                self.assertEqual(proposal, self.pins)
+                self.assertEqual(calls, [self.listing, self.pinned, self.attached])
+
+    def test_a_changed_primary_file_still_fails_even_if_the_mirror_is_good(self):
+        result, proposal, calls = self.check_release({
+            self.listing: [0, json.dumps([self.release('3.5.2')])], self.pinned: [0, 'not the pinned file'],
+            self.attached: [0, GOOD.decode()]})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('PIN BROKEN', result.stdout)
+        self.assertEqual(proposal, self.pins)
+        self.assertEqual(calls, [self.listing, self.pinned])
+
+    def test_release_discovery_proposes_the_latest_stable_uploaded_release_only(self):
+        releases = [self.release('3.5.9'), self.release('3.5.10'), self.release('3.5.11', prerelease=True),
+                    self.release('3.6.0', draft=True), self.release('4.0.0', state='open'),
+                    self.release('4.1.0', asset_url='https://github.com/RsyncProject/rsync/archive/refs/tags/v4.1.0.tar.gz')]
+        url = releases[1]['assets'][0]['browser_download_url']
+        result, proposal, calls = self.check_release({self.listing: [0, json.dumps(releases)], url: [0, NEWER.decode()]})
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [self.listing, url])
+        self.assertEqual(proposal, f'RSYNC_VERSION=3.5.10\nRSYNC_URL={url}\nRSYNC_SHA256={sha(NEWER)}\n')
+        self.assertIn('1 newer', result.stdout)
+
+    def test_stale_release_feed_cannot_downgrade_the_pin(self):
+        result, proposal, calls = self.check_release({
+            self.listing: [0, json.dumps([self.release('3.5.1')])], self.pinned: [0, GOOD.decode()]})
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [self.listing, self.pinned])
+        self.assertIn('older release 3.5.1; pin checked', result.stdout)
+        self.assertEqual(proposal, self.pins)
+
+    def test_when_discovery_is_down_an_independently_verified_pin_still_passes(self):
+        result, proposal, calls = self.check_release({self.listing: [22, 'HTTP 429'], self.samba: [22, 'HTTP 503'],
+                                                      self.pinned: [28, 'timed out'], self.attached: [0, GOOD.decode()]})
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [self.listing, self.samba, self.pinned, self.attached])
+        self.assertEqual(proposal, self.pins)
+        self.assertIn('HTTP 429', result.stdout)
+        self.assertIn('1 whose newest is not known', result.stdout)
+
+    def test_samba_listing_can_still_discover_a_new_archive_but_not_a_signature(self):
+        url = self.samba + 'rsync-3.5.3.tar.gz'
+        result, proposal, calls = self.check_release({self.listing: [22, 'HTTP 429'],
+                                                      self.samba: [0, '<a>rsync-3.5.3.tar.gz</a><a>rsync-3.5.4.tar.gz.asc</a>'],
+                                                      url: [0, NEWER.decode()]})
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [self.listing, self.samba, url])
+        self.assertEqual(proposal, f'RSYNC_VERSION=3.5.3\nRSYNC_URL={url}\nRSYNC_SHA256={sha(NEWER)}\n')
 
 
 class Pins(unittest.TestCase):

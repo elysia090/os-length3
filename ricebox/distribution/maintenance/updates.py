@@ -48,15 +48,27 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
-def source_urls(url):
-    """GNU's documented HTTPS mirrors, then the original; preserve the complete path and the pin.
+RSYNC_REPO = 'RsyncProject/rsync'
+RSYNC_SAMBA = 'https://download.samba.org/pub/rsync/src/'
+RSYNC_RELEASES = f'https://api.github.com/repos/{RSYNC_REPO}/releases?per_page=30'
 
-    https://www.gnu.org/prep/ftp.html (also ricebox/distribution/build/fetch-sources.sh, used by the builder).
+
+def rsync_release_url(version):
+    return f'https://github.com/{RSYNC_REPO}/releases/download/v{version}/rsync-{version}.tar.gz'
+
+
+def source_urls(url):
+    """Known download routes for the same pinned bytes, matching the builder's fetch-sources.sh.
+
+    GNU's documented HTTPS mirrors (https://www.gnu.org/prep/ftp.html) precede the original.
     """
     prefix = 'https://ftp.gnu.org/gnu/'
     if url.startswith(prefix):
         path = url.removeprefix(prefix)
         return ['https://ftpmirror.gnu.org/' + path, 'https://mirror.csclub.uwaterloo.ca/gnu/' + path, url]
+    if url == RSYNC_SAMBA + 'rsync-3.5.2.tar.gz':
+        # The project's uploaded tarball has this same pin; GitHub's generated tag archive does not.
+        return [url, rsync_release_url('3.5.2')]
     return [url]
 
 
@@ -179,6 +191,31 @@ def util_linux():
     return newest(f'https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v{line}/', r'util-linux-(\d+\.\d+(?:\.\d+)?)\.tar\.xz')
 
 
+def rsync():
+    """Prefer its release feed with uploaded tarballs; the original directory can still report releases."""
+    try:
+        releases = json.loads(get(RSYNC_RELEASES))
+        found = []
+        for release in releases:
+            match = re.fullmatch(r'v(\d+\.\d+\.\d+)', release['tag_name'])
+            if not match or release['draft'] or release['prerelease']:
+                continue
+            version = match[1]
+            url = rsync_release_url(version)
+            if any(asset['name'] == f'rsync-{version}.tar.gz' and asset['state'] == 'uploaded'
+                   and asset['browser_download_url'] == url for asset in release['assets']):
+                found.append((version, url))
+        if not found:
+            raise RuntimeError(f'no stable rsync release with a tarball at {RSYNC_RELEASES}')
+        return max(found, key=lambda r: key(r[0]))
+    except (RuntimeError, ValueError, KeyError, TypeError) as feed_error:
+        try:
+            version = newest(RSYNC_SAMBA, r'rsync-(\d+\.\d+\.\d+)\.tar\.gz(?=["\'<\s]|$)')
+            return version, f'{RSYNC_SAMBA}rsync-{version}.tar.gz'
+        except RuntimeError as listing_error:
+            raise RuntimeError(f'{feed_error}; {listing_error}') from listing_error
+
+
 # How the newest release of each is found.
 NEWEST = {
     'LINUX': lambda: json.loads(get('https://www.kernel.org/releases.json'))['latest_stable']['version'],
@@ -242,7 +279,7 @@ NEWEST = {
     'LIBEVENT': lambda: newest('https://libevent.org/', r'libevent-(\d+\.\d+\.\d+)-stable\.tar\.gz'),
     'TMUX': lambda: github('tmux/tmux', ''),
     'NCDU': lambda: newest('https://dev.yorhel.nl/download/', r'ncdu-(1\.\d+)\.tar\.gz'),
-    'RSYNC': lambda: newest('https://download.samba.org/pub/rsync/src/', r'rsync-(\d+\.\d+\.\d+)\.tar\.gz'),
+    'RSYNC': rsync,
     'ENTR': lambda: newest('https://eradman.com/entrproject/', r'entr-(\d+\.\d+)\.tar\.gz'),
     'READLINE': lambda: newest('https://ftp.gnu.org/gnu/readline/', r'readline-(\d+\.\d+)\.tar\.gz'),
     'SQLITE': sqlite,
@@ -303,6 +340,9 @@ def one_file(path):
         if isinstance(latest, tuple):  # a rule that knows where the release is, not only its version
             latest, at = latest
         was = pins.get(f'{name}_VERSION') or pins.get(f'{name}_DATE')
+        if name == 'RSYNC' and latest and key(latest) < key(was):
+            # A stale release feed that hasn't seen the pinned version cannot propose a downgrade.
+            why, latest = f'rsync listing only has older release {latest}', None
         if not latest or why or latest == was:
             return name, was, latest or '?', (why + '; ' if why else '') + pin_checked(name), {}
         url = at or moved_url(pins[f'{name}_URL'], was, latest)
