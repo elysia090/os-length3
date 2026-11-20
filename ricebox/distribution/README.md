@@ -26,15 +26,17 @@ npm pack --ignore-scripts
 
 The output directory must not exist. This creates a private local package, not a
 registry publication. Install the generated tarball with `npm install --offline
---ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes no Why, Everyday, demo,
-or site files. Its declared Node requirement is `>=22.18`; use Node 24 to generate
-the package. Browser consumers need a bundler with module-Worker support and
-must serve the distribution assets separately.
+--ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes the optional Everyday
+presenter, not the terminal preview, demos, or Why site files. Its declared Node
+requirement is `>=22.18`; use Node 24 to generate the package. Browser consumers
+need a bundler with module-Worker support and serve the distribution assets separately.
 
-The package exports `ricebox` (`createRoot` and its types), `ricebox/prepare`
-(composition), and `ricebox/vite` (the Vite integration, including
-`distributionAssets`). Repository paths are not additional package exports.
-Native build prerequisites are not installed by this package.
+The package exports `ricebox` (`createRoot` and its types), `ricebox/everyday`
+(the optional presenter), `ricebox/prepare` (composition), `ricebox/assets`
+([framework-neutral static staging](docs/installation.md#stage-a-static-site-without-the-vite-adapter)),
+and `ricebox/vite` (the Vite adapter, with the existing `distributionAssets` alias).
+Repository paths are not additional package exports. Native build prerequisites
+are not installed by this package.
 
 ## Source map
 

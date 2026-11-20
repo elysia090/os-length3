@@ -23,6 +23,9 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(existsSync(join(out,'ricebox/distribution/npm')),false);
     assert.equal(pkg.exports['./vite'].import,'./ricebox/distribution/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./ricebox/distribution/build/prepare.ts');
+    assert.deepEqual(pkg.exports['./assets'],{
+      types:'./ricebox/distribution/deployment/assets.ts', import:'./ricebox/distribution/deployment/assets.js',
+    });
     assert.deepEqual(pkg.exports['./everyday'],{
       types:'./ricebox/everyday/src/surface.ts', import:'./ricebox/everyday/src/surface.js',
     });
@@ -39,7 +42,7 @@ test('built npm package contains builder dependencies and imports public JS with
         assert.ok(existsSync(resolve(dirname(path),m[1])),`${path} lacks ${m[1]}`);
       }
     }
-    const imports=['.','./vite','./prepare'].map(key=>pathToFileURL(join(out,pkg.exports[key].import)).href);
+    const imports=['.','./vite','./prepare','./assets'].map(key=>pathToFileURL(join(out,pkg.exports[key].import)).href);
     const result=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',
       `for (const url of ${JSON.stringify(imports)}) await import(url); console.log('imports-ok');`],{encoding:'utf8',timeout:30_000});
     assert.match(result,/imports-ok/);
@@ -59,13 +62,15 @@ test('built npm package contains builder dependencies and imports public JS with
     execFileSync('npm',['install','--ignore-scripts','--offline','--no-audit','--no-fund',join(work,packed[0].filename)],
       {cwd:consumer,env:{...process.env,npm_config_cache:join(work,'empty-consumer-cache')},encoding:'utf8',timeout:30_000});
     const composed=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',`
-      import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'; import {join} from 'node:path'; import {createHash} from 'node:crypto';
+      import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'; import {dirname,join} from 'node:path'; import {createHash} from 'node:crypto';
+      globalThis.fetch=()=>{throw Error('package import and staging must not fetch');};
+      globalThis.Worker=class { constructor(){throw Error('package import and staging must not start a browser Worker');} };
       await import('ricebox');
       const {mountGuestSurface,surfaceFromMirror}=await import('ricebox/everyday');
       if(typeof mountGuestSurface!=='function'||typeof surfaceFromMirror!=='function')throw Error('missing installed Everyday API');
       console.log('everyday-js-ok');
       const {prepareDistribution}=await import('ricebox/prepare');
-      const {distributionAssets}=await import('ricebox/vite');
+      const {distributionAssets}=await import('ricebox/assets');
       const work=${JSON.stringify(work)}, cache=join(work,'selected-cache'), base=join(cache,'base');
       mkdirSync(join(base,'tree/usr/share'),{recursive:true});writeFileSync(join(base,'tree/usr/share/base'),'package');
       for(const [key,value] of Object.entries({version:'1',source:'fixture',key:'fixture'}))writeFileSync(join(base,key),value);
@@ -73,13 +78,21 @@ test('built npm package contains builder dependencies and imports public JS with
         const path=join(work,name),bytes=name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('fixture');
         writeFileSync(path,bytes);return [name,{path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];
       }));
-      globalThis.fetch=()=>{throw Error('package composition must not acquire');};
       const output=join(work,'composed');await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
       if(JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')).version!==${JSON.stringify(pkg.version)})throw Error('wrong packaged version');
-      if(!distributionAssets(output).has('ricebox/muk.json'))throw Error('missing maker');console.log('composition-ok');
+      const site=join(work,'site');mkdirSync(site);
+      for(const [path,bytes] of distributionAssets(output)){
+        const file=join(site,path);mkdirSync(dirname(file),{recursive:true});writeFileSync(file,bytes,{flag:'wx'});
+      }
+      const layers=join(site,'ricebox');
+      for(const name of ['webroot.json','muk.json']){
+        if(!readFileSync(join(layers,name)).equals(readFileSync(join(output,name))))throw Error('wrong static asset: '+name);
+      }
+      if((await import('ricebox/vite')).distributionAssets!==distributionAssets)throw Error('Vite alias changed');
+      console.log('static-assets-ok');
     `],{cwd:consumer,encoding:'utf8',timeout:30_000});
     assert.match(composed,/everyday-js-ok/);
-    assert.match(composed,/composition-ok/);
+    assert.match(composed,/static-assets-ok/);
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
 });

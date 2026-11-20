@@ -87,6 +87,45 @@ already prepared distribution. Do not pass both `build` and `distribution`.
 Serving these assets is distinct from running guest programs and from deploying
 a service.
 
+### Stage a static site without the Vite adapter
+
+If you already have a prepared distribution, use `ricebox/assets` from Node.
+It verifies the release index and the assets it names, including Muk. It
+does not acquire packages, build the distribution, start guests, or publish
+the site. Save this as `stage-ricebox.mjs` beside your local npm installation:
+
+```js
+import {mkdirSync, writeFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {distributionAssets} from 'ricebox/assets';
+
+const [prepared, newSiteDirectory] = process.argv.slice(2);
+if (!prepared || !newSiteDirectory) {
+  throw new Error('Usage: node stage-ricebox.mjs PREPARED_DISTRIBUTION NEW_SITE_DIRECTORY');
+}
+const assets = distributionAssets(prepared);
+mkdirSync(newSiteDirectory);
+for (const [name, bytes] of assets) {
+  const file = join(newSiteDirectory, name);
+  mkdirSync(dirname(file), {recursive: true});
+  writeFileSync(file, bytes, {flag: 'wx'});
+}
+```
+
+```sh
+node stage-ricebox.mjs /path/to/prepared-distribution ./new-site
+```
+
+Put your HTML and browser build beside the resulting `new-site/ricebox/`
+directory. If you serve the site at your domain root, the corresponding
+`createRoot` base is `/ricebox/` (including the final slash). Plain HTML can
+load your app as an ES module; use a build that handles module Workers
+for the browser app, not the Node-only `ricebox/assets` import. The app
+still owns the shell UI and Worker admission. Import the separate
+`ricebox/everyday` presenter only if you want to display guest frames;
+neither this staging step nor the core import mounts a display. Serving
+the layers on your domain is not a guest execution relay.
+
 ## Ownership and failure
 
 The caller owns the downloaded cache and tool inputs and must keep them stable
