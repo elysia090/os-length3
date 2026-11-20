@@ -3,6 +3,7 @@ import {mountGuestSurface, surfaceFromMirror} from 'ricebox/everyday';
 import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 import {offerShell} from './shell-page.mts';
+import {placeCamera} from './camera-placement.mts';
 
 function required<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -81,6 +82,14 @@ async function start() {
   let surface: ReturnType<typeof mountGuestSurface>;
   try { surface = mountGuestSurface({viewport, canvas, source, limits: {width:64, height:48, bytes:64*48*4}}); }
   catch (error) { worker.terminate(); throw error; }
+  const placement = profile.get('camera');
+  let stopPlacement: (() => void) | undefined;
+  try {
+    if (placement === 'floating' || placement === 'pinned') {
+      stopPlacement = placeCamera(required('#camera-pane'),required('#camera-toolbar'),
+        required('#camera-handle'),required('#camera-pin'),placement);
+    }
+  } catch (error) { surface.close(); worker.terminate(); throw error; }
   let retiring = false, finished = false, timer: ReturnType<typeof setTimeout> | undefined;
   function stop(acknowledged: boolean) {
     if (finished) return;
@@ -94,6 +103,7 @@ async function start() {
   function retire() {
     if (retiring || finished) return;
     retiring = true;
+    stopPlacement?.();
     surface.close();
     for (const button of controls) button.disabled = true;
     timer = setTimeout(() => stop(false), 1000);
@@ -137,6 +147,6 @@ async function start() {
   worker.addEventListener('error', failed);
   window.addEventListener('pagehide', retire, {once:true});
   try { worker.postMessage(rasterStart(translator,muk,elf)); }
-  catch (error) { surface.close(); stop(false); throw error; }
+  catch (error) { stopPlacement?.(); surface.close(); stop(false); throw error; }
 }
 void start().catch(error => report('error', String(error)));

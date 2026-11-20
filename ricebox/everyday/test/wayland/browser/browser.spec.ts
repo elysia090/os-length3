@@ -147,3 +147,40 @@ test.describe('with actual Wayland ARGB SHM', () => {
     await expect(page.locator('#status')).toHaveText('admission acknowledged');
   });
 });
+
+test('floating and pinned camera placement do not move or resize the real guest', async ({page}) => {
+  await page.goto('/?camera=floating');
+  const pane=page.locator('#camera-pane'), canvas=page.locator('canvas');
+  const handle=page.getByRole('button',{name:'Move view'});
+  const pin=page.getByRole('button',{name:'Pin position'});
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  await expect(pane).toHaveAttribute('data-placement','floating');
+  const before=(await pane.boundingBox())!;
+  async function drag(dx: number, dy: number) {
+    const box=(await handle.boundingBox())!;
+    const x=box.x+box.width/2, y=box.y+box.height/2;
+    await page.mouse.move(x,y);
+    await page.mouse.down();
+    await page.mouse.move(x+dx,y+dy,{steps:4});
+    await page.mouse.up();
+  }
+  await drag(80,36);
+  const after=(await pane.boundingBox())!;
+  expect([after.x-before.x,after.y-before.y]).toEqual([80,36]);
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  await expect(canvas).toHaveAttribute('width','32');
+  await expect(canvas).toHaveAttribute('height','24');
+
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed','true');
+  await expect(pane).toHaveAttribute('data-placement','pinned');
+  await drag(40,20);
+  await handle.press('ArrowLeft');
+  expect(await pane.boundingBox()).toEqual(after);
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  const image=(await canvas.boundingBox())!;
+  await page.mouse.click(image.x+10.5*image.width/32,image.y+12.5*image.height/24);
+  await expect(canvas).toHaveAttribute('data-sequence','2');
+  const rgba=await canvas.evaluate(el=>Array.from((el as HTMLCanvasElement).getContext('2d')!.getImageData(10,12,1,1).data));
+  expect(rgba).toEqual([248,61,105,255]);
+});

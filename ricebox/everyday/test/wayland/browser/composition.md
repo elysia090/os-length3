@@ -61,3 +61,13 @@ For an engine-only alpha check, pass the alpha executable instead of the
 opaque executable to the installed guest-pair check above and append --alpha.
 It checks every RGBA pixel in both real guest buffer sizes without claiming
 browser composition.
+
+## Place the browser camera without moving the guest
+
+Open the preview with ?camera=floating to position the browser view
+independently of the page layout. Drag **Move view**, or focus it and use arrow
+keys (Shift moves farther). **Pin position** locks placement; ?camera=pinned
+starts locked. The viewport still scrolls inside the camera, and a smaller host
+window clamps the frame into view. No placement or pin command is sent to the
+guest, and it does not change the guest's resolution. This is browser camera
+placement, not pinning an actual native Wayland or Quickshell window.
