@@ -271,6 +271,7 @@ test('the opt-in terminal draws a real guest screen and sends raw keys and Ctrl-
   await shell.getByRole('button',{name:'Open guest shell'}).click();
   await expect(status).toHaveAttribute('data-phase','input');
   await expect(output).toContainText('everyday$');
+  const promptMode = (await shell.getAttribute('data-terminal-input'))!;
 
   await typed("printf '\\033[31mvt-red\\033[0m\\n'");
   await expect(output.locator('span').filter({hasText:'vt-red'})).toHaveCSS('color','rgb(173, 36, 51)');
@@ -278,15 +279,22 @@ test('the opt-in terminal draws a real guest screen and sends raw keys and Ctrl-
   await typed("/bin/busybox stty -icanon -echo min 1 time 0; " +
     "printf '\\033[?1049h\\033[H\\033[32mvt-green\\033[0m'; " +
     "byte=$(/bin/busybox dd bs=1 count=1 2>/dev/null); /bin/busybox stty icanon echo; " +
-    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"");
+    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"; " +
+    "IFS= read -r cooked; printf '<line:%s>\\n' \"$cooked\"");
   await expect(shell).toHaveAttribute('data-terminal-input','raw');
   await expect(output).toHaveAttribute('data-screen','alternate');
   await expect(output.locator('span').filter({hasText:'vt-green'})).toHaveCSS('color','rgb(35, 107, 67)');
   await input.press('q');
   await expect(output).toHaveAttribute('data-screen','primary');
   await expect(output).toContainText('<read:q>');
+  // The compound command holds a real cooked read. At the next prompt,
+  // BusyBox's own line editor may legitimately request raw mode again.
   await expect(shell).toHaveAttribute('data-terminal-input','line');
   await expect(status).toHaveAttribute('data-phase','input');
+  await typed('cooked-answer');
+  await expect(output).toContainText('<line:cooked-answer>');
+  await expect(status).toHaveAttribute('data-phase','input');
+  await expect(shell).toHaveAttribute('data-terminal-input',promptMode);
 
   await typed("/bin/busybox stty -echo; printf '<h%s>\\n' ush; IFS= read -r value; " +
     "/bin/busybox stty echo; printf '<length:%s>\\n' \"${#value}\"");
@@ -317,7 +325,9 @@ test('the opt-in terminal draws a real guest screen and sends raw keys and Ctrl-
   })))).toBe(true);
   await input.press('Control+c');
   await expect(status).toHaveAttribute('data-phase','input');
-  await typed("printf '<after:%s>\\n' \"$((6*7))\"");
+  await expect(shell).toHaveAttribute('data-terminal-input',promptMode);
+  await input.pressSequentially("printf '<after:%s>\\n' \"$((6*7))\"");
+  await input.press('Enter');
   await expect(output).toContainText('<after:42>');
   await expect(status).toHaveAttribute('data-phase','input');
   await expect(canvas).toHaveAttribute('data-sequence','1');

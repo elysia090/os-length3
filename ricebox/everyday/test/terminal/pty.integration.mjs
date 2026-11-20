@@ -80,12 +80,13 @@ async function until(label, ready) {
   }
   if (errors.length) throw new AggregateError(errors, label + ': ' + text());
 }
-const rawMode = m => m.type === 'tty' && (m.lflag & (ICANON | ECHO)) === 0;
-const cookedMode = m => m.type === 'tty' && (m.lflag & (ICANON | ECHO)) === (ICANON | ECHO);
+const inputMode = () => (messages.findLast(m => m.type === 'tty')?.lflag ?? (ICANON | ECHO)) & (ICANON | ECHO);
 try {
   worker.postMessage({...shellStart(translator, muk, busybox), cols: 53, rows: 12});
   await until('real interactive prompt', () => waits(0, 'input') && text().includes('everyday$'));
-  assert.equal(messages.find(m => m.type === 'threads')?.apart, true);
+  const apart = !process.env.SODS_INLINE;
+  assert.equal(messages.find(m => m.type === 'threads')?.apart, apart);
+  const promptMode = inputMode();
 
   const first = messages.length;
   command("printf '<size:%s>\\n' \"$(/bin/busybox stty size)\"; printf '\\033[31mtty-color\\033[0m\\n'");
@@ -97,21 +98,26 @@ try {
   command("/bin/busybox stty -icanon -echo min 1 time 0; " +
     "printf '\\033[?1049h\\033[H\\033[32malt-screen\\033[0m\\n<r%s>\\n' aw; " +
     "byte=$(/bin/busybox dd bs=1 count=1 2>/dev/null); /bin/busybox stty icanon echo; " +
-    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"");
+    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"; " +
+    "IFS= read -r cooked; printf '<line:%s>\\n' \"$cooked\"");
   await until('raw no-echo guest read blocks', () =>
-    messages.slice(beforeRaw).some(rawMode) && text().includes('<raw>') && waits(beforeRaw, 'input'));
+    inputMode() === 0 && text().includes('<raw>') && waits(beforeRaw, 'input'));
   assert.ok(screen.alternate && hasInk('alt-screen', 2));
   const beforeKey = messages.length;
   send('q'); // Deliberately no Enter afterward.
-  await until('one raw byte read and canonical mode restored', () => waits(beforeKey, 'input') &&
-    messages.slice(beforeKey).some(cookedMode) && text().includes('<read:q>'));
+  await until('one raw byte read and a canonical read blocks in the same command', () =>
+    waits(beforeKey, 'input') && inputMode() === (ICANON | ECHO) && text().includes('<read:q>'));
   assert.ok(!screen.alternate && !hasInk('alt-screen', 2) && screen.text().includes('<read:q>'));
+  const beforeCooked = messages.length;
+  command('cooked-answer');
+  await until('the cooked line is read and the normal shell prompt resumes', () =>
+    waits(beforeCooked, 'input') && inputMode() === promptMode && text().includes('<line:cooked-answer>'));
 
   const beforeHidden = messages.length;
   command("/bin/busybox stty -echo; printf '<h%s>\\n' ush; IFS= read -r value; " +
     "/bin/busybox stty echo; printf '<length:%s>\\n' \"${#value}\"");
   await until('canonical no-echo input', () => waits(beforeHidden, 'input') && text().includes('<hush>') &&
-    messages.slice(beforeHidden).some(m => m.type === 'tty' && (m.lflag & (ICANON | ECHO)) === ICANON));
+    inputMode() === ICANON);
   command('hidden-value');
   await until('guest consumed the masked line', () => text().includes('<length:12>'));
   assert.ok(!text().includes('hidden-value'));
@@ -123,7 +129,7 @@ try {
   const beforeSignal = messages.length;
   worker.postMessage({type: 'interrupt', sig: 2, flush: stream.flush()});
   await until('Ctrl-C returned to a live prompt without waiting for sleep', () =>
-    waits(beforeSignal, 'input') && text(1).includes('everyday$'));
+    waits(beforeSignal, 'input') && inputMode() === promptMode && text(1).includes('everyday$'));
   const beforeRecovery = messages.length;
   command("printf '<after:%s>\\n' \"$((6*7))\"");
   await until('the same shell is usable after Ctrl-C', () => waits(beforeRecovery, 'input') &&
@@ -143,8 +149,10 @@ try {
   assert.equal(messages[boundary].sentBytes, received);
   assert.ok(!messages.slice(boundary + 1).some(m => m.type === 'output'));
   console.log(JSON.stringify({
-    installedRootWorker: true, actualCpuWorker: true, rows: 12, cols: 53,
-    ansi: true, alternateScreen: true, cookedEchoOff: true, rawKeyWithoutEnter: 'q', canonicalRestored: true, recoveredAfterCtrlC: 42,
+    installedRootWorker: true, actualCpuWorker: apart, rows: 12, cols: 53,
+    ansi: true, alternateScreen: true, cookedEchoOff: true, rawKeyWithoutEnter: 'q',
+    canonicalRestored: true, cookedReply: 'cooked-answer', promptMode: promptMode & ICANON ? 'line' : 'raw',
+    recoveredAfterCtrlC: 42,
     outputBoundaryBytes: received, admissionRetired: true,
   }));
 } finally { await worker.terminate(); }
