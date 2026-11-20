@@ -3,6 +3,9 @@
 Status: design and source-checked requirements, **not a tested or packaged desktop**.
 The current theme API remains unchanged. Do not promote the ANSI artwork study into
 a compositor or define this module around an arm renderer.
+The separate [opt-in browser presenter](README.md#embed-one-guest-surface-opt-in)
+accepts one explicitly supplied guest frame source; it does not satisfy this
+borrowed-session profile or replace its proof.
 
 ## The smallest connection
 

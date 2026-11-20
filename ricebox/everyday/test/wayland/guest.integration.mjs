@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {MirrorRaster} from './support/mirror-raster.ts';
+import {mountGuestSurface} from '../../src/surface.ts';
 
 const [binary, mode, execClient] = process.argv.slice(2);
 const {SODS_TRANSLATOR_WASM: translatorPath, RICEBOX_MUK_FILE: mukPath} = process.env;
@@ -12,12 +13,43 @@ const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const read = (path) => new Uint8Array(readFileSync(path));
 const translator = read(translatorPath), muk = read(mukPath), elf = read(binary);
 const receipt=[],frames=[],terminal=[],model=new MirrorRaster();
+// Node has no browser backing store. Use a synchronous recording 2D surface;
+// the frames, pointer responses and resize below still come from the real guest.
+globalThis.ImageData=class {
+  constructor(data,width,height) { Object.assign(this,{data,width,height}); }
+};
+const original={left:64,top:44,width:256,height:192};
+const clip={left:0,top:0,width:245,height:172};
+let box=original, rendered, observer, sent, inputFence;
+const canvas=Object.assign(new EventTarget(), {
+  width:0,height:0,getBoundingClientRect:()=>box,
+  getContext:()=>({clearRect(){},putImageData(image){
+    rendered={width:image.width,height:image.height,pixels:new Uint8ClampedArray(image.data)};
+  }}),
+});
+const viewport={clientLeft:0,clientTop:0,clientWidth:clip.width,clientHeight:clip.height,
+  getBoundingClientRect:()=>clip,contains:target=>target===canvas};
+function sendFramed(bytes) {
+  sent=bytes;
+  inputFence=input(bytes);
+}
+const presenter=mountGuestSurface({canvas,viewport,limits:{width:64,height:48,bytes:64*48*4},source:{
+  observe(next){observer=next;return ()=>{model.retire();observer=undefined;};},
+  pointer({x,y}){sendFramed(Uint8Array.of(1,x,y));},
+  resize({width,height}){sendFramed(Uint8Array.of(2,width,height));},
+}});
 globalThis.self={ onmessage:undefined, postMessage(m,{transfer=[]}={}){
   const event=structuredClone(m,{transfer});
   receipt.push(event);
   if(event.type==='output')terminal.push(Buffer.from(event.bytes));
   const frame=model.accept(event);
-  if(frame)frames.push(frame);
+  if(frame && observer) {
+    rendered=undefined;
+    const {sequence:serial,width,height,pixels:rgba}=frame;
+    assert.equal(observer.frame({serial,width,height,rgba}),true);
+    assert.ok(rendered,'guest pixels pass through the product presenter');
+    frames.push({sequence:serial,...rendered});
+  }
 } };
 await import('../../../distribution/runtime/worker.ts');
 const send=data=>self.onmessage({data:structuredClone(data)});
@@ -74,17 +106,19 @@ try{
   await input(Uint8Array.of(1,250,250));
   await until(()=>text().includes('WAYLAND_CONTROL_REFUSED'),'invalid point verification');
   assert.equal(frames.length,1);
-  const clip={x:0,y:0,width:245,height:172},original={x:64,y:44,width:256,height:192};
-  const panned={...original,x:16,y:8};
-  const cmd=model.pointer(panned.x+84,panned.y+100,panned,clip);
-  assert.deepEqual(cmd,model.pointer(original.x+84,original.y+100,original,clip));
-  assert.deepEqual(cmd,Uint8Array.of(1,10,12));
+  box={...original,left:16,top:8};
   assert.equal(frames.length,1,'camera geometry alone is no guest input');
-  await input(cmd);
+  canvas.dispatchEvent(Object.assign(new Event('pointerdown'), {
+    button:0,isPrimary:true,clientX:box.left+84,clientY:box.top+100,
+  }));
+  assert.deepEqual(sent,Uint8Array.of(1,10,12));
+  await inputFence;
   await until(()=>frames.length===2&&text().includes('WAYLAND_COMMIT seq=2'),'Wayland pointer commit');
   const g=shape(2,32,24,[10,12]);
   assert.notEqual(f.sha256,g.sha256);
-  await input(model.resize(47,19));
+  assert.equal(presenter.resize(47,19),true);
+  assert.deepEqual(sent,Uint8Array.of(2,47,19));
+  await inputFence;
   await until(()=>frames.length===3&&text().includes('WAYLAND_COMMIT seq=3'),'xdg resized commit');
   const h=shape(3,47,19);
   await input(Uint8Array.of(3,0,0));
@@ -105,12 +139,13 @@ try{
   assert.ok(expanded>initial);
   assert.ok(lines.includes('WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3'));
   assert.equal(lines.at(-1),'WAYLAND_WINDOW_CLOSED');
-  model.retire();
+  presenter.close();
   await send({type:'retire'});
   const retired=receipt.find(e=>e.type==='retiring');
   assert.ok(retired);
   assert.deepEqual(retired.failures,[]);
   console.log(JSON.stringify({mode,connection:execClient?'exec-inherited':'fork-direct',elf:hash(elf),frames:[f,g,h],lines,lifecycle:'admission acknowledged'}));
 }finally{
+  presenter.close();
   if(!receipt.some(m=>m.type==='retiring'))await send({type:'retire'});
 }

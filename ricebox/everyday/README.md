@@ -77,3 +77,59 @@ the words that must stay read on the OS's grounds, including the active Prompt's
 text against its background. The editor shows which lines this file cannot apply
 and why, without removing them from the file or taking changes from another device.
 Nothing of why is known here.
+
+## Embed one guest surface (opt-in)
+
+`ricebox/everyday` is a host-side 2D canvas presenter, not a compositor or a
+guest launch API. Admit an existing guest surface explicitly through a
+`GuestSurfaceSource`. That source belongs to the deployer: it subscribes to one
+agreed surface, supplies its frames, and optionally accepts primary-pointer
+contacts and explicit guest resize requests. The presenter does not open a
+socket, start or retire a Worker, fetch packages, or expose a mirrored directory.
+Importing it does not change the default Ricebox startup.
+
+```html
+<div id="camera" style="width: 24rem; height: 14rem; overflow: auto">
+  <canvas id="guest" style="display: block"></canvas>
+</div>
+```
+
+```ts
+import {mountGuestSurface, type GuestSurfaceSource} from 'ricebox/everyday';
+
+// The application has already agreed on one guest surface and owns its source.
+export function show(source: GuestSurfaceSource) {
+  const viewport = document.querySelector<HTMLElement>('#camera')!;
+  const canvas = document.querySelector<HTMLCanvasElement>('#guest')!;
+  const surface = mountGuestSurface({source, viewport, canvas,
+    limits: {width: 1920, height: 1080, bytes: 1920 * 1080 * 4}});
+
+  viewport.scrollTo(40, 20); // Host camera only. No guest event is sent.
+  return surface;           // Opt in to surface.resize(w, h); close on teardown.
+}
+```
+
+The source lends tightly packed, straight RGBA pixels (red, green, blue, alpha;
+four bytes per pixel) for each synchronous `observer.frame()`. Release or reuse
+the buffer after the call returns; the presenter does not retain it. Each source
+starts with a positive serial and publishes strictly newer serials. A stale,
+incomplete, oversized or shared-memory frame is refused. Define frame limits
+before materializing decoded pixels as well; the presenter does not bound
+transport or decoder allocations. If the admitted source ends it calls
+`observer.end()`; `surface.close()` also removes the subscription and input hook,
+but does not shut down the caller's transport. The canvas is exclusive to the
+mount while attached.
+
+The browser owns scrolling, clipping and CSS sizing of the borderless canvas
+in its untransformed, axis-aligned viewport. Pointer coordinates are browser CSS
+pixels measured at each contact, mapped only inside both the canvas and the
+viewport's content area (excluding borders and scrollbars). The optional source
+input carries the rendered serial, so a source can reject input for a surface
+that has already changed. No keyboard, hover or blanket input forwarding is
+implied. A browser layout resize is not a guest resize.
+
+The [static guest Wayland browser example](test/wayland/browser/demo.ts) uses
+this entry from source. It explicitly owns the existing Ricebox Worker and
+admits only the fixture surface published from an actual Wayland SHM commit.
+The example's file encoding and input bytes stay test-only; they are not the
+package's surface protocol. This is not stock Quickshell running in Sods.

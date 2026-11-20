@@ -1,4 +1,5 @@
-import {mountMirrorCanvas} from './mirror-canvas.ts';
+import {mountGuestSurface, type GuestSurfaceSource, type GuestSurfaceObserver} from '../../../src/surface.ts';
+import {MirrorRaster} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 
 function required<T extends HTMLElement>(selector: string): T {
@@ -40,8 +41,17 @@ async function start() {
   const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(manifest.elf)]);
   const worker = new Worker(new URL('../../../../distribution/runtime/worker.ts',import.meta.url),{type:'module'});
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
-  let surface: ReturnType<typeof mountMirrorCanvas>;
-  try { surface = mountMirrorCanvas(viewport, canvas, post); }
+  // This fixture alone knows its RBF1 file and control bytes. Neither the
+  // mount nor another consumer of the Worker gets a display capability by default.
+  const model = new MirrorRaster();
+  let observer: GuestSurfaceObserver | undefined;
+  const source: GuestSurfaceSource = {
+    observe(next) { observer = next; return () => { observer = undefined; model.retire(); }; },
+    pointer({x, y}) { post(Uint8Array.of(1, x, y)); },
+    resize({width, height}) { post(Uint8Array.of(2, width, height)); },
+  };
+  let surface: ReturnType<typeof mountGuestSurface>;
+  try { surface = mountGuestSurface({viewport, canvas, source, limits: {width:64, height:48, bytes:64*48*4}}); }
   catch (error) { worker.terminate(); throw error; }
   let retiring = false, finished = false, timer: ReturnType<typeof setTimeout> | undefined;
   function stop(acknowledged: boolean) {
@@ -56,7 +66,7 @@ async function start() {
   function retire() {
     if (retiring || finished) return;
     retiring = true;
-    surface.detach();
+    surface.close();
     for (const button of controls) button.disabled = true;
     timer = setTimeout(() => stop(false), 1000);
     try { worker.postMessage({type:'retire'}); }
@@ -83,22 +93,22 @@ async function start() {
       retire();
       return;
     }
-    const frame = surface.accept(msg);
-    if (!frame) return;
+    const frame = model.accept(msg);
+    if (!frame || !observer?.frame({serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels})) return;
     canvas.style.width = frame.width * 8 + 'px';
     canvas.style.height = frame.height * 8 + 'px';
     canvas.dataset.sequence = String(frame.sequence);
     report('frame', 'Guest raster ' + frame.width + '×' + frame.height);
   }
   function failed(event: ErrorEvent) { report('error', event.message); retire(); }
-  pan.onclick = () => surface.pan(48,36);
+  pan.onclick = () => { if (!retiring) viewport.scrollTo(48,36); };
   hostResize.onclick = () => { viewport.style.width='270px'; viewport.style.height='208px'; };
-  guestResize.onclick = () => surface.resizeGuest(47,19);
+  guestResize.onclick = () => surface.resize(47,19);
   quit.onclick = () => { if (!retiring) post(Uint8Array.of(3,0,0)); };
   worker.addEventListener('message', message);
   worker.addEventListener('error', failed);
   window.addEventListener('pagehide', retire, {once:true});
   try { worker.postMessage(rasterStart(translator,muk,elf)); }
-  catch (error) { surface.detach(); stop(false); throw error; }
+  catch (error) { surface.close(); stop(false); throw error; }
 }
 void start().catch(error => report('error', String(error)));

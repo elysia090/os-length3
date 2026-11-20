@@ -11,7 +11,7 @@ translation, native container execution or a command-line tool.
 | [Muk](muk/) | A native x86-64 Linux OCI bundle runner. It does not read images or own the frontend terminal. |
 | [You](you/) | Freestanding C directory history and tree search commands. |
 | [Cowboy](cowboy/) | Guest network adapters and a relay protocol. Product identity and relay authorization are supplied outside the component. |
-| [Everyday](everyday/) | Theme value parsing. Display and input compatibility is a separate goal, not a capability of the current parser. |
+| [Everyday](everyday/) | Theme values and an opt-in browser presenter for explicitly provided guest frames. General display/input compatibility is a separate goal. |
 | [Otter](otter/) | Command help and pinned package acquisition. |
 
 Freestanding C components share the small [toolchain](toolchain/) directory.

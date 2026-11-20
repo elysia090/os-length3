@@ -15,13 +15,14 @@ if (!out) throw new Error('usage: node ricebox/distribution/build/npm.ts OUT');
 if (existsSync(out)) throw new Error(`Refusing to replace an existing directory: ${out}`);
 const version = releaseVersion();
 const entry = 'ricebox/distribution/runtime/root.ts';
+const display = 'ricebox/everyday/src/surface.ts';
 const modules = packageTypeScript(repository, out, [
-  entry, 'ricebox/distribution/integrations/vite.ts', 'ricebox/distribution/build/prepare.ts',
+  entry, display, 'ricebox/distribution/integrations/vite.ts', 'ricebox/distribution/build/prepare.ts',
   // CLI roots invoked by prepare.ts and assemble.sh, not static imports.
   'ricebox/distribution/build/distribution.ts', 'ricebox/distribution/build/package-database.ts',
   'ricebox/distribution/build/script-interpreters.ts',
 ], path => {
-  if (!/^ricebox\/(distribution\/(?:runtime|format|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts') || /\/(?:test|verification|site|demos?|examples?|playground)\/|\.(?:test|spec)\.ts$/.test(path)) {
+  if (!/^ricebox\/(distribution\/(?:runtime|format|build|deployment|integrations|host\/node)|sods\/runtime|everyday\/src)\//.test(path) || !path.endsWith('.ts') || /\/(?:test|verification|site|demos?|examples?|playground)\/|\.(?:test|spec)\.ts$/.test(path)) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
 });
@@ -35,8 +36,13 @@ writeFileSync(join(out, 'ricebox/sods/Cargo.toml'), readFileSync(join(repository
 writeFileSync(join(out, 'package.json'), JSON.stringify({
   name: 'ricebox', version, private: true, type: 'module',
   description: 'The product-independent ricebox distribution loader',
-  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': {types: './ricebox/distribution/integrations/vite.ts', import: './ricebox/distribution/integrations/vite.js'}, './prepare': {types: './ricebox/distribution/build/prepare.ts', import: './ricebox/distribution/build/prepare.js'}},
+  exports: {
+    '.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')},
+    './everyday': {types: './' + display, import: './' + display.replace(/\.ts$/, '.js')},
+    './vite': {types: './ricebox/distribution/integrations/vite.ts', import: './ricebox/distribution/integrations/vite.js'},
+    './prepare': {types: './ricebox/distribution/build/prepare.ts', import: './ricebox/distribution/build/prepare.js'},
+  },
   engines: {node: '>=22.18'},
 }, null, 2) + '\n');
-writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. Supply selected packages and a package cache. For a pinned catalog, acquire with otter first and pass its packages/packageCache/tools result; ricebox never fetches or resolves a catalog. Supply integrity-pinned translator, sods and muk artifacts as tools to use the bundled assembler and AOT scripts without building Rust/C; a source toolchain remains available for development. It also requires Linux shell tools, GNU tar and zstd; it does not install native build prerequisites. Catalog acquisition is owned by otter, not a second ricebox registry. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
+writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nThe optional ricebox/everyday entry presents explicitly supplied guest frames; it starts no Worker and mounts no default UI.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. Supply selected packages and a package cache. For a pinned catalog, acquire with otter first and pass its packages/packageCache/tools result; ricebox never fetches or resolves a catalog. Supply integrity-pinned translator, sods and muk artifacts as tools to use the bundled assembler and AOT scripts without building Rust/C; a source toolchain remains available for development. It also requires Linux shell tools, GNU tar and zstd; it does not install native build prerequisites. Catalog acquisition is owned by otter, not a second ricebox registry. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
 console.log(`ricebox: ${modules} modules, no product dependencies; npm pack ${out}`);
