@@ -22,8 +22,18 @@ if (import.meta.main) {
   const {chromium} = await import('@playwright/test');
   const executablePath = process.env.EVERYDAY_CHROME_BIN;
   if (!executablePath) throw new Error('Set EVERYDAY_CHROME_BIN to the runner’s installed Chrome');
-  const browser = await chromium.launch({executablePath, headless: true, chromiumSandbox: true, timeout: 10000});
+  // Cold starts vary across stock runner images. Only the launch budget changes.
+  const launchTimeoutMs = 30_000;
+  const launchStarted = performance.now();
+  const browser = await chromium.launch({
+    executablePath, headless: true, chromiumSandbox: true, timeout: launchTimeoutMs,
+  }).catch((error: unknown) => {
+    console.error('EVERYDAY_STOCK_CHROME_LAUNCH_FAILED',
+      {elapsedMs: Math.round(performance.now() - launchStarted), timeoutMs: launchTimeoutMs});
+    throw error;
+  });
   try {
+    console.log('EVERYDAY_STOCK_CHROME_LAUNCH_READY', {elapsedMs: Math.round(performance.now() - launchStarted)});
     const page = await browser.newPage();
     await page.goto('chrome://sandbox/', {timeout: 8000});
     await page.getByText('Seccomp-BPF sandbox', {exact: true}).waitFor({timeout: 4000});
