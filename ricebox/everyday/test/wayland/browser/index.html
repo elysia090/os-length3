@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Everyday Wayland commit proof</title>
+<style>
+  body { margin: 24px; font: 15px/1.45 system-ui, sans-serif; }
+  #status { min-height: 22px; }
+  #camera { width: 256px; height: 184px; overflow: auto; border: 1px solid #52565d; }
+  #stage { width: 576px; height: 448px; padding: 44px 64px; box-sizing: border-box; background: #f5f5f5; }
+  canvas { display: block; image-rendering: pixelated; }
+</style>
+<h1>Guest Wayland commit proof</h1>
+<p>A guest Wayland client draws these pixels into a committed surface. The browser only presents the exported buffer and moves the camera.</p>
+<p id="status" role="status" data-phase="loading">Loading guest…</p>
+<div id="camera" aria-label="Pannable guest view" tabindex="0">
+  <div id="stage"><canvas width="1" height="1" aria-label="Guest raster"></canvas></div>
+</div>
+<p>
+  <button id="pan" disabled>Pan right and down</button>
+  <button id="host-resize" disabled>Resize viewport</button>
+  <button id="guest-resize" disabled>Resize guest raster</button>
+  <button id="quit" disabled>Exit guest</button>
+</p>
+<pre id="protocol" aria-label="Guest Wayland receipts"></pre>
+<script type="module" src="/demo.ts"></script>
+</html>

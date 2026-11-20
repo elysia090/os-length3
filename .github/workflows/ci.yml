@@ -6,6 +6,11 @@ on:
   pull_request:
     paths: ['why/**', 'ricebox/**', 'scripts/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
+    inputs:
+      everyday_chrome:
+        description: Run the isolated guest Wayland/Chrome conformance gate
+        type: boolean
+        default: false
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
 permissions:
@@ -436,6 +441,26 @@ jobs:
           timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter"
           timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline
           timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker
+
+      # This opt-in gate consumes the fixture already built above. There is no
+      # binary, screenshot or app upload, and Chromium uses its own sandbox.
+      - name: Install locked browser test dependencies for Everyday
+        if: matrix.part == 'native' && inputs.everyday_chrome == true
+        run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: matrix.part == 'native' && inputs.everyday_chrome == true
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('node_modules/playwright-core/browsers.json') }}
+      - name: Install ordinary Chromium for Everyday conformance
+        if: matrix.part == 'native' && inputs.everyday_chrome == true
+        run: npx playwright install chromium
+      - name: Test guest Wayland commits in Chromium
+        if: matrix.part == 'native' && inputs.everyday_chrome == true
+        env:
+          SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          RICEBOX_MUK_FILE: target/muk/muk
+        run: sh ricebox/everyday/test/wayland/browser/run.sh target/everyday-fixture/wayland-presenter
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the
       # same C muk translated, each box made by the calls it makes on Linux (a static busybox its shell and tools).
