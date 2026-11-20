@@ -48,9 +48,9 @@ static int write_all(int fd, const unsigned char *p, size_t n) {
     return 0;
 }
 
-// The Quickshell-only fixture presents straight RGBA from premultiplied SHM.
+// Only the opt-in alpha fixtures expose straight RGBA from premultiplied SHM.
 static bool alpha_witness(uint32_t format) {
-#ifdef EVERYDAY_TEST_QUICKSHELL
+#if defined(EVERYDAY_TEST_QUICKSHELL) || defined(EVERYDAY_TEST_ALPHA_FIXTURE)
     return format==WL_SHM_FORMAT_ARGB8888;
 #else
     (void)format;
@@ -68,6 +68,9 @@ static bool mirror_commit(struct Server *s, struct wl_shm_buffer *buffer) {
     const int w=wl_shm_buffer_get_width(buffer), h=wl_shm_buffer_get_height(buffer), stride=wl_shm_buffer_get_stride(buffer);
     const uint32_t format=wl_shm_buffer_get_format(buffer);
     const bool alpha=alpha_witness(format);
+#ifdef EVERYDAY_TEST_ALPHA_FIXTURE
+    if (!alpha) return false;
+#endif
     if (w != s->width || h != s->height || w < 1 || w > MAX_W || h < 1 || h > MAX_H ||
         stride < w*4 || stride > MAX_W*4+12 || (format != WL_SHM_FORMAT_XRGB8888 && !alpha) ||
         s->damage_width != w || s->damage_height != h || s->frames == UINT32_MAX) return false;

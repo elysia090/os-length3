@@ -44,9 +44,14 @@ static void done(void *arg, struct wl_callback *cb, uint32_t serial) {
 }
 static const struct wl_callback_listener callback = { .done = done };
 
+#ifdef EVERYDAY_TEST_ALPHA_FIXTURE
+static const uint32_t frame_format = WL_SHM_FORMAT_ARGB8888;
+#else
+static const uint32_t frame_format = WL_SHM_FORMAT_XRGB8888;
+#endif
+
 static void draw(struct Client *c) {
-    // Deliberately use a padded stride and a non-alpha X byte so the
-    // server's pixel witness cannot accidentally assume tight RGBA.
+    // Both paths use padded rows; the opaque control also uses a non-alpha X byte.
     int stride = c->width * 4 + 12, length = stride * c->height;
     int fd = memfd_create("guest-wayland-presenter", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     if (fd < 0) { c->failed = true; return; }
@@ -58,18 +63,25 @@ static void draw(struct Client *c) {
     memset(data, 0x6a, (size_t)length);
     for (int y = 0; y < c->height; ++y) {
         for (int x = 0; x < c->width; ++x) {
+#ifdef EVERYDAY_TEST_ALPHA_FIXTURE
+            // Actual wl_shm ARGB: clear, premultiplied (255,128,64,128), opaque.
+            uint32_t pixel = x < c->width / 3 ? 0 :
+                x < 2 * c->width / 3 ? 0x80804020u : 0xff416ee1u;
+#else
             int dx = x - c->marker_x, dy = y - c->marker_y;
             bool mark = c->marker_x >= 0 && dx * dx + dy * dy <= 4;
             uint32_t r = mark ? 248u : (unsigned)(18 + 2 * x);
             uint32_t g = mark ? 61u : (unsigned)(28 + 3 * y);
             uint32_t b = mark ? 105u : (unsigned)(42 + (x ^ y));
-            ((uint32_t *)(data + y * stride))[x] = (0x4du << 24) | (r << 16) | (g << 8) | b;
+            uint32_t pixel = (0x4du << 24) | (r << 16) | (g << 8) | b;
+#endif
+            ((uint32_t *)(data + y * stride))[x] = pixel;
         }
     }
     struct wl_shm_pool *pool = wl_shm_create_pool(c->shm, fd, length);
     close(fd);
     if (!pool) { munmap(data, (size_t)length); c->failed = true; return; }
-    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, c->width, c->height, stride, WL_SHM_FORMAT_XRGB8888);
+    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, c->width, c->height, stride, frame_format);
     wl_shm_pool_destroy(pool);
     struct Hold *hold = malloc(sizeof *hold);
     if (!buffer || !hold) {
@@ -149,7 +161,7 @@ static const struct wl_seat_listener seat = {.capabilities = capa};
 
 static void format(void *arg, struct wl_shm *shm, uint32_t f) {
     (void)shm;
-    if (f == WL_SHM_FORMAT_XRGB8888) ((struct Client *)arg)->offered = true;
+    if (f == frame_format) ((struct Client *)arg)->offered = true;
 }
 static const struct wl_shm_listener shm_listen = {.format = format};
 static void global(void *arg, struct wl_registry *r, uint32_t id, const char *iface, uint32_t version) {

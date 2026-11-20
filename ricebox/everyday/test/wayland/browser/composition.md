@@ -36,3 +36,28 @@ package and both real CPU Worker lanes, stage a temporary consumer:
 
 The Node check does not establish browser pixels, physical presentation, or
 Quickshell running in Sods.
+
+## Preserve guest transparency over the host
+
+For the opt-in alpha witness, also build the static Wayland client/server with
+EVERYDAY_WITH_ALPHA=1 in the guest build stage and pass its resulting executable:
+
+    EVERYDAY_ALPHA_ELF=/path/to/wayland-alpha-presenter
+
+Set that together with the environment above. With --serve, open the loopback
+page with ?surface=alpha to see the actual guest's transparent, half-alpha, and
+opaque strips. Add &over=shell and open the optional shell to place its real
+transcript behind the guest image. Shell controls remain separate. The default
+page still loads only the opaque fixture.
+
+The alpha fixture negotiates actual ARGB8888 SHM with padded rows, and the
+test-owned mirror converts it to straight RGBA once. Browser tests distinguish
+backing pixels from composited pixels over two CSS backdrops and hold the
+guest serial fixed, so a host backdrop change is not a guest repaint. Exact
+alpha, visible shell text and independent transport are not transparency in
+stock Quickshell under Sods, nor a timing measurement.
+
+For an engine-only alpha check, pass the alpha executable instead of the
+opaque executable to the installed guest-pair check above and append --alpha.
+It checks every RGBA pixel in both real guest buffer sizes without claiming
+browser composition.

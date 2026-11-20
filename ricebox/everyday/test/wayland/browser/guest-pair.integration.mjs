@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import {Worker as NodeWorker} from 'node:worker_threads';
 import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {rasterStart} from './raster-fixture.ts';
 import {shellStart} from './shell-fixture.ts';
 import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
 import {createRoot} from 'ricebox';
 import {surfaceFromMirror} from 'ricebox/everyday';
 // Engine-only corroboration: actual independent Workers/guests, no browser claim.
-const [wasm, mukFile, elfFile, busyboxFile] = process.argv.slice(2);
-assert.ok(busyboxFile,'pass TRANSLATOR_WASM MUK WAYLAND_TEST_ELF STATIC_BUSYBOX');
+const [wasm, mukFile, elfFile, busyboxFile, profile] = process.argv.slice(2);
+const alpha = profile === "--alpha";
+assert.ok(profile === undefined || alpha);
+assert.ok(busyboxFile,'pass TRANSLATOR_WASM MUK WAYLAND_TEST_ELF STATIC_BUSYBOX [--alpha]');
 const bridge = new URL('data:text/javascript,' + encodeURIComponent([
   "import {parentPort,workerData} from 'node:worker_threads';",
   "globalThis.self={postMessage(value,{transfer=[]}={}){parentPort.postMessage(value,transfer);}};",
@@ -42,7 +45,18 @@ const source=surfaceFromMirror({worker:port,file:rasterFile,maxEncodedBytes:16+6
   encodeResize:({width,height})=>Uint8Array.of(2,width,height),
 });
 let displayEnded=false;
-const stopSource=source.observe({frame:()=>true,end:()=>{displayEnded=true;}});
+const alphaFrames=[];
+const stopSource=source.observe({frame(frame) {
+  if (alpha) for (let y=0;y<frame.height;y++) for (let x=0;x<frame.width;x++) {
+    const offset=(y*frame.width+x)*4;
+    const expected=x<Math.floor(frame.width/3)?[0,0,0,0]:
+      x<Math.floor(2*frame.width/3)?[255,128,64,128]:[65,110,225,255];
+    assert.deepEqual(Array.from(frame.rgba.subarray(offset,offset+4)),expected);
+  }
+  if (alpha) alphaFrames.push({serial:frame.serial,width:frame.width,height:frame.height,
+    sha256:createHash('sha256').update(frame.rgba).digest('hex')});
+  return true;
+},end:()=>{displayEnded=true;}});
 const read=p=>new Uint8Array(readFileSync(p));
 const [translator,muk,elf,busybox]=[wasm,mukFile,elfFile,busyboxFile].map(read);
 const packets=[], display=[], sh=[], errors=[], retired=[];
@@ -101,5 +115,7 @@ try {
   await pause(()=>retired.length===2);
   const actualCpuWorkers=[display.find(o=>o.type==='threads')?.apart,sh.find(o=>o.type==='threads')?.apart];
   assert.deepEqual(actualCpuWorkers,[true,true]);
-  console.log(JSON.stringify({installedWorker:entry.endsWith('/node_modules/ricebox/ricebox/distribution/runtime/worker.js'),shellResult:42,afterDisplayClose:81,displayFrame:2,stops:retired,actualCpuWorkers}));
+  if (alpha) assert.match(Buffer.concat(display.filter(m=>m.type==='output').map(m=>Buffer.from(m.bytes))).toString(),
+    /WAYLAND_ALPHA format=argb8888/);
+  console.log(JSON.stringify({alpha,alphaFrames,installedWorker:entry.endsWith('/node_modules/ricebox/ricebox/distribution/runtime/worker.js'),shellResult:42,afterDisplayClose:81,displayFrame:2,stops:retired,actualCpuWorkers}));
 } finally {stopSource(); await Promise.all([a.terminate(),b.terminate()]);}

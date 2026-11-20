@@ -11,6 +11,8 @@ await mkdir(target);
 const manifest = {};
 const files = [['translator','sods.wasm',translator],['muk','muk',muk],['elf','wayland-presenter',elf]];
 if (shell) files.push(['shell','busybox',shell]);
+const alpha = process.env.EVERYDAY_ALPHA_ELF;
+if (alpha) files.push(['alpha','wayland-alpha-presenter',alpha]);
 for (const [key, name, path] of files) {
   const contents = await readFile(path);
   assert.ok(contents.length);

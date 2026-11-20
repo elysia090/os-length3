@@ -41,13 +41,32 @@ async function start() {
   if (!manifest || !pin(manifest.translator,'sods.wasm') || !pin(manifest.muk,'muk') ||
       !pin(manifest.elf,'wayland-presenter')) throw new Error('Invalid fixture pins');
   const shell = pin(manifest.shell,'busybox') ? manifest.shell : null;
-  const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(manifest.elf)]);
+  const profile = new URLSearchParams(location.search);
+  let displayPin = manifest.elf;
+  if (profile.get('surface') === 'alpha') {
+    if (!pin(manifest.alpha,'wayland-alpha-presenter')) throw new Error('No staged Wayland alpha guest');
+    displayPin = manifest.alpha;
+  }
+  const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(displayPin)]);
   // The caller owns the pinned fixture assets; use the installed package to
   // make both standard Workers without loading a default distribution.
   const root = createRoot({base:'/fixture/', first:[], usedKey:'everyday-proof-used',
     planKey:'everyday-proof-plan', message:key=>key, missing:()=> 'No default root',
     errorText:error=>String(error)});
-  if (shell) offerShell(required('#shell'), () => load(shell), translator, muk, root.rootWorker);
+  if (shell) {
+    offerShell(required('#shell'), () => load(shell), translator, muk, root.rootWorker);
+    if (profile.get('surface') === 'alpha' && profile.get('over') === 'shell') {
+      // Move only the real transcript under the canvas. The shell command
+      // controls stay in their own section and never share guest input.
+      const stage = required('#stage'), transcript = required('#shell-output');
+      const padding = getComputedStyle(stage);
+      stage.style.position = 'relative';
+      Object.assign(transcript.style, {position:'absolute', top:padding.paddingTop,
+        left:padding.paddingLeft, margin:'0', pointerEvents:'none'});
+      Object.assign(canvas.style, {position:'relative', zIndex:'1'});
+      stage.prepend(transcript);
+    }
+  }
   const worker = root.rootWorker();
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
   // Only this fixture knows its RBF1 format and control bytes.

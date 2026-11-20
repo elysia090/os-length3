@@ -433,6 +433,7 @@ jobs:
         env:
           SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
           RICEBOX_MUK_FILE: target/muk/muk
+          EVERYDAY_WITH_ALPHA: ${{ inputs.everyday_chrome && '1' || '0' }}
         run: |
           test_dir=ricebox/everyday/test/wayland
           build=target/everyday-fixture
@@ -475,7 +476,7 @@ jobs:
             echo "::error::The explicitly opted-in Chrome composition needs the native lane's static BusyBox"
             exit 1
           fi
-          EVERYDAY_SHELL_ELF="$busybox" \
+          EVERYDAY_SHELL_ELF="$busybox" EVERYDAY_ALPHA_ELF=target/everyday-fixture/wayland-alpha-presenter \
             sh ricebox/everyday/test/wayland/browser/run.sh target/everyday-fixture/wayland-presenter
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the
