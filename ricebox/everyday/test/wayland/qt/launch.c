@@ -23,7 +23,11 @@ int main(int argc, char **argv) {
         if (fcntl(pair[1], F_SETFD, 0) < 0 || setenv("WAYLAND_SOCKET", endpoint, 1) < 0) _exit(14);
         // This launcher runs with the native test's explicit environment. Its
         // only display connection is the endpoint created by this process.
+#ifdef EVERYDAY_TEST_QUICKSHELL
+        char *const args[] = {"/packages/usr/bin/quickshell", "--no-color", "--path", "/tmp/shell.qml", NULL};
+#else
         char *const args[] = {"/usr/lib/qt6/bin/qmlscene", "/tmp/rectangle.qml", NULL};
+#endif
         execv(args[0], args);
         perror("Qt Wayland exec");
         _exit(15);
@@ -35,6 +39,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Qt Wayland server %d; child status %d\n", server, status);
         return 13;
     }
+#ifdef EVERYDAY_TEST_QUICKSHELL
+    puts("QUICKSHELL_NATIVE_WINDOW_CLOSED");
+#else
     puts("QT_WAYLAND_WINDOW_CLOSED");
+#endif
     return 0;
 }

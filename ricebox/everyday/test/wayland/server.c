@@ -48,10 +48,28 @@ static int write_all(int fd, const unsigned char *p, size_t n) {
     return 0;
 }
 
+// The Quickshell-only fixture presents straight RGBA from premultiplied SHM.
+static bool alpha_witness(uint32_t format) {
+#ifdef EVERYDAY_TEST_QUICKSHELL
+    return format==WL_SHM_FORMAT_ARGB8888;
+#else
+    (void)format;
+    return false;
+#endif
+}
+
+static unsigned char straight(unsigned char premultiplied, unsigned char alpha) {
+    if (!alpha) return 0;
+    unsigned value = ((unsigned)premultiplied * 255 + alpha / 2) / alpha;
+    return value > 255 ? 255 : value;
+}
+
 static bool mirror_commit(struct Server *s, struct wl_shm_buffer *buffer) {
     const int w=wl_shm_buffer_get_width(buffer), h=wl_shm_buffer_get_height(buffer), stride=wl_shm_buffer_get_stride(buffer);
+    const uint32_t format=wl_shm_buffer_get_format(buffer);
+    const bool alpha=alpha_witness(format);
     if (w != s->width || h != s->height || w < 1 || w > MAX_W || h < 1 || h > MAX_H ||
-        stride < w*4 || stride > MAX_W*4+12 || wl_shm_buffer_get_format(buffer) != WL_SHM_FORMAT_XRGB8888 ||
+        stride < w*4 || stride > MAX_W*4+12 || (format != WL_SHM_FORMAT_XRGB8888 && !alpha) ||
         s->damage_width != w || s->damage_height != h || s->frames == UINT32_MAX) return false;
     unsigned char frame[16 + MAX_W*MAX_H*4];
     memcpy(frame,"RBF1",4); u32le(frame+4,s->frames+1); u32le(frame+8,w); u32le(frame+12,h);
@@ -62,7 +80,12 @@ static bool mirror_commit(struct Server *s, struct wl_shm_buffer *buffer) {
     for (int y=0;y<h;y++) for (int x=0;x<w;x++) {
         const unsigned char *b=data+y*stride+4*x;
         unsigned char *p=frame+16+(y*w+x)*4;
-        p[0]=b[2]; p[1]=b[1]; p[2]=b[0]; p[3]=255; // little-endian XRGB8888 -> RGBA
+        if(alpha) {
+            p[0]=straight(b[2],b[3]); p[1]=straight(b[1],b[3]);
+            p[2]=straight(b[0],b[3]); p[3]=b[3];
+        } else {
+            p[0]=b[2]; p[1]=b[1]; p[2]=b[0]; p[3]=255;
+        }
     }
     wl_shm_buffer_end_access(buffer);
     int fd=open(s->temporary,O_CREAT|O_TRUNC|O_WRONLY|O_CLOEXEC,0600);
@@ -70,6 +93,7 @@ static bool mirror_commit(struct Server *s, struct wl_shm_buffer *buffer) {
     int written=write_all(fd,frame,16+(size_t)w*h*4), closed=close(fd);
     if (written<0 || closed<0 || rename(s->temporary,s->name)<0) {unlink(s->temporary); return false;}
     s->frames++;
+    if(alpha) puts("WAYLAND_ALPHA format=argb8888");
     printf("WAYLAND_COMMIT seq=%u size=%dx%d configure=%u pointer=%u stride=%d\n",
            s->frames,w,h,s->acknowledged,s->pointer_serial,stride);
     return fflush(stdout) == 0;
@@ -318,9 +342,14 @@ static void layer_keyboard(struct wl_client *c,struct wl_resource *r,uint32_t ke
     (void)c;
     if(keyboard) fail(wl_resource_get_user_data(r),"unexpected layer keyboard policy");
 }
+static void destroy_layer(struct wl_client *c,struct wl_resource *r) {
+    struct Server *s=wl_resource_get_user_data(r);
+    if(s->closing) puts("WAYLAND_LAYER_CLIENT_DESTROY");
+    destroy(c,r);
+}
 static const struct zwlr_layer_surface_v1_interface layer_surface_impl={
     .set_size=layer_size,.set_anchor=layer_anchor,.set_exclusive_zone=layer_zone,.set_margin=layer_margin,
-    .set_keyboard_interactivity=layer_keyboard,.ack_configure=ack,.destroy=destroy,
+    .set_keyboard_interactivity=layer_keyboard,.ack_configure=ack,.destroy=destroy_layer,
 };
 static void layer_surface(struct wl_client *c,struct wl_resource *shell,uint32_t id,struct wl_resource *surface,
                           struct wl_resource *output,uint32_t layer,const char *scope) {

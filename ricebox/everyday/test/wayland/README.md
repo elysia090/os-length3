@@ -83,3 +83,34 @@ the explicitly advertised, private test output. The test checks that role
 and the software-rendered buffer/resize/close independently of xdg-shell.
 The renderer mirrors the committed buffer only; it does not show or
 measure a physically pinned panel or claim a Quickshell session.
+
+### Optional native Quickshell application
+
+This is the real Debian trixie-backports `quickshell 0.3.0-1~bpo13+1`
+application with a small `Quickshell.PanelWindow` QML configuration.
+It uses a Debian x86-64 test host with matching Qt 6.8.2 runtime libraries and
+the supplementary official `.deb` files listed in
+[`qt/quickshell/debs.sha256`](qt/quickshell/debs.sha256). Stage those files from
+Debian's authenticated trixie and trixie-backports archives; the optional
+staging script verifies their recorded hashes and only extracts payloads,
+without installing anything or running scripts.
+
+Use the same pinned protocol XML in the scanner stage as for the Qt layer
+test above. Then build the guest fixture with `EVERYDAY_WITH_QUICKSHELL=1`
+and run:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+sh "$q/stage-debs.sh" "$DEB_CACHE" "$NEW_OVERLAY"
+python3 "$q/native-check.py" "$NEW_OVERLAY" "$BUILD_ROOT/wayland-quickshell-launch"
+```
+
+Only system `/usr` and the staged payloads are mounted read-only, with fresh
+home, runtime, and display state; there is no external Wayland socket. The QML
+must render an actual translucent rectangle from ARGB8888 SHM at both sizes.
+The mirror converts premultiplied color to straight RGBA; the runner compares
+every pixel and checks the client destroys the layer after close. A finite
+QML timer exits the test application, not the behavior of a normal shell
+daemon. Shell IPC and physical/browser presentation are not tested. The
+official Quickshell executable is dynamically linked and this is not a
+translated Sods Quickshell result.
