@@ -20,7 +20,7 @@ struct Server {
     uint32_t configured, acknowledged, frames, pointer_serial;
     unsigned char command[3];
     unsigned n;
-    bool client_gone, pointer_entered, closing, failed;
+    bool client_gone, pointer_entered, closing, detached, failed;
 };
 
 static void fail(struct Server *s, const char *message) {
@@ -127,7 +127,13 @@ static void destroy(struct wl_client *client, struct wl_resource *r) {(void)clie
 static void attach(struct wl_client *client, struct wl_resource *r, struct wl_resource *b, int32_t x, int32_t y) {
     (void)client;
     struct Server *s=wl_resource_get_user_data(r);
-    if (x!=0 || y!=0 || !b || s->buffer) {fail(s,"invalid demo attach"); return;}
+    if(x || y || s->buffer || s->detached) {fail(s,"invalid demo attach");return;}
+    if(!b) {
+        if(!s->closing || s->window || s->role || s->callback) {fail(s,"unexpected detach");return;}
+        // Qt drops the old buffer when closing its destroyed xdg role.
+        s->detached=true;
+        return;
+    }
     s->buffer=b;
 }
 static void damage(struct wl_client *client, struct wl_resource *r, int32_t x,int32_t y,int32_t w,int32_t h) {
@@ -135,6 +141,11 @@ static void damage(struct wl_client *client, struct wl_resource *r, int32_t x,in
     struct Server *s=wl_resource_get_user_data(r);
     if(x || y) {fail(s,"invalid damage origin"); return;}
     s->damage_width=w; s->damage_height=h;
+}
+/* The renderer does not composite behind this one client, so opaque regions
+ * are advisory. Implement region lifetimes without using the hint. */
+static void opaque_hint(struct wl_client *c, struct wl_resource *s, struct wl_resource *region) {
+    (void)c;(void)s;(void)region;
 }
 static void frame(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct Server *s=wl_resource_get_user_data(r);
@@ -150,6 +161,7 @@ static void commit(struct wl_client *c, struct wl_resource *r) {
         return;
     }
     if(s->failed) return;
+    if(s->detached) {s->detached=false;return;} // No buffer, no new frame.
     struct wl_shm_buffer *b=s->buffer ? wl_shm_buffer_get(s->buffer) : NULL;
     if(!s->acknowledged || s->configured!=s->acknowledged || !b || !s->callback || !mirror_commit(s,b)) {
         fail(s,"expected an acknowledged and valid SHM commit");
@@ -164,7 +176,7 @@ static void commit(struct wl_client *c, struct wl_resource *r) {
         if(!s->input) fail(s,"could not own fixture input channel");
     }
 }
-static const struct wl_surface_interface surface_impl={.destroy=destroy,.attach=attach,.damage=damage,.frame=frame,.commit=commit};
+static const struct wl_surface_interface surface_impl={.destroy=destroy,.attach=attach,.damage=damage,.frame=frame,.commit=commit,.set_opaque_region=opaque_hint};
 static void surface_gone(struct wl_resource *r) {
     struct Server *s=wl_resource_get_user_data(r); s->surface=NULL; s->pointer_entered=false;
 }
@@ -175,13 +187,32 @@ static void create_surface(struct wl_client *c, struct wl_resource *r, uint32_t 
     if(!s->surface){wl_client_post_no_memory(c);return;}
     wl_resource_set_implementation(s->surface,&surface_impl,s,surface_gone);
 }
-static const struct wl_compositor_interface compositor={.create_surface=create_surface};
+static void region_rect(struct wl_client *c, struct wl_resource *region, int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void)c;(void)region;(void)x;(void)y;(void)w;(void)h;
+}
+static const struct wl_region_interface region_impl={.destroy=destroy,.add=region_rect,.subtract=region_rect};
+static void create_region(struct wl_client *c, struct wl_resource *compositor, uint32_t id) {
+    (void)compositor;
+    struct wl_resource *region=wl_resource_create(c,&wl_region_interface,1,id);
+    if(region) wl_resource_set_implementation(region,&region_impl,NULL,NULL); else wl_client_post_no_memory(c);
+}
+static const struct wl_compositor_interface compositor={.create_surface=create_surface,.create_region=create_region};
 static void bind_compositor(struct wl_client *c, void *data, uint32_t v, uint32_t id) {
     struct wl_resource *r=wl_resource_create(c,&wl_compositor_interface,(int)v,id);
     if(r)wl_resource_set_implementation(r,&compositor,data,NULL);else wl_client_post_no_memory(c);
 }
 
-static const struct xdg_toplevel_interface top_impl={.destroy=destroy};
+static void window_label(struct wl_client *c, struct wl_resource *window, const char *label) {
+    (void)c;(void)window;(void)label;
+}
+static void unconstrained_size(struct wl_client *c, struct wl_resource *window, int32_t w, int32_t h) {
+    (void)c;
+    if(w || h) fail(wl_resource_get_user_data(window),"fixture only supports unconstrained windows");
+}
+static const struct xdg_toplevel_interface top_impl={
+    .destroy=destroy,.set_title=window_label,.set_app_id=window_label,
+    .set_min_size=unconstrained_size,.set_max_size=unconstrained_size,
+};
 static void top_gone(struct wl_resource *r){((struct Server *)wl_resource_get_user_data(r))->window=NULL;}
 static void top(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct Server *s=wl_resource_get_user_data(r);
@@ -195,7 +226,14 @@ static void ack(struct wl_client *c, struct wl_resource *r, uint32_t seq) {
     if(seq!=s->configured || seq==s->acknowledged){fail(s,"wrong configure acknowledgement");return;}
     s->acknowledged=seq;s->width=s->pending_width;s->height=s->pending_height;
 }
-static const struct xdg_surface_interface role_impl={.destroy=destroy,.get_toplevel=top,.ack_configure=ack};
+static void window_geometry(struct wl_client *c, struct wl_resource *role, int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void)c;
+    struct Server *s=wl_resource_get_user_data(role);
+    if(x || y || w < 1 || w > MAX_W || h < 1 || h > MAX_H) fail(s,"invalid fixture window geometry");
+}
+static const struct xdg_surface_interface role_impl={
+    .destroy=destroy,.get_toplevel=top,.ack_configure=ack,.set_window_geometry=window_geometry,
+};
 static void role_gone(struct wl_resource *r){((struct Server *)wl_resource_get_user_data(r))->role=NULL;}
 static void role(struct wl_client *c, struct wl_resource *wm, uint32_t id, struct wl_resource *surf) {
     struct Server *s=wl_resource_get_user_data(wm);

@@ -75,3 +75,6 @@ fixture() {
 }
 fixture wayland-presenter "$here/start.c" "$here/client.c" "$here/server.c"
 fixture wayland-socket-client "$here/socket-client.c" "$here/client.c"
+if [ "${EVERYDAY_WITH_QT:-0}" = 1 ]; then
+  fixture wayland-qt-launch "$here/qt/launch.c" "$here/server.c"
+fi

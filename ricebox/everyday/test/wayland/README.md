@@ -38,3 +38,29 @@ WAYLAND_SOCKET endpoint across exec (stdout/stderr remain normal). The client
 has no stdin and verifies an unrelated close-on-exec descriptor disappeared;
 ordinary libwayland consumes the environment value and takes that endpoint
 back to close-on-exec. This also keeps the in-process fork test as a control.
+
+### Optional native Qt Quick control
+
+This separate Linux x86-64 check reuses the test compositor with the real Alpine
+3.24 Qt 6.11.1-r0 Wayland client. It is not part of the default test path and
+does not install Qt into Ricebox or run Qt under Sods. Stage the official signed
+`qt6-qtdeclarative=6.11.1-r0` and `qt6-qtbase-wayland=6.11.1-r0` APKs and
+their dependencies in a disposable Alpine filesystem. The package manager also
+selects `qt6-qtbase-x11`, which contains the Wayland platform plugin despite
+its name. `qmlscene` lives in the runtime package; the dev package is not
+required. The runner checks the pinned qmlscene executable digest before running.
+
+After the scanner stage above, build with `EVERYDAY_WITH_QT=1` for the guest
+stage, then on the Linux host run:
+
+```sh
+python3 ricebox/everyday/test/wayland/qt/native-check.py \
+  "$ALPINE_ROOT" "$BUILD_ROOT/wayland-qt-launch"
+```
+
+The read-only root runs under normal unprivileged bubblewrap with no host
+display/device mounts. The launcher's local socketpair supplies
+`WAYLAND_SOCKET`; the display backend is Wayland, not offscreen or X11. The
+fixture checks Qt's software-renderer selection, every RGBA pixel of the first
+rectangle and its xdg resize, and close without a third frame. This optional
+control is not a general Qt, Chrome, or Quickshell compatibility claim.
