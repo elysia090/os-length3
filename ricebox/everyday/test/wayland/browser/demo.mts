@@ -15,11 +15,13 @@ const protocol = required('#protocol');
 const decoder = new TextDecoder();
 const controls = ['pan','host-resize','guest-resize','quit'].map(id => required<HTMLButtonElement>('#'+id));
 const [pan,hostResize,guestResize,quit] = controls;
-async function load([name,expected]:readonly [string,string]): Promise<Uint8Array<ArrayBuffer>> {
-  const response=await fetch('/fixture/'+name);
+async function load([name,expected]:readonly [string,string], signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const response=await fetch('/fixture/'+name,{signal});
   if (!response.ok) throw new Error('Missing pinned fixture '+name);
   const bytes=await response.arrayBuffer();
+  signal?.throwIfAborted();
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
+  signal?.throwIfAborted();
   if (hash!==expected) throw new Error('Unexpected fixture bytes '+name);
   return new Uint8Array(bytes);
 }
@@ -56,18 +58,39 @@ async function start() {
     planKey:'everyday-proof-plan', message:key=>key, missing:()=> 'No default root',
     errorText:error=>String(error)});
   if (shell) {
-    offerShell(required('#shell'), () => load(shell), translator, muk, root.rootWorker);
-    if (profile.get('surface') === 'alpha' && profile.get('over') === 'shell') {
-      // Move only the real transcript under the canvas. The shell command
-      // controls stay in their own section and never share guest input.
-      const stage = required('#stage'), transcript = required('#shell-output');
-      const padding = getComputedStyle(stage);
-      stage.style.position = 'relative';
-      Object.assign(transcript.style, {position:'absolute', top:padding.paddingTop,
-        left:padding.paddingLeft, margin:'0', pointerEvents:'none'});
-      Object.assign(canvas.style, {position:'relative', zIndex:'1'});
-      stage.prepend(transcript);
+    const section = required('#shell'), asset = shell;
+    function setupShell(terminal?: Parameters<typeof offerShell>[5], fallback = false) {
+      try {
+        offerShell(section, signal => load(asset, signal), translator, muk, root.rootWorker, terminal);
+        if (fallback) required('#shell-status').textContent = 'Terminal view unavailable; the line console is available.';
+        if (profile.get('surface') === 'alpha' && profile.get('over') === 'shell') {
+          // The controls stay in their own section and never share guest input.
+          const stage = required('#stage'), transcript = required('#shell-output');
+          const padding = getComputedStyle(stage);
+          stage.style.position = 'relative';
+          Object.assign(transcript.style, {position:'absolute', top:padding.paddingTop,
+            left:padding.paddingLeft, margin:'0', pointerEvents:'none'});
+          Object.assign(canvas.style, {position:'relative', zIndex:'1'});
+          stage.prepend(transcript);
+        }
+      } catch {
+        section.hidden = false;
+        required<HTMLButtonElement>('#shell-open').disabled = true;
+        const shellStatus = required('#shell-status');
+        shellStatus.dataset.phase = 'error';
+        shellStatus.textContent = 'Guest shell view is unavailable.';
+      }
     }
+    if (profile.get('terminal') === 'screen') {
+      let departed = false;
+      const pagehide = () => { departed = true; };
+      window.addEventListener('pagehide',pagehide,{once:true});
+      // The optional shell view loads independently of the Wayland display.
+      void import('./terminal-view.mts').then(
+        module => { if (!departed) setupShell(module.mountTerminal); },
+        () => { if (!departed) setupShell(undefined, true); },
+      ).finally(() => window.removeEventListener('pagehide',pagehide));
+    } else setupShell();
   }
   const worker = root.rootWorker();
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});

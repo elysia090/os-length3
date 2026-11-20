@@ -5,6 +5,7 @@ import {Worker as NodeWorker} from 'node:worker_threads';
 import {createRoot} from 'ricebox';
 import {shellStart} from './shell-fixture.ts';
 import {guestScreen} from './vt.ts';
+import {terminalStream} from './terminal-stream.mts';
 
 // Run from the fresh offline npm consumer, with its exact installed Worker.
 const args = process.argv.slice(2);
@@ -34,7 +35,7 @@ finally { globalThis.Worker = OriginalWorker; }
 
 const messages = [], errors = [], output = [];
 const screen = guestScreen(53, 12);
-const initialDecoder = new TextDecoder();
+const stream = terminalStream(text => screen.write(text), () => screen.discardPartial());
 function hasInk(needle, fg) {
   return screen.lines.some(row => {
     // Both fixture witnesses are ASCII; indices are screen cell positions.
@@ -61,10 +62,13 @@ worker.on('message', msg => {
       return;
     }
     output.push({...msg, bytes: Buffer.from(msg.bytes)});
-    // The core test covers the ordered initial epoch; a browser adapter must
-    // coordinate decoder resets and display acknowledgement when it flushes.
-    if (msg.epoch === 0) screen.write(initialDecoder.decode(msg.bytes, {stream: true}));
+    try { stream.accept(msg.bytes, msg.epoch); }
+    catch (error) { errors.push(error); return; }
     worker.postMessage({type: 'drained', n: msg.bytes.length});
+  }
+  if (msg.type === 'output-boundary') {
+    try { stream.seal(msg.sentBytes); }
+    catch (error) { errors.push(error); }
   }
 });
 async function until(label, ready) {
@@ -103,12 +107,21 @@ try {
     messages.slice(beforeKey).some(cookedMode) && text().includes('<read:q>'));
   assert.ok(!screen.alternate && !hasInk('alt-screen', 2) && screen.text().includes('<read:q>'));
 
+  const beforeHidden = messages.length;
+  command("/bin/busybox stty -echo; printf '<h%s>\\n' ush; IFS= read -r value; " +
+    "/bin/busybox stty echo; printf '<length:%s>\\n' \"${#value}\"");
+  await until('canonical no-echo input', () => waits(beforeHidden, 'input') && text().includes('<hush>') &&
+    messages.slice(beforeHidden).some(m => m.type === 'tty' && (m.lflag & (ICANON | ECHO)) === ICANON));
+  command('hidden-value');
+  await until('guest consumed the masked line', () => text().includes('<length:12>'));
+  assert.ok(!text().includes('hidden-value'));
+
   const beforeSleep = messages.length;
   command("printf '<s%s>\\n' leep; /bin/busybox sleep 30");
   await until('guest foreground sleep', () => text().includes('<sleep>') &&
     messages.slice(beforeSleep).some(m => m.type === 'waiting' && m.for === 'time' && m.ms >= 20_000));
   const beforeSignal = messages.length;
-  worker.postMessage({type: 'interrupt', sig: 2, flush: 1});
+  worker.postMessage({type: 'interrupt', sig: 2, flush: stream.flush()});
   await until('Ctrl-C returned to a live prompt without waiting for sleep', () =>
     waits(beforeSignal, 'input') && text(1).includes('everyday$'));
   const beforeRecovery = messages.length;
@@ -116,9 +129,12 @@ try {
   await until('the same shell is usable after Ctrl-C', () => waits(beforeRecovery, 'input') &&
     text(1).includes('<after:42>') && !text(0).includes('<after:42>'));
 
+  assert.ok(screen.text().includes('<after:42>'));
   command('exit');
   await until('guest exit', () => messages.some(m => m.type === 'exit'));
   assert.equal(messages.find(m => m.type === 'exit').status, 0);
+  assert.equal(stream.sealed, true);
+  stream.close();
   const boundary = messages.findIndex(m => m.type === 'output-boundary');
   assert.ok(boundary !== -1 && boundary < messages.findIndex(m => m.type === 'exit'));
   worker.postMessage({type: 'retire'});
@@ -128,7 +144,7 @@ try {
   assert.ok(!messages.slice(boundary + 1).some(m => m.type === 'output'));
   console.log(JSON.stringify({
     installedRootWorker: true, actualCpuWorker: true, rows: 12, cols: 53,
-    ansi: true, alternateScreen: true, rawKeyWithoutEnter: 'q', canonicalRestored: true, recoveredAfterCtrlC: 42,
+    ansi: true, alternateScreen: true, cookedEchoOff: true, rawKeyWithoutEnter: 'q', canonicalRestored: true, recoveredAfterCtrlC: 42,
     outputBoundaryBytes: received, admissionRetired: true,
   }));
 } finally { await worker.terminate(); }

@@ -147,6 +147,13 @@ export class Parser {
     else this.#inter += ch;
   }
 
+  /** A transport flush can drop the tail of a control sequence, not what's drawn. */
+  discardPartial() {
+    this.#state = 'ground';
+    this.#discardControl = false;
+    this.#params = this.#inter = this.#osc = this.#charsetFor = '';
+  }
+
   write(text: string) {
     const n = text.length;
     for (let i = 0; i < n;) {
@@ -293,6 +300,14 @@ export class Screen {
   get main(): {rows: readonly Row[]; y: number} { return {rows: this.#main.rows, y: this.#main.y}; }
 
   write(text: string) { this.#parser.write(text); }
+  discardPartial() { this.#parser.discardPartial(); }
+
+  /** Cooked echo belongs to the page: never interpret local text as guest ANSI. */
+  echoLine(text: string) {
+    this.#print(text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ''));
+    this.#control('\r');
+    this.#control('\n');
+  }
 
   #checkSize(cols: number, rows: number) {
     const limits = this.#limits;

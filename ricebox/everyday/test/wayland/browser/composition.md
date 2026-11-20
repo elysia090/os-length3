@@ -82,3 +82,15 @@ browser overflow for wheel, keyboard, touch and pointer dragging; no guest
 input or resize is sent. Browsers without the exact styling, and forced-colors
 or custom contrast modes, keep their normal scrollbars. Omit the parameter to
 use the platform look.
+
+## Use the opt-in guest terminal screen
+
+With BusyBox staged as above, add ?terminal=screen to the URL and select
+**Open guest shell**. The regular line console is still the default. The
+opt-in view draws the same guest's ordered output through the shared bounded
+VT model. It uses existing guest termios to switch from a line form to raw
+keystrokes, shows the alternate screen, and interrupts a running guest with
+Ctrl+C from the command field or its **Interrupt** button. The guest screen
+is fixed at 80×24; this reference does not yet offer terminal scrollback,
+live terminal-dimension changes, or complete terminal/IME compatibility.
+The independent Wayland guest is not affected.

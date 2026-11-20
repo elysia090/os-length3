@@ -247,3 +247,101 @@ test('the 1.6 CSS px scrollbar keeps native drag targets and pans only the camer
   await expect.poll(async()=> (await offset())[0]).toBeGreaterThan(left);
   await expect(canvas).toHaveAttribute('data-sequence','1');
 });
+
+test('the opt-in terminal draws a real guest screen and sends raw keys and Ctrl-C', async ({page}) => {
+  test.skip(!process.env.EVERYDAY_SHELL_ELF, 'requires the explicitly staged static BusyBox');
+  const terminalRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/assets/terminal-view-')) terminalRequests.push(request.url());
+  });
+  await page.goto('/');
+  await expect(page.locator('canvas')).toHaveAttribute('data-sequence','1');
+  expect(terminalRequests).toEqual([]);
+
+  await page.goto('/?terminal=screen');
+  const canvas = page.locator('canvas');
+  const shell = page.getByRole('region',{name:'Guest shell'});
+  const input = shell.getByRole('textbox',{name:'Shell command'});
+  const status = shell.getByRole('status');
+  const output = shell.locator('#shell-output');
+  const typed = async (command: string) => { await input.fill(command); await input.press('Enter'); };
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  await expect(shell).toHaveAttribute('data-terminal','screen');
+  expect(terminalRequests.length).toBeGreaterThan(0);
+  await shell.getByRole('button',{name:'Open guest shell'}).click();
+  await expect(status).toHaveAttribute('data-phase','input');
+  await expect(output).toContainText('everyday$');
+
+  await typed("printf '\\033[31mvt-red\\033[0m\\n'");
+  await expect(output.locator('span').filter({hasText:'vt-red'})).toHaveCSS('color','rgb(173, 36, 51)');
+  await expect(status).toHaveAttribute('data-phase','input');
+  await typed("/bin/busybox stty -icanon -echo min 1 time 0; " +
+    "printf '\\033[?1049h\\033[H\\033[32mvt-green\\033[0m'; " +
+    "byte=$(/bin/busybox dd bs=1 count=1 2>/dev/null); /bin/busybox stty icanon echo; " +
+    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"");
+  await expect(shell).toHaveAttribute('data-terminal-input','raw');
+  await expect(output).toHaveAttribute('data-screen','alternate');
+  await expect(output.locator('span').filter({hasText:'vt-green'})).toHaveCSS('color','rgb(35, 107, 67)');
+  await input.press('q');
+  await expect(output).toHaveAttribute('data-screen','primary');
+  await expect(output).toContainText('<read:q>');
+  await expect(shell).toHaveAttribute('data-terminal-input','line');
+  await expect(status).toHaveAttribute('data-phase','input');
+
+  await typed("/bin/busybox stty -echo; printf '<h%s>\\n' ush; IFS= read -r value; " +
+    "/bin/busybox stty echo; printf '<length:%s>\\n' \"${#value}\"");
+  await expect(output).toContainText('<hush>');
+  await expect(status).toHaveAttribute('data-wait','input');
+  const hiddenInput = shell.locator('input[type=password]');
+  await hiddenInput.fill('hidden-value');
+  await hiddenInput.press('Enter');
+  await expect(output).toContainText('<length:12>');
+  await expect(output).not.toContainText('hidden-value');
+  await expect(status).toHaveAttribute('data-phase','input');
+
+  await typed("/bin/busybox stty -echo; printf '<m%s>\\n' asked; /bin/busybox sleep 2; " +
+    "/bin/busybox stty echo; printf '<r%s>\\n' estored");
+  await expect(output).toContainText('<masked>');
+  await expect(status).toHaveAttribute('data-wait','time');
+  await hiddenInput.fill('unsent-masked-draft');
+  await expect(output).toContainText('<restored>');
+  await expect(input).toHaveValue('');
+  await expect(output).not.toContainText('unsent-masked-draft');
+  await expect(status).toHaveAttribute('data-phase','input');
+
+  await typed("printf '<s%s>\\n' leep; /bin/busybox sleep 30");
+  await expect(output).toContainText('<sleep>');
+  await expect(status).toHaveAttribute('data-wait','time');
+  expect(await input.evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'C', ctrlKey: true, shiftKey: true, cancelable: true,
+  })))).toBe(true);
+  await input.press('Control+c');
+  await expect(status).toHaveAttribute('data-phase','input');
+  await typed("printf '<after:%s>\\n' \"$((6*7))\"");
+  await expect(output).toContainText('<after:42>');
+  await expect(status).toHaveAttribute('data-phase','input');
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  await typed("printf '<f%s>\\n' inal; exit");
+  await expect(status).toHaveText('Shell admission closed');
+  await expect(output).toContainText('<final>');
+  await expect(input).toBeDisabled();
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+});
+
+test('an unavailable optional terminal chunk does not start the shell or block the display', async ({page}) => {
+  test.skip(!process.env.EVERYDAY_SHELL_ELF, 'requires the explicitly staged static BusyBox');
+  let shellFetches = 0;
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/fixture/busybox') shellFetches++;
+  });
+  await page.route('**/assets/terminal-view-*.js', route => route.abort());
+  await page.goto('/?terminal=screen');
+  await expect(page.locator('canvas')).toHaveAttribute('data-sequence','1');
+  const shell = page.getByRole('region',{name:'Guest shell'});
+  await expect(shell.getByRole('status')).toHaveText('Terminal view unavailable; the line console is available.');
+  expect(shellFetches).toBe(0);
+  await expect(shell.locator('pre#shell-output')).toBeAttached();
+  await shell.getByRole('button',{name:'Open guest shell'}).click();
+  await expect(shell.locator('#shell-output')).toContainText('everyday$');
+  expect(shellFetches).toBe(1);
+});
