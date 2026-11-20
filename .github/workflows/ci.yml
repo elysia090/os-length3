@@ -471,7 +471,12 @@ jobs:
           echo "Stock Chrome package: $package"
           "$EVERYDAY_CHROME_BIN" --version
           node ricebox/everyday/test/wayland/browser/stock-chrome.ts
-          sh ricebox/everyday/test/wayland/browser/run.sh target/everyday-fixture/wayland-presenter
+          if ! busybox=$(command -v busybox) || [[ ! -x "$busybox" ]]; then
+            echo "::error::The explicitly opted-in Chrome composition needs the native lane's static BusyBox"
+            exit 1
+          fi
+          EVERYDAY_SHELL_ELF="$busybox" \
+            sh ricebox/everyday/test/wayland/browser/run.sh target/everyday-fixture/wayland-presenter
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the
       # same C muk translated, each box made by the calls it makes on Linux (a static busybox its shell and tools).

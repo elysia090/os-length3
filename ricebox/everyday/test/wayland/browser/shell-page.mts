@@ -1,9 +1,9 @@
 // Reference UI only: a bounded line console, not an ANSI terminal emulator.
-import {retireRootWorker} from '../../../../distribution/runtime/retire-worker.ts';
+import {retireRootWorker} from 'ricebox';
 import {shellStart} from './shell-fixture.ts';
 
 export function offerShell(section: HTMLElement, load: () => Promise<Uint8Array>,
-  translator: Uint8Array, muk: Uint8Array): void {
+  translator: Uint8Array, muk: Uint8Array, rootWorker: () => Worker): void {
   const open = section.querySelector<HTMLButtonElement>('#shell-open')!;
   const status = section.querySelector<HTMLElement>('#shell-status')!;
   const output = section.querySelector<HTMLElement>('#shell-output')!;
@@ -66,7 +66,7 @@ export function offerShell(section: HTMLElement, load: () => Promise<Uint8Array>
     try {
       const busybox = await load();
       if (closing) return;
-      worker = new Worker(new URL('../../../../distribution/runtime/worker.ts', import.meta.url), {type: 'module'});
+      worker = rootWorker();
       worker.addEventListener('message', hear);
       worker.addEventListener('error', failed);
       worker.addEventListener('messageerror', failed);

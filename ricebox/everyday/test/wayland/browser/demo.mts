@@ -1,7 +1,8 @@
-import {mountGuestSurface, surfaceFromMirror} from '../../../src/surface.ts';
+import {createRoot} from 'ricebox';
+import {mountGuestSurface, surfaceFromMirror} from 'ricebox/everyday';
 import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
-import {offerShell} from './shell-page.ts';
+import {offerShell} from './shell-page.mts';
 
 function required<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -41,8 +42,13 @@ async function start() {
       !pin(manifest.elf,'wayland-presenter')) throw new Error('Invalid fixture pins');
   const shell = pin(manifest.shell,'busybox') ? manifest.shell : null;
   const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(manifest.elf)]);
-  if (shell) offerShell(required('#shell'), () => load(shell), translator, muk);
-  const worker = new Worker(new URL('../../../../distribution/runtime/worker.ts',import.meta.url),{type:'module'});
+  // The caller owns the pinned fixture assets; use the installed package to
+  // make both standard Workers without loading a default distribution.
+  const root = createRoot({base:'/fixture/', first:[], usedKey:'everyday-proof-used',
+    planKey:'everyday-proof-plan', message:key=>key, missing:()=> 'No default root',
+    errorText:error=>String(error)});
+  if (shell) offerShell(required('#shell'), () => load(shell), translator, muk, root.rootWorker);
+  const worker = root.rootWorker();
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
   // Only this fixture knows its RBF1 format and control bytes.
   const source = surfaceFromMirror({worker, file:rasterFile, maxEncodedBytes:16+64*48*4,

@@ -128,8 +128,8 @@ input carries the rendered serial, so a source can reject input for a surface
 that has already changed. No keyboard, hover or blanket input forwarding is
 implied. A browser layout resize is not a guest resize.
 
-The [static guest Wayland browser example](test/wayland/browser/demo.ts) uses
-this entry from source. It explicitly owns the existing Ricebox Worker and
+The [static guest Wayland browser example](test/wayland/browser/demo.mts) uses
+this entry from a locally installed Ricebox tarball. It owns the Worker and
 admits only the fixture surface published from an actual Wayland SHM commit.
 The example's file encoding and input bytes stay test-only; they are not the
 package's surface protocol. This is not stock Quickshell running in Sods.
