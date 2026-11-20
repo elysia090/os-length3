@@ -13,14 +13,31 @@ export interface Raster {
 export interface Rect { x: number; y: number; width: number; height: number }
 type Mirrored = {type?: unknown; files?: unknown};
 
-export function decodeRaster(bytes: Uint8Array): Raster | null {
+function rasterInfo(bytes: Uint8Array): Omit<Raster, 'pixels'> | null {
   if (bytes.byteLength < header || bytes.byteLength > header + widest * tallest * 4 ||
       bytes[0] !== 82 || bytes[1] !== 66 || bytes[2] !== 70 || bytes[3] !== 49) return null; // RBF1
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const sequence = view.getUint32(4, true), width = view.getUint32(8, true), height = view.getUint32(12, true);
   if (!sequence || !width || width > widest || !height || height > tallest || bytes.length !== header + width * height * 4) return null;
-  // Own the bounded frame, including when the input is a Node Buffer or a view.
-  return {sequence, width, height, pixels: new Uint8ClampedArray(bytes.subarray(header))};
+  return {sequence, width, height};
+}
+
+export function decodeRaster(bytes: Uint8Array): Raster | null {
+  const info = rasterInfo(bytes);
+  // The retained-frame helpers still own a bounded copy.
+  return info && {...info, pixels: new Uint8ClampedArray(bytes.subarray(header))};
+}
+
+/** Lend the exact payload to a synchronous draw of the received Worker message. */
+export function lendRaster(bytes: Uint8Array): Raster | null {
+  const buffer = bytes.buffer;
+  if (!(buffer instanceof ArrayBuffer)) return null;
+  const info = rasterInfo(bytes);
+  if (!info) return null;
+  // ImageData requires fixed backing. A normal transferred frame already has it.
+  const pixels = buffer.resizable ? new Uint8ClampedArray(bytes.subarray(header)) :
+    new Uint8ClampedArray(buffer, bytes.byteOffset + header, bytes.byteLength - header);
+  return {...info, pixels};
 }
 
 function contains(box: Rect, x: number, y: number): boolean {

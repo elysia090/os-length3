@@ -1,6 +1,6 @@
 import {createRoot} from 'ricebox';
 import {mountGuestSurface, surfaceFromMirror} from 'ricebox/everyday';
-import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
+import {lendRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 import {offerShell} from './shell-page.mts';
 import {placeCamera} from './camera-placement.mts';
@@ -99,7 +99,8 @@ async function start() {
   // Only this fixture knows its RBF1 format and control bytes.
   const source = surfaceFromMirror({worker, file:rasterFile, maxEncodedBytes:16+64*48*4,
     decode(bytes) {
-      const frame = decodeRaster(bytes);
+      // The installed presenter consumes this view synchronously, not as a cached frame.
+      const frame = lendRaster(bytes);
       return frame && {serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels};
     },
     encodePointer: ({x, y}) => Uint8Array.of(1, x, y),

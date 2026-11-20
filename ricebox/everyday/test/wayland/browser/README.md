@@ -2,7 +2,11 @@
 
 This fixture reuses the native lane's freshly built Wayland guest, current
 Sods translator, and Muk. It uses the opt-in Everyday surface API with the
-fixture's own bounded guest-mirror format. Vite runs locally in CI, bound to
+fixture's own bounded guest-mirror format. The decoder lends the validated
+RGBA span of each fixed, received Worker buffer for its synchronous canvas
+draw. It does not allocate another pixel array on that path; the guest mirror
+and the canvas backing-store write still do their own work.
+Vite runs locally in CI, bound to
 loopback only, without production data. The test always requests Chromium's
 sandbox.
 
