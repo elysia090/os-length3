@@ -7,6 +7,7 @@ import {packageTypeScript} from '../../toolchain/package-typescript.ts';
 import {readFileSync, mkdirSync, writeFileSync, existsSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
 import {releaseVersion} from './version.ts';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -27,6 +28,9 @@ const modules = packageTypeScript(repository, out, [
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
 });
+const webEntry = (path: string) => path.slice('ricebox/'.length).replace(/\.ts$/, '.js');
+execFileSync(process.execPath, ['--experimental-vm-modules', fileURLToPath(new URL('./browser-manifest.mjs', import.meta.url)),
+  out, webEntry(entry), webEntry(display)], {stdio: 'inherit'});
 // Shell and data inputs are not TypeScript graph edges.
 for (const path of ['RELEASE', 'build/assemble.sh', 'etc/os-release', 'pins/sources.env']) {
   const name = 'ricebox/distribution/' + path;
@@ -46,5 +50,5 @@ writeFileSync(join(out, 'package.json'), JSON.stringify({
   },
   engines: {node: '>=22.18'},
 }, null, 2) + '\n');
-writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nThe optional ricebox/everyday entry presents explicitly supplied guest frames; it starts no Worker and mounts no default UI.\nUse ricebox/assets from Node to verify and stage the distribution's static files without the Vite adapter.\nServe those files separately and give createRoot their URL prefix (for the default layout, /ricebox/).\nA bundler with module-Worker support is required for browser applications.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. Supply selected packages and a package cache. For a pinned catalog, acquire with otter first and pass its packages/packageCache/tools result; ricebox never fetches or resolves a catalog. Supply integrity-pinned translator, sods and muk artifacts as tools to use the bundled assembler and AOT scripts without building Rust/C; a source toolchain remains available for development. It also requires Linux shell tools, GNU tar and zstd; it does not install native build prerequisites. Catalog acquisition is owned by otter, not a second ricebox registry. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
+writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nThe optional ricebox/everyday entry presents explicitly supplied guest frames; it starts no Worker and mounts no default UI.\nUse ricebox/assets from Node to verify and stage the distribution's static files without the Vite adapter.\nServe those files separately and give createRoot their URL prefix (for the default layout, /ricebox/).\nFor plain HTML, use browserModules() from ricebox/assets to stage the built ES modules, then import ./ricebox-js/distribution/runtime/root.js. Use browserModules({display: true}) only if you also need the presenter modules. Alternatively use a bundler with module-Worker support.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. Supply selected packages and a package cache. For a pinned catalog, acquire with otter first and pass its packages/packageCache/tools result; ricebox never fetches or resolves a catalog. Supply integrity-pinned translator, sods and muk artifacts as tools to use the bundled assembler and AOT scripts without building Rust/C; a source toolchain remains available for development. It also requires Linux shell tools, GNU tar and zstd; it does not install native build prerequisites. Catalog acquisition is owned by otter, not a second ricebox registry. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
 console.log(`ricebox: ${modules} modules, no product dependencies; npm pack ${out}`);

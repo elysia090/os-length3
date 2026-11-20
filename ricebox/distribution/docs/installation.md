@@ -90,20 +90,22 @@ a service.
 ### Stage a static site without the Vite adapter
 
 If you already have a prepared distribution, use `ricebox/assets` from Node.
-It verifies the release index and the assets it names, including Muk. It
-does not acquire packages, build the distribution, start guests, or publish
-the site. Save this as `stage-ricebox.mjs` beside your local npm installation:
+`distributionAssets` verifies the release index and the assets it names, including
+Muk. `browserModules` copies the browser JavaScript listed at package build
+time, including the module Workers, with their relative paths intact. Neither
+acquires packages, builds a distribution, starts guests, or publishes the site.
+Save this as `stage-ricebox.mjs` beside your local npm installation:
 
 ```js
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {distributionAssets} from 'ricebox/assets';
+import {browserModules, distributionAssets} from 'ricebox/assets';
 
 const [prepared, newSiteDirectory] = process.argv.slice(2);
 if (!prepared || !newSiteDirectory) {
   throw new Error('Usage: node stage-ricebox.mjs PREPARED_DISTRIBUTION NEW_SITE_DIRECTORY');
 }
-const assets = distributionAssets(prepared);
+const assets = [...distributionAssets(prepared), ...browserModules()];
 mkdirSync(newSiteDirectory);
 for (const [name, bytes] of assets) {
   const file = join(newSiteDirectory, name);
@@ -116,15 +118,24 @@ for (const [name, bytes] of assets) {
 node stage-ricebox.mjs /path/to/prepared-distribution ./new-site
 ```
 
-Put your HTML and browser build beside the resulting `new-site/ricebox/`
-directory. If you serve the site at your domain root, the corresponding
-`createRoot` base is `/ricebox/` (including the final slash). Plain HTML can
-load your app as an ES module; use a build that handles module Workers
-for the browser app, not the Node-only `ricebox/assets` import. The app
-still owns the shell UI and Worker admission. Import the separate
-`ricebox/everyday` presenter only if you want to display guest frames;
-neither this staging step nor the core import mounts a display. Serving
-the layers on your domain is not a guest execution relay.
+Put your HTML beside `new-site/ricebox/` and `new-site/ricebox-js/`. Load your
+app with `<script type="module" src="./app.js"></script>`. At the top of `app.js`,
+import `createRoot` from `./ricebox-js/distribution/runtime/root.js`, not the
+Node-only `ricebox/assets` module. Use HTTPS (loopback HTTP for local previews),
+serve `.js` files as JavaScript and `.json` files as JSON, and keep the directory
+layout. Stage the full JavaScript tree from one package build; these paths are
+not content-addressed, so revalidate them or use a new site prefix per build.
+Set `createRoot`'s `base` to the URL of the `ricebox/` layers, including the
+final slash (for example, `/ricebox/` at your domain root). The root loader
+fetches and checks the guest assets when the app requests a load; no separate
+browser preflight is needed.
+
+The app still owns the shell UI and Worker admission; importing the entry
+does not start a guest or show a prompt. If the app needs guest frames, stage
+with `browserModules({display: true})` and import the separate presenter from
+`./ricebox-js/everyday/src/surface.js` only when wanted. The default staged
+modules do not include it. Serving the layers on your domain is not a guest
+execution relay.
 
 ## Ownership and failure
 

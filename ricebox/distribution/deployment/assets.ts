@@ -3,8 +3,32 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {blobAsset, releaseIndexAsset, readReleaseIndex, type About} from '../format/manifest.ts';
 import {checkPacks} from '../format/pack.ts';
+
+/** Copy native ES modules from the built npm package, preserving relative Worker URLs. */
+export function browserModules({display = false}: {display?: boolean} = {}): Map<string, Buffer> {
+  const packageFiles = fileURLToPath(new URL('../../', import.meta.url));
+  const read = (path: string) => {
+    const parts = path.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const stat = lstatSync(join(packageFiles, ...parts.slice(0, i)));
+      if (i === parts.length ? !stat.isFile() : !stat.isDirectory()) {
+        throw new Error(`ricebox: browser module path is not a regular file: ${path}`);
+      }
+    }
+    return readFileSync(join(packageFiles, path));
+  };
+  const {v, core, display: optional} = JSON.parse(read('distribution/deployment/browser-modules.json').toString('utf8'));
+  if (v !== 1 || !Array.isArray(core) || !Array.isArray(optional)) throw new Error('ricebox: invalid browser module manifest');
+  const paths = [...core, ...optional];
+  const browser = /^(?:distribution\/(?:format|runtime)|sods\/runtime|everyday\/src)(?:\/[a-z0-9-]+)*\/[a-z0-9.-]+\.js$/;
+  if (paths.some(path => typeof path !== 'string' || !browser.test(path)) || new Set(paths).size !== paths.length ||
+      !core.includes('distribution/runtime/root.js') || core.some(path => path.startsWith('everyday/')) ||
+      !optional.includes('everyday/src/surface.js')) throw new Error('ricebox: invalid browser module manifest paths');
+  return new Map((display === true ? paths : core).map(path => [`ricebox-js/${path}`, read(path)]));
+}
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
   if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
