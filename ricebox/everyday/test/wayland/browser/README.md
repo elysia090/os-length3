@@ -36,3 +36,18 @@ the test checks clean capture and pan in both axes, a pointer through the
 pan-adjusted canvas geometry, independent CSS vs xdg resize, exact Wayland
 receipts, and close. It reads both the canvas backing pixel and the browser's
 composited screenshot at DPR 1 and 2; this is not physical display timing.
+
+## Display owner check without a browser
+
+From the repository root with locked dependencies:
+
+    stage="$(mktemp -d)/installed"
+    node ricebox/everyday/test/wayland/browser/stage-consumer.mjs "$stage"
+    node ricebox/everyday/test/wayland/browser/display-owner.integration.mjs \
+      "$stage/consumer/browser"
+
+This checks that delivered frames draw synchronously with no pending renderer
+work, and that an injected Worker message decoding error clears the surface,
+disables its controls, and retires its owner. The fixture substitutes a DOM
+and Worker event target, not a guest or a browser. This is not a Chrome frame
+rate, transport backlog, or Wayland buffer-release measurement.

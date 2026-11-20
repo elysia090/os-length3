@@ -124,6 +124,8 @@ async function start() {
     clearTimeout(timer);
     worker.removeEventListener('message', message);
     worker.removeEventListener('error', failed);
+    worker.removeEventListener('messageerror', failed);
+    window.removeEventListener('pagehide', retire);
     worker.terminate();
     report('closed', acknowledged ? 'admission acknowledged' : 'worker terminated without acknowledgement');
   }
@@ -165,13 +167,17 @@ async function start() {
     canvas.dataset.sequence = String(frame.serial);
     report('frame', 'Guest raster ' + frame.width + '×' + frame.height);
   }
-  function failed(event: ErrorEvent) { report('error', event.message); retire(); }
+  function failed(event: Event) {
+    report('error', event.type === 'messageerror' ? 'Guest Worker message could not be decoded' : (event as ErrorEvent).message);
+    retire();
+  }
   pan.onclick = () => { if (!retiring) viewport.scrollTo(48,36); };
   hostResize.onclick = () => { viewport.style.width='270px'; viewport.style.height='208px'; };
   guestResize.onclick = () => surface.resize(47,19);
   quit.onclick = () => { if (!retiring) post(Uint8Array.of(3,0,0)); };
   worker.addEventListener('message', message);
   worker.addEventListener('error', failed);
+  worker.addEventListener('messageerror', failed);
   window.addEventListener('pagehide', retire, {once:true});
   try { worker.postMessage(rasterStart(translator,muk,elf)); }
   catch (error) { stopPlacement?.(); surface.close(); stop(false); throw error; }
