@@ -18,7 +18,12 @@ test('the opt-in screen fits its viewport and the real foreground shell observes
     const rows = Math.floor((box.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / cell.height);
     return cols + 'x' + rows;
   });
-  const type = async (command: string) => { await input.fill(command); await input.press('Enter'); };
+  const type = async (command: string) => {
+    // A single-line text input strips CR and LF from its value.
+    expect(command).not.toMatch(/[\r\n]/);
+    await input.fill(command);
+    await input.press('Enter');
+  };
   await expect(canvas).toHaveAttribute('data-sequence', '1');
   await shell.getByRole('button', {name: 'Open guest shell'}).click();
   await expect(status).toHaveAttribute('data-phase', 'input');
@@ -26,15 +31,15 @@ test('the opt-in screen fits its viewport and the real foreground shell observes
   expect(first).not.toBe('80x24');
   await expect.poll(grid).toBe(first);
   const probe = [
-    'trap \'printf "<winch:%s>\\n" "$(/bin/busybox stty size)"\' WINCH',
-    'printf "<probe:%s>\\n" "$(/bin/busybox stty size)"',
+    'trap \'printf "<winch:%s>\\n" "$(/bin/busybox stty size)"\' WINCH;',
+    'printf "<probe:%s>\\n" "$(/bin/busybox stty size)";',
     'while :; do if IFS= read -r line; then',
     '  case "$line" in',
     '    stop) break;;',
     '    *) printf "<read:%s>\\n" "$line";;',
-    '  esac',
+    '  esac;',
     'fi; done',
-  ].join('\n');
+  ].join(' ');
   // A foreground process whose WINCH behavior we own, not the interactive
   // Ash line editor (which can install its own handler at a prompt).
   await type("/bin/busybox sh -c '" + probe.replaceAll("'", "'\\''") + "'");
