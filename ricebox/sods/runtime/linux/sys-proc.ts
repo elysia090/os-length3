@@ -11,7 +11,7 @@ import {down} from './fs.ts';
 import {CgroupNs, Ipc, NS, Net, PidNs, Uts, byNr, nrIn, pidReservationAllowed, spaceOf, withSpaces, type Spaces} from './space.ts';
 import {move, zero} from './bulk.ts';
 import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
-import {E, File, FsError} from './fs.ts';
+import {E, File, FsError, MNT} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
 import {ACTIONS, read as readFilter} from './seccomp.ts';
@@ -647,12 +647,16 @@ function names(p: Proc, address: bigint, length: bigint): string {
 }
 
 export const PROC_CALLS: Calls = {
-  9(addr, len, _prot, flags, fd, off) {
+  9(addr, len, prot, flags, fd, off) {
     const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20, shared = (N(flags) & 3) !== 2;
     if (length <= 0) fail(E.INVAL);
     const d = anonymous ? null : this.fds.get(N(fd));
     const node = d?.node instanceof File ? d.node : null;
     if (!anonymous && (!d || d.kind !== 'file' || !node)) fail(E.BADF);
+    // The descriptor holds the source mount, even after a rename or dup.
+    // Refuse this before any mapped bytes or reservation can be changed.
+    const sourceMount = d?.mnt, executable = (prot & 4n) !== 0n;
+    if (executable && sourceMount && (sourceMount.flags & MNT.NOEXEC)) fail(E.PERM);
     // Source callbacks and snapshot allocation happen before reserving or replacing
     // guest mappings. Source failure must not start this call’s reserve/replacement
     // phase; source settling, callback effects and fatal cleanup are separate.
@@ -661,6 +665,7 @@ export const PROC_CALLS: Calls = {
       const identity = this.readIdentity();
       try { initial = node.snapshotRange(N(off), N(off) + length); }
       finally { identity(); }
+      if (executable && sourceMount && (sourceMount.flags & MNT.NOEXEC)) fail(E.PERM);
     }
     const start = fixed ? N(addr) : this.reserve(length);
     if (fixed) {

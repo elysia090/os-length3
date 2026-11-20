@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {File, FsError, E, counted} from '../../runtime/linux/fs.ts';
+import {File, FsError, E, MNT, Mount, counted} from '../../runtime/linux/fs.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 const enc = new TextEncoder(), dec = new TextDecoder();
 const call = (p: Process, nr: number, ...args: number[]) => p.syscall(BigInt(nr), ...([...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]));
@@ -115,4 +115,44 @@ test('abnormal retirement preserves last committed bytes and another process map
   file.write(0, Uint8Array.of(12)); assert.equal(q.bytes[12288], 12);
   assert.equal(call(q, 11, 12288, 4096), 0n);
   assert.equal(counted.mapped, mapped - 1);
+});
+
+test('file-backed executable mmap honors the opened mount before loading the file or replacing a mapping', () => {
+  const {k, p} = setup(), old = new File(new Uint8Array(4096).fill(7));
+  const root = k.vfs.mkdirp('/places');
+  const placed = new Mount(k.vfs.mount.sb, root, MNT.NOEXEC);
+  let reads = 0;
+  const lazy = new File(new Uint8Array(), 0o644, () => { reads++; return new Uint8Array(4096).fill(6); });
+  root.entries.set('source', lazy);
+  k.vfs.mkdirp('/blocked'); k.mount('/blocked', placed);
+  const oldFd = open(p, old);
+  p.bytes.set(enc.encode('/blocked/source\0'), 1024);
+  const fd = Number(call(p, 2, 1024, 0)); assert.ok(fd >= 0);
+  // Descriptor aliases retain the same open file's mount, not a new path lookup.
+  const copy = Number(call(p, 32, fd)); assert.ok(copy >= 0);
+  assert.equal(call(p, 3, fd), 0n);
+  assert.equal(call(p, 9, 8192, 4096, 3, 0x11, oldFd, 0), 8192n);
+  const before = p.maps[0], fixed = [...p.fixed], end = p.mapEnd;
+  assert.equal(call(p, 9, 8192, 4096, 5, 0x12, copy, 0), -BigInt(E.PERM));
+  assert.equal(reads, 0);
+  assert.equal(p.maps[0], before); assert.deepEqual(p.fixed, fixed); assert.equal(p.mapEnd, end);
+  assert.equal(p.bytes[8192], 7);
+  // Reading the same file on noexec is still valid.
+  assert.equal(call(p, 9, 8192, 4096, 1, 0x12, copy, 0), 8192n);
+  assert.equal(reads, 1); assert.equal(p.bytes[8192], 6);
+});
+
+test('executable mmap on an executable mount is unaffected, but reentrant noexec is rechecked before publication', () => {
+  const {p} = setup();
+  const mount = p.kernel.root.mnt;
+  const good = open(p, new File(new Uint8Array(4096).fill(2)), 0);
+  assert.equal(call(p, 9, 8192, 4096, 5, 0x12, good, 0), 8192n);
+  assert.equal(p.bytes[8192], 2);
+  const changing = new File(new Uint8Array(), 0o644, () => {
+    mount.flags |= MNT.NOEXEC;
+    return new Uint8Array(4096).fill(3);
+  });
+  const fd = open(p, changing, 0), fixed = [...p.fixed];
+  assert.equal(call(p, 9, 8192, 4096, 5, 0x12, fd, 0), -BigInt(E.PERM));
+  assert.equal(p.bytes[8192], 2); assert.deepEqual(p.fixed, fixed);
 });
