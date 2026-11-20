@@ -327,6 +327,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends musl-tools busybox-static
+          if [ "${{ matrix.part }}" = native ]; then
+            sudo apt-get install -y --no-install-recommends libexpat1-dev pkg-config
+          fi
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -397,6 +400,42 @@ jobs:
         env:
           SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
         run: node --test ricebox/sods/package/npm.test.ts
+      # Pin and check only the sources used by the native Wayland test fixture;
+      # none of this test SDK is selected for a Ricebox release or served.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.part == 'native'
+        with:
+          repository: wayland-mirror/wayland
+          ref: 3e673a438b0a9749e3bdf5cac4befac86333024c # 1.25.0
+          path: target/everyday-source/wayland
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.part == 'native'
+        with:
+          repository: wayland-mirror/wayland-protocols
+          ref: 02e63e74a807afed95bc25a386173110afef24e3 # 1.48
+          path: target/everyday-source/wayland-protocols
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.part == 'native'
+        with:
+          repository: libffi/libffi
+          ref: e2eda0cf72a0598b44278cc91860ea402273fa29 # 3.5.2
+          path: target/everyday-source/libffi
+          persist-credentials: false
+      - name: Test real guest Wayland commits and mirrored pixels
+        if: matrix.part == 'native'
+        env:
+          SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          RICEBOX_MUK_FILE: target/muk/muk
+        run: |
+          test_dir=ricebox/everyday/test/wayland
+          build=target/everyday-fixture
+          sh "$test_dir/build.sh" scanner target/everyday-source "$build"
+          sh "$test_dir/build.sh" guest target/everyday-source "$build"
+          timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter"
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the
       # same C muk translated, each box made by the calls it makes on Linux (a static busybox its shell and tools).
