@@ -23,6 +23,9 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(existsSync(join(out,'ricebox/distribution/npm')),false);
     assert.equal(pkg.exports['./vite'].import,'./ricebox/distribution/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./ricebox/distribution/build/prepare.ts');
+    assert.deepEqual(pkg.exports['./everyday'],{
+      types:'./ricebox/everyday/src/surface.ts', import:'./ricebox/everyday/src/surface.js',
+    });
     for(const name of ['ricebox/distribution/format/executable-source.ts','ricebox/distribution/build/distribution.ts',
       'ricebox/distribution/deployment/assets.ts','ricebox/distribution/deployment/assets.js',
       'ricebox/distribution/integrations/vite.ts','ricebox/distribution/integrations/vite.js','ricebox/distribution/build/prepare.ts','ricebox/distribution/build/prepare.js']) {
@@ -44,7 +47,11 @@ test('built npm package contains builder dependencies and imports public JS with
       {cwd:out,env:{...process.env,npm_config_cache:join(work,'npm-cache')},encoding:'utf8',timeout:30_000}));
     assert.ok(existsSync(join(work,packed[0].filename)));
     assert.ok(!packed[0].files.some((f:{path:string})=>/file-store|file-scope/.test(f.path)), 'retired file ownership implementations are not package content');
-    assert.ok(!packed[0].files.some((f:{path:string})=>/(^|\/)(why|site|demos?|examples?|playground|everyday|test|verification)(\/|$)/.test(f.path)), 'products and demos are not package content');
+    assert.ok(!packed[0].files.some((f:{path:string})=>/(^|\/)(why|site|demos?|examples?|playground|test|verification)(\/|$)/.test(f.path)), 'products and demos are not package content');
+    assert.deepEqual(packed[0].files.map((f:{path:string})=>f.path).filter((path:string)=>/(^|\/)everyday(\/|$)/.test(path)).sort(),[
+      'ricebox/everyday/src/mirror-surface.js','ricebox/everyday/src/mirror-surface.ts',
+      'ricebox/everyday/src/surface.js','ricebox/everyday/src/surface.ts',
+    ],'only the explicit Everyday API and its source modules are package content');
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/format/executable-source.ts'));
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='ricebox/distribution/integrations/vite.js'));
     const consumer=join(work,'consumer'); mkdirSync(consumer);
@@ -54,6 +61,9 @@ test('built npm package contains builder dependencies and imports public JS with
     const composed=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',`
       import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'; import {join} from 'node:path'; import {createHash} from 'node:crypto';
       await import('ricebox');
+      const {mountGuestSurface,surfaceFromMirror}=await import('ricebox/everyday');
+      if(typeof mountGuestSurface!=='function'||typeof surfaceFromMirror!=='function')throw Error('missing installed Everyday API');
+      console.log('everyday-js-ok');
       const {prepareDistribution}=await import('ricebox/prepare');
       const {distributionAssets}=await import('ricebox/vite');
       const work=${JSON.stringify(work)}, cache=join(work,'selected-cache'), base=join(cache,'base');
@@ -68,6 +78,7 @@ test('built npm package contains builder dependencies and imports public JS with
       if(JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')).version!==${JSON.stringify(pkg.version)})throw Error('wrong packaged version');
       if(!distributionAssets(output).has('ricebox/muk.json'))throw Error('missing maker');console.log('composition-ok');
     `],{cwd:consumer,encoding:'utf8',timeout:30_000});
+    assert.match(composed,/everyday-js-ok/);
     assert.match(composed,/composition-ok/);
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
