@@ -39,7 +39,11 @@ test('actual Wayland commits into mirror canvas: both camera axes, click redraw,
   expect(await pix(...pixel)).toEqual([248,61,105,255]);
   await expect.poll(()=>screenRegion(page,x,y)).toEqual([248,61,105,255]);
   await page.getByRole('button',{name:'Resize viewport'}).click();
-  await expect(v).toHaveCSS('width','270px');
+  // Native scrollbar gutters change the scrollport, not the camera's border box.
+  await expect.poll(async () => {
+    const box = await v.boundingBox();
+    return box && [box.width,box.height];
+  }).toEqual([272,210]); // 270 × 208 plus the 1px borders.
   await expect(c).toHaveAttribute('data-sequence','2');
   await expect(c).toHaveAttribute('width','32'); await expect(c).toHaveAttribute('height','24');
   await page.getByRole('button',{name:'Resize guest raster'}).click();
@@ -106,15 +110,22 @@ test.describe('with actual Wayland ARGB SHM', () => {
     await expect(canvas).toHaveAttribute('data-sequence','1');
     await expect(page.locator('#protocol')).toContainText('WAYLAND_ALPHA format=argb8888');
     expect(await readBacking()).toEqual(backing);
+    // The opaque control pixel is clipped by the initial native scrollport.
+    await page.getByRole('button',{name:'Pan right and down'}).click();
     const rect = await canvas.boundingBox();
     expect(rect).not.toBeNull();
+    const points = coordinates.map(x => ({
+      x: Math.floor(rect!.x+(x+.5)*rect!.width/32),
+      y: Math.floor(rect!.y+4.5*rect!.height/24),
+    }));
+    expect(await canvas.evaluate((el, points) =>
+      points.map(({x,y}) => document.elementFromPoint(x,y) === el), points)).toEqual([true,true,true]);
 
     for (const rgb of [[40,80,160], [200,30,10]]) {
       await stage.evaluate((el, rgb) => { el.style.backgroundColor = 'rgb(' + rgb.join(',') + ')'; }, rgb);
       const expected = [[...rgb,255], [...rgb.map((back,i) => Math.round((back * 127 + backing[1]![i]! * 128) / 255)),255], backing[2]!];
-      for (const [i,x] of coordinates.entries()) {
-        const present = () => screenRegion(page,rect!.x+(x+.5)*rect!.width/32,rect!.y+4.5*rect!.height/24);
-        await expect.poll(async () => Math.max(...(await present()).map((channel,j) =>
+      for (const [i,{x,y}] of points.entries()) {
+        await expect.poll(async () => Math.max(...(await screenRegion(page,x,y)).map((channel,j) =>
           Math.abs(channel-expected[i]![j]!)))).toBeLessThanOrEqual(i === 1 ? 1 : 0);
       }
       expect(await readBacking()).toEqual(backing);
