@@ -51,6 +51,17 @@ import type {ForkOptions, AltStack, Call, Calls, Console, Outside, Cpu, Extra, F
 import {ARCH, RET, STRICT, verdict} from './seccomp.ts';
 import {said, steady} from '../host.ts';
 
+const terminalDimension = (n: number): boolean => Number.isInteger(n) && n > 0 && n <= 0xffff;
+/** Positive cell counts that can survive the root console's Linux winsize ABI. */
+export function validConsoleWindow(cols: number, rows: number): boolean {
+  return terminalDimension(cols) && terminalDimension(rows);
+}
+
+type RootConsoleGuest = {
+  closed: boolean;
+  child: {launcher: WeakRef<Process>; process: WeakRef<Process>; executed: boolean} | null;
+};
+
 /**
  * What the kernel asks of the translator it is given, not the translator's implementation. The translator knows
  * its own rejected-input errors; the kernel alone turns that answer into an exec's ENOEXEC. An error it does not
@@ -372,6 +383,7 @@ export class Kernel implements Kern {
   declare readonly outside: Outside | null;
   declare readonly translateMore: NonNullable<Translator['more']> | null;
   declare readonly console: Console;
+  #rootConsoleGuest: RootConsoleGuest | undefined;
   declare readonly images: Map<File, Kept>;
   declare uses: number;
   declare budget: number;
@@ -1512,6 +1524,55 @@ export class Kernel implements Kern {
     return true;
   }
 
+  /**
+   * Follow one Worker-owned terminal session. Its trusted launcher is the
+   * kernel's initial process; pin its first published direct child, then
+   * admit only that child's completed exec. Never infer ownership from names,
+   * numeric IDs, waiting state, or a later reparented descendant.
+   */
+  watchRootConsoleGuest(): {state(): 'inactive' | 'live' | 'closed'; close(): void} {
+    if (this.#rootConsoleGuest) throw new Error('Root console already observed');
+    const lease: RootConsoleGuest = {closed: false, child: null};
+    this.#rootConsoleGuest = lease;
+    return {
+      state: () => {
+        if (lease.closed) return 'closed';
+        if (!lease.child) return 'inactive';
+        const guest = lease.child.process.deref(), launcher = lease.child.launcher.deref();
+        if (guest?.state !== 'live' || this.procs.get(guest.pid) !== guest ||
+            launcher?.state !== 'live' || this.initOf() !== launcher ||
+            guest.ppid !== launcher.pid || !launcher.children.has(guest)) return 'closed';
+        return lease.child.executed ? 'live' : 'inactive';
+      },
+      close() { lease.closed = true; lease.child = null; },
+    };
+  }
+
+  /** Called when a process has been published, before it can first run. */
+  noteRootConsoleChild(launcher: Process, child: Process): void {
+    const lease = this.#rootConsoleGuest;
+    if (!lease || lease.closed || lease.child || this.initOf() !== launcher ||
+        child.ppid !== launcher.pid) return;
+    lease.child = {launcher: new WeakRef(launcher), process: new WeakRef(child), executed: false};
+  }
+
+  /** Called only after Process.execve has committed successfully. */
+  noteRootConsoleExec(p: Process): void {
+    const child = this.#rootConsoleGuest?.child;
+    if (child?.process.deref() === p) child.executed = true;
+  }
+
+  /** Host window geometry for the existing root terminal, not a devpts peer. */
+  resizeConsole(cols: number, rows: number): boolean {
+    const console = this.console;
+    if (!validConsoleWindow(cols, rows) || !console.interactive || !console.screen) return false;
+    if ((console.cols ?? 80) === cols && (console.rows ?? 24) === rows) return false;
+    console.cols = cols;
+    console.rows = rows;
+    this.interrupt(SIG.WINCH); // The current foreground group, without draining input.
+    return true;
+  }
+
   /** Everything ends now, as when init is killed (a PID namespace's end). */
   halt(): void {
     const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
@@ -1997,6 +2058,7 @@ export class Process implements Proc {
     t.resumeAt = BigInt(f.entry);
     t.redirected = true;
     this.kernel.releaseVfork(this);
+    this.kernel.noteRootConsoleExec(this);
   }
 
   /** SysV entry stack: argc, argv, envp, auxv, then the strings. */
@@ -2143,6 +2205,7 @@ export class Process implements Proc {
       up.children.add(child);
       k.procs.set(child.pid, child);
       k.tasks.set(ct.tid, ct);
+      k.noteRootConsoleChild(this, child);
       k.go(ct);
       return child;
     }

@@ -12,9 +12,15 @@ const args = process.argv.slice(2);
 assert.equal(args.length, 3, 'pass TRANSLATOR_WASM MUK STATIC_BUSYBOX');
 const [translator, muk, busybox] = args.map(path => new Uint8Array(readFileSync(path)));
 const entry = new URL('./worker.js', import.meta.resolve('ricebox')).href;
+const resizeAdmitted = process.env.EVERYDAY_NO_RESIZE !== '1';
+const dropResizeReply = process.env.EVERYDAY_DROP_RESIZE_REPLY === '1';
+const apart = !process.env.SODS_INLINE;
 const bridge = new URL('data:text/javascript,' + encodeURIComponent([
   "import {parentPort, workerData} from 'node:worker_threads';",
-  "globalThis.self = {postMessage(value, {transfer=[]}={}) {parentPort.postMessage(value, transfer);}};",
+  "globalThis.self = {postMessage(value, {transfer=[]}={}) {",
+  "  if (workerData.dropResizeReply && value.type === 'terminal-size' && value.request === 1) return;",
+  "  parentPort.postMessage(value, transfer);",
+  "}};",
   "await import(workerData.entry);",
   "parentPort.on('message', data => self.onmessage({data}));",
 ].join('\n')));
@@ -26,7 +32,7 @@ const OriginalWorker = globalThis.Worker;
 globalThis.Worker = class {
   constructor(url) {
     assert.equal(url.href, entry);
-    return new NodeWorker(bridge, {workerData: {entry}});
+    return new NodeWorker(bridge, {workerData: {entry, dropResizeReply}});
   }
 };
 let worker;
@@ -82,9 +88,14 @@ async function until(label, ready) {
 }
 const inputMode = () => (messages.findLast(m => m.type === 'tty')?.lflag ?? (ICANON | ECHO)) & (ICANON | ECHO);
 try {
-  worker.postMessage({...shellStart(translator, muk, busybox), cols: 53, rows: 12});
+  const ask = (request, cols, rows) => worker.postMessage({type: 'terminal-resize', request, cols, rows});
+  const answer = request => messages.find(m => m.type === 'terminal-size' && m.request === request);
+  ask(7, 97, 29);
+  await until('resize rejected before admission', () => !!answer(7));
+  assert.equal(answer(7).error, 'inactive');
+  worker.postMessage({...shellStart(translator, muk, busybox), cols: 53, rows: 12,
+    ...(resizeAdmitted ? {terminalResize: true} : {})});
   await until('real interactive prompt', () => waits(0, 'input') && text().includes('everyday$'));
-  const apart = !process.env.SODS_INLINE;
   assert.equal(messages.find(m => m.type === 'threads')?.apart, apart);
   const promptMode = inputMode();
 
@@ -93,6 +104,66 @@ try {
   await until('guest ioctl geometry and literal ANSI output', () =>
     waits(first, 'input') && text().includes('<size:12 53>') && text().includes('\x1b[31mtty-color\x1b[0m'));
   assert.ok(hasInk('tty-color', 1));
+
+  if (resizeAdmitted) {
+    const beforeTrap = messages.length;
+    // An ordinary foreground program; interactive ash's own line editor
+    // handles WINCH while reading its prompt, so it isn't the witness.
+    const windowProbe = [
+      'hits=0',
+      'trap \'hits=$((hits+1)); printf "<winch:%s>\\n" "$(/bin/busybox stty size)"\' WINCH',
+      'printf "<probe:%s>\\n" "$(/bin/busybox stty size)"',
+      'while :; do if IFS= read -r line; then',
+      '  case "$line" in',
+      '    stop) break;;',
+      '    count) printf "<size-after:%s hits:%s>\\n" "$(/bin/busybox stty size)" "$hits";;',
+      '    hold) printf "<hold>\\n"; /bin/busybox sleep 1;;',
+      '  esac',
+      'fi; done',
+    ].join('\n');
+    command("/bin/busybox sh -c '" + windowProbe.replaceAll("'", "'\\''") + "'");
+    await until('foreground child traps WINCH before its input wait', () =>
+      waits(beforeTrap, 'input') && text().includes('<probe:12 53>'));
+    ask(1, 93, 31);
+    await until('live resize receipt and guest WINCH ioctl', () =>
+      (dropResizeReply || !!answer(1)) && text().includes('<winch:31 93>'));
+    if (dropResizeReply) assert.equal(answer(1), undefined);
+    else assert.deepEqual(answer(1), {type: 'terminal-size', request: 1, cols: 93, rows: 31, changed: true});
+
+    ask(4, 93, 31);
+    ask(3, 71, 22);
+    ask(5, 65536, 22);
+    await until('same-size, stale and invalid replies', () => !!answer(4) && !!answer(3) && !!answer(5));
+    assert.deepEqual(answer(4), {type: 'terminal-size', request: 4, cols: 93, rows: 31, changed: false});
+    assert.equal(answer(3).error, 'stale');
+    assert.equal(answer(5).error, 'invalid-size');
+    const beforeReadback = messages.length;
+    command('count');
+    await until('guest reads same geometry and exactly one signal after rejected/duplicate sets', () =>
+      waits(beforeReadback, 'input') && text().includes('<size-after:31 93 hits:1>'));
+
+    // Restore the starting dimensions so the preexisting 53x12 screen transport
+    // checks below still describe the same visual grid they always tested.
+    const beforeHold = messages.length;
+    command('hold');
+    await until('foreground guard sleeps before it can read more input', () =>
+      waits(beforeHold, 'time') && text().includes('<hold>'));
+    command('count'); // Already in FIFO when the resize command is admitted.
+    ask(6, 53, 12);
+    await until('resize signals again without discarding already queued input', () =>
+      !!answer(6) && text().includes('<winch:12 53>') && text().includes('<size-after:12 53 hits:2>'));
+    assert.equal(answer(6).changed, true);
+    assert.ok(output.every(m => m.epoch === 0));
+    command('stop');
+  } else {
+    ask(1, 93, 31);
+    await until('unadmitted screen rejects a resize', () => !!answer(1));
+    assert.equal(answer(1).error, 'inactive');
+    const beforeControl = messages.length;
+    command("printf '<fixed:%s>\\n' \"$(/bin/busybox stty size)\"");
+    await until('old-no-resize screen kept its original terminal', () =>
+      waits(beforeControl, 'input') && text().includes('<fixed:12 53>'));
+  }
 
   const beforeRaw = messages.length;
   command("/bin/busybox stty -icanon -echo min 1 time 0; " +
@@ -143,13 +214,22 @@ try {
   stream.close();
   const boundary = messages.findIndex(m => m.type === 'output-boundary');
   assert.ok(boundary !== -1 && boundary < messages.findIndex(m => m.type === 'exit'));
+  ask(8, 71, 22);
+  await until('output-ended root rejects a late resize', () => !!answer(8));
+  assert.equal(answer(8).error, 'closed');
   worker.postMessage({type: 'retire'});
   await until('root admission retirement', () => messages.some(m => m.type === 'retiring'));
   assert.deepEqual(messages.find(m => m.type === 'retiring').failures, []);
+  ask(9, 71, 22);
+  await until('retired root rejects a late resize', () => !!answer(9));
+  assert.equal(answer(9).error, 'closed');
   assert.equal(messages[boundary].sentBytes, received);
   assert.ok(!messages.slice(boundary + 1).some(m => m.type === 'output'));
   console.log(JSON.stringify({
     installedRootWorker: true, actualCpuWorker: apart, rows: 12, cols: 53,
+    liveWindow: resizeAdmitted
+      ? {changedRows: 31, changedCols: 93, sigwinch: 2, dropResizeReply, pendingInputRetained: true, lateClosed: true}
+      : {admitted: false, unchangedRows: 12, unchangedCols: 53, lateClosed: true},
     ansi: true, alternateScreen: true, cookedEchoOff: true, rawKeyWithoutEnter: 'q',
     canonicalRestored: true, cookedReply: 'cooked-answer', promptMode: promptMode & ICANON ? 'line' : 'raw',
     recoveredAfterCtrlC: 42,

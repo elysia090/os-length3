@@ -16,6 +16,9 @@ import {requireStandardFileOwner} from '../format/manifest.ts';
 // was written and not yet shown is dropped too. Shown as a screen, its console is a
 // terminal, and {type: 'tty', iflag, oflag, lflag} says each change in how it
 // is set (a program reading each key as it comes clears ICANON).
+// An explicit screen start with terminalResize:true also accepts
+// {type:'terminal-resize', request, cols, rows} while its foreground is live.
+// 'terminal-size' confirms the applied root TTY size, not a screen repaint.
 // It receives {type: 'output', fd, bytes, epoch}, {type: 'waiting', for, ms,
 // memory, held}, {type: 'exit', status} or {type: 'error', message}. A
 // kernel waits `for` 'input' (what runs reads what is typed) or 'time' (it
@@ -91,7 +94,7 @@ import {validateExecutable, canonicalHotSources} from './prepared-executable.ts'
 import type {Index, PreparedExecutable} from './root-types.ts';
 import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
-import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads,
+import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads, validConsoleWindow,
   type Console, type File, type Image, type SourceBoundExecutable, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from '../format/mount.ts';
@@ -115,13 +118,21 @@ interface Start extends Ready {
   dirs?: string[];
   links?: {path: string; target: string}[];
   screen?: boolean;
+  terminalResize?: true;
   cols?: number;
   rows?: number;
   kept?: Kept;
   mirror?: string;
 }
+interface TerminalResize {type: 'terminal-resize'; request: number; cols: number; rows: number}
+type ResizeError = 'inactive' | 'stale' | 'invalid-size' | 'closed';
+const resizeRequest = (id: number): boolean => Number.isSafeInteger(id) && id > 0;
+function refuseSize(request: number, error: ResizeError): void {
+  if (resizeRequest(request)) self.postMessage({type: 'terminal-size', request, error});
+}
 /** What the page posts. */
 type Posted =
+  | TerminalResize
   | {type: 'drained'; n: number}
   | {type: 'input'; bytes: Uint8Array}
   | {type: 'eof' | 'typing' | 'free' | 'warm' | 'retire'}
@@ -154,6 +165,11 @@ const moved = (...views: {buffer: ArrayBufferLike}[]): {transfer: ArrayBuffer[]}
 const lifetime = new WorkerLifetime();
 const executionOwners = new Set<WeakRef<Kernel>>();
 let kernel: Kernel | null = null;
+let terminalResize: {kernel: Kernel; guest: ReturnType<Kernel['watchRootConsoleGuest']>; last: number} | null = null;
+function forgetTerminalResize(): void {
+  terminalResize?.guest.close();
+  terminalResize = null;
+}
 let foregroundReference: {release(): void} | null = null;
 let mirror: Mirror | null = null;
 /** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
@@ -330,7 +346,10 @@ async function rehearse(r: Readied, box: Box): Promise<void> {
   }
 }
 
-const failed = (e: unknown): void => self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
+const failed = (e: unknown): void => {
+  terminalResize?.guest.close();
+  self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
+};
 
 /**
  * How long the Prompt waits for its next line before what is due is translated again as one module (Kernel.consolidate):
@@ -366,6 +385,7 @@ function paused(r: Pumped): Said | null {
   if (!lifetime.accepting) return m;
   if (m.type === 'exit' && !outputBoundarySent) {
     outputBoundarySent = true; // Before posting: an ambiguous send must not be retried.
+    forgetTerminalResize();
     self.postMessage({type: 'output-boundary', sentBytes: publishedOutputBytes});
   }
   if (!lifetime.accepting) return m;
@@ -503,6 +523,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   if (data.type === 'retire') {
     if (!lifetime.accepting) { self.postMessage({type: 'retiring', owners: lifetime.snapshot()}); return; }
     lifetime.freeze(); // Before callbacks, including synchronous message reentry.
+    forgetTerminalResize();
     keep?.close(); // Detach late cache notifications; in-flight host reads may remain.
     clearTimeout(idle); clearTimeout(waking);
     for (const timer of rehearsalTimers) clearTimeout(timer);
@@ -543,6 +564,12 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
     return;
   }
+  if (data.type === 'terminal-resize' && (!lifetime.accepting || outputBoundarySent)) {
+    // A late layout event does not reopen admission or turn a normal exit
+    // into an unrelated shell fault.
+    refuseSize(data.request, 'closed');
+    return;
+  }
   if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
   if (outputBoundarySent && data.type !== 'drained') { failed(new Error('Worker output boundary is closed; new work is not accepted')); return; }
   try {
@@ -555,6 +582,22 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       onItsWay = Math.max(0, onItsWay - data.n);
       if (kernel) kernel.dirty = true;
       nudge();
+      return;
+    }
+    if (data.type === 'terminal-resize') {
+      const {request, cols, rows} = data;
+      if (!resizeRequest(request)) return;
+      const target = terminalResize;
+      if (!target || target.kernel !== kernel) { refuseSize(request, 'inactive'); return; }
+      const state = target.guest.state();
+      if (state !== 'live') { refuseSize(request, state); return; }
+      if (request <= target.last) { refuseSize(request, 'stale'); return; }
+      if (!validConsoleWindow(cols, rows)) { refuseSize(request, 'invalid-size'); return; }
+      const changed = target.kernel.resizeConsole(cols, rows);
+      if (!lifetime.accepting || terminalResize !== target || kernel !== target.kernel) return;
+      target.last = request;
+      self.postMessage({type: 'terminal-size', request, cols, rows, changed});
+      if (changed) nudge();
       return;
     }
     if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
@@ -650,7 +693,13 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
       const made = {vfs, translate, console, keeper: keep, onIdle: (r: Pumped) => paused(r), consolidateIdle: true};
       const prepared = r.prepared ? makePreparedKernel(r, made) : null;
+      const firstForeground = kernel === null;
       const k = kernel = prepared?.kernel ?? linux({...made, translated: files});
+      // A legacy replacement does not inherit a previous page's known size IDs.
+      forgetTerminalResize();
+      if (lifetime.accepting && !outputBoundarySent && firstForeground && data.screen && data.terminalResize === true) {
+        terminalResize = {kernel: k, guest: k.watchRootConsoleGuest(), last: 0};
+      }
       foregroundReference?.release(); foregroundReference = lifetime.observe('foreground-reference', k);
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
