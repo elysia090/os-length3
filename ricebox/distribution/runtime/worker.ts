@@ -18,6 +18,7 @@ import {requireStandardFileOwner} from '../format/manifest.ts';
 // is set (a program reading each key as it comes clears ICANON).
 // An explicit screen start with terminalResize:true also accepts
 // {type:'terminal-resize', request, cols, rows} while its foreground is live.
+// 'terminal-geometry' is an in-order host-output cut, posted before WINCH.
 // 'terminal-size' confirms the applied root TTY size, not a screen repaint.
 // It receives {type: 'output', fd, bytes, epoch}, {type: 'waiting', for, ms,
 // memory, held}, {type: 'exit', status} or {type: 'error', message}. A
@@ -125,7 +126,7 @@ interface Start extends Ready {
   mirror?: string;
 }
 interface TerminalResize {type: 'terminal-resize'; request: number; cols: number; rows: number}
-type ResizeError = 'inactive' | 'stale' | 'invalid-size' | 'closed';
+type ResizeError = 'inactive' | 'stale' | 'invalid-size' | 'busy' | 'closed';
 const resizeRequest = (id: number): boolean => Number.isSafeInteger(id) && id > 0;
 function refuseSize(request: number, error: ResizeError): void {
   if (resizeRequest(request)) self.postMessage({type: 'terminal-size', request, error});
@@ -421,7 +422,7 @@ function told(): void {
 let waking: ReturnType<typeof setTimeout> | undefined;
 /** Threads in turn here: run until they all wait, then again for input or when a sleep ends. */
 function pump(): void {
-  if (!lifetime.accepting) return;
+  if (!lifetime.accepting || parkResizeWake()) return;
   try {
     if (publishingOutput) throw new Error('Output publication is already active; cannot reenter execution');
     const m = paused(kernel!.pump());
@@ -455,7 +456,11 @@ function given(k: Kernel, files: Program[]): void {
 }
 
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
-const nudge = (): void => { if (!lifetime.accepting || outputBoundarySent || !kernel) return; clearTimeout(idle); waitingInput = false; if (kernel instanceof RemoteKernel) kernel.kick(); else pump(); };
+const nudge = (): void => {
+  if (!lifetime.accepting || outputBoundarySent || !kernel || parkResizeWake()) return;
+  clearTimeout(idle); waitingInput = false;
+  if (kernel instanceof RemoteKernel) kernel.kick(); else pump();
+};
 
 /**
  * Output on its way to the page and not yet taken in there (it says how much it took, 'drained', once a frame): past
@@ -467,6 +472,15 @@ let onItsWay = 0;
 let publishedOutputBytes = 0;
 let outputBoundarySent = false;
 let publishingOutput = false;
+// During a synchronous geometry cut, a reentrant host adapter may still
+// deliver page messages. Admit them only on the later side of the cut.
+interface ResizePublication {kernel: Kernel; released: Promise<boolean>; wake: boolean}
+let publishingResize: ResizePublication | null = null;
+function parkResizeWake(): boolean {
+  if (!publishingResize) return false;
+  publishingResize.wake = true;
+  return true;
+}
 let abandonedAfterBoundary = 0;
 
 /**
@@ -572,6 +586,16 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   }
   if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
   if (outputBoundarySent && data.type !== 'drained') { failed(new Error('Worker output boundary is closed; new work is not accepted')); return; }
+  const heldResize = publishingResize;
+  if (heldResize && data.type !== 'terminal-resize') {
+    // Retirement was handled above; resize itself has a typed busy reply.
+    // Other messages wait as whole commands, in arrival order. In particular
+    // an interrupt must not clear input accepted after it or advance epoch
+    // before the marker is forwarded. Await also avoids recursive pumping.
+    const resume = await heldResize.released;
+    if (!resume || !lifetime.accepting || kernel !== heldResize.kernel ||
+        (outputBoundarySent && data.type !== 'drained')) return;
+  }
   try {
     requireStandardFileOwner(data);
     if ('root' in data && data.root) requireStandardFileOwner(data.root.index);
@@ -593,11 +617,41 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       if (state !== 'live') { refuseSize(request, state); return; }
       if (request <= target.last) { refuseSize(request, 'stale'); return; }
       if (!validConsoleWindow(cols, rows)) { refuseSize(request, 'invalid-size'); return; }
-      const changed = target.kernel.resizeConsole(cols, rows);
-      if (!lifetime.accepting || terminalResize !== target || kernel !== target.kernel) return;
-      target.last = request;
-      self.postMessage({type: 'terminal-size', request, cols, rows, changed});
-      if (changed) nudge();
+      if (publishingOutput || publishingResize) { refuseSize(request, 'busy'); return; }
+      const owned = () => lifetime.accepting && !outputBoundarySent &&
+        terminalResize === target && kernel === target.kernel;
+      const live = () => owned() && target.guest.state() === 'live';
+      let release!: (resume: boolean) => void;
+      const released = new Promise<boolean>(resolve => { release = resolve; });
+      const turn: ResizePublication = {kernel: target.kernel, released, wake: false};
+      publishingResize = turn;
+      let complete = false;
+      try {
+        // Cut the host's ordered output stream, not the CPUs' write times.
+        // Shared outbox data not yet received by the host remains in flight.
+        send();
+        if (!live()) { if (owned()) refuseSize(request, 'closed'); return; }
+        const publishGeometry = (): boolean => {
+          target.last = request;
+          self.postMessage({type: 'terminal-geometry', request, cols, rows, sentBytes: publishedOutputBytes});
+          return live();
+        };
+        const changed = target.kernel.resizeConsole(cols, rows, publishGeometry);
+        if (!changed) publishGeometry(); // A no-op can re-confirm current geometry.
+        if (!owned()) return;
+        self.postMessage({type: 'terminal-size', request, cols, rows, changed});
+        complete = true;
+        if (changed) turn.wake = true;
+      } catch (error) {
+        // Publication may already have had an effect. Do not repeat it or
+        // notify the guest from an uncertain display cut.
+        failed(error);
+      } finally {
+        publishingResize = null;
+        const resume = complete && owned();
+        release(resume);
+        if (resume && turn.wake) queueMicrotask(() => { if (kernel === turn.kernel) nudge(); });
+      }
       return;
     }
     if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }

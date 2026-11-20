@@ -1562,14 +1562,20 @@ export class Kernel implements Kern {
     if (child?.process.deref() === p) child.executed = true;
   }
 
-  /** Host window geometry for the existing root terminal, not a devpts peer. */
-  resizeConsole(cols: number, rows: number): boolean {
+  /**
+   * Host window geometry for the existing root terminal, not a devpts peer.
+   * A host with a serialized display stream can publish the applied size
+   * before notifying the guest; a host detached during publication can
+   * suppress the notification.
+   */
+  resizeConsole(cols: number, rows: number, beforeNotify?: () => boolean): boolean {
     const console = this.console;
     if (!validConsoleWindow(cols, rows) || !console.interactive || !console.screen) return false;
     if ((console.cols ?? 80) === cols && (console.rows ?? 24) === rows) return false;
     console.cols = cols;
     console.rows = rows;
-    this.interrupt(SIG.WINCH); // The current foreground group, without draining input.
+    if (!beforeNotify || beforeNotify()) this.interrupt(SIG.WINCH);
+    // No Worker input or output epoch is changed by this terminal signal.
     return true;
   }
 

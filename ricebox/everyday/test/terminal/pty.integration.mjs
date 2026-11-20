@@ -90,6 +90,7 @@ const inputMode = () => (messages.findLast(m => m.type === 'tty')?.lflag ?? (ICA
 try {
   const ask = (request, cols, rows) => worker.postMessage({type: 'terminal-resize', request, cols, rows});
   const answer = request => messages.find(m => m.type === 'terminal-size' && m.request === request);
+  const geometry = request => messages.find(m => m.type === 'terminal-geometry' && m.request === request);
   ask(7, 97, 29);
   await until('resize rejected before admission', () => !!answer(7));
   assert.equal(answer(7).error, 'inactive');
@@ -126,7 +127,7 @@ try {
       waits(beforeTrap, 'input') && text().includes('<probe:12 53>'));
     ask(1, 93, 31);
     await until('live resize receipt and guest WINCH ioctl', () =>
-      (dropResizeReply || !!answer(1)) && text().includes('<winch:31 93>'));
+      !!geometry(1) && (dropResizeReply || !!answer(1)) && text().includes('<winch:31 93>'));
     if (dropResizeReply) assert.equal(answer(1), undefined);
     else assert.deepEqual(answer(1), {type: 'terminal-size', request: 1, cols: 93, rows: 31, changed: true});
 
@@ -153,6 +154,24 @@ try {
     await until('resize signals again without discarding already queued input', () =>
       !!answer(6) && text().includes('<winch:12 53>') && text().includes('<size-after:12 53 hits:2>'));
     assert.equal(answer(6).changed, true);
+    const beforeResize = Buffer.concat(output.map(m => m.bytes));
+    const firstSignal = beforeResize.indexOf('<winch:31 93>');
+    const secondSignal = beforeResize.indexOf('<winch:12 53>');
+    const held = beforeResize.indexOf('<hold>');
+    assert.ok(geometry(1).sentBytes <= firstSignal);
+    assert.ok(held >= 0 && held + '<hold>'.length <= geometry(6).sentBytes && geometry(6).sentBytes <= secondSignal);
+    assert.deepEqual(messages.filter(m => m.type === 'terminal-geometry').map(m => m.request), [1,4,6]);
+    let published = 0;
+    for (const message of messages) {
+      if (message.type === 'output') published += message.bytes.length;
+      if (message.type === 'terminal-geometry') {
+        assert.equal(message.sentBytes, published);
+        if (!dropResizeReply || message.request !== 1) {
+          assert.deepEqual([message.cols, message.rows], [answer(message.request).cols, answer(message.request).rows]);
+          assert.ok(messages.indexOf(message) < messages.indexOf(answer(message.request)));
+        }
+      }
+    }
     assert.ok(output.every(m => m.epoch === 0));
     command('stop');
   } else {
@@ -207,6 +226,14 @@ try {
     text(1).includes('<after:42>') && !text(0).includes('<after:42>'));
 
   assert.ok(screen.text().includes('<after:42>'));
+  if (resizeAdmitted) {
+    ask(10, 53, 12);
+    await until('same-size geometry cut after an actual Ctrl-C flush', () => !!geometry(10) && !!answer(10));
+    const before = messages.slice(0, messages.indexOf(geometry(10))).filter(m => m.type === 'output');
+    assert.ok(before.some(m => m.epoch === 0) && before.some(m => m.epoch === 1));
+    assert.equal(geometry(10).sentBytes, before.reduce((n, m) => n + m.bytes.length, 0));
+    assert.equal(answer(10).changed, false);
+  }
   command('exit');
   await until('guest exit', () => messages.some(m => m.type === 'exit'));
   assert.equal(messages.find(m => m.type === 'exit').status, 0);
@@ -228,7 +255,7 @@ try {
   console.log(JSON.stringify({
     installedRootWorker: true, actualCpuWorker: apart, rows: 12, cols: 53,
     liveWindow: resizeAdmitted
-      ? {changedRows: 31, changedCols: 93, sigwinch: 2, dropResizeReply, pendingInputRetained: true, lateClosed: true}
+      ? {changedRows: 31, changedCols: 93, sigwinch: 2, dropResizeReply, pendingInputRetained: true, lateClosed: true, orderedGeometry: true}
       : {admitted: false, unchangedRows: 12, unchangedCols: 53, lateClosed: true},
     ansi: true, alternateScreen: true, cookedEchoOff: true, rawKeyWithoutEnter: 'q',
     canonicalRestored: true, cookedReply: 'cooked-answer', promptMode: promptMode & ICANON ? 'line' : 'raw',
