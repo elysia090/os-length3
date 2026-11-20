@@ -22,6 +22,7 @@ import type {ResolveHookContext} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {threadId} from 'node:worker_threads';
 
 enableCompileCache();
 
@@ -54,7 +55,7 @@ function stripped(url: string, text: string): string {
     process.emitWarning = warn;
   }
   // Written aside, then named: a process reading it never meets half of it.
-  const aside = `${kept}.${process.pid}`;
+  const aside = `${kept}.${process.pid}.${threadId}`;
   writeFileSync(aside, of + code);
   renameSync(aside, kept);
   return code;
