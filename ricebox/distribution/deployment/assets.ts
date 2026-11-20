@@ -3,22 +3,21 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {blobAsset, releaseIndexAsset, readReleaseIndex, type About} from '../format/manifest.ts';
 import {checkPacks} from '../format/pack.ts';
 
 /** Copy native ES modules from the built npm package, preserving relative Worker URLs. */
 export function browserModules({display = false}: {display?: boolean} = {}): Map<string, Buffer> {
-  const packageFiles = fileURLToPath(new URL('../../', import.meta.url));
+  const packageFiles = new URL('../../', import.meta.url);
   const read = (path: string) => {
     const parts = path.split('/');
     for (let i = 1; i <= parts.length; i++) {
-      const stat = lstatSync(join(packageFiles, ...parts.slice(0, i)));
+      const stat = lstatSync(new URL(parts.slice(0, i).join('/'), packageFiles));
       if (i === parts.length ? !stat.isFile() : !stat.isDirectory()) {
         throw new Error(`ricebox: browser module path is not a regular file: ${path}`);
       }
     }
-    return readFileSync(join(packageFiles, path));
+    return readFileSync(new URL(path, packageFiles));
   };
   const {v, core, display: optional} = JSON.parse(read('distribution/deployment/browser-modules.json').toString('utf8'));
   if (v !== 1 || !Array.isArray(core) || !Array.isArray(optional)) throw new Error('ricebox: invalid browser module manifest');

@@ -1,4 +1,4 @@
-// Invoked by npm.ts with Node's ESM parser, on the package's emitted JavaScript.
+// Invoked by the package compiler with Node's ESM parser, on emitted JavaScript.
 // This is build tooling; it is not installed or run by the site-staging helper.
 import {readFileSync, writeFileSync} from 'node:fs';
 import {join, posix} from 'node:path';

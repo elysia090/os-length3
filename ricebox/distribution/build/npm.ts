@@ -3,11 +3,10 @@
 // carries the complete relative module closure, never why or a second runtime.
 // No downloads, install hook, credentials, or publication. Supply a NEW output path.
 // node ricebox/distribution/build/npm.ts OUT
-import {packageTypeScript} from '../../toolchain/package-typescript.ts';
+import {packageBrowserManifest, packageTypeScript} from '../../toolchain/package-typescript.ts';
 import {readFileSync, mkdirSync, writeFileSync, existsSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {execFileSync} from 'node:child_process';
 import {releaseVersion} from './version.ts';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -28,9 +27,7 @@ const modules = packageTypeScript(repository, out, [
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
 });
-const webEntry = (path: string) => path.slice('ricebox/'.length).replace(/\.ts$/, '.js');
-execFileSync(process.execPath, ['--experimental-vm-modules', fileURLToPath(new URL('./browser-manifest.mjs', import.meta.url)),
-  out, webEntry(entry), webEntry(display)], {stdio: 'inherit'});
+packageBrowserManifest(out, entry, display);
 // Shell and data inputs are not TypeScript graph edges.
 for (const path of ['RELEASE', 'build/assemble.sh', 'etc/os-release', 'pins/sources.env']) {
   const name = 'ricebox/distribution/' + path;
