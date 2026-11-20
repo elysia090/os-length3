@@ -2012,7 +2012,7 @@ export class Process implements Proc {
     bytes.set(randomBytes(16), random);
     const args = starts.slice(0, argv.length), envp = starts.slice(argv.length, argv.length + env.length), execfn = starts[argv.length + env.length];
     const f = this.image.facts;
-    const aux = [[3, f.phdr], [4, f.phent], [5, f.phnum], [6, PAGE], [9, f.entry], [11, 0], [12, 0], [13, 0], [14, 0],
+    const aux = [[3, f.phdr], [4, f.phent], [5, f.phnum], [6, PAGE], [7, 0], [9, f.entry], [11, 0], [12, 0], [13, 0], [14, 0],
       [23, 0], [25, random], [31, execfn], [0, 0]];
     const words = [args.length, ...args, 0, ...envp, 0, ...aux.flat()];
     const top = (random - words.length * 8) & ~15;
