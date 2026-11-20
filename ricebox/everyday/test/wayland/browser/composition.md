@@ -71,3 +71,14 @@ starts locked. The viewport still scrolls inside the camera, and a smaller host
 window clamps the frame into view. No placement or pin command is sent to the
 guest, and it does not change the guest's resolution. This is browser camera
 placement, not pinning an actual native Wayland or Quickshell window.
+
+## Keep a thin camera scrollbar without a thin hit target
+
+Use ?scrollbars=hairline (combine it with &camera=floating if wanted). The
+[camera stylesheet](camera-scrollbars.css) paints both native scrollbar thumbs
+at 1.6 CSS px in supported Chrome, with a 24 CSS px native drag gutter.
+Physical pixels round according to device scale. The camera still uses ordinary
+browser overflow for wheel, keyboard, touch and pointer dragging; no guest
+input or resize is sent. Browsers without the exact styling, and forced-colors
+or custom contrast modes, keep their normal scrollbars. Omit the parameter to
+use the platform look.

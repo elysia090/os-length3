@@ -43,6 +43,7 @@ async function start() {
       !pin(manifest.elf,'wayland-presenter')) throw new Error('Invalid fixture pins');
   const shell = pin(manifest.shell,'busybox') ? manifest.shell : null;
   const profile = new URLSearchParams(location.search);
+  if (profile.get('scrollbars') === 'hairline') viewport.dataset.scrollbars = 'hairline';
   let displayPin = manifest.elf;
   if (profile.get('surface') === 'alpha') {
     if (!pin(manifest.alpha,'wayland-alpha-presenter')) throw new Error('No staged Wayland alpha guest');

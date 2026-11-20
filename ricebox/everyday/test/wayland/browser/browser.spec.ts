@@ -1,7 +1,8 @@
 import {expect,test,type Page} from '@playwright/test';
 // Sample a real browser-composited screenshot, not just Canvas backing.
-async function screenRegion(page: Page, x: number, y: number, width = 1, height = 1): Promise<number[]> {
-  const encoded = (await page.screenshot({scale:'css'})).toString('base64');
+async function screenRegion(page: Page, x: number, y: number,
+    width = 1, height = 1, scale: 'css' | 'device' = 'css'): Promise<number[]> {
+  const encoded = (await page.screenshot({scale})).toString('base64');
   return page.evaluate(async ({encoded,x,y,width,height}) => {
     const bytes=Uint8Array.from(atob(encoded), c=>c.charCodeAt(0));
     const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));
@@ -183,4 +184,55 @@ test('floating and pinned camera placement do not move or resize the real guest'
   await expect(canvas).toHaveAttribute('data-sequence','2');
   const rgba=await canvas.evaluate(el=>Array.from((el as HTMLCanvasElement).getContext('2d')!.getImageData(10,12,1,1).data));
   expect(rgba).toEqual([248,61,105,255]);
+});
+
+test('the 1.6 CSS px scrollbar keeps native drag targets and pans only the camera', async ({page}) => {
+  await page.goto('/?scrollbars=hairline');
+  const camera=page.locator('#camera'), canvas=page.locator('canvas');
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  const hairline=()=>camera.evaluate(el=>getComputedStyle(el).getPropertyValue('--camera-scroll-hairline').trim());
+  expect(await hairline()).toBe('1.6px');
+  expect(await camera.evaluate(el=>{
+    const {offsetWidth,offsetHeight,clientWidth,clientHeight}=el as HTMLElement;
+    return [offsetWidth-clientWidth-2,offsetHeight-clientHeight-2];
+  })).toEqual([24,24]); // Subtract the two 1px borders.
+  const {x,y,width,height}=(await camera.boundingBox())!;
+  const dpr=await page.evaluate(()=>devicePixelRatio);
+  // Sample one cross-section through each compositor-painted thumb. Use
+  // device pixels and allow one physical pixel of rounding at either DPR.
+  const bands=await Promise.all([
+    screenRegion(page,(x+width-25)*dpr,(y+27)*dpr,24*dpr,1,'device'),
+    screenRegion(page,(x+27)*dpr,(y+height-25)*dpr,1,24*dpr,'device'),
+  ]);
+  for (const band of bands) {
+    let covered=0;
+    for (let i=0;i<band.length;i+=4) covered+=Math.max(0,Math.min(1,(245-band[i]!)/(245-82)));
+    expect(covered).toBeGreaterThan(0);
+    expect(Math.abs(covered-1.6*dpr)).toBeLessThanOrEqual(1);
+  }
+
+  async function drag(x: number, y: number, dx: number, dy: number) {
+    await page.mouse.move(x,y);
+    await page.mouse.down();
+    await page.mouse.move(x+dx,y+dy,{steps:4});
+    await page.mouse.up();
+  }
+  await drag(x+width-7,y+27,0,18); // Deliberately outside the visible ink.
+  const offset=()=>camera.evaluate(el=>[el.scrollLeft,el.scrollTop]);
+  await expect.poll(async()=> (await offset())[1]).toBeGreaterThan(0);
+  expect((await offset())[0]).toBe(0);
+  await drag(x+27,y+height-7,18,0);
+  await expect.poll(async()=> (await offset())[0]).toBeGreaterThan(0);
+  await expect(canvas).toHaveAttribute('data-sequence','1');
+  await expect(canvas).toHaveAttribute('width','32');
+  await expect(canvas).toHaveAttribute('height','24');
+
+  // Never force custom ink/gutters on a high-contrast system.
+  await page.emulateMedia({forcedColors:'active'});
+  expect(await hairline()).toBe('');
+  const left=(await offset())[0]!;
+  await camera.focus();
+  await camera.press('ArrowRight');
+  await expect.poll(async()=> (await offset())[0]).toBeGreaterThan(left);
+  await expect(canvas).toHaveAttribute('data-sequence','1');
 });

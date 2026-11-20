@@ -32,7 +32,7 @@ node(['--no-experimental-strip-types', '--input-type=module', '-e', [
 ].join('\n')], consumer);
 
 for (const dir of ['browser', 'support']) mkdirSync(join(consumer, dir));
-for (const name of ['index.html', 'demo.mts', 'shell-page.mts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.mjs']) {
+for (const name of ['index.html', 'camera-scrollbars.css', 'demo.mts', 'shell-page.mts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.mjs']) {
   copyFileSync(new URL(name, import.meta.url), join(consumer, 'browser', name));
 }
 copyFileSync(new URL('../support/mirror-raster.ts', import.meta.url), join(consumer, 'support/mirror-raster.ts'));
