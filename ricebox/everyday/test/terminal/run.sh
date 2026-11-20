@@ -11,5 +11,6 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 node "$tests/wayland/browser/stage-consumer.mjs" "$scratch/installed"
 browser="$scratch/installed/consumer/browser"
+cp "ricebox/everyday/terminal/vt.ts" "$browser/vt.ts"
 cp "$tests/terminal/pty.integration.mjs" "$browser/terminal-pty.integration.mjs"
 node "$browser/terminal-pty.integration.mjs" "$@"

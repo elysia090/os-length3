@@ -4,6 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Worker as NodeWorker} from 'node:worker_threads';
 import {createRoot} from 'ricebox';
 import {shellStart} from './shell-fixture.ts';
+import {guestScreen} from './vt.ts';
 
 // Run from the fresh offline npm consumer, with its exact installed Worker.
 const args = process.argv.slice(2);
@@ -32,6 +33,15 @@ try { worker = root.rootWorker(); }
 finally { globalThis.Worker = OriginalWorker; }
 
 const messages = [], errors = [], output = [];
+const screen = guestScreen(53, 12);
+const initialDecoder = new TextDecoder();
+function hasInk(needle, fg) {
+  return screen.lines.some(row => {
+    // Both fixture witnesses are ASCII; indices are screen cell positions.
+    const start = row.chars.join('').indexOf(needle);
+    return start >= 0 && row.st.slice(start, start + needle.length).every(st => screen.styles.of(st).fg === fg);
+  });
+}
 const encoder = new TextEncoder();
 const send = text => worker.postMessage({type: 'input', bytes: encoder.encode(text)});
 let received = 0;
@@ -51,6 +61,9 @@ worker.on('message', msg => {
       return;
     }
     output.push({...msg, bytes: Buffer.from(msg.bytes)});
+    // The core test covers the ordered initial epoch; a browser adapter must
+    // coordinate decoder resets and display acknowledgement when it flushes.
+    if (msg.epoch === 0) screen.write(initialDecoder.decode(msg.bytes, {stream: true}));
     worker.postMessage({type: 'drained', n: msg.bytes.length});
   }
 });
@@ -74,16 +87,21 @@ try {
   command("printf '<size:%s>\\n' \"$(/bin/busybox stty size)\"; printf '\\033[31mtty-color\\033[0m\\n'");
   await until('guest ioctl geometry and literal ANSI output', () =>
     waits(first, 'input') && text().includes('<size:12 53>') && text().includes('\x1b[31mtty-color\x1b[0m'));
+  assert.ok(hasInk('tty-color', 1));
 
   const beforeRaw = messages.length;
-  command("/bin/busybox stty -icanon -echo min 1 time 0; printf '<r%s>\\n' aw; " +
-    "byte=$(/bin/busybox dd bs=1 count=1 2>/dev/null); /bin/busybox stty icanon echo; printf '<read:%s>\\n' \"$byte\"");
+  command("/bin/busybox stty -icanon -echo min 1 time 0; " +
+    "printf '\\033[?1049h\\033[H\\033[32malt-screen\\033[0m\\n<r%s>\\n' aw; " +
+    "byte=$(/bin/busybox dd bs=1 count=1 2>/dev/null); /bin/busybox stty icanon echo; " +
+    "printf '\\033[?1049l<read:%s>\\n' \"$byte\"");
   await until('raw no-echo guest read blocks', () =>
     messages.slice(beforeRaw).some(rawMode) && text().includes('<raw>') && waits(beforeRaw, 'input'));
+  assert.ok(screen.alternate && hasInk('alt-screen', 2));
   const beforeKey = messages.length;
   send('q'); // Deliberately no Enter afterward.
   await until('one raw byte read and canonical mode restored', () => waits(beforeKey, 'input') &&
     messages.slice(beforeKey).some(cookedMode) && text().includes('<read:q>'));
+  assert.ok(!screen.alternate && !hasInk('alt-screen', 2) && screen.text().includes('<read:q>'));
 
   const beforeSleep = messages.length;
   command("printf '<s%s>\\n' leep; /bin/busybox sleep 30");
@@ -110,7 +128,7 @@ try {
   assert.ok(!messages.slice(boundary + 1).some(m => m.type === 'output'));
   console.log(JSON.stringify({
     installedRootWorker: true, actualCpuWorker: true, rows: 12, cols: 53,
-    ansi: true, rawKeyWithoutEnter: 'q', canonicalRestored: true, recoveredAfterCtrlC: 42,
+    ansi: true, alternateScreen: true, rawKeyWithoutEnter: 'q', canonicalRestored: true, recoveredAfterCtrlC: 42,
     outputBoundaryBytes: received, admissionRetired: true,
   }));
 } finally { await worker.terminate(); }
