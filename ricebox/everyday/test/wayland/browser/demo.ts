@@ -1,5 +1,5 @@
-import {mountGuestSurface, type GuestSurfaceSource, type GuestSurfaceObserver} from '../../../src/surface.ts';
-import {MirrorRaster} from '../support/mirror-raster.ts';
+import {mountGuestSurface, surfaceFromMirror} from '../../../src/surface.ts';
+import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 
 function required<T extends HTMLElement>(selector: string): T {
@@ -41,15 +41,15 @@ async function start() {
   const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(manifest.elf)]);
   const worker = new Worker(new URL('../../../../distribution/runtime/worker.ts',import.meta.url),{type:'module'});
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
-  // This fixture alone knows its RBF1 file and control bytes. Neither the
-  // mount nor another consumer of the Worker gets a display capability by default.
-  const model = new MirrorRaster();
-  let observer: GuestSurfaceObserver | undefined;
-  const source: GuestSurfaceSource = {
-    observe(next) { observer = next; return () => { observer = undefined; model.retire(); }; },
-    pointer({x, y}) { post(Uint8Array.of(1, x, y)); },
-    resize({width, height}) { post(Uint8Array.of(2, width, height)); },
-  };
+  // Only this fixture knows its RBF1 format and control bytes.
+  const source = surfaceFromMirror({worker, file:rasterFile, maxEncodedBytes:16+64*48*4,
+    decode(bytes) {
+      const frame = decodeRaster(bytes);
+      return frame && {serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels};
+    },
+    encodePointer: ({x, y}) => Uint8Array.of(1, x, y),
+    encodeResize: ({width, height}) => Uint8Array.of(2, width, height),
+  });
   let surface: ReturnType<typeof mountGuestSurface>;
   try { surface = mountGuestSurface({viewport, canvas, source, limits: {width:64, height:48, bytes:64*48*4}}); }
   catch (error) { worker.terminate(); throw error; }
@@ -93,11 +93,11 @@ async function start() {
       retire();
       return;
     }
-    const frame = model.accept(msg);
-    if (!frame || !observer?.frame({serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels})) return;
+    const frame = source.current;
+    if (msg?.type !== 'changes' || !frame || frame.serial === Number(canvas.dataset.sequence)) return;
     canvas.style.width = frame.width * 8 + 'px';
     canvas.style.height = frame.height * 8 + 'px';
-    canvas.dataset.sequence = String(frame.sequence);
+    canvas.dataset.sequence = String(frame.serial);
     report('frame', 'Guest raster ' + frame.width + '×' + frame.height);
   }
   function failed(event: ErrorEvent) { report('error', event.message); retire(); }

@@ -135,3 +135,5 @@ export function mountGuestSurface({canvas, viewport, source, limits}: GuestSurfa
     close,
   };
 }
+
+export {surfaceFromMirror, type MirrorSurfaceOptions, type MirrorSurfaceSource} from './mirror-surface.ts';

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {MirrorRaster} from './support/mirror-raster.ts';
-import {mountGuestSurface} from '../../src/surface.ts';
+import {decodeRaster, rasterFile} from './support/mirror-raster.ts';
+import {mountGuestSurface, surfaceFromMirror} from '../../src/surface.ts';
 
 const [binary, mode, execClient] = process.argv.slice(2);
 const {SODS_TRANSLATOR_WASM: translatorPath, RICEBOX_MUK_FILE: mukPath} = process.env;
@@ -12,7 +12,7 @@ if (mode === 'inline') process.env.SODS_INLINE = '1'; else delete process.env.SO
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const read = (path) => new Uint8Array(readFileSync(path));
 const translator = read(translatorPath), muk = read(mukPath), elf = read(binary);
-const receipt=[],frames=[],terminal=[],model=new MirrorRaster();
+const receipt=[],frames=[],terminal=[];
 // Node has no browser backing store. Use a synchronous recording 2D surface;
 // the frames, pointer responses and resize below still come from the real guest.
 globalThis.ImageData=class {
@@ -20,7 +20,7 @@ globalThis.ImageData=class {
 };
 const original={left:64,top:44,width:256,height:192};
 const clip={left:0,top:0,width:245,height:172};
-let box=original, rendered, observer, sent, inputFence;
+let box=original, rendered, sent, inputFence;
 const canvas=Object.assign(new EventTarget(), {
   width:0,height:0,getBoundingClientRect:()=>box,
   getContext:()=>({clearRect(){},putImageData(image){
@@ -29,26 +29,29 @@ const canvas=Object.assign(new EventTarget(), {
 });
 const viewport={clientLeft:0,clientTop:0,clientWidth:clip.width,clientHeight:clip.height,
   getBoundingClientRect:()=>clip,contains:target=>target===canvas};
-function sendFramed(bytes) {
+const transport=Object.assign(new EventTarget(), {postMessage({type,bytes}) {
+  assert.equal(type,'input');
   sent=bytes;
   inputFence=input(bytes);
-}
-const presenter=mountGuestSurface({canvas,viewport,limits:{width:64,height:48,bytes:64*48*4},source:{
-  observe(next){observer=next;return ()=>{model.retire();observer=undefined;};},
-  pointer({x,y}){sendFramed(Uint8Array.of(1,x,y));},
-  resize({width,height}){sendFramed(Uint8Array.of(2,width,height));},
 }});
+const source=surfaceFromMirror({worker:transport,file:rasterFile,maxEncodedBytes:16+64*48*4,
+  decode(bytes) {
+    const frame=decodeRaster(bytes);
+    return frame && {serial:frame.sequence,width:frame.width,height:frame.height,rgba:frame.pixels};
+  },
+  encodePointer:({x,y})=>Uint8Array.of(1,x,y),
+  encodeResize:({width,height})=>Uint8Array.of(2,width,height),
+});
+const presenter=mountGuestSurface({canvas,viewport,limits:{width:64,height:48,bytes:64*48*4},source});
 globalThis.self={ onmessage:undefined, postMessage(m,{transfer=[]}={}){
   const event=structuredClone(m,{transfer});
   receipt.push(event);
   if(event.type==='output')terminal.push(Buffer.from(event.bytes));
-  const frame=model.accept(event);
-  if(frame && observer) {
-    rendered=undefined;
-    const {sequence:serial,width,height,pixels:rgba}=frame;
-    assert.equal(observer.frame({serial,width,height,rgba}),true);
-    assert.ok(rendered,'guest pixels pass through the product presenter');
-    frames.push({sequence:serial,...rendered});
+  rendered=undefined;
+  transport.dispatchEvent(new MessageEvent('message',{data:event}));
+  if(rendered) {
+    assert.ok(source.current,'product source admitted the guest frame');
+    frames.push({sequence:source.current.serial,...rendered});
   }
 } };
 await import('../../../distribution/runtime/worker.ts');

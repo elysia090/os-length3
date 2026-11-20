@@ -133,3 +133,47 @@ this entry from source. It explicitly owns the existing Ricebox Worker and
 admits only the fixture surface published from an actual Wayland SHM commit.
 The example's file encoding and input bytes stay test-only; they are not the
 package's surface protocol. This is not stock Quickshell running in Sods.
+
+### Bind a surface already lent by a Ricebox Worker
+
+For a deployer who already owns a Ricebox root Worker, `surfaceFromMirror`
+adapts one root-level file in that Worker's configured mirror. Give the guest
+a dedicated mirror directory for display output. The Worker sends its ordinary
+`changes` messages, and the adapter selects only the agreed basename. There is
+no extra mount, polling, default frame format or permission. Attach before
+starting the guest: mirroring is change-based, not a snapshot or video stream.
+
+```ts
+import {mountGuestSurface, surfaceFromMirror} from 'ricebox/everyday';
+
+// worker and admittedStart are owned and prepared by the application.
+// The producer agrees on scanout.bin in the guest's dedicated mirror directory.
+const source = surfaceFromMirror({
+  worker, file: 'scanout.bin', maxEncodedBytes: 2 * 1024 * 1024,
+  decode: decodeProducerFrame, // your bounded synchronous format-to-GuestFrame decoder
+});
+const surface = mountGuestSurface({canvas, viewport, source,
+  limits: {width: 1024, height: 768, bytes: 1024 * 768 * 4}});
+worker.postMessage({...admittedStart, mirror: '/display-out'});
+// Call surface.close() before terminating this Worker yourself.
+```
+
+The optional `encodePointer` and `encodeResize` handlers return bytes for the
+same Worker's existing guest stdin. Omit them for a display-only embed. Use
+them only if stdin belongs to this display's agreed controls, not a shell or
+another app. Input must name the current drawn serial and coordinates are
+bounded; a malformed, stale or rejected change to the selected file disarms
+input until a valid newer frame is drawn. Publish complete images atomically;
+an invalid update can leave the old pixels visible but not interactive.
+Removing or replacing the selected file with a directory, Worker exit,
+retirement or error ends this one-shot observation. Unsubscribing does not
+stop the Worker, and browsers do not send an event for an owner calling
+`Worker.terminate()`, so close your mount before doing so.
+
+The encoded-byte budget is checked before decoding. The caller must bound
+the producer, the existing mirror and decoded geometry; messages and their
+bytes already exist when the adapter gets them. See the
+[static guest Wayland test](test/wayland/README.md) for the pinned producer
+and [browser run](test/wayland/browser/README.md). That example supplies its
+own test-only file decoder and pointer/resize packets. The package does not
+install a Wayland compositor or launch stock Quickshell in Sods.
