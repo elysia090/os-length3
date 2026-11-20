@@ -91,6 +91,34 @@ opt-in view draws the same guest's ordered output through the shared bounded
 VT model. It uses existing guest termios to switch from a line form to raw
 keystrokes, shows the alternate screen, and interrupts a running guest with
 Ctrl+C from the command field or its **Interrupt** button. The guest screen
-is fixed at 80×24; this reference does not yet offer terminal scrollback,
-live terminal-dimension changes, or complete terminal/IME compatibility.
+is fixed at 80×24 unless you opt into the fit mode below. This reference
+does not offer terminal scrollback or complete terminal/IME compatibility.
 The independent Wayland guest is not affected.
+
+
+### Fit the terminal viewport (separate opt-in)
+
+Add &terminalResize=fit to ?terminal=screen for the separately laid-out
+terminal. After the shell is ready for input, the fixed terminal output box
+and its monospace cell size determine the columns and rows in CSS pixels,
+up to the screen's 240×100 cell budget. Hidden or undersized boxes don't
+request a new geometry. Changing the browser viewport doesn't change the
+other guest's Wayland surface, camera, or pointer. Fit is not enabled for
+the transparency sample's moved shell underlay (?surface=alpha&over=shell).
+
+One request waits for the Worker's ordered geometry marker while a single
+latest layout can replace any intervening layout. The view verifies the
+marker's cumulative byte position, including bytes discarded by a Ctrl+C
+epoch, and resizes before parsing subsequent bytes without resetting an
+incomplete character or escape sequence. The ordinary size ACK does not
+resize the view. The bounded VT keeps visible cells without reflowing old
+lines; it clips a wide glyph if only half fits and has no scrollback. The
+foreground guest gets the normal Linux SIGWINCH on a change, not a browser
+resize callback or repaint guarantee.
+
+A typed refusal stops fitting and keeps the last confirmed grid with
+ordinary scrollable output. A missing or inconsistent marker is different:
+the guest and screen may disagree, so this reference closes the shell rather
+than guessing or retrying. End of output or page departure stops observation
+and discards pending layout work. The other guest and its display are not
+involved.

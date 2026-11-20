@@ -1,6 +1,9 @@
 // One display-only projection of the worker's ordered output and flush epochs.
 export function terminalStream(write: (text: string) => void, discardPartial: () => void) {
   let epoch = 0, lastTag = 0, received = 0, decoder = new TextDecoder(), sealed = false, closed = false;
+  function cut(sentBytes: number): void {
+    if (closed || sealed || sentBytes !== received) throw new Error('Terminal output boundary does not match');
+  }
   return {
     accept(bytes: Uint8Array, tag: number): boolean {
       if (closed) return false;
@@ -22,8 +25,10 @@ export function terminalStream(write: (text: string) => void, discardPartial: ()
       discardPartial();
       return ++epoch;
     },
+    // A geometry cut checks the prefix without flushing UTF-8 or ANSI carry.
+    cut,
     seal(sentBytes: number): void {
-      if (closed || sealed || sentBytes !== received) throw new Error('Terminal output boundary does not match');
+      cut(sentBytes);
       sealed = true;
     },
     get sealed() { return sealed; },

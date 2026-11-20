@@ -19,3 +19,20 @@
   background: var(--vt-fg);
   color: var(--vt-bg);
 }
+
+/* Dedicated fit mode: printing rows cannot resize the measured content box. */
+#shell-output.vt-screen[data-fit] {
+  position: relative;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: clamp(8rem, 45vh, 24rem);
+  overflow: hidden;
+}
+#shell-output .vt-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  inset: 0 auto auto 0;
+  inline-size: 1ch;
+  block-size: 1lh;
+}

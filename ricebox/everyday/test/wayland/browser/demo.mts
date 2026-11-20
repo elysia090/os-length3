@@ -59,11 +59,13 @@ async function start() {
     errorText:error=>String(error)});
   if (shell) {
     const section = required('#shell'), asset = shell;
+    const overSurface = profile.get('surface') === 'alpha' && profile.get('over') === 'shell';
+    const fit = !overSurface && profile.get('terminalResize') === 'fit';
     function setupShell(terminal?: Parameters<typeof offerShell>[5], fallback = false) {
       try {
-        offerShell(section, signal => load(asset, signal), translator, muk, root.rootWorker, terminal);
+        offerShell(section, signal => load(asset, signal), translator, muk, root.rootWorker, terminal, fit);
         if (fallback) required('#shell-status').textContent = 'Terminal view unavailable; the line console is available.';
-        if (profile.get('surface') === 'alpha' && profile.get('over') === 'shell') {
+        if (overSurface) {
           // The controls stay in their own section and never share guest input.
           const stage = required('#stage'), transcript = required('#shell-output');
           const padding = getComputedStyle(stage);

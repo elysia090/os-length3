@@ -7,7 +7,7 @@ const vite = fileURLToPath(new URL('../../../../../node_modules/vite/bin/vite.js
 const args = [process.execPath,vite,'preview','--config',here+'vite.config.ts',
   '--strictPort','--host','127.0.0.1','--port',String(port)];
 export default defineConfig({
-  testDir:here, testMatch:'browser.spec.ts', timeout:12000, workers:1, retries:0,
+  testDir:here, testMatch:['browser.spec.ts','terminal-resize.spec.ts'], timeout:12000, workers:1, retries:0,
   outputDir:process.env.EVERYDAY_CHROME_RESULTS,
   use:{baseURL:url,browserName:'chromium',headless:true,
     // Playwright otherwise hides native scrollbars in headless mode.

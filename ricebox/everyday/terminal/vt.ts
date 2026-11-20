@@ -323,7 +323,16 @@ export class Screen {
     for (const b of [this.#main, this.#alt]) {
       if (!b) continue;
       for (const r of b.rows) {
-        if (r.chars.length > cols) { r.chars.length = cols; r.st.length = cols; }
+        if (r.chars.length > cols) {
+          // In the bounded display, do not leave a two-cell glyph whose
+          // continuation was clipped by the new right edge.
+          if (this.#limits !== unbounded && r.chars[cols] === '' && width(r.chars[cols - 1]!.codePointAt(0) ?? 0) === 2) {
+            r.chars[cols - 1] = ' ';
+            r.st[cols - 1] = 0;
+          }
+          r.chars.length = cols;
+          r.st.length = cols;
+        }
         while (r.chars.length < cols) { r.chars.push(' '); r.st.push(0); }
       }
       while (b.rows.length > rows) {

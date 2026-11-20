@@ -2,6 +2,7 @@
 import {guestScreen, ScreenView} from './vt-screen.ts';
 import {terminalStream} from './terminal-stream.mts';
 import {acceptsControlC, controlC, rawEditor, rawPaste, type TerminalPost} from './terminal-input.mts';
+import {terminalResize, watchTerminalGrid, type ResizeRequest} from './terminal-resize.mts';
 import './terminal-view.css';
 
 const ICANON = 2, ECHO = 8, ISIG = 1, ICRNL = 0x100, OPOST = 1, ONLCR = 4;
@@ -9,7 +10,8 @@ const arrows = new Map([['ArrowUp','A'],['ArrowDown','B'],['ArrowRight','C'],['A
 const rawKeys = new Map([['Escape','\x1b'],['Backspace','\x7f'],['Tab','\t'],['Delete','\x1b[3~']]);
 
 export function mountTerminal(section: HTMLElement, output: HTMLElement, line: HTMLInputElement,
-  submit: HTMLButtonElement, post: (message: TerminalPost) => void, fail: () => void) {
+  submit: HTMLButtonElement, post: (message: TerminalPost) => void, fail: () => void,
+  fit?: {post: (request: ResizeRequest) => void; fail: () => void}) {
   const cols = 80, rows = 24, encode = new TextEncoder();
   let phase = 'off', stopped = false, frame = 0;
   let tty = {iflag: ICRNL, oflag: OPOST | ONLCR, lflag: ICANON | ECHO | ISIG};
@@ -25,6 +27,17 @@ export function mountTerminal(section: HTMLElement, output: HTMLElement, line: H
   view.element.setAttribute('aria-live', 'off');
   output.replaceWith(view.element);
   section.dataset.terminal = 'screen';
+  const resize = fit && typeof ResizeObserver === 'function' ? terminalResize({cols, rows}, fit.post, (grid, sentBytes) => {
+    stream.cut(sentBytes);
+    model.resize(grid.cols, grid.rows);
+    schedule();
+  }, reason => {
+    stopWatching?.();
+    section.dataset.terminalResize = reason;
+    if (reason === 'rejected') delete view.element.dataset.fit;
+    else fit.fail();
+  }) : undefined;
+  const stopWatching = resize && watchTerminalGrid(view.element, resize.offer);
   const interrupt = document.createElement('button');
   interrupt.type = 'button';
   interrupt.textContent = 'Interrupt (Ctrl+C)';
@@ -53,6 +66,7 @@ export function mountTerminal(section: HTMLElement, output: HTMLElement, line: H
   function draw() {
     frame = 0;
     view.draw();
+    if (resize) view.element.dataset.grid = model.cols + 'x' + model.rows;
     view.element.dataset.screen = model.alternate ? 'alternate' : 'primary';
   }
   function schedule() {
@@ -101,8 +115,12 @@ export function mountTerminal(section: HTMLElement, output: HTMLElement, line: H
   configure();
   schedule();
   return {
-    cols, rows,
-    phase(value: string) { phase = value; configure(); },
+    cols, rows, resize,
+    phase(value: string) {
+      phase = value;
+      configure();
+      if (phase === 'input') resize?.activate();
+    },
     echoCooked(value: string) {
       if (live() && phase === 'input' && !raw() && (tty.lflag & ECHO)) {
         model.echoLine(value);
@@ -121,11 +139,17 @@ export function mountTerminal(section: HTMLElement, output: HTMLElement, line: H
     output(bytes: Uint8Array, tag: number) {
       if (stream.accept(bytes, tag)) schedule();
     },
-    seal(sentBytes: number) { stream.seal(sentBytes); },
+    seal(sentBytes: number) {
+      resize?.close();
+      stopWatching?.();
+      stream.seal(sentBytes);
+    },
     get sealed() { return stream.sealed; },
     close() {
       if (stopped) return;
       stopped = true;
+      resize?.close();
+      stopWatching?.();
       events.abort();
       if (frame) cancelAnimationFrame(frame);
       clearDraft();

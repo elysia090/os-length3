@@ -3,10 +3,11 @@ import {retireRootWorker} from 'ricebox';
 import {shellStart} from './shell-fixture.ts';
 import type {mountTerminal} from './terminal-view.mts';
 import type {TerminalPost} from './terminal-input.mts';
+import type {ResizeRequest} from './terminal-resize.mts';
 
 export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => Promise<Uint8Array>,
   translator: Uint8Array, muk: Uint8Array, rootWorker: () => Worker,
-  createTerminal?: typeof mountTerminal): void {
+  createTerminal?: typeof mountTerminal, fit = false): void {
   const open = section.querySelector<HTMLButtonElement>('#shell-open')!;
   const status = section.querySelector<HTMLElement>('#shell-status')!;
   const output = section.querySelector<HTMLElement>('#shell-output')!;
@@ -16,11 +17,14 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
   const out = new TextDecoder(), err = new TextDecoder(), encode = new TextEncoder();
   let worker: Worker | undefined, closing = false;
   const loading = new AbortController();
-  function post(data: TerminalPost | {type: 'drained'; n: number}) {
+  function post(data: TerminalPost | ResizeRequest | {type: 'drained'; n: number}) {
     if (closing) return;
     try { worker?.postMessage(data); } catch { failed(); }
   }
-  const terminal = createTerminal?.(section, output, line, send, post, failed);
+  const terminal = createTerminal?.(section, output, line, send, post, failed, fit ? {
+    post,
+    fail: () => { phase('error', 'Guest terminal resize could not be verified'); void retire(); },
+  } : undefined);
 
   function phase(state: string, text: string) {
     status.dataset.phase = state;
@@ -61,6 +65,8 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
         post({type: 'drained', n: msg.bytes.length});
       } catch { failed(); return; }
     }
+    if (msg?.type === 'terminal-geometry') terminal?.resize?.marker(msg);
+    if (msg?.type === 'terminal-size') terminal?.resize?.reply(msg);
     if (msg?.type === 'output-boundary' && terminal) {
       try { terminal.seal(msg.sentBytes); }
       catch { phase('error', 'Guest terminal output was incomplete'); void retire(); return; }
@@ -100,7 +106,8 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
       worker.addEventListener('error', failed);
       worker.addEventListener('messageerror', failed);
       const start = shellStart(translator, muk, busybox);
-      if (terminal) worker.postMessage({...start, cols: terminal.cols, rows: terminal.rows});
+      if (terminal) worker.postMessage({...start, cols: terminal.cols, rows: terminal.rows,
+        ...(terminal.resize && {terminalResize: true})});
       else worker.postMessage(start);
     } catch { if (!closing) failed(); }
   };

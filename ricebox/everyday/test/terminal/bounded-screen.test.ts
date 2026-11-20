@@ -40,3 +40,13 @@ test('bounded cells and color table keep prior content and ignore host OSC', () 
   assert.equal(screen.styles.id(color(0)),first);
   assert.deepEqual(screen.styles.of(first),color(0));
 });
+
+test('shrinking a bounded row through a wide glyph removes the clipped pair', () => {
+  const screen = guestScreen(5, 3);
+  screen.write('abc好');
+  assert.deepEqual(screen.lines[0]!.chars, ['a','b','c','好','']);
+  screen.resize(4, 2);
+  assert.deepEqual(screen.lines[0]!.chars, ['a','b','c',' ']);
+  screen.resize(5, 3);
+  assert.deepEqual(screen.lines[0]!.chars, ['a','b','c',' ',' ']);
+});

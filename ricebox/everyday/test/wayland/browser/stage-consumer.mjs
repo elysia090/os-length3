@@ -32,7 +32,7 @@ node(['--no-experimental-strip-types', '--input-type=module', '-e', [
 ].join('\n')], consumer);
 
 for (const dir of ['browser', 'support']) mkdirSync(join(consumer, dir));
-for (const name of ['index.html', 'camera-scrollbars.css', 'demo.mts', 'shell-page.mts', 'terminal-view.mts', 'terminal-stream.mts', 'terminal-input.mts', 'terminal-view.css', 'terminal-view-css.d.ts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.mjs']) {
+for (const name of ['index.html', 'camera-scrollbars.css', 'demo.mts', 'shell-page.mts', 'terminal-view.mts', 'terminal-stream.mts', 'terminal-input.mts', 'terminal-resize.mts', 'terminal-view.css', 'terminal-view-css.d.ts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.mjs']) {
   copyFileSync(new URL(name, import.meta.url), join(consumer, 'browser', name));
 }
 copyFileSync(new URL('../support/mirror-raster.ts', import.meta.url), join(consumer, 'support/mirror-raster.ts'));
@@ -41,7 +41,7 @@ for (const name of ['vt.ts', 'vt-view.ts']) {
   copyFileSync(new URL('../../../terminal/' + name, import.meta.url), join(consumer, 'browser', name));
 }
 writeFileSync(join(consumer, 'browser/vt-screen.ts'),
-  "export {guestScreen} from './vt.ts';\nexport {ScreenView} from './vt-view.ts';\n");
+  "export {GUEST_SCREEN_LIMITS, guestScreen} from './vt.ts';\nexport {ScreenView} from './vt-view.ts';\n");
 node([join(repo, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck',
   '--allowImportingTsExtensions', '--target', 'ES2022', '--module', 'ESNext', '--moduleResolution', 'Bundler',
   '--lib', 'ES2024,DOM,DOM.Iterable', '--types', 'node', '--typeRoots', join(repo, 'node_modules/@types'),
