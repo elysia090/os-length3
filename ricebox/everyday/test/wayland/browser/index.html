@@ -23,5 +23,16 @@
   <button id="quit" disabled>Exit guest</button>
 </p>
 <pre id="protocol" aria-label="Guest Wayland receipts"></pre>
+<section id="shell" aria-label="Guest shell" hidden>
+  <h2>Independent guest shell</h2>
+  <p>This line console runs commands in a separate Ricebox guest.</p>
+  <button type="button" id="shell-open">Open guest shell</button>
+  <p id="shell-status" role="status" data-phase="off"></p>
+  <pre id="shell-output" aria-label="Guest shell output"></pre>
+  <form>
+    <label>Shell command <input maxlength="1024" autocomplete="off" spellcheck="false" disabled></label>
+    <button disabled>Run command</button>
+  </form>
+</section>
 <script type="module" src="/demo.ts"></script>
 </html>

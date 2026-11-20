@@ -1,6 +1,7 @@
 import {mountGuestSurface, surfaceFromMirror} from '../../../src/surface.ts';
 import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
+import {offerShell} from './shell-page.ts';
 
 function required<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -38,7 +39,9 @@ async function start() {
   const manifest = await response.json();
   if (!manifest || !pin(manifest.translator,'sods.wasm') || !pin(manifest.muk,'muk') ||
       !pin(manifest.elf,'wayland-presenter')) throw new Error('Invalid fixture pins');
+  const shell = pin(manifest.shell,'busybox') ? manifest.shell : null;
   const [translator,muk,elf] = await Promise.all([load(manifest.translator),load(manifest.muk),load(manifest.elf)]);
+  if (shell) offerShell(required('#shell'), () => load(shell), translator, muk);
   const worker = new Worker(new URL('../../../../distribution/runtime/worker.ts',import.meta.url),{type:'module'});
   const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
   // Only this fixture knows its RBF1 format and control bytes.

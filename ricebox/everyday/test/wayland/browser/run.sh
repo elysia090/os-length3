@@ -7,6 +7,8 @@ test_dir=ricebox/everyday/test/wayland/browser
 temp=$(mktemp -d)
 trap 'rm -rf "$temp"' EXIT
 export EVERYDAY_CHROME_ASSETS="$temp/assets" EVERYDAY_CHROME_DIST="$temp/dist" EVERYDAY_CHROME_RESULTS="$temp/results"
-node "$test_dir/stage.mjs" "$EVERYDAY_CHROME_ASSETS" "$SODS_TRANSLATOR_WASM" "$RICEBOX_MUK_FILE" "$1"
+set -- "$EVERYDAY_CHROME_ASSETS" "$SODS_TRANSLATOR_WASM" "$RICEBOX_MUK_FILE" "$1"
+if [ -n "${EVERYDAY_SHELL_ELF:-}" ]; then set -- "$@" "$EVERYDAY_SHELL_ELF"; fi
+node "$test_dir/stage.mjs" "$@"
 node node_modules/vite/bin/vite.js build --config "$test_dir/vite.config.ts"
 node node_modules/@playwright/test/cli.js test --config "$test_dir/playwright.config.ts"

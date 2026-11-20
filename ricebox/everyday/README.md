@@ -177,3 +177,7 @@ bytes already exist when the adapter gets them. See the
 and [browser run](test/wayland/browser/README.md). That example supplies its
 own test-only file decoder and pointer/resize packets. The package does not
 install a Wayland compositor or launch stock Quickshell in Sods.
+
+The [optional same-page shell example](test/wayland/browser/composition.md)
+runs a second real guest independently. A shell asset is only requested when
+opened; the display and shell do not share stdin, a guest or retirement.
