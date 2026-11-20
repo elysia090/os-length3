@@ -29,9 +29,12 @@ def frame(path, seq, w, h, pixel):
 
 with tempfile.TemporaryDirectory(prefix='wayland-proof-') as td:
     path=Path(td)/'frame.rgba'
-    p=subprocess.Popen([sys.argv[1],td],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0)
+    p=subprocess.Popen([sys.argv[1],td,*sys.argv[2:]],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0)
     try:
-        print(until(p,'WAYLAND_COMMIT seq=1'),end='')
+        first=until(p,'WAYLAND_COMMIT seq=1')
+        print(first,end='')
+        assert ('WAYLAND_CLIENT_EXEC fd_inherited=1 cloexec_sentinel_absent=1 stdin_absent=1' in first)==bool(sys.argv[2:])
+        assert ('WAYLAND_SOCKET_CONSUMED close_on_exec=1' in first)==bool(sys.argv[2:])
         frame(path,1,32,24,(38,64,48,255))
         p.stdin.write(bytes([1,250,250]))
         print(until(p,'WAYLAND_CONTROL_REFUSED'),end='')

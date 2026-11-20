@@ -29,3 +29,12 @@ guest code. The guest uses musl-gcc by default (CC can name another musl
 compiler). No host objects are linked into the fixture and it has no dynamic
 loader or shared-library dependency. None of these files or test artifacts
 is a requested release package or visible desktop.
+
+
+The same checks also run with a separately executed static client. Pass
+OUT/wayland-socket-client as the final argument to any of the three test
+commands. The guest server deliberately inherits only its guest-owned
+WAYLAND_SOCKET endpoint across exec (stdout/stderr remain normal). The client
+has no stdin and verifies an unrelated close-on-exec descriptor disappeared;
+ordinary libwayland consumes the environment value and takes that endpoint
+back to close-on-exec. This also keeps the in-process fork test as a control.

@@ -63,11 +63,15 @@ done
 "$cc" -std=gnu11 -O2 -fPIC -fstack-protector-strong -I"$wl/src" \
   -c "$build/generated/wayland-protocol.c" -o "$build/obj/wl-protocol.o"
 "$ar" crD "$build/libwayland.a" "$build/obj"/wl-*.o
-"$cc" -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -fstack-protector-strong \
-  -static -no-pie -Wl,-z,relro,-z,now,-z,noexecstack -I"$build" -I"$wl/src" -I"$build/generated" \
-  "$here/start.c" "$here/client.c" "$here/server.c" "$build/generated/xdg-protocol.c" \
-  "$build/libwayland.a" "$build/libffi.a" -pthread -o "$build/wayland-presenter"
-readelf -hW -lW -dW "$build/wayland-presenter" > "$build/elf.log"
-grep -q 'Type:.*EXEC' "$build/elf.log"
-! grep -Eq 'INTERP|NEEDED|RPATH|RUNPATH' "$build/elf.log"
-grep -Eq 'GNU_STACK.* RW ' "$build/elf.log"
+fixture() {
+  binary=$1; shift
+  "$cc" -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -fstack-protector-strong \
+    -static -no-pie -Wl,-z,relro,-z,now,-z,noexecstack -I"$build" -I"$wl/src" -I"$build/generated" \
+    "$@" "$build/generated/xdg-protocol.c" "$build/libwayland.a" "$build/libffi.a" -pthread -o "$build/$binary"
+  readelf -hW -lW -dW "$build/$binary" > "$build/$binary.elf.log"
+  grep -q 'Type:.*EXEC' "$build/$binary.elf.log"
+  ! grep -Eq 'INTERP|NEEDED|RPATH|RUNPATH' "$build/$binary.elf.log"
+  grep -Eq 'GNU_STACK.* RW ' "$build/$binary.elf.log"
+}
+fixture wayland-presenter "$here/start.c" "$here/client.c" "$here/server.c"
+fixture wayland-socket-client "$here/socket-client.c" "$here/client.c"

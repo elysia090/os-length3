@@ -3,10 +3,10 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {MirrorRaster} from './support/mirror-raster.ts';
 
-const [binary, mode] = process.argv.slice(2);
+const [binary, mode, execClient] = process.argv.slice(2);
 const {SODS_TRANSLATOR_WASM: translatorPath, RICEBOX_MUK_FILE: mukPath} = process.env;
 assert.ok(binary && translatorPath && mukPath && (mode === 'inline' || mode === 'worker'),
-  'pass the built ELF and inline/worker; supply the current SODS_TRANSLATOR_WASM and RICEBOX_MUK_FILE');
+  'pass the presenter ELF, inline/worker and optional client ELF; supply the current SODS_TRANSLATOR_WASM and RICEBOX_MUK_FILE');
 if (mode === 'inline') process.env.SODS_INLINE = '1'; else delete process.env.SODS_INLINE;
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const read = (path) => new Uint8Array(readFileSync(path));
@@ -46,10 +46,13 @@ const shape=(seq,w,h,marker=null)=>{
   return {sequence:seq,width:w,height:h,sha256:hash(f.pixels)};
 };
 // Reuse the ordinary production Worker/file mirror, not a custom display or host mount.
-const path = '/usr/bin/wayland-presenter';
+const path = '/usr/bin/wayland-presenter', separate = '/usr/bin/wayland-socket-client';
+const args = execClient ? [path, '/proof', separate] : [path, '/proof'];
+const files = [{path,bytes:elf,mode:0o755}];
+if (execClient) files.push({path:separate,bytes:read(execClient),mode:0o755});
 const config = JSON.stringify({
   ociVersion: '1.0.2',
-  process: {args: [path, '/proof'], cwd: '/', env: ['LANG=C.UTF-8'], noNewPrivileges: true},
+  process: {args, cwd: '/', env: ['LANG=C.UTF-8'], noNewPrivileges: true},
   root: {path: '/', readonly: true},
   mounts: [{destination:'/proof', type:'bind', source:'/proof-channel', options:['bind','rw','nosuid','nodev','noexec']}],
   linux: {
@@ -60,7 +63,7 @@ const config = JSON.stringify({
 const start = {
   type:'start', translator, muk, cwd:'/', screen:false,
   box: {config, words:['run','--lend','/','--lend','/proof-channel','--ids','0-0','-b','/run/box','proof']},
-  mirror:'/proof-channel', dirs:['/proof','/proof-channel'], files:[{path,bytes:elf,mode:0o755}],
+  mirror:'/proof-channel', dirs:['/proof','/proof-channel'], files,
 };
 try{
   await send(start);
@@ -89,10 +92,13 @@ try{
   assert.equal(receipt.find(e=>e.type==='exit').status,37<<8);
   assert.deepEqual(receipt.filter(e=>e.type==='error'),[]);
   const lines=text().trim().split('\n');
-  assert.match(lines[0],/^WAYLAND_COMMIT seq=1 size=32x24 configure=(\d+) pointer=0 stride=140$/);
+  assert.equal(lines.includes('WAYLAND_CLIENT_EXEC fd_inherited=1 cloexec_sentinel_absent=1 stdin_absent=1'), !!execClient);
+  assert.equal(lines.includes('WAYLAND_SOCKET_CONSUMED close_on_exec=1'), !!execClient);
+  const initialCommit=lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=1'));
+  assert.match(initialCommit,/^WAYLAND_COMMIT seq=1 size=32x24 configure=(\d+) pointer=0 stride=140$/);
   assert.ok(lines.includes('WAYLAND_CONTROL_REFUSED'));
   assert.match(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')),/^WAYLAND_COMMIT seq=2 size=32x24 configure=(\d+) pointer=([1-9]\d*) stride=140$/);
-  const initial=Number(lines[0].match(/configure=(\d+)/)[1]);
+  const initial=Number(initialCommit.match(/configure=(\d+)/)[1]);
   const pointer=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')).match(/configure=(\d+)/)[1]);
   const expanded=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=3')).match(/configure=(\d+)/)[1]);
   assert.equal(pointer,initial);
@@ -104,7 +110,7 @@ try{
   const retired=receipt.find(e=>e.type==='retiring');
   assert.ok(retired);
   assert.deepEqual(retired.failures,[]);
-  console.log(JSON.stringify({mode,elf:hash(elf),frames:[f,g,h],lines,lifecycle:'admission acknowledged'}));
+  console.log(JSON.stringify({mode,connection:execClient?'exec-inherited':'fork-direct',elf:hash(elf),frames:[f,g,h],lines,lifecycle:'admission acknowledged'}));
 }finally{
   if(!receipt.some(m=>m.type==='retiring'))await send({type:'retire'});
 }

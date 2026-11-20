@@ -170,9 +170,8 @@ static void global(void *arg, struct wl_registry *r, uint32_t id, const char *if
 static void removed(void *arg, struct wl_registry *r, uint32_t id) {(void)arg; (void)r; (void)id;}
 static const struct wl_registry_listener registry = {.global = global, .global_remove = removed};
 
-int guest_wayland_client(int fd) {
+static int run_client(struct wl_display *display) {
     struct Client c = {.marker_x = -1, .marker_y = -1};
-    struct wl_display *display = wl_display_connect_to_fd(fd);
     if (!display) return 21;
     struct wl_registry *r = wl_display_get_registry(display);
     if (!r || wl_registry_add_listener(r, &registry, &c) < 0 || wl_display_roundtrip(display) < 0 ||
@@ -202,4 +201,22 @@ int guest_wayland_client(int fd) {
     if (wl_display_roundtrip(display) < 0) return 25;
     wl_display_disconnect(display);
     return 0;
+}
+
+
+int guest_wayland_client(int fd) {
+    return run_client(wl_display_connect_to_fd(fd));
+}
+
+int guest_wayland_inherited(int expected) {
+    struct wl_display *display = wl_display_connect(NULL);
+    if (!display) return 26;
+    int flags = fcntl(expected, F_GETFD);
+    if (wl_display_get_fd(display) != expected || getenv("WAYLAND_SOCKET") || flags < 0 || !(flags & FD_CLOEXEC)) {
+        wl_display_disconnect(display);
+        return 27;
+    }
+    puts("WAYLAND_SOCKET_CONSUMED close_on_exec=1");
+    if (fflush(stdout) != 0) { wl_display_disconnect(display); return 28; }
+    return run_client(display);
 }
