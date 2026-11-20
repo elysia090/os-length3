@@ -64,3 +64,22 @@ display/device mounts. The launcher's local socketpair supplies
 fixture checks Qt's software-renderer selection, every RGBA pixel of the first
 rectangle and its xdg resize, and close without a third frame. This optional
 control is not a general Qt, Chrome, or Quickshell compatibility claim.
+
+For a separate top-layer panel control, also stage the signed
+`layer-shell-qt=6.6.6-r0` runtime package and take
+`wlr-layer-shell-unstable-v1.xml` from the signed Alpine
+`wlr-protocols=0_git20250702-r0` package. Pass that XML as
+`EVERYDAY_WLR_LAYER_XML` during the scanner stage and
+`EVERYDAY_WITH_QT_LAYER=1` during the guest stage. Neither is enabled by
+default. Then run the same host check with:
+
+```sh
+python3 ricebox/everyday/test/wayland/qt/native-check.py \
+  "$ALPINE_ROOT" "$BUILD_ROOT/wayland-qt-layer-launch" --layer
+```
+
+The Qt/KDE client must request a top-layer role with top-left anchors for
+the explicitly advertised, private test output. The test checks that role
+and the software-rendered buffer/resize/close independently of xdg-shell.
+The renderer mirrors the committed buffer only; it does not show or
+measure a physically pinned panel or claim a Quickshell session.

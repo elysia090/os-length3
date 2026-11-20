@@ -1,6 +1,9 @@
 #include "presenter.h"
 #include <wayland-server.h>
 #include "generated/xdg-server.h"
+#ifdef EVERYDAY_TEST_LAYER
+#include "generated/layer-server.h"
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -13,6 +16,10 @@ struct Server {
     struct wl_client *client;
     struct wl_event_source *input;
     struct wl_resource *surface, *role, *window, *pointer, *buffer, *callback;
+#ifdef EVERYDAY_TEST_LAYER
+    struct wl_resource *layer, *output;
+    uint32_t anchor;
+#endif
     struct wl_listener gone;
     char name[256], temporary[256];
     int width, height, pending_width, pending_height;
@@ -68,9 +75,34 @@ static bool mirror_commit(struct Server *s, struct wl_shm_buffer *buffer) {
     return fflush(stdout) == 0;
 }
 
+static bool layer_active(const struct Server *s) {
+#ifdef EVERYDAY_TEST_LAYER
+    return s->layer != NULL;
+#else
+    (void)s;
+    return false;
+#endif
+}
+static void close_window(struct Server *s) {
+    s->closing=true;
+#ifdef EVERYDAY_TEST_LAYER
+    if(s->layer) {zwlr_layer_surface_v1_send_closed(s->layer);return;}
+#endif
+    if(s->window) xdg_toplevel_send_close(s->window);
+}
+
 static bool configure(struct Server *s, int w, int h) {
-    if (!s->role || !s->window || s->configured != s->acknowledged ||
+    if ((!layer_active(s) && (!s->role || !s->window)) || s->configured != s->acknowledged ||
         w < 1 || w > MAX_W || h < 1 || h > MAX_H) return false;
+#ifdef EVERYDAY_TEST_LAYER
+    if(s->layer) {
+        if(s->anchor != (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP|ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT)) return false;
+        if(!s->configured) puts("WAYLAND_LAYER surface=top anchors=top-left output=explicit scope=ricebox-layer-proof");
+        s->configured=serial(s); s->pending_width=w; s->pending_height=h;
+        zwlr_layer_surface_v1_send_configure(s->layer,s->configured,w,h);
+        return true;
+    }
+#endif
     struct wl_array states;
     wl_array_init(&states);
     s->configured=serial(s); s->pending_width=w; s->pending_height=h;
@@ -82,7 +114,7 @@ static bool configure(struct Server *s, int w, int h) {
 
 static void run_command(struct Server *s) {
     int x=s->command[1], y=s->command[2];
-    if (s->closing || s->configured!=s->acknowledged || !s->window || !s->frames) return;
+    if (s->closing || s->configured!=s->acknowledged || (!s->window && !layer_active(s)) || !s->frames) return;
     switch (s->command[0]) {
     case 1:
         if (!s->pointer || x>=s->width || y>=s->height) break;
@@ -99,8 +131,7 @@ static void run_command(struct Server *s) {
         if (configure(s,x,y)) return;
         break;
     case 3:
-        s->closing=true;
-        xdg_toplevel_send_close(s->window);
+        close_window(s);
         return;
     default:
         break;
@@ -112,12 +143,12 @@ static void run_command(struct Server *s) {
 static int input_ready(int fd, uint32_t mask, void *arg) {
     struct Server *s=arg;
     if (mask & (WL_EVENT_ERROR | WL_EVENT_HANGUP)) {
-        s->closing=true; if(s->window)xdg_toplevel_send_close(s->window);
+        close_window(s);
         return 0;
     }
     ssize_t n=read(fd,s->command+s->n,sizeof s->command-s->n);
     if(n<0) { if(errno!=EINTR && errno!=EAGAIN) fail(s,"cannot read fixture input"); return 0;}
-    if(n==0) { s->closing=true; if(s->window)xdg_toplevel_send_close(s->window); return 0;}
+    if(n==0) { close_window(s); return 0;}
     s->n+=(unsigned)n;
     if(s->n==sizeof s->command) {s->n=0; run_command(s);}
     return 0;
@@ -129,7 +160,7 @@ static void attach(struct wl_client *client, struct wl_resource *r, struct wl_re
     struct Server *s=wl_resource_get_user_data(r);
     if(x || y || s->buffer || s->detached) {fail(s,"invalid demo attach");return;}
     if(!b) {
-        if(!s->closing || s->window || s->role || s->callback) {fail(s,"unexpected detach");return;}
+        if(!s->closing || s->window || s->role || layer_active(s) || s->callback) {fail(s,"unexpected detach");return;}
         // Qt drops the old buffer when closing its destroyed xdg role.
         s->detached=true;
         return;
@@ -247,6 +278,70 @@ static void bind_wm(struct wl_client *c, void *data, uint32_t v, uint32_t id) {
     if(r)wl_resource_set_implementation(r,&wm_impl,data,NULL);else wl_client_post_no_memory(c);
 }
 
+#ifdef EVERYDAY_TEST_LAYER
+static void output_gone(struct wl_resource *r) {
+    ((struct Server *)wl_resource_get_user_data(r))->output=NULL;
+}
+static const struct wl_output_interface output_impl={.release=destroy};
+static void bind_output(struct wl_client *c, void *data, uint32_t v, uint32_t id) {
+    struct Server *s=data;
+    if(s->output){fail(s,"only one output binding is owned");return;}
+    s->output=wl_resource_create(c,&wl_output_interface,(int)v,id);
+    if(!s->output){wl_client_post_no_memory(c);return;}
+    wl_resource_set_implementation(s->output,&output_impl,s,output_gone);
+    wl_output_send_geometry(s->output,0,0,180,120,WL_OUTPUT_SUBPIXEL_UNKNOWN,
+                            "Ricebox","Fixture",WL_OUTPUT_TRANSFORM_NORMAL);
+    wl_output_send_mode(s->output,WL_OUTPUT_MODE_CURRENT|WL_OUTPUT_MODE_PREFERRED,MAX_W,MAX_H,60000);
+    if(v >= 2){wl_output_send_scale(s->output,1); wl_output_send_done(s->output);}
+}
+static void layer_gone(struct wl_resource *r){((struct Server *)wl_resource_get_user_data(r))->layer=NULL;}
+static void layer_size(struct wl_client *c, struct wl_resource *r,uint32_t w,uint32_t h) {
+    (void)c;
+    if(w<1 || w>MAX_W || h<1 || h>MAX_H) fail(wl_resource_get_user_data(r),"invalid bounded layer size");
+}
+static void layer_anchor(struct wl_client *c, struct wl_resource *r,uint32_t anchor) {
+    (void)c;
+    struct Server *s=wl_resource_get_user_data(r);
+    if(anchor != (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP|ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT))
+        fail(s,"wrong top-left layer anchors");
+    s->anchor=anchor;
+}
+static void layer_margin(struct wl_client *c,struct wl_resource *r,int32_t t,int32_t right,int32_t b,int32_t left) {
+    (void)c;
+    if(t || right || b || left) fail(wl_resource_get_user_data(r),"unexpected layer margin");
+}
+static void layer_zone(struct wl_client *c,struct wl_resource *r,int32_t zone) {
+    (void)c;
+    if(zone) fail(wl_resource_get_user_data(r),"unexpected layer zone");
+}
+static void layer_keyboard(struct wl_client *c,struct wl_resource *r,uint32_t keyboard) {
+    (void)c;
+    if(keyboard) fail(wl_resource_get_user_data(r),"unexpected layer keyboard policy");
+}
+static const struct zwlr_layer_surface_v1_interface layer_surface_impl={
+    .set_size=layer_size,.set_anchor=layer_anchor,.set_exclusive_zone=layer_zone,.set_margin=layer_margin,
+    .set_keyboard_interactivity=layer_keyboard,.ack_configure=ack,.destroy=destroy,
+};
+static void layer_surface(struct wl_client *c,struct wl_resource *shell,uint32_t id,struct wl_resource *surface,
+                          struct wl_resource *output,uint32_t layer,const char *scope) {
+    struct Server *s=wl_resource_get_user_data(shell);
+    if(s->layer || s->role || surface!=s->surface || !s->output || output!=s->output ||
+       layer!=ZWLR_LAYER_SHELL_V1_LAYER_TOP || strcmp(scope,"ricebox-layer-proof")) {
+        fail(s,"expected Qt layer over the fixture output");
+        return;
+    }
+    s->layer=wl_resource_create(c,&zwlr_layer_surface_v1_interface,1,id);
+    if(!s->layer){wl_client_post_no_memory(c);return;}
+    wl_resource_set_implementation(s->layer,&layer_surface_impl,s,layer_gone);
+}
+static const struct zwlr_layer_shell_v1_interface layer_shell_impl={.get_layer_surface=layer_surface};
+static void bind_layer_shell(struct wl_client *c,void *data,uint32_t v,uint32_t id) {
+    struct wl_resource *r=wl_resource_create(c,&zwlr_layer_shell_v1_interface,(int)v,id);
+    if(r)wl_resource_set_implementation(r,&layer_shell_impl,data,NULL);else wl_client_post_no_memory(c);
+}
+
+#endif
+
 static void cursor(struct wl_client *c, struct wl_resource *r, uint32_t seq, struct wl_resource *s, int32_t x, int32_t y) {
     (void)c;(void)r;(void)seq;(void)s;(void)x;(void)y;
 }
@@ -274,10 +369,15 @@ int guest_wayland_server(int fd, const char *mirror) {
     if(n<0 || (size_t)n>=sizeof s.name || m<0 || (size_t)m>=sizeof s.temporary){close(fd);return 41;}
     s.display=wl_display_create();
     if(!s.display){close(fd);return 42;}
-    if(wl_display_init_shm(s.display)!=0 || !wl_global_create(s.display,&wl_compositor_interface,1,&s,bind_compositor) ||
-       !wl_global_create(s.display,&xdg_wm_base_interface,1,&s,bind_wm) || !wl_global_create(s.display,&wl_seat_interface,1,&s,bind_seat)) {
-        close(fd);wl_display_destroy(s.display);return 43;
-    }
+    bool globals=wl_display_init_shm(s.display)==0 &&
+                 wl_global_create(s.display,&wl_compositor_interface,1,&s,bind_compositor) &&
+                 wl_global_create(s.display,&xdg_wm_base_interface,1,&s,bind_wm) &&
+                 wl_global_create(s.display,&wl_seat_interface,1,&s,bind_seat);
+#ifdef EVERYDAY_TEST_LAYER
+    globals=globals && wl_global_create(s.display,&wl_output_interface,2,&s,bind_output) &&
+              wl_global_create(s.display,&zwlr_layer_shell_v1_interface,1,&s,bind_layer_shell);
+#endif
+    if(!globals){close(fd);wl_display_destroy(s.display);return 43;}
     s.client=wl_client_create(s.display,fd);
     if(!s.client){close(fd);wl_display_destroy(s.display);return 44;}
     wl_client_add_destroy_listener(s.client,&s.gone);

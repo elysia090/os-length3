@@ -29,6 +29,13 @@ if [ "$mode" = scanner ]; then
   gen server-header "$proto/stable/xdg-shell/xdg-shell.xml" xdg-server.h
   gen private-code "$proto/stable/xdg-shell/xdg-shell.xml" xdg-protocol.c
   (cd "$build" && sha256sum -c "$here/generated.sha256")
+  if [ -n "${EVERYDAY_WLR_LAYER_XML:-}" ]; then
+    digest=$(sha256sum "$EVERYDAY_WLR_LAYER_XML")
+    test "${digest%% *}" = 87e0b9c837aecd6977f76f3c47d73088b7159871f5d979dc1840f6cadb5e2ed8
+    gen server-header "$EVERYDAY_WLR_LAYER_XML" layer-server.h
+    gen private-code "$EVERYDAY_WLR_LAYER_XML" layer-protocol.c
+    (cd "$build" && sha256sum -c "$here/qt/layer-generated.sha256")
+  fi
   exit 0
 fi
 [ "$mode" = guest ] || { echo "unknown build stage: $mode" >&2; exit 2; }
@@ -77,4 +84,9 @@ fixture wayland-presenter "$here/start.c" "$here/client.c" "$here/server.c"
 fixture wayland-socket-client "$here/socket-client.c" "$here/client.c"
 if [ "${EVERYDAY_WITH_QT:-0}" = 1 ]; then
   fixture wayland-qt-launch "$here/qt/launch.c" "$here/server.c"
+fi
+if [ "${EVERYDAY_WITH_QT_LAYER:-0}" = 1 ]; then
+  (cd "$build" && sha256sum -c "$here/qt/layer-generated.sha256")
+  fixture wayland-qt-layer-launch -DEVERYDAY_TEST_LAYER \
+    "$here/qt/launch.c" "$here/server.c" "$build/generated/layer-protocol.c"
 fi

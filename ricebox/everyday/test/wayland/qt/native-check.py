@@ -1,4 +1,5 @@
 """Opt-in native Qt control; do not run or install Qt in the browser test."""
+import argparse
 import hashlib
 from pathlib import Path
 import struct
@@ -10,6 +11,8 @@ import time
 
 QMLSCENE = "usr/lib/qt6/bin/qmlscene"
 QMLSCENE_SHA256 = "315d0090f499b0117d6a9e10d0d9ea7f4639c4d9e4390169dbb6aec80d770fad"
+LAYER_PLUGIN = "usr/lib/qt6/plugins/wayland-shell-integration/liblayer-shell.so"
+LAYER_PLUGIN_SHA256 = "001b23f9ebd86fec11399e360630e4af620b59985d9fbc9db94f32e3db1d7a66"
 BACKGROUND = bytes.fromhex("121c2aff")
 RECTANGLE = bytes.fromhex("f83d69ff")
 
@@ -34,13 +37,21 @@ def check_frame(proc, path, sequence, width, height):
     raise RuntimeError(f"no Qt SHM frame {sequence}; exit={proc.poll()}")
 
 
-def check(root, launcher):
+def check_digest(root, name, digest):
+    path = root / name
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        raise SystemExit(f"missing or unexpected pinned {path.name}: {path}")
+
+
+def check(root, launcher, layer):
     if root == Path("/"):
         raise SystemExit("pass a disposable pinned Alpine root, not the host root")
-    qmlscene = root / QMLSCENE
-    if not qmlscene.is_file() or hashlib.sha256(qmlscene.read_bytes()).hexdigest() != QMLSCENE_SHA256:
-        raise SystemExit(f"missing or unexpected pinned qmlscene: {qmlscene}")
-    scene = Path(__file__).with_name("rectangle.qml").resolve()
+    check_digest(root, QMLSCENE, QMLSCENE_SHA256)
+    platform = []
+    if layer:
+        check_digest(root, LAYER_PLUGIN, LAYER_PLUGIN_SHA256)
+        platform = ["--setenv", "QT_WAYLAND_SHELL_INTEGRATION", "layer-shell"]
+    scene = Path(__file__).with_name("panel.qml" if layer else "rectangle.qml").resolve()
     with tempfile.TemporaryDirectory(prefix="qt-wayland-native-") as directory:
         result = Path(directory)
         cmd = [
@@ -56,7 +67,7 @@ def check(root, launcher):
             "--setenv", "QT_QUICK_BACKEND", "software",
             "--setenv", "QT_WAYLAND_DISABLE_WINDOWDECORATION", "1",
             "--setenv", "QSG_INFO", "1",
-            "/tmp/qt-launch", "/tmp/result",
+            *platform, "/tmp/qt-launch", "/tmp/result",
         ]
         frame, trace = result / "frame.rgba", result / "qt.log"
         with trace.open("wb") as log:
@@ -76,6 +87,10 @@ def check(root, launcher):
                     "WAYLAND_COMMIT seq=1 size=32x24 configure=1 pointer=0 stride=128",
                     "WAYLAND_COMMIT seq=2 size=47x19 configure=2 pointer=0 stride=188",
                 ]
+                layer_receipt = "WAYLAND_LAYER surface=top anchors=top-left output=explicit scope=ricebox-layer-proof"
+                assert lines.count(layer_receipt) == int(layer), "unexpected window role"
+                if layer:
+                    print(layer_receipt)
                 assert "QT_WAYLAND_WINDOW_CLOSED" in lines
                 for name, data in (("first", first), ("resize", resized)):
                     print("NATIVE_QT_WAYLAND_RECTANGLE_RGBA", name, hashlib.sha256(data[16:]).hexdigest())
@@ -90,6 +105,9 @@ def check(root, launcher):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit(f"usage: {sys.argv[0]} ALPINE_ROOT WAYLAND_QT_LAUNCH")
-    check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(strict=True))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("alpine_root", type=Path)
+    parser.add_argument("launcher", type=Path)
+    parser.add_argument("--layer", action="store_true")
+    args = parser.parse_args()
+    check(args.alpine_root.resolve(), args.launcher.resolve(strict=True), args.layer)
