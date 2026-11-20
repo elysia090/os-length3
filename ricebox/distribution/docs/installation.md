@@ -137,6 +137,23 @@ with `browserModules({display: true})` and import the separate presenter from
 modules do not include it. Serving the layers on your domain is not a guest
 execution relay.
 
+### Verify the static host's pack transport
+
+Local staging verifies bytes, not the serving host's HTTP behavior. To check
+range efficiency on a preview or an authorized deployment, send a `GET` with
+`Accept-Encoding: identity` and `Range: bytes=START-END` to one actual staged
+`ricebox/packs/<digest>.pack` URL, under the same site prefix as the app. Choose
+a nonempty proper subrange from the verified local pack. A passing response
+is `206` with `Content-Range: bytes START-END/TOTAL`, where `TOTAL` is the
+indexed pack size, no content transformation, and bytes that match the same
+staged slice. `HEAD` and `Accept-Ranges` alone do not establish this.
+
+A `200` means this request was not served as a range. The runtime supports a
+valid whole pack in that case, but may have to transfer and buffer the whole
+pack for a small read. Close the probe response without reading the rest; it
+does not verify full-body fallback integrity or measure browser cache reuse.
+Run this check outside the app. No visitor-side preflight is needed.
+
 ## Ownership and failure
 
 The caller owns the downloaded cache and tool inputs and must keep them stable
