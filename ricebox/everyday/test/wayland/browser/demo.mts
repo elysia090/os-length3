@@ -4,6 +4,7 @@ import {lendRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 import {offerShell} from './shell-page.mts';
 import {placeCamera} from './camera-placement.mts';
+import {bindGuestViewWindow} from './guest-view-window.mts';
 
 function required<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -12,7 +13,8 @@ function required<T extends HTMLElement>(selector: string): T {
 }
 const status = required('#status'), viewport = required('#camera'), canvas = required<HTMLCanvasElement>('canvas');
 const protocol = required('#protocol');
-const decoder = new TextDecoder();
+const showDrawing = required<HTMLButtonElement>('#show-drawing');
+const stopDrawing = required<HTMLButtonElement>('#stop-drawing');
 const controls = ['pan','host-resize','guest-resize','quit'].map(id => required<HTMLButtonElement>('#'+id));
 const [pan,hostResize,guestResize,quit] = controls;
 async function load([name,expected]:readonly [string,string], signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
@@ -25,7 +27,7 @@ async function load([name,expected]:readonly [string,string], signal?: AbortSign
   if (hash!==expected) throw new Error('Unexpected fixture bytes '+name);
   return new Uint8Array(bytes);
 }
-function report(phase: 'frame' | 'closed' | 'error', detail: string) {
+function report(phase: 'loading' | 'stopping' | 'frame' | 'closed' | 'error', detail: string) {
   if (status.dataset.phase === 'error' && phase === 'closed') return;
   status.textContent = detail;
   status.dataset.phase = phase;
@@ -57,13 +59,24 @@ async function start() {
   const root = createRoot({base:'/fixture/', first:[], usedKey:'everyday-proof-used',
     planKey:'everyday-proof-plan', message:key=>key, missing:()=> 'No default root',
     errorText:error=>String(error)});
+  let ended = false, retireShell: (() => Promise<void>) | undefined, endKeeper: (() => void) | undefined;
+  const canDetach = shell && profile.get('terminal') !== 'screen' && !profile.get('over') && !profile.get('camera');
+  const totalMs = 15 * 60 * 1000, deadline = performance.now() + totalMs, wallDeadline = Date.now() + totalMs;
+  function canAct() {
+    if (ended) return false;
+    if (canDetach && (performance.now() >= deadline || Date.now() >= wallDeadline)) {
+      endKeeper?.();return false;
+    }
+    return true;
+  }
   if (shell) {
     const section = required('#shell'), asset = shell;
     const overSurface = profile.get('surface') === 'alpha' && profile.get('over') === 'shell';
     const fit = !overSurface && profile.get('terminalResize') === 'fit';
     function setupShell(terminal?: Parameters<typeof offerShell>[5], fallback = false) {
       try {
-        offerShell(section, signal => load(asset, signal), translator, muk, root.rootWorker, terminal, fit);
+        if (!canAct()) return;
+        retireShell = offerShell(section, signal => load(asset, signal), translator, muk, root.rootWorker, terminal, fit, canAct);
         if (fallback) required('#shell-status').textContent = 'Terminal view unavailable; the line console is available.';
         if (overSurface) {
           // The controls stay in their own section and never share guest input.
@@ -94,92 +107,150 @@ async function start() {
       ).finally(() => window.removeEventListener('pagehide',pagehide));
     } else setupShell();
   }
-  const worker = root.rootWorker();
-  const post = (bytes: Uint8Array) => worker.postMessage({type:'input',bytes});
-  // Only this fixture knows its RBF1 format and control bytes.
-  const source = surfaceFromMirror({worker, file:rasterFile, maxEncodedBytes:16+64*48*4,
-    decode(bytes) {
-      // The installed presenter consumes this view synchronously, not as a cached frame.
-      const frame = lendRaster(bytes);
-      return frame && {serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels};
-    },
-    encodePointer: ({x, y}) => Uint8Array.of(1, x, y),
-    encodeResize: ({width, height}) => Uint8Array.of(2, width, height),
-  });
-  let surface: ReturnType<typeof mountGuestSurface>;
-  try { surface = mountGuestSurface({viewport, canvas, source, limits: {width:64, height:48, bytes:64*48*4}}); }
-  catch (error) { worker.terminate(); throw error; }
-  const placement = profile.get('camera');
-  let stopPlacement: (() => void) | undefined;
-  try {
-    if (placement === 'floating' || placement === 'pinned') {
-      stopPlacement = placeCamera(required('#camera-pane'),required('#camera-toolbar'),
-        required('#camera-handle'),required('#camera-pin'),placement);
+  let current: ReturnType<typeof launchDrawing> | undefined, drawingHeld = false;
+  function openDrawing() {
+    if (!canAct() || drawingHeld || current) return;
+    showDrawing.disabled = true;
+    try {
+      const instance=launchDrawing();
+      current=instance;
+      stopDrawing.disabled = false;
+      void instance.released.then(clean => {
+        if (current!==instance) return;
+        current=undefined;
+        stopDrawing.disabled=true;
+        if (!clean) drawingHeld=true;
+        showDrawing.disabled=ended||drawingHeld;
+      });
+    } catch {
+      drawingHeld=true;showDrawing.disabled=stopDrawing.disabled=true;
+      report('error', 'Guest drawing could not start');
     }
-  } catch (error) { surface.close(); worker.terminate(); throw error; }
-  let retiring = false, finished = false, timer: ReturnType<typeof setTimeout> | undefined;
-  function stop(acknowledged: boolean) {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timer);
-    worker.removeEventListener('message', message);
-    worker.removeEventListener('error', failed);
-    worker.removeEventListener('messageerror', failed);
-    window.removeEventListener('pagehide', retire);
-    worker.terminate();
-    report('closed', acknowledged ? 'admission acknowledged' : 'worker terminated without acknowledgement');
   }
-  function retire() {
-    if (retiring || finished) return;
-    retiring = true;
-    stopPlacement?.();
-    surface.close();
-    for (const button of controls) button.disabled = true;
-    timer = setTimeout(() => stop(false), 1000);
-    try { worker.postMessage({type:'retire'}); }
-    catch { stop(false); }
+  function closeDrawing() {
+    stopDrawing.disabled=true;
+    if (current) void current.retire();
   }
-  function message(ev: MessageEvent) {
-    const msg = ev.data;
-    if (msg?.type === 'retiring') {
-      if (retiring) {
-        if (msg.failures?.length) report('error', 'Guest admission closed with retirement errors');
-        stop(true);
+  showDrawing.onclick = event => { if (event.isTrusted) openDrawing(); };
+  stopDrawing.onclick = event => { if (event.isTrusted) closeDrawing(); };
+  if (canDetach) {
+    required('#view-keeper').hidden = false;
+    endKeeper = bindGuestViewWindow({view:required('#guest-view'),slot:required('#guest-view-slot'),
+      openButton:required('#view-open'),endButton:required('#view-end'),status:required('#view-status'),
+      stopDrawing:closeDrawing,canAct,budgetMs:Math.max(0,deadline-performance.now()),endSession() {
+        ended=true;showDrawing.disabled=true;closeDrawing();void retireShell?.();
+      }});
+  }
+  openDrawing();
+  function launchDrawing() {
+    const decoder = new TextDecoder();
+    delete canvas.dataset.sequence;
+    delete status.dataset.wait;
+    canvas.width = canvas.height = 1;
+    canvas.style.width = canvas.style.height = '';
+    viewport.scrollLeft = viewport.scrollTop = 0;
+    protocol.textContent = '';
+    report('loading', 'Opening drawing');
+    const worker = root.rootWorker();
+    const post = (bytes: Uint8Array) => { if (canAct()) worker.postMessage({type:'input',bytes}); };
+    // Only this fixture knows its RBF1 format and control bytes.
+    const source = surfaceFromMirror({worker, file:rasterFile, maxEncodedBytes:16+64*48*4,
+      decode(bytes) {
+        if (!canAct()) return null;
+        // The installed presenter consumes this view synchronously, not as a cached frame.
+        const frame = lendRaster(bytes);
+        return frame && {serial:frame.sequence, width:frame.width, height:frame.height, rgba:frame.pixels};
+      },
+      encodePointer: ({x, y}) => canAct() ? Uint8Array.of(1, x, y) : null,
+      encodeResize: ({width,height}) => canAct() ? Uint8Array.of(2, width, height) : null,
+    });
+    let surface: ReturnType<typeof mountGuestSurface>;
+    try { surface = mountGuestSurface({viewport, canvas, source, limits: {width:64, height:48, bytes:64*48*4}}); }
+    catch (error) { worker.terminate(); throw error; }
+    const placement = profile.get('camera');
+    let stopPlacement: (() => void) | undefined;
+    try {
+      if (placement === 'floating' || placement === 'pinned') {
+        stopPlacement = placeCamera(required('#camera-pane'),required('#camera-toolbar'),
+          required('#camera-handle'),required('#camera-pin'),placement);
       }
-      return;
+    } catch (error) { try { surface.close(); } finally { worker.terminate(); } throw error; }
+    let retiring = false, finished = false, cleanupHeld = false, timer: ReturnType<typeof setTimeout> | undefined;
+    let settle!: (released: boolean) => void;
+    const released = new Promise<boolean>(resolve => { settle=resolve; });
+    function stop(acknowledged: boolean) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      worker.removeEventListener('message', message);
+      worker.removeEventListener('error', failed);
+      worker.removeEventListener('messageerror', failed);
+      window.removeEventListener('pagehide', retire);
+      try { worker.terminate(); } catch { cleanupHeld=true; }
+      const clean = acknowledged && !cleanupHeld && status.dataset.phase !== 'error';
+      if (clean) report('closed', 'admission acknowledged');
+      else if (status.dataset.phase !== 'error') report('error', 'Drawing Worker retirement unconfirmed');
+      settle(clean);
     }
-    if (retiring) return;
-    if (msg?.type === 'error') { report('error', String(msg.message)); retire(); return; }
-    if (msg?.type === 'output' && msg.bytes instanceof Uint8Array) {
-      protocol.textContent=(protocol.textContent+decoder.decode(msg.bytes,{stream:true})).slice(-4096);
-      worker.postMessage({type:'drained', n:msg.bytes.length});
+    function retire() {
+      if (retiring || finished) return released;
+      retiring = true;
+      // The Worker must be retired even if a compositor/placement callback fails.
+      timer = setTimeout(() => stop(false), 1000);
+      for (const releaseView of [stopPlacement, () => surface.close()]) {
+        try { releaseView?.(); }
+        catch { cleanupHeld=true; }
+      }
+      if (cleanupHeld) report('error', 'Drawing view cleanup was not confirmed');
+      else if (status.dataset.phase !== 'error') report('stopping', 'Stopping drawing');
+      try { worker.postMessage({type:'retire'}); }
+      catch { stop(false); }
+      return released;
     }
-    if (msg?.type === 'waiting' && msg.for === 'input') status.dataset.wait = 'input';
-    if (msg?.type === 'exit') {
-      if (msg.status !== (37 << 8)) report('error', 'Unexpected guest exit ' + String(msg.status));
+    function message(ev: MessageEvent) {
+      const msg = ev.data;
+      if (msg?.type === 'retiring') {
+        if (retiring) {
+          const clean=Array.isArray(msg.failures)&&msg.failures.length===0;
+          if (!clean) report('error', 'Guest admission closed with retirement errors');
+          stop(clean);
+        }
+        return;
+      }
+      if (retiring || !canAct()) return;
+      if (msg?.type === 'error') { report('error', String(msg.message)); retire(); return; }
+      if (msg?.type === 'output' && msg.bytes instanceof Uint8Array) {
+        protocol.textContent=(protocol.textContent+decoder.decode(msg.bytes,{stream:true})).slice(-4096);
+        worker.postMessage({type:'drained', n:msg.bytes.length});
+      }
+      if (msg?.type === 'waiting' && msg.for === 'input') status.dataset.wait = 'input';
+      if (msg?.type === 'exit') {
+        if (msg.status !== (37 << 8)) report('error', 'Unexpected guest exit ' + String(msg.status));
+        retire();
+        return;
+      }
+      const frame = source.current;
+      if (msg?.type !== 'changes' || !frame || frame.serial === Number(canvas.dataset.sequence)) return;
+      canvas.style.width = frame.width * 8 + 'px';
+      canvas.style.height = frame.height * 8 + 'px';
+      canvas.dataset.sequence = String(frame.serial);
+      report('frame', 'Guest raster ' + frame.width + '×' + frame.height);
+    }
+    function failed(event: Event) {
+      report('error', event.type === 'messageerror' ? 'Guest Worker message could not be decoded' : (event as ErrorEvent).message);
       retire();
-      return;
     }
-    const frame = source.current;
-    if (msg?.type !== 'changes' || !frame || frame.serial === Number(canvas.dataset.sequence)) return;
-    canvas.style.width = frame.width * 8 + 'px';
-    canvas.style.height = frame.height * 8 + 'px';
-    canvas.dataset.sequence = String(frame.serial);
-    report('frame', 'Guest raster ' + frame.width + '×' + frame.height);
+    pan.onclick = () => { if (!retiring && canAct()) viewport.scrollTo(48,36); };
+    hostResize.onclick = () => { if (!canAct()) return; viewport.style.width='270px'; viewport.style.height='208px'; };
+    guestResize.onclick = () => { if (canAct()) surface.resize(47,19); };
+    quit.onclick = () => { if (!retiring) post(Uint8Array.of(3,0,0)); };
+    worker.addEventListener('message', message);
+    worker.addEventListener('error', failed);
+    worker.addEventListener('messageerror', failed);
+    window.addEventListener('pagehide', retire, {once:true});
+    try { worker.postMessage(rasterStart(translator,muk,elf)); }
+    catch (error) { void retire(); throw error; }
+    return {retire,released};
   }
-  function failed(event: Event) {
-    report('error', event.type === 'messageerror' ? 'Guest Worker message could not be decoded' : (event as ErrorEvent).message);
-    retire();
-  }
-  pan.onclick = () => { if (!retiring) viewport.scrollTo(48,36); };
-  hostResize.onclick = () => { viewport.style.width='270px'; viewport.style.height='208px'; };
-  guestResize.onclick = () => surface.resize(47,19);
-  quit.onclick = () => { if (!retiring) post(Uint8Array.of(3,0,0)); };
-  worker.addEventListener('message', message);
-  worker.addEventListener('error', failed);
-  worker.addEventListener('messageerror', failed);
-  window.addEventListener('pagehide', retire, {once:true});
-  try { worker.postMessage(rasterStart(translator,muk,elf)); }
-  catch (error) { stopPlacement?.(); surface.close(); stop(false); throw error; }
 }
 void start().catch(error => report('error', String(error)));

@@ -1,3 +1,4 @@
+import {randomInt} from 'node:crypto';
 import {expect,test,type Page} from '@playwright/test';
 // Sample a real browser-composited screenshot, not just Canvas backing.
 async function screenRegion(page: Page, x: number, y: number,
@@ -96,6 +97,79 @@ test.describe('with explicitly staged static BusyBox', () => {
     await command('exit');
     await expect(shellStatus).toHaveText('Shell admission closed');
   });
+  test('close and reopen an actual guest view without restarting the BusyBox shell', async ({page}) => {
+    let shellAcquisitions = 0;
+    page.context().on('request', request => {
+      if (new URL(request.url()).pathname === '/fixture/busybox') shellAcquisitions++;
+    });
+    await page.goto('/');
+    const popup = async (label: string) => {
+      const issued = page.waitForEvent('popup');
+      await page.getByRole('button', {name: label, exact:true}).click();
+      const view = await issued;
+      await expect(view).toHaveTitle('Ricebox guest view');
+      expect(await view.evaluate(() => window.opener === null)).toBe(true);
+      expect(page.isClosed()).toBe(false);
+      return view;
+    };
+    let view = await popup('Open guest view window');
+    const surface = () => view.getByLabel('Guest raster');
+    const terminal = () => view.getByRole('region', {name: 'Guest shell'});
+    const input = () => terminal().getByRole('textbox', {name: 'Shell command'});
+    const output = () => terminal().getByLabel('Guest shell output');
+    async function command(value: string) {
+      await expect(input()).toBeEnabled();
+      await input().fill(value);await input().press('Enter');
+    }
+    await expect(surface()).toHaveAttribute('data-sequence','1');
+    await terminal().getByRole('button', {name:'Open guest shell'}).click();
+    const nonce = randomInt(1024, 30_000);
+    await command("unset keeper_nonce; keeper_nonce="+nonce+"; printf 'keeper-pid=%s\n' "$$"");
+    await expect(output()).toContainText(/keeper-pid=[1-9][0-9]*/);
+    const before = (await output().textContent())!.match(/keeper-pid=([1-9][0-9]*)/)![1]!;
+    await view.getByRole('button',{name:'Stop drawing', exact:true}).click();
+    await expect(view.locator('#status')).toHaveText('admission acknowledged');
+    expect(await surface().evaluate(canvas => {
+      const c=canvas as HTMLCanvasElement;
+      return Array.from(c.getContext('2d')!.getImageData(0,0,c.width,c.height).data).every(x=>x===0);
+    })).toBe(true);
+    await view.getByRole('button',{name:'Show drawing',exact:true}).click();
+    await expect(surface()).toHaveAttribute('data-sequence','1');
+    await view.getByRole('button',{name:'Resize guest raster'}).click();
+    await expect(surface()).toHaveAttribute('data-sequence','2');
+    await expect(surface()).toHaveAttribute('width','47');
+    await view.close(); // Browser window close, not CSS hide.
+    expect(view.isClosed()).toBe(true);
+    await expect(page.locator('#status')).toHaveText('admission acknowledged');
+    view = await popup('Reopen guest view window');
+    await expect(view.getByRole('button',{name:'Show drawing',exact:true})).toBeEnabled();
+    await expect(output()).not.toContainText('reopened='+(nonce+31));
+    await command("printf 'reopened=%s same-pid=%s\n' "$((keeper_nonce+31))" "$$"");
+    await expect(output()).toContainText('reopened='+(nonce+31)+' same-pid='+before);
+    expect(shellAcquisitions).toBe(1);
+    await view.getByRole('button',{name:'Show drawing',exact:true}).click();
+    await expect(surface()).toHaveAttribute('data-sequence','1');
+    const closed = view.waitForEvent('close');
+    await view.getByRole('button',{name:'Close guest view window'}).click();
+    await closed;
+    await expect(page.locator('#status')).toHaveText('admission acknowledged');
+    view=await popup('Reopen guest view window');
+    await command("printf 'third-view=%s\n' "$((keeper_nonce*2))"");
+    await expect(output()).toContainText('third-view='+nonce*2);
+    expect(shellAcquisitions).toBe(1);
+    // Navigating this one owned popup ends its view and the drawing, not the keeper.
+    await view.getByRole('button',{name:'Show drawing',exact:true}).click();
+    await expect(surface()).toHaveAttribute('data-sequence','1');
+    await view.goto('about:blank');
+    await expect(page.getByRole('button',{name:'Reopen guest view window'})).toBeEnabled();
+    await expect(page.locator('#status')).toHaveText('admission acknowledged');
+    await view.close();
+    await page.getByRole('button',{name:'End guest session'}).click();
+    await expect(page.locator('#shell-status')).toHaveText('Shell admission closed');
+    await expect(page.getByRole('button',{name:'Reopen guest view window'})).toBeDisabled();
+    await expect(page.getByRole('button',{name:'Show drawing',exact:true})).toBeDisabled();
+  });
+
 });
 
 test.describe('with actual Wayland ARGB SHM', () => {
@@ -354,4 +428,15 @@ test('an unavailable optional terminal chunk does not start the shell or block t
   await shell.getByRole('button',{name:'Open guest shell'}).click();
   await expect(shell.locator('#shell-output')).toContainText('everyday$');
   expect(shellFetches).toBe(1);
+});
+
+test('blocked popup leaves the in-page drawing and an explicit recovery path', async ({page}) => {
+  await page.addInitScript(() => {window.open = () => null;});
+  await page.goto('/');
+  const open=page.getByRole('button',{name:'Open guest view window'});
+  test.skip(!process.env.EVERYDAY_SHELL_ELF,'requires the explicitly staged static BusyBox');
+  await open.click();
+  await expect(page.locator('#view-status')).toContainText('browser blocked the popup');
+  await expect(open).toBeEnabled();
+  await expect(page.getByLabel('Guest raster')).toHaveAttribute('data-sequence','1');
 });

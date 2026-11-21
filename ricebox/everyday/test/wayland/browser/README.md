@@ -51,3 +51,19 @@ work, and that an injected Worker message decoding error clears the surface,
 disables its controls, and retires its owner. The fixture substitutes a DOM
 and Worker event target, not a guest or a browser. This is not a Chrome frame
 rate, transport backlog, or Wayland buffer-release measurement.
+
+### Reopen the guest view without restarting the shell
+
+With the default line console and an explicitly staged BusyBox, **Open guest view
+window** opens a separate window. Keep the original keeper tab open. Closing
+the view, including from its title bar, stops the drawing and returns the same
+shell to the keeper. Use **Reopen guest view window**, then **Show drawing** to
+start a fresh drawing. **Stop drawing** retires that drawing before it can be
+started again. The terminal Worker belongs to the keeper; the view has no
+separate guest, command endpoint, saved transcript, or automatic reopen.
+
+Use **End guest session** to retire both guests; closing the keeper or the
+15-minute keeper expiry also stops admission. A suspended Chrome tab can only
+retire its Workers after it resumes; no new input or drawing is admitted then. A blocked popup leaves the
+in-page view usable. The separate-window mode is not offered in optional VT,
+camera-placement, or overlay variants of this reference fixture.
