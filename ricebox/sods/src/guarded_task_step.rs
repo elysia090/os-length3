@@ -60,6 +60,17 @@ pub fn translate(bytes: &[u8]) -> Result<Vec<u8>, Rejection> {
             Code::Mov_r64_imm64 if n == 10 && bytes[0] == 0x48 && (0xb8..=0xbf).contains(&bytes[1]) => {
                 emit(&[I::I32Const(r(i.op0_register())), I::I64Const(i.immediate64() as i64), I::Call(SET)]);
             }
+            // Exact REX.W LEA r64,[RIP+disp32], as in the pinned
+            // interpreter's real _dl_start prefix. No dereference or flags;
+            // a potentially noncanonical bit pattern is legal for LEA alone.
+            Code::Lea_r64_m if n == 7 && bytes[0..2] == [0x48,0x8d] && bytes[2] & 0xc7 == 5
+                && i.op1_kind() == OpKind::Memory && i.memory_base() == Register::RIP
+                && i.memory_index() == Register::None => {
+                let delta = i32::from_le_bytes(bytes[3..7].try_into().unwrap()) as i64;
+                emit(&[I::I32Const(r(i.op0_register()))]);
+                emit(&pc_after);
+                emit(&[I::I64Const(delta), I::I64Add, I::Call(SET)]);
+            }
             Code::Mov_rm64_r64 if n == 3 && bytes[0..2] == [0x48,0x89]
                 && i.op0_kind() == OpKind::Register && i.op1_kind() == OpKind::Register => {
                 emit(&[I::I32Const(r(i.op0_register())), I::I32Const(r(i.op1_register())), I::Call(REG), I::Call(SET)]);
@@ -111,7 +122,7 @@ mod tests {
     #[test]
     fn only_closed_encodings_generate_memoryless_steps() {
         for bytes in [[0x54].as_slice(), &[0x57], &[0xc3], &[0xe8,0,0,0,0], &[0x0f,0x05],
-            &[0xba,0,0,0,0x80], &[0x48,0xb8,1,0,0,0,1,0,0,0], &[0x48,0x89,0xe6], &[0x48,0x8b,0x3c,0x24]] {
+            &[0xba,0,0,0,0x80], &[0x48,0xb8,1,0,0,0,1,0,0,0], &[0x48,0x89,0xe6], &[0x48,0x8b,0x3c,0x24], &[0x48,0x8d,0x35,0xc8,0x21,0xfe,0xff]] {
             let wasm = translate(bytes).unwrap();
             wasmparser::Validator::new().validate_all(&wasm).unwrap();
             assert!(!wasmparser::Parser::new(0).parse_all(&wasm).any(|x| matches!(x.unwrap(), wasmparser::Payload::MemorySection(_))));
@@ -124,7 +135,7 @@ mod tests {
             assert_eq!(translate(bytes), Err(Rejection::MoreBytes));
         }
         for bytes in [[0x90].as_slice(), &[0x66,0x54], &[0xf3,0xc3], &[0x48,0x89,0x04,0x24], &[0x48,0x8b,0x04,0x64],
-            &[0x0f,0xa2], &[0xc3,0x90], &[0x48,0xc7,0xc0,0,0,0,0]] {
+            &[0x0f,0xa2], &[0xc3,0x90], &[0x48,0x8d,0x04,0x25,0,0,0,0], &[0x4c,0x8d,0x05,0,0,0,0], &[0x48,0xc7,0xc0,0,0,0,0]] {
             assert_eq!(translate(bytes), Err(Rejection::Unsupported));
         }
     }

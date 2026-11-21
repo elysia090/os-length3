@@ -10,6 +10,7 @@ import {GuardedFault, GuardedInlineMemory, type GuardedOwner} from '../../runtim
 import {type Call} from '../../runtime/linux/parts.ts';
 import {type Image, Kernel, Process, Task, type Translation, trapOrPreempt} from '../../runtime/linux/process.ts';
 import {SIG} from '../../runtime/linux/signal.ts';
+import {interpreterElf, INTERPRETER_ELF_LIMIT, type ElfEntryPlan} from './guarded-interpreter-elf.ts';
 
 const P = 4096, LIMIT = 16 << 20, SP_END = LIMIT - P, SP_START = SP_END - P;
 const RX = 5, RO = 1, RW = 3, RSP = 4, RFLAGS = 17;
@@ -75,6 +76,8 @@ interface FileInput {
   readonly elfSha256: string;
 }
 interface CompanionInput extends FileInput { readonly bias: number }
+interface InterpreterInput extends CompanionInput { readonly mainBias: number }
+interface InterpreterPlans { readonly main: ElfEntryPlan; readonly ld: ElfEntryPlan }
 type ResolvedFile = Exclude<ReturnType<typeof walk>, number>;
 interface FilePlan {
   readonly input: FileInput;
@@ -88,6 +91,7 @@ interface CodePlan {
   readonly fd: number;
   readonly start: number;
   readonly offset: number;
+  readonly length: number;
   current(): void;
 }
 interface CompanionLayout {
@@ -121,14 +125,14 @@ function companionLayout(bytes: Uint8Array<ArrayBuffer>, bias: number, primary: 
 
 /** Bind both content and the legitimate executable VFS object. Recheck at
  * each async return and before commit, not just after the first path walk. */
-async function filePlan(p: Process, input: FileInput): Promise<FilePlan> {
-  if (!/^\/[a-zA-Z0-9/_-]{1,80}$/.test(input.path)) throw new FsError(E.NOEXEC);
+async function filePlan(p: Process, input: FileInput, max = INPUT_LIMIT): Promise<FilePlan> {
+  if (input.path.length > 128 || !/^\/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(input.path)) throw new FsError(E.NOEXEC);
   const source = executableSourceFor(input.source,p.kernel.vfs), at = walk(p,input.path,p.fs.pwd,WALK.NO_SYMLINKS | WALK.NO_MAGICLINKS);
   if (typeof at === 'number') throw new FsError(at);
   const owner = p.readIdentity(), mountFlags = at.mnt.flags, fdTable = p.fds;
   const allowed = () => !!(source.node.mode & 0o111) && !(source.node.mode & 0o6000)
     && may(p.cred,source.node,MAY.EXEC) && may(p.cred,source.node,MAY.READ) && !(at.mnt.flags & MNT.NOEXEC);
-  if (at.node !== source.node || !allowed() || source.size > INPUT_LIMIT) throw new FsError(E.ACCES);
+  if (at.node !== source.node || !allowed() || source.size > max) throw new FsError(E.ACCES);
   const current = () => {
     owner();
     const live = walk(p,input.path,p.fs.pwd,WALK.NO_SYMLINKS | WALK.NO_MAGICLINKS);
@@ -141,11 +145,11 @@ async function filePlan(p: Process, input: FileInput): Promise<FilePlan> {
   return {input,file:source.node,at,bytes,current};
 }
 
-function codePlan(p: Process, file: FilePlan, start: number, offset: number): CodePlan {
+function codePlan(p: Process, file: FilePlan, start: number, offset: number, length = P): CodePlan {
   const table = p.fds, fd = table.install(new Description('file',{node:file.file,mnt:file.at.mnt,path:file.input.path}));
   if (fd < 0) throw new FsError(E.MFILE);
   const slot = table.slots.get(fd);
-  return {file,fd,start,offset,current:() => {
+  return {file,fd,start,offset,length,current:() => {
     file.current();
     if (table !== p.fds || !slot || table.slots.get(fd) !== slot || slot.description.closed) throw new FsError(E.NOEXEC);
   }};
@@ -167,12 +171,38 @@ function stack(program: string, layout: Layout): {bytes: Uint8Array<ArrayBuffer>
   return {bytes, sp:BigInt(at(start))};
 }
 
+// Authentic startup pointer meanings. No vDSO, hardware features, or
+// signal/rseq claims are borrowed from the native host (not implemented).
+function interpreterStack(p: Process, program: string, plans: InterpreterPlans): {bytes: Uint8Array<ArrayBuffer>; sp: bigint} {
+  const bytes = new Uint8Array(P), view = new DataView(bytes.buffer), {main,ld} = plans;
+  let top=P;
+  const put=(b:Uint8Array) => { top-=b.length; bytes.set(b,top); return SP_START+top; };
+  const filename=put(enc.encode(program+'\0')), platform=put(enc.encode('x86_64\0')), random=put(randomBytes(16));
+  const {uid,euid,gid,egid}=p.cred;
+  const words=[1,filename,0,0, 6,P,17,100,3,main.phdr,4,main.phent,5,main.phnum,7,ld.bias,8,0,9,main.entry,
+    11,uid,12,euid,13,gid,14,egid,23,0,25,random,31,filename,15,platform,0,0];
+  top=(top-words.length*8)&~15;
+  if(top<128)throw new FsError(E.TOOBIG);
+  words.forEach((n,k)=>view.setBigUint64(top+8*k,BigInt(n),true));
+  return {bytes,sp:BigInt(SP_START+top)};
+}
+
+function interpreterPlans(main: FilePlan, ld: FilePlan, cfg: InterpreterInput): InterpreterPlans {
+  const a=interpreterElf(main.bytes,cfg.mainBias,SP_START,'main'), b=interpreterElf(ld.bytes,cfg.bias,SP_START,'interpreter');
+  if (a.interpreter!==ld.input.path || main.file===ld.file
+    || a.loads.some(x=>b.loads.some(y=>x.start<y.start+y.length && y.start<x.start+x.length))) throw new FsError(E.NOEXEC);
+  return Object.freeze({main:a,ld:b});
+}
+
+type InterpreterTrace = Readonly<{rip: bigint; rsp: bigint; rdi: bigint; rsi: bigint; rax: bigint; rbp: bigint; flags: bigint; stackWord: bigint | null}>;
+
 interface PreparedSpace {
   readonly guard: GuardedInlineMemory;
   readonly owner: GuardedOwner;
   readonly identity: () => void;
   readonly protections: Map<number,number>;
   readonly companionRx: number | undefined;
+  readonly interpreter?: InterpreterPlans;
   readonly sp: bigint;
   readonly entry: bigint;
 }
@@ -212,6 +242,32 @@ async function prepareSpace(p: Process, main: CodePlan, image: Layout, companion
   }
 }
 
+/** Prepare the actual main+interpreter file pages without relocating
+ * anything or mapping a DSO. PT_GNU_RELRO starts RW, as at Linux exec. */
+async function prepareInterpreterSpace(p: Process, files: readonly [CodePlan,CodePlan], plans: InterpreterPlans): Promise<PreparedSpace> {
+  const identity=p.readIdentity(), fds=p.fds, guard=new GuardedInlineMemory(LIMIT/65536);
+  const owner=guard.installOwner(p.kernel.vfs,fds), protections=new Map<number,number>();
+  try {
+    const proof=await Promise.all(files.map(x=>guard.authenticate(owner,x.file.input.source,x.file.input.elfSha256)));
+    identity();
+    if(proof.some(x=>!x) || p.fds!==fds || p.memory!==null) throw new FsError(E.NOEXEC);
+    files.forEach(x=>x.current());
+    const ordered=[plans.main,plans.ld];
+    for(const [i,x] of files.entries()) {
+      if(!guard.installRx(owner,proof[i]!,x.fd,{address:x.start,length:x.length,fileOffset:x.offset,flags:0x12,prot:RX}))
+        throw new FsError(E.NOEXEC);
+      for(const q of ordered[i]!.loads) {
+        if(q.prot!==RX) guard.installData(owner,q.start,q.length,q.prot,x.file.bytes.subarray(q.fileOffset,q.fileOffset+q.copied));
+        for(let page=q.start;page<q.start+q.length;page+=P)protections.set(page,q.prot);
+      }
+    }
+    const initial=interpreterStack(p,files[0].file.input.path,plans);
+    guard.installData(owner,SP_START,P,RW,initial.bytes);
+    protections.set(SP_START,RW);
+    return {guard,owner,identity,protections,interpreter:plans,companionRx:undefined,sp:initial.sp,entry:BigInt(plans.ld.entry)};
+  } catch(e) { guard.retireOwner(owner); throw e; }
+}
+
 class StaticTask extends Task {
   #backing: GuardedInlineMemory | undefined;
   readonly #owner: GuardedOwner;
@@ -227,6 +283,9 @@ class StaticTask extends Task {
   #remaining = STEPS;
   #fault: GuardedFault | undefined;
   readonly #companionRx: number | undefined;
+  readonly #interpreter: InterpreterPlans | undefined;
+  readonly #stepsSeen: InterpreterTrace[] = [];
+  readonly #syscallsSeen: bigint[] = [];
   constructor(p: Process, compile: Compile, space: PreparedSpace) {
     super(p);
     this.#compile = compile;
@@ -235,6 +294,7 @@ class StaticTask extends Task {
     this.#owner = space.owner;
     this.#protections = space.protections;
     this.#companionRx = space.companionRx;
+    this.#interpreter = space.interpreter;
     this.#identity = space.identity;
     this.setReg(RSP, space.sp);
     this.setReg(RFLAGS, 0x202n);
@@ -247,6 +307,46 @@ class StaticTask extends Task {
     return this.#backing;
   }
   get memoryFault(): Readonly<GuardedFault> | undefined { return this.#fault; }
+  interpreterTrace() { return {steps:this.#stepsSeen.slice(),syscalls:this.#syscallsSeen.slice()}; }
+  /** Inspect only the actual starting image facts before any guest effect.
+   * These are bounded reads through the guard, not an exported guest view. */
+  entryReceipt(mainWord?: number) {
+    const plans=this.#interpreter;
+    if(!plans || this.state!=='ready') throw new Error('No guarded interpreter entry to inspect');
+    this.#alive(this.resumeAt);
+    const read=(at:bigint,n=8)=>this.#guard.read(this.#owner,at,n), sp=this.reg(RSP);
+    const cstring=(at:bigint) => {
+      let out='';
+      for(let i=0;i<128;i++) {
+        const v=read(at+BigInt(i),1);
+        if(!v)return out;
+        out+=String.fromCharCode(Number(v));
+      }
+      throw new Error('Unterminated guarded entry string');
+    };
+    const aux=new Map<number,bigint>();
+    for(let i=0;i<32;i++) {
+      const at=sp+32n+16n*BigInt(i), tag=Number(read(at)), value=read(at+8n);
+      if(!tag) { if(value)throw new Error('Invalid guarded AT_NULL'); break; }
+      if(aux.has(tag))throw new Error('Duplicate guarded auxv tag');
+      aux.set(tag,value);
+      if(i===31)throw new Error('No guarded AT_NULL');
+    }
+    const random=aux.get(25)!;
+    read(random); read(random+8n); // exact span, contents never belong in the receipt
+    const bss=plans.ld.loads.filter(x=>x.memoryBytes>x.dataBytes).map(x=>{
+      let zero=true;
+      for(let i=x.dataBytes;i<x.memoryBytes;i++)if(read(BigInt(x.segment+i),1)!==0n)zero=false;
+      return {first:x.segment+x.dataBytes,length:x.memoryBytes-x.dataBytes,zero};
+    });
+    const addr=mainWord===undefined ? undefined : plans.main.bias+mainWord;
+    if(addr!==undefined && (!Number.isSafeInteger(addr) || !plans.main.loads.some(x=>x.prot!==RX
+        && addr>=x.segment && addr+8<=x.segment+x.memoryBytes))) throw new Error('Requested receipt lies outside main data');
+    return {plans,entry:this.resumeAt,sp,argc:read(sp),argv0:cstring(read(sp+8n)),argvEnd:read(sp+16n),envEnd:read(sp+24n),
+      aux,platform:cstring(aux.get(15)!),execfn:cstring(aux.get(31)!),randomReadable:true,ldBss:bss,
+      mainFirstPhdr:read(aux.get(3)!,4),mainWord:addr===undefined?undefined:read(BigInt(addr)),
+      entryBytes:this.#guard.bindCode(this.#owner,this.resumeAt,3)?.bytes};
+  }
   override get exports(): Translation { return this.#exports; }
   override get bytes(): never { throw new Error('Guarded Task exports no raw guest bytes'); }
   override load(): never { throw new FsError(E.NOEXEC); }
@@ -317,6 +417,13 @@ class StaticTask extends Task {
         --this.#remaining;
         this.resumeAt = rip;
         this.#alive(rip);
+        if(this.#interpreter && this.#stepsSeen.length<32) {
+          const rsp=this.reg(RSP);
+          let stackWord:bigint|null=null;
+          try { stackWord=this.#guard.read(this.#owner,rsp,8); } catch(e) { if(!(e instanceof GuardedFault))throw e; }
+          this.#stepsSeen.push(Object.freeze({rip,rsp,rdi:this.reg(7),rsi:this.reg(6),rax:this.reg(0),rbp:this.reg(5),
+            flags:this.reg(RFLAGS),stackWord}));
+        }
         // An entire step is synchronous. A syscall is its last guest action,
         // and even a successful protection change cannot run its next step
         // without a fresh lease check before any memory/register effect.
@@ -334,6 +441,7 @@ class StaticTask extends Task {
     this.setReg(1, next); // RCX and R11 are clobbered by SYSCALL
     this.setReg(11, this.reg(RFLAGS) & ~0x10000n);
     const nr = BigInt.asIntN(32, this.reg(0)), args = [7,6,2,10,8,9].map(n => this.reg(n));
+    if(this.#interpreter && this.#syscallsSeen.length<32)this.#syscallsSeen.push(nr);
     this.setReg(0, this.kernel.enter(this, nr, args, next));
   }
   /** Only the profile's small memory-effect handlers. Stock exit (no user
@@ -431,18 +539,22 @@ class StaticKernel extends Kernel {
     return call.nr === 60 || call.nr === 231 ? super.attempt(task, call) : result;
   }
 
-  async begin(input: FileInput, compile: Compile, extra?: CompanionInput): Promise<StaticTask> {
-    if (this.#used || this.shared) throw new FsError(E.NOEXEC);
+  async begin(input: FileInput, compile: Compile, extra?: CompanionInput, loader?: InterpreterInput): Promise<StaticTask> {
+    if (this.#used || this.shared || extra && loader) throw new FsError(E.NOEXEC);
     this.#used = true;
     const p = new Process(this, null);
     let staging: PreparedSpace | undefined;
     try {
-      const main = await filePlan(p,input), image = layout(main.bytes);
+      const main = await filePlan(p,input,loader && INTERPRETER_ELF_LIMIT);
+      const image = loader ? undefined : layout(main.bytes);
+      const interpreter = loader && await filePlan(p,loader,INTERPRETER_ELF_LIMIT);
+      const plans = loader && interpreter && interpreterPlans(main,interpreter,loader);
       const auxiliary = extra && await filePlan(p,extra);
       if (auxiliary?.file === main.file) throw new FsError(E.NOEXEC);
-      const shape = extra && auxiliary && companionLayout(auxiliary.bytes,extra.bias,image);
+      const shape = extra && auxiliary && image && companionLayout(auxiliary.bytes,extra.bias,image);
       main.current();
       auxiliary?.current();
+      interpreter?.current();
       p.stackLow = SP_START;
       p.stackTop = SP_END;
       p.mapBase = p.mapEnd = LIMIT;
@@ -451,16 +563,25 @@ class StaticKernel extends Kernel {
       p.exe = input.path;
       p.exeAt = {mnt:main.at.mnt, node:main.file, dir:main.at.parent, name:main.at.name};
       for (const [fd,path] of ['stdin','stdout','stderr'].entries()) p.fds.install(new Description('console', {path}), {fd});
-      const mainCode = codePlan(p,main,image.start,0);
-      const companion = shape && auxiliary && {code:codePlan(p,auxiliary,shape.rx,P),layout:shape};
-      staging = await prepareSpace(p,mainCode,image,companion);
-      // A return from await isn't a commit. Recheck both exact FD slots,
-      // both sources/mounts, and the already admitted Task owner again.
-      mainCode.current();
-      companion?.code.current();
+      let codes: readonly CodePlan[];
+      if(plans && interpreter) {
+        const code=(f:FilePlan,plan:ElfEntryPlan) => {
+          const rx=plan.loads.find(x=>x.prot===RX)!;
+          return codePlan(p,f,rx.start,rx.fileOffset,rx.length);
+        };
+        const pair=[code(main,plans.main),code(interpreter,plans.ld)] as const;
+        codes=pair;
+        staging=await prepareInterpreterSpace(p,pair,plans);
+      } else if (image) {
+        const mainCode=codePlan(p,main,image.start,0);
+        const companion=shape && auxiliary && {code:codePlan(p,auxiliary,shape.rx,P),layout:shape};
+        codes=companion?[mainCode,companion.code]:[mainCode];
+        staging=await prepareSpace(p,mainCode,image,companion);
+      } else throw new FsError(E.NOEXEC);
+      // Await completion is not commit: recheck exact FD/VFS/owner identity.
+      codes.forEach(x=>x.current());
       staging.identity();
-      p.fds.close(mainCode.fd);
-      if (companion) p.fds.close(companion.code.fd);
+      codes.forEach(x=>p.fds.close(x.fd));
       const t = new StaticTask(p,compile,staging);
       staging = undefined; // the actual Task now owns this same sealed memory
       p.pid = p.pgid = p.sid = t.tid;
@@ -493,13 +614,17 @@ export async function guardedStaticTask(input: {
   readonly elfSha256: string;
   readonly write: (fd: number, bytes: Uint8Array) => void;
   readonly companion?: CompanionInput;
-}): Promise<{kernel: Kernel; task: Task; fault(): Readonly<GuardedFault> | undefined}> {
+  readonly interpreter?: InterpreterInput;
+}) {
   // Seal primitive configuration before the first await. The VFS/source are
   // checked again on use; a callback cannot change the admitted digest.
-  const {compiler:bytes,compilerSha256,vfs,path,source,elfSha256,write,companion} = input;
+  const {compiler:bytes,compilerSha256,vfs,path,source,elfSha256,write,companion,interpreter} = input;
   const extra = companion && {path:companion.path,source:companion.source,elfSha256:companion.elfSha256,bias:companion.bias};
+  const boot = interpreter && {path:interpreter.path,source:interpreter.source,elfSha256:interpreter.elfSha256,
+    bias:interpreter.bias,mainBias:interpreter.mainBias};
   const compile = await compiler(bytes, compilerSha256);
   const kernel = new StaticKernel({vfs,console:{write,read:() => null}});
-  const task = await kernel.begin({path,source,elfSha256}, compile, extra);
-  return {kernel,task,fault:() => task.memoryFault};
+  const task = await kernel.begin({path,source,elfSha256}, compile, extra, boot);
+  return {kernel:kernel as Kernel,task:task as Task,fault:() => task.memoryFault,
+    entryReceipt:(off?:number)=>task.entryReceipt(off),interpreterTrace:()=>task.interpreterTrace()};
 }
