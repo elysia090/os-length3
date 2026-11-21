@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8">
+<title>Ricebox boot acceptance, not a production terminal</title>
+<h1>Ricebox pinned shell acceptance</h1>
+<label>Host focus witness <input id="host-focus" autofocus></label>
+<p id="state" role="status">Loading pinned Ricebox root</p>
+<pre id="output" aria-label="Guest output"></pre>
+<form id="console"><label>Guest command <input id="line" disabled></label><button>Send</button></form>
+<script type="application/json" id="launch">{"shell":"./ricebox/"}</script>
+<script type="module" src="./demo.mjs"></script>
+</html>
