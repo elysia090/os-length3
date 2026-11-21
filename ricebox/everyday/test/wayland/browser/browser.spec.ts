@@ -124,7 +124,7 @@ test.describe('with explicitly staged static BusyBox', () => {
     await expect(surface()).toHaveAttribute('data-sequence','1');
     await terminal().getByRole('button', {name:'Open guest shell'}).click();
     const nonce = randomInt(1024, 30_000);
-    await command("unset keeper_nonce; keeper_nonce="+nonce+"; printf 'keeper-pid=%s\n' "$$"");
+    await command(String.raw`unset keeper_nonce; keeper_nonce=${nonce}; printf 'keeper-pid=%s\n' "$$"`);
     await expect(output()).toContainText(/keeper-pid=[1-9][0-9]*/);
     const before = (await output().textContent())!.match(/keeper-pid=([1-9][0-9]*)/)![1]!;
     await view.getByRole('button',{name:'Stop drawing', exact:true}).click();
@@ -144,7 +144,7 @@ test.describe('with explicitly staged static BusyBox', () => {
     view = await popup('Reopen guest view window');
     await expect(view.getByRole('button',{name:'Show drawing',exact:true})).toBeEnabled();
     await expect(output()).not.toContainText('reopened='+(nonce+31));
-    await command("printf 'reopened=%s same-pid=%s\n' "$((keeper_nonce+31))" "$$"");
+    await command(String.raw`printf 'reopened=%s same-pid=%s\n' "$((keeper_nonce+31))" "$$"`);
     await expect(output()).toContainText('reopened='+(nonce+31)+' same-pid='+before);
     expect(shellAcquisitions).toBe(1);
     await view.getByRole('button',{name:'Show drawing',exact:true}).click();
@@ -154,7 +154,7 @@ test.describe('with explicitly staged static BusyBox', () => {
     await closed;
     await expect(page.locator('#status')).toHaveText('admission acknowledged');
     view=await popup('Reopen guest view window');
-    await command("printf 'third-view=%s\n' "$((keeper_nonce*2))"");
+    await command(String.raw`printf 'third-view=%s\n' "$((keeper_nonce*2))"`);
     await expect(output()).toContainText('third-view='+nonce*2);
     expect(shellAcquisitions).toBe(1);
     // Navigating this one owned popup ends its view and the drawing, not the keeper.
