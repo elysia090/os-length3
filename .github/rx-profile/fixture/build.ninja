@@ -1,0 +1,11 @@
+ninja_required_version = 1.13.2
+rule cxx
+  command = /usr/bin/c++ -std=c++17 -O2 -MMD -MF $out.d -c $in -o $out
+  depfile = $out.d
+  deps = gcc
+rule link
+  command = /usr/bin/c++ -o $out $in
+build edit_distance.o: cxx edit_distance.cc
+build driver.o: cxx driver.cc
+build proof: link driver.o edit_distance.o
+default proof
