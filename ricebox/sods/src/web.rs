@@ -354,3 +354,19 @@ pub unsafe extern "C" fn sods_translate_guarded_scalar(ptr: *mut u8, len: usize)
     OUTPUT.with(|o| *o.borrow_mut() = out);
     status
 }
+
+/// Translate one bounded instruction of the isolated Task profile, or
+/// describe it as unsupported (1) or incomplete (2). No code is kept.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call, all written.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate_guarded_task_step(ptr: *mut u8, len: usize) -> i32 {
+    let bytes = Vec::from_raw_parts(ptr, len, len);
+    let (status, out) = match crate::guarded_task_step::translate(&bytes) {
+        Ok(wasm) => (0, wasm),
+        Err(reason) => (reason as i32, Vec::new()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}

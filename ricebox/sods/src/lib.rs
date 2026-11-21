@@ -24,6 +24,7 @@ pub mod abi;
 pub mod wasm;
 pub mod frame;
 pub mod guarded_scalar;
+pub mod guarded_task_step;
 pub mod sync;
 pub mod operand;
 pub mod flags;
