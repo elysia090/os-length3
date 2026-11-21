@@ -4,16 +4,13 @@ set -euo pipefail
 umask 077
 self=$(cd -- "$(dirname -- "$0")" && pwd)
 product=$(cd -- "$1" && pwd)
-work=$(mktemp -d -- "$2/rx-profile.XXXXXX")
 hostnode=$(command -v node)
 commit=28c45a65649b1058da0ad5077624e8fd4fa3cee9
 NINJA=3441b633c2fe2c494e958780ba0f4227b1327634
 NINJA_TREE=70dd1324a3997a3ce38bfe70a8291b2ef4a0bf65
 ALPINE=alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
-result="$work/result"
-mkdir "$result" "$work/inputs" "$work/native-root" "$work/asmb"
 cd "$product"
-export SOURCE_DATE_EPOCH=0
+export LC_ALL=C SOURCE_DATE_EPOCH=0
 if [[ ${GITHUB_EVENT_NAME:-} != workflow_dispatch || ${GITHUB_REF:-} != refs/heads/diag/cc1plus-28c45a6 || ${GITHUB_ACTOR:-} != elysia090 || ${GITHUB_TRIGGERING_ACTOR:-} != elysia090 || ${GITHUB_REPOSITORY:-} != elysia090/os-length3 ]]; then
  echo 'RX_HOLD not the exact authorized manual diagnostic scope'; exit 2
 fi
@@ -21,24 +18,125 @@ if [[ $(git rev-parse HEAD) != "$commit" || $(uname -m) != x86_64 || $(node --ve
  echo 'RX_HOLD unexpected source/host/engine'; exit 2
 fi
 # The only retained log prints are fixed enums and bounded allowlisted numbers, not diagnostic paths or stderr.
-phase=preflight
+phase=private-staging
 trap 'rc=$?; if ((rc)); then printf "RX_HOLD stage=%s code=%d\n" "$phase" "$rc"; fi' EXIT
+# Resolve bind sources only through a fresh directory. Prefer shallow sticky /tmp
+# if it is on the original runner-temp filesystem; never switch backing devices.
+[[ -d $2 && $(id -u) != 0 ]] || exit 2
+parent=$2
+orig_dev=$(stat -Lc '%d' -- "$parent" 2>/dev/null)
+if [[ ! -L /tmp && $(stat -c '%u:%a' /tmp 2>/dev/null) == 0:1777 &&
+      $(stat -c '%d' /tmp 2>/dev/null) == "$orig_dev" ]]; then parent=/tmp; fi
+work=$(mktemp -d -- "$parent/rx-profile.XXXXXX" 2>/dev/null)
+result="$work/result"
+builder_work="$work/builder"
+mkdir "$result" "$work/inputs" "$work/native-root" "$work/asmb" "$builder_work" 2>/dev/null
 stage() { phase=$1; shift; printf 'RX_STAGE %s\n' "$phase"; "$@" >"$work/$phase.log" 2>&1; }
 install_tools() {
  sudo -n apt-get update -qq
- sudo -n apt-get install -y --no-install-recommends bubblewrap zstd binutils
- rustup target add wasm32-unknown-unknown
- docker info --format '{{.ServerVersion}}'
+ sudo -n apt-get install -y --no-install-recommends bubblewrap zstd binutils acl
 }
 stage setup install_tools
+
+# Named execute-only ACL for host UID 0. No directory is made public and no
+# run-wide A/B or clock state is changed. The group ACL remains explicitly empty.
+bind_search() {
+ local dir
+ for dir; do
+  [[ -d $dir && ! -L $dir && $(stat -c '%u:%a' -- "$dir") == "$(id -u):700" ]] || return 66
+  setfacl -m user:0:--x -- "$dir" || return 67
+  [[ $(getfacl -cpn -- "$dir") == $'user::rwx
+user:0:--x
+group::---
+mask::--x
+other::---' ]] || return 68
+ done
+}
+stage native-bind-ancestry bind_search "$work" "$work/native-root" "$result"
+
+# Same launcher for both cheap checks and the actual compiler/Ninja. No fallback.
+guest_env=(--clearenv --setenv HOME /root --setenv PATH /bin:/usr/bin --setenv LANG C --setenv LC_ALL C --setenv TZ UTC --setenv TERM dumb --setenv TMPDIR /tmp --setenv SOURCE_DATE_EPOCH 0)
+box() {
+ local box_root=$1; shift
+ LC_ALL=C timeout -k 5 180 sudo -n -- /usr/bin/env LC_ALL=C /usr/bin/bwrap \
+  --unshare-all --unshare-user --uid 0 --gid 0 --die-with-parent --new-session --cap-drop ALL \
+  "${guest_env[@]}" --ro-bind "$box_root" / --proc /proc --dev /dev "$@"
+}
+trial_box() {
+ local box_root=$1 writable=$2 readonly=$3; shift 3
+ box "$box_root" --bind "$writable" /tmp --ro-bind "$readonly" /tmp/rx-in --chdir /tmp/rx-out "$@"
+}
+trial_dirs() {
+ local trial=$1
+ sudo -n install -d -m 1777 -o 0 -g 0 -- "$trial" || return $?
+ sudo -n install -d -m 0755 -o 0 -g 0 -- "$trial/rx-in" "$trial/rx-out"
+}
+isolation_stage() {
+ phase=$1; shift
+ local rc=0 category
+ printf 'RX_STAGE %s\n' "$phase"
+ "$@" >"$work/$phase.stdout" 2>"$work/$phase.stderr" || rc=$?
+ category=$(python3 -I -B "$self/isolation-result.py" "$rc" "$work/$phase.stdout" "$work/$phase.stderr") || {
+  # Fixed enums only. Never print a path, stderr or an unvalidated suffix.
+  case $category in
+   overflow|unverified-success|bounded-timeout-or-kill|guest-namespace-contract|guest-privilege-contract|\
+   guest-mount-contract|guest-input-contract|guest-device-contract|guest-write-or-wait-contract|\
+   guest-smoke-protocol|unclassified-guest|unclassified-probe|unclassified-launcher|launcher-netns-loopback|\
+   launcher-id-map|launcher-bind-source|launcher-mount|launcher-exec-or-cwd|launcher-namespace|launcher-sudo|local-receipt) ;;
+   *) category=local-receipt ;;
+  esac
+  printf 'RX_ISOLATION stage=%s result=blocked category=%s\n' "$phase" "${category:-local-receipt}"
+  return 90
+ }
+ [[ $category == passed ]] || return 91
+ printf 'RX_ISOLATION stage=%s result=passed\n' "$phase"
+}
+host_namespaces=()
+stage_host_namespaces() {
+ local kind ident
+ for kind in mnt user pid net ipc uts cgroup; do
+  ident=$(stat -Lc '%d:%i' -- "/proc/self/ns/$kind") || return 1
+  [[ $ident =~ ^[0-9]+:[1-9][0-9]*$ ]] || return 1
+  host_namespaces+=("$ident")
+ done
+}
+mini_root="$work/isolation-root"
+mini_timer="$work/isolation-timer"
+mini_trial="$work/isolation-trial"
+mini_inputs="$work/isolation-inputs"
+smoke="$work/isolation-smoke"
+prepare_isolation_smoke() {
+ # Host cc only for a tiny static control; no build of the stock gcc package.
+ cc -std=c11 -Wall -Wextra -Werror -O2 -static-pie "$self/isolation-smoke.c" -o "$smoke"
+ local header
+ header=$(readelf -Whl "$smoke") || return 69
+ [[ $header == *"X86-64"* && $header == *"DYN "* && $header != *INTERP* ]] || return 69
+ sudo -n install -d -m 0755 -o 0 -g 0 -- "$mini_root" "$mini_root/usr" "$mini_root/usr/bin" "$mini_root/proc" "$mini_root/dev"
+ sudo -n install -d -m 1777 -o 0 -g 0 -- "$mini_root/tmp" "$mini_timer"
+ sudo -n ln -s usr/bin "$mini_root/bin"
+ sudo -n install -m 0755 -o 0 -g 0 -- "$smoke" "$mini_root/usr/bin/rx-isolation-smoke"
+ sudo -n install -m 0644 -o 0 -g 0 -- "$self/fixture/rx-time.c" "$mini_timer/rx-time.c"
+ trial_dirs "$mini_trial"
+ install -d -m 0755 -- "$mini_inputs"
+ install -m 0644 -- "$self/fixture/rx-time.c" "$mini_inputs/rx-time.c"
+ install -m 0755 -- "$smoke" "$mini_inputs/rx-isolation-smoke"
+}
+stage native-isolation-host-ids stage_host_namespaces
+stage native-isolation-fixture prepare_isolation_smoke
+isolation_stage native-isolation-early-timer box "$mini_root" --bind "$mini_timer" /tmp --chdir /tmp \
+ /bin/rx-isolation-smoke timer "${host_namespaces[@]}"
+isolation_stage native-isolation-early-trial trial_box "$mini_root" "$mini_trial" "$mini_inputs" \
+ /tmp/rx-in/rx-isolation-smoke trial "${host_namespaces[@]}"
+
+stage docker-info docker info --format '{{.ServerVersion}}'
 verify_builder_image() {
  docker pull --platform linux/amd64 "$ALPINE"
  test "$(docker image inspect --format '{{.Os}} {{.Architecture}} {{.Id}}' "$ALPINE")" = 'linux amd64 sha256:b92841763c5c2140a20eeb2a44e94ebb0e80fd51d9d6b5895ea72fa999525d68'
 }
 stage builder-image verify_builder_image
-stage packages docker run --rm --platform linux/amd64 -v "$product:/w:ro" -v "$work:/rx" -e "OWNER=$(id -u):$(id -g)" "$ALPINE"  sh /w/ricebox/distribution/build/packages.sh /rx/packages gcc binutils busybox linux-headers musl fortify-headers system-config
+stage packages docker run --rm --platform linux/amd64 -v "$product:/w:ro" -v "$builder_work:/rx" -e "OWNER=$(id -u):$(id -g)" "$ALPINE"  sh /w/ricebox/distribution/build/packages.sh /rx/packages gcc binutils busybox linux-headers musl fortify-headers system-config
 root_package_provenance() {
- local dir="$work/packages"
+ local dir="$builder_work/packages"
  test "$(cat "$dir/gcc/version")" = '16.2.0'
  test "$(cat "$dir/gcc/source")" = 'e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e'
  test "$(cat "$dir/binutils/version")" = '2.47'
@@ -51,7 +149,7 @@ root_package_provenance() {
 }
 stage package-provenance root_package_provenance
 assemble() {
- (umask 022; sh ricebox/distribution/build/assemble.sh "$work/packages" "$work/asmb" 0.0.0 ricebox)
+ (umask 022; sh ricebox/distribution/build/assemble.sh "$builder_work/packages" "$work/asmb" 0.0.0 ricebox)
  cd "$work/asmb"; sha256sum -c SHA256SUMS
  awk 'NR==1{print $2}' SHA256SUMS >"$work/archive-name"
  sudo -n tar --zstd --numeric-owner -xf "$(cat "$work/archive-name")" -C "$work/native-root"
@@ -61,6 +159,7 @@ cd "$product"
 root="$work/native-root/root"
 archive="$work/asmb/$(cat "$work/archive-name")"
 compiler() {
+ rustup target add wasm32-unknown-unknown
  CARGO_TARGET_DIR="$work/trans" cargo build --locked --release --target wasm32-unknown-unknown --lib --manifest-path ricebox/sods/Cargo.toml
 }
 stage translator compiler
@@ -91,22 +190,19 @@ bootstrap() {
 }
 stage ninja-bootstrap bootstrap
 # Same validated programs/inputs are read-only on native and copied byte-for-byte into the Sods guest inputs.
-guest_env=(--clearenv --setenv HOME /root --setenv PATH /bin:/usr/bin --setenv LANG C --setenv LC_ALL C --setenv TZ UTC --setenv TERM dumb --setenv TMPDIR /tmp --setenv SOURCE_DATE_EPOCH 0)
-box() { timeout 180 sudo -n bwrap --unshare-all --unshare-user --uid 0 --gid 0 --die-with-parent --new-session --cap-drop ALL "${guest_env[@]}" --ro-bind "$root" / --proc /proc --dev /dev "$@"; }
 stage timer-input-copy cp -a "$self/fixture/." "$work/inputs/"
 stage timer-input-dirs chmod 0755 "$work/inputs" "$work/inputs/fixture.sh"
 stage timer-input-files chmod 0644 "$work/inputs/"*.cc "$work/inputs/"*.h "$work/inputs/build.ninja" "$work/inputs/rx-time.c"
 stage timer-bind-dir sudo -n install -d -m 1777 -o 0 -g 0 -- "$work/timer-stage"
 stage timer-bind-source sudo -n install -m 0644 -o 0 -g 0 -- "$work/inputs/rx-time.c" "$work/timer-stage/rx-time.c"
-# Use the same root, uid, capabilities, namespace flags and bind as the actual compiler.
-# A /bin/sh exit code names the failed check without emitting guest or runner paths.
-stage native-isolation-probe box --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec '
- test -r rx-time.c || exit 71
- test -r /proc/self/status || exit 72
- (umask 077; : > .rx-preflight) || exit 73
- rm -- .rx-preflight || exit 74
-'
-stage timer-gcc box --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec 'umask 022; exec /usr/bin/cc -O2 rx-time.c -o rx-time'
+# Check both real native mount shapes and the stock shell before invoking GCC.
+# The diagnostic helper never enters the measured /tmp/rx-in or either ABBA arm.
+stage timer-bind-control sudo -n install -m 0755 -o 0 -g 0 -- "$smoke" "$work/timer-stage/rx-isolation-smoke"
+isolation_stage native-isolation-exact-timer box "$root" --bind "$work/timer-stage" /tmp --chdir /tmp \
+ /bin/sh -ec 'exec ./rx-isolation-smoke timer "$@"' rx-profile "${host_namespaces[@]}"
+isolation_stage native-isolation-exact-trial trial_box "$root" "$mini_trial" "$mini_inputs" \
+ /bin/sh -ec 'exec /tmp/rx-in/rx-isolation-smoke trial "$@"' rx-profile "${host_namespaces[@]}"
+stage timer-gcc box "$root" --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec 'umask 022; exec /usr/bin/cc -O2 rx-time.c -o rx-time'
 stage timer-host-readable test -r "$work/timer-stage/rx-time"
 stage timer-install install -m 0755 "$work/timer-stage/rx-time" "$work/inputs/rx-time"
 record_elf() { readelf -Whld "$1" >"$2"; }
@@ -130,10 +226,10 @@ stage timer-materials timer_materials
 # then edit B and time at the same waitpid cut. No profiler or observer in these rows.
 native() {
  local out=$1
- mkdir "$out"  # private runner-owned 0700 parent, never mounted into the guest
- sudo -n install -d -m 1777 -o 0 -g 0 -- "$out/work" # normal /tmp, capless UID 0 can traverse and create compiler temps
- sudo -n install -d -m 0755 -o 0 -g 0 -- "$out/work/rx-in" "$out/work/rx-out"
- box --bind "$out/work" /tmp --ro-bind "$work/inputs" /tmp/rx-in --chdir /tmp/rx-out /bin/sh /tmp/rx-in/fixture.sh >"$out/stdout" 2>"$out/stderr"
+ mkdir "$out"  # runner + UID 0 search only; the parent is never mounted in the guest
+ bind_search "$out"
+ trial_dirs "$out/work" # sticky /tmp and ordinary root-owned 0755 trial leaves
+ trial_box "$root" "$out/work" "$work/inputs" /bin/sh /tmp/rx-in/fixture.sh >"$out/stdout" 2>"$out/stderr"
  cp "$out/work/rx-out/proof" "$out/proof.bin"
  readelf -Whld "$out/proof.bin" >"$out/proof.elf"
  cat /proc/sys/kernel/random/boot_id >"$out/runner-vm"
