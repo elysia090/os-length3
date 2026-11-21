@@ -23,6 +23,7 @@ pub mod facts;
 pub mod abi;
 pub mod wasm;
 pub mod frame;
+pub mod guarded_scalar;
 pub mod sync;
 pub mod operand;
 pub mod flags;

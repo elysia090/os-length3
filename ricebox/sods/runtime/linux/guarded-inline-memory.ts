@@ -2,7 +2,7 @@
 // the checked scalar read/write/fetch methods can be lent to an actual guest
 // instruction. The stock Sods runtime does not yet use this memory or profile.
 import {type ExecutableSource} from './executable-source.ts';
-import {ExecutableMappingModel, type ExecutableFileProof, type FileRxRequest} from './executable-mappings.ts';
+import {ExecutableMappingModel, type ExecutableFileProof, type FileRxRequest, type MappedCodeObservation} from './executable-mappings.ts';
 import {FdTable} from './fd.ts';
 import {File, Vfs} from './fs.ts';
 
@@ -157,6 +157,24 @@ export class GuardedInlineMemory {
     const observed = owner.proof.inspect(start, width);
     if (!observed) throw new GuardedFault('permission', address);
     return this.#littleEndian(start, width);
+  }
+
+  /** Copy one bounded instruction span and retain its exact original executable lease. */
+  bindCode(token: GuardedOwner, address: bigint, length: number): {bytes: Uint8Array<ArrayBuffer>; current(): boolean} | null {
+    const owner = this.#current(token, address);
+    if (!Number.isInteger(length) || length < 1 || length > 15) throw new RangeError('Invalid diagnostic code span');
+    // Read in checked scalar-sized parts, all from one continuous live lease.
+    const parts: MappedCodeObservation[] = [], bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i += 8) {
+      const size = Math.min(length - i, 8), start = this.#allowed(address + BigInt(i), size, EXEC);
+      const got = owner.proof.inspect(start, size), first = parts[0];
+      if (!got || (first && (got.epoch !== first.epoch || got.fileOffset !== first.fileOffset + i))) return null;
+      bytes.set(this.#bytes.subarray(start, start + size), i);
+      parts.push(got);
+    }
+    // Returning mutable *copies* confers neither access to the guard nor the
+    // ability to make the original claim valid after unmap/replacement.
+    return Object.freeze({bytes, current: () => this.#owner === owner && parts.every(x => owner.proof.confirm(x))});
   }
 
   #current(token: GuardedOwner, at: bigint): Owner {

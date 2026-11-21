@@ -338,3 +338,19 @@ pub extern "C" fn sods_x87_names() -> i32 {
     OUTPUT.with(|o| *o.borrow_mut() = crate::x87::NAMES.join(",").into_bytes());
     0
 }
+
+/// Opt-in scalar diagnostic, not an ELF exec entry or the normal translator.
+/// A successful module has only checked scalar access imports; the RET byte
+/// ends the admitted span but remains the caller's instruction boundary.
+/// # Safety
+/// The initialized buffer belongs to a single sods_alloc call and is taken here.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate_guarded_scalar(ptr: *mut u8, len: usize) -> i32 {
+    let bytes = Vec::from_raw_parts(ptr, len, len);
+    let (status, out) = match crate::guarded_scalar::translate(&bytes) {
+        Ok(wasm) => (0, wasm),
+        Err(error) => (1, error.as_bytes().to_vec()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
