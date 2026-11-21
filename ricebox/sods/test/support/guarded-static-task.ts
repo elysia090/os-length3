@@ -5,14 +5,14 @@ import {MAY, may} from '../../runtime/linux/cred.ts';
 import {type ExecutableSource, executableSourceFor, unchangedExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Exit, randomBytes} from '../../runtime/linux/flow.ts';
-import {E, type File, FsError, MNT, Vfs, walk} from '../../runtime/linux/fs.ts';
+import {E, type File, FsError, MNT, Vfs, WALK, walk} from '../../runtime/linux/fs.ts';
 import {GuardedFault, GuardedInlineMemory, type GuardedOwner} from '../../runtime/linux/guarded-inline-memory.ts';
 import {type Call} from '../../runtime/linux/parts.ts';
 import {type Image, Kernel, Process, Task, type Translation, trapOrPreempt} from '../../runtime/linux/process.ts';
 import {SIG} from '../../runtime/linux/signal.ts';
 
 const P = 4096, LIMIT = 16 << 20, SP_END = LIMIT - P, SP_START = SP_END - P;
-const RX = 5, RW = 3, RSP = 4, RFLAGS = 17;
+const RX = 5, RO = 1, RW = 3, RSP = 4, RFLAGS = 17;
 const PT_STACK_RW = 6; // ELF p_flags, not mmap PROT_* values
 const INPUT_LIMIT = 4 * P, STEPS = 4096;
 const syscallRoute = Symbol('guarded Task syscall route');
@@ -69,6 +69,88 @@ function layout(bytes: Uint8Array<ArrayBuffer>): Layout {
   return {start:Number(start), entry:Number(entry)};
 }
 
+interface FileInput {
+  readonly path: string;
+  readonly source: ExecutableSource;
+  readonly elfSha256: string;
+}
+interface CompanionInput extends FileInput { readonly bias: number }
+type ResolvedFile = Exclude<ReturnType<typeof walk>, number>;
+interface FilePlan {
+  readonly input: FileInput;
+  readonly file: File;
+  readonly at: ResolvedFile;
+  readonly bytes: Uint8Array<ArrayBuffer>;
+  current(): void;
+}
+interface CodePlan {
+  readonly file: FilePlan;
+  readonly fd: number;
+  readonly start: number;
+  readonly offset: number;
+  current(): void;
+}
+interface CompanionLayout {
+  readonly ro: number;
+  readonly rx: number;
+  readonly rw: number;
+}
+
+/** Deliberately exact second-object cut. A relocation-free ET_DYN with
+ * exactly three disjoint one-page LOADs (R, RX, RW) and NX stack. No
+ * PT_INTERP/DYNAMIC, BSS, permissive overlaps or guesses from section names.
+ * Both data pages contain one complete aligned file page. */
+function companionLayout(bytes: Uint8Array<ArrayBuffer>, bias: number, primary: Layout): CompanionLayout {
+  const bad = (): never => { throw new FsError(E.NOEXEC); };
+  if (!Number.isSafeInteger(bias) || bias < 65536 || bias % P || bias + 4 * P > SP_START
+    || (primary.start >= bias && primary.start < bias + 3 * P)
+    || bytes.length < 3 * P || bytes.length > INPUT_LIMIT) return bad();
+  const v = new DataView(bytes.buffer), q = (p: number) => v.getBigUint64(p,true);
+  const h = (p: number) => v.getUint16(p,true), u = (p: number) => v.getUint32(p,true);
+  if (u(0) !== 0x464c457f || bytes[4] !== 2 || bytes[5] !== 1 || bytes[6] !== 1
+    || h(16) !== 3 || h(18) !== 62 || u(20) !== 1 || q(32) !== 64n || h(52) !== 64 || h(54) !== 56 || h(56) !== 4
+    || u(232) !== 0x6474e551 || u(236) !== PT_STACK_RW || q(264) !== 0n || q(272) !== 0n) return bad();
+  for (const [n, flags] of [4,5,6].entries()) { // ELF PF_R, PF_R|PF_X, PF_R|PF_W
+    const at = 64 + n * 56, off = BigInt(n * P), size = q(at + 32);
+    if (u(at) !== 1 || u(at+4) !== flags || q(at+8) !== off || q(at+16) !== off
+      || q(at+40) !== size || q(at+48) !== BigInt(P) || !size || size > BigInt(P)
+      || (n !== 1 && size !== BigInt(P)) || (n === 1 && (q(24) < off || q(24) >= off + size))) return bad();
+  }
+  return {ro:bias, rx:bias+P, rw:bias+2*P};
+}
+
+/** Bind both content and the legitimate executable VFS object. Recheck at
+ * each async return and before commit, not just after the first path walk. */
+async function filePlan(p: Process, input: FileInput): Promise<FilePlan> {
+  if (!/^\/[a-zA-Z0-9/_-]{1,80}$/.test(input.path)) throw new FsError(E.NOEXEC);
+  const source = executableSourceFor(input.source,p.kernel.vfs), at = walk(p,input.path,p.fs.pwd,WALK.NO_SYMLINKS | WALK.NO_MAGICLINKS);
+  if (typeof at === 'number') throw new FsError(at);
+  const owner = p.readIdentity(), mountFlags = at.mnt.flags, fdTable = p.fds;
+  const allowed = () => !!(source.node.mode & 0o111) && !(source.node.mode & 0o6000)
+    && may(p.cred,source.node,MAY.EXEC) && may(p.cred,source.node,MAY.READ) && !(at.mnt.flags & MNT.NOEXEC);
+  if (at.node !== source.node || !allowed() || source.size > INPUT_LIMIT) throw new FsError(E.ACCES);
+  const current = () => {
+    owner();
+    const live = walk(p,input.path,p.fs.pwd,WALK.NO_SYMLINKS | WALK.NO_MAGICLINKS);
+    if (typeof live === 'number' || live.node !== source.node || live.mnt !== at.mnt || at.mnt.flags !== mountFlags
+      || p.fds !== fdTable || !allowed() || !unchangedExecutableSource(source)) throw new FsError(E.NOEXEC);
+  };
+  const bytes = new Uint8Array(source.node.read(0,source.size));
+  if (!/^[0-9a-f]{64}$/.test(input.elfSha256) || await hexHash(bytes) !== input.elfSha256) throw new FsError(E.NOEXEC);
+  current();
+  return {input,file:source.node,at,bytes,current};
+}
+
+function codePlan(p: Process, file: FilePlan, start: number, offset: number): CodePlan {
+  const table = p.fds, fd = table.install(new Description('file',{node:file.file,mnt:file.at.mnt,path:file.input.path}));
+  if (fd < 0) throw new FsError(E.MFILE);
+  const slot = table.slots.get(fd);
+  return {file,fd,start,offset,current:() => {
+    file.current();
+    if (table !== p.fds || !slot || table.slots.get(fd) !== slot || slot.description.closed) throw new FsError(E.NOEXEC);
+  }};
+}
+
 /** Bounded AMD64 initial stack. This single process has one argv, no env,
  * no vDSO or interpreter. These words are not raw-writable after install. */
 function stack(program: string, layout: Layout): {bytes: Uint8Array<ArrayBuffer>; sp: bigint} {
@@ -85,13 +167,58 @@ function stack(program: string, layout: Layout): {bytes: Uint8Array<ArrayBuffer>
   return {bytes, sp:BigInt(at(start))};
 }
 
+interface PreparedSpace {
+  readonly guard: GuardedInlineMemory;
+  readonly owner: GuardedOwner;
+  readonly identity: () => void;
+  readonly protections: Map<number,number>;
+  readonly companionRx: number | undefined;
+  readonly sp: bigint;
+  readonly entry: bigint;
+}
+
+async function prepareSpace(p: Process, main: CodePlan, image: Layout, companion?: {code: CodePlan; layout: CompanionLayout}): Promise<PreparedSpace> {
+  const identity = p.readIdentity(), fds = p.fds, codes = companion ? [main,companion.code] : [main];
+  const guard = new GuardedInlineMemory(LIMIT / 65536), owner = guard.installOwner(p.kernel.vfs,fds);
+  const protections = new Map<number,number>();
+  try {
+    // The proof and FD identities of the entire proposed address space
+    // precede every mapping. No Task has been created or assigned a PID.
+    const proofs = await Promise.all(codes.map(({file}) => guard.authenticate(owner,file.input.source,file.input.elfSha256)));
+    identity();
+    if (p.fds !== fds || p.memory !== null || proofs.some(p => !p)) throw new FsError(E.NOEXEC);
+    codes.forEach(x => x.current());
+    for (const [i,x] of codes.entries()) {
+      if (!guard.installRx(owner, proofs[i]!, x.fd, {address:x.start,length:P,fileOffset:x.offset,flags:0x12,prot:RX}))
+        throw new FsError(E.NOEXEC);
+      protections.set(x.start,RX);
+    }
+    if (companion) {
+      const {code:{file:{bytes}},layout:{ro,rw}} = companion;
+      // Private copies from the same authenticated snapshot. Rights come
+      // from the parsed PT_LOADs, never caller flags or an unverified alias.
+      guard.installData(owner,ro,P,RO,bytes.subarray(0,P));
+      guard.installData(owner,rw,P,RW,bytes.subarray(2*P,3*P));
+      protections.set(ro,RO);
+      protections.set(rw,RW);
+    }
+    const initial = stack(main.file.input.path,image);
+    guard.installData(owner,SP_START,P,RW,initial.bytes);
+    protections.set(SP_START,RW);
+    return {guard,owner,identity,protections,companionRx:companion?.layout.rx,sp:initial.sp,entry:BigInt(image.entry)};
+  } catch (e) {
+    guard.retireOwner(owner);
+    throw e;
+  }
+}
+
 class StaticTask extends Task {
-  #backing: GuardedInlineMemory | undefined = new GuardedInlineMemory(LIMIT / 65536);
+  #backing: GuardedInlineMemory | undefined;
   readonly #owner: GuardedOwner;
   readonly #compile: Compile;
   readonly #fds: Process['fds'];
   readonly #steps = new Map<bigint, Step>();
-  readonly #protections = new Map<number, number>();
+  readonly #protections: Map<number,number>;
   readonly #regs = new BigInt64Array(19);
   readonly #exports: Translation;
   #identity: (() => void) | undefined;
@@ -99,11 +226,19 @@ class StaticTask extends Task {
   #retired = false;
   #remaining = STEPS;
   #fault: GuardedFault | undefined;
-  constructor(p: Process, compile: Compile) {
+  readonly #companionRx: number | undefined;
+  constructor(p: Process, compile: Compile, space: PreparedSpace) {
     super(p);
     this.#compile = compile;
     this.#fds = p.fds;
-    this.#owner = this.#guard.installOwner(p.kernel.vfs, p.fds);
+    this.#backing = space.guard;
+    this.#owner = space.owner;
+    this.#protections = space.protections;
+    this.#companionRx = space.companionRx;
+    this.#identity = space.identity;
+    this.setReg(RSP, space.sp);
+    this.setReg(RFLAGS, 0x202n);
+    this.resumeAt = space.entry;
     const table = new WebAssembly.Table({initial:0, maximum:0, element:'anyfunc'});
     this.#exports = Object.freeze({table, run:(rip: bigint) => this.#run(rip)});
   }
@@ -127,23 +262,6 @@ class StaticTask extends Task {
     const backing = this.#backing;
     this.#backing = undefined; // never pooled, even while a dead Task handle is retained
     backing?.retireOwner(this.#owner);
-  }
-  async prepare(source: ExecutableSource, digest: string, fd: number, image: Layout, program: string): Promise<void> {
-    if (this.#identity || this.#retired || this.#running) throw new Error('Guarded Task admits one image only');
-    const identity = this.proc.readIdentity();
-    const proof = await this.#guard.authenticate(this.#owner, source, digest);
-    identity();
-    if (!proof || this.#retired || this.#fds !== this.proc.fds || this.proc.memory !== null
-      || !this.#guard.installRx(this.#owner, proof, fd, {address:image.start, length:P, fileOffset:0, flags:0x12, prot:RX}))
-      throw new FsError(E.NOEXEC);
-    const initial = stack(program, image);
-    this.#guard.installData(this.#owner, SP_START, P, RW, initial.bytes);
-    this.#protections.set(image.start,RX);
-    this.#protections.set(SP_START,RW);
-    this.setReg(RSP, initial.sp);
-    this.setReg(RFLAGS, 0x202n);
-    this.resumeAt = BigInt(image.entry);
-    this.#identity = identity;
   }
 
   #alive(at: bigint): void {
@@ -264,6 +382,17 @@ class StaticTask extends Task {
       this.#protections.set(start,prot);
       return 0n;
     }
+    if (call.nr === 11 && this.#companionRx !== undefined) {
+      // Exact one-page companion RX munmap only. No path to remap, expand,
+      // or reopen a stale execution lease. Leave the primary, data, stack.
+      if (a !== BigInt(this.#companionRx) || b !== BigInt(P)) return minus(E.INVAL);
+      const start = this.#companionRx;
+      if (this.#protections.has(start)) {
+        this.#guard.unmap(this.#owner,start,P);
+        this.#protections.delete(start);
+      }
+      return 0n;
+    }
     return minus(E.NOSYS);
   }
 }
@@ -302,48 +431,57 @@ class StaticKernel extends Kernel {
     return call.nr === 60 || call.nr === 231 ? super.attempt(task, call) : result;
   }
 
-  async begin(input: {path: string; source: ExecutableSource; elfSha256: string}, compile: Compile): Promise<Task> {
-    if (this.#used || this.shared || !/^\/[a-zA-Z0-9/_-]{1,80}$/.test(input.path)) throw new FsError(E.NOEXEC);
+  async begin(input: FileInput, compile: Compile, extra?: CompanionInput): Promise<StaticTask> {
+    if (this.#used || this.shared) throw new FsError(E.NOEXEC);
     this.#used = true;
-    const p = new Process(this, null), t = this.#task = new StaticTask(p, compile);
-    p.pid = p.pgid = p.sid = t.tid;
-    p.argv = [input.path];
-    p.env = [];
-    p.task = t;
-    p.tasks.add(t);
-    this.procs.set(p.pid, p);
-    this.tasks.set(t.tid, t);
-    this.tty = {sid:p.sid, fg:p.pgid};
+    const p = new Process(this, null);
+    let staging: PreparedSpace | undefined;
     try {
-      const captured = executableSourceFor(input.source, this.vfs), at = walk(p, input.path, p.fs.pwd);
-      if (typeof at === 'number') throw new FsError(at);
-      if (at.node !== captured.node || at.mnt.flags & MNT.NOEXEC || !may(p.cred, captured.node, MAY.EXEC)
-        || captured.node.mode & 0o6000 || !(captured.node.mode & 0o111) || captured.size > INPUT_LIMIT)
-        throw new FsError(E.ACCES);
-      const stable = p.readIdentity();
-      const bytes = new Uint8Array(captured.node.read(0, captured.size));
-      if (!/^[0-9a-f]{64}$/.test(input.elfSha256) || await hexHash(bytes) !== input.elfSha256
-        || !unchangedExecutableSource(captured) || at.mnt.flags & MNT.NOEXEC) throw new FsError(E.NOEXEC);
-      stable();
-      const image = layout(bytes);
+      const main = await filePlan(p,input), image = layout(main.bytes);
+      const auxiliary = extra && await filePlan(p,extra);
+      if (auxiliary?.file === main.file) throw new FsError(E.NOEXEC);
+      const shape = extra && auxiliary && companionLayout(auxiliary.bytes,extra.bias,image);
+      main.current();
+      auxiliary?.current();
       p.stackLow = SP_START;
       p.stackTop = SP_END;
       p.mapBase = p.mapEnd = LIMIT;
       p.fixed = [];
       p.free = [];
       p.exe = input.path;
-      p.exeAt = {mnt:at.mnt, node:captured.node, dir:at.parent, name:at.name};
+      p.exeAt = {mnt:main.at.mnt, node:main.file, dir:main.at.parent, name:main.at.name};
       for (const [fd,path] of ['stdin','stdout','stderr'].entries()) p.fds.install(new Description('console', {path}), {fd});
-      const fd = p.fds.install(new Description('file', {node:captured.node, mnt:at.mnt, path:input.path}));
-      await t.prepare(input.source, input.elfSha256, fd, image, input.path);
-      p.fds.close(fd);
+      const mainCode = codePlan(p,main,image.start,0);
+      const companion = shape && auxiliary && {code:codePlan(p,auxiliary,shape.rx,P),layout:shape};
+      staging = await prepareSpace(p,mainCode,image,companion);
+      // A return from await isn't a commit. Recheck both exact FD slots,
+      // both sources/mounts, and the already admitted Task owner again.
+      mainCode.current();
+      companion?.code.current();
+      staging.identity();
+      p.fds.close(mainCode.fd);
+      if (companion) p.fds.close(companion.code.fd);
+      const t = new StaticTask(p,compile,staging);
+      staging = undefined; // the actual Task now owns this same sealed memory
+      p.pid = p.pgid = p.sid = t.tid;
+      p.argv = [input.path];
+      p.env = [];
+      p.task = t;
+      p.tasks.add(t);
+      // The only publication boundary: the prepared Task becomes runnable.
+      this.#task = t;
+      this.procs.set(p.pid,p);
+      this.tasks.set(t.tid,t);
+      this.tty = {sid:p.sid, fg:p.pgid};
       this.ready(t);
       return t;
     } catch (e) {
+      if (staging) staging.guard.retireOwner(staging.owner);
       this.exitProcess(p, SIG.KILL);
       throw e;
     }
   }
+
 }
 
 export async function guardedStaticTask(input: {
@@ -354,12 +492,14 @@ export async function guardedStaticTask(input: {
   readonly source: ExecutableSource;
   readonly elfSha256: string;
   readonly write: (fd: number, bytes: Uint8Array) => void;
+  readonly companion?: CompanionInput;
 }): Promise<{kernel: Kernel; task: Task; fault(): Readonly<GuardedFault> | undefined}> {
   // Seal primitive configuration before the first await. The VFS/source are
   // checked again on use; a callback cannot change the admitted digest.
-  const {compiler:bytes,compilerSha256,vfs,path,source,elfSha256,write} = input;
+  const {compiler:bytes,compilerSha256,vfs,path,source,elfSha256,write,companion} = input;
+  const extra = companion && {path:companion.path,source:companion.source,elfSha256:companion.elfSha256,bias:companion.bias};
   const compile = await compiler(bytes, compilerSha256);
   const kernel = new StaticKernel({vfs,console:{write,read:() => null}});
-  const task = await kernel.begin({path,source,elfSha256}, compile) as StaticTask;
+  const task = await kernel.begin({path,source,elfSha256}, compile, extra);
   return {kernel,task,fault:() => task.memoryFault};
 }
