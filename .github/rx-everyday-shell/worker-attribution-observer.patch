@@ -1,0 +1,29 @@
+--- a/run-static-acceptance.mjs
++++ b/run-static-acceptance.mjs
+@@ -242,9 +242,24 @@
+       const original=readFileSync(join(consumer,'run-receipt.mjs'),'utf8');
+       const needle='  result.browser=browser.version;';
+       need(original.split(needle).length===2,'SANDBOX_HOOK_ANCHOR_MISMATCH');
++      const observationAnchor='      result.phases.push(receipt);';
++      need(original.split(observationAnchor).length===2,'ATTRIBUTION_HOOK_ANCHOR_MISMATCH');
++      copyFileSync(fileURLToPath(new URL('./worker-attribution.mjs',import.meta.url)),join(consumer,'worker-attribution.mjs'));
+       writeFileSync(join(consumer,'sandbox-same-process.mjs'),readFileSync(fileURLToPath(new URL('./sandbox-same-process.mjs',import.meta.url))),{flag:'wx'});
+-      writeFileSync(join(consumer,'run-receipt.mjs'),"import { verifySandbox } from './sandbox-same-process.mjs';\n"+original.replace(needle,
+-        needle+"\n  if(mode==='staged'){at='sandbox-proof'; result.sandbox=await verifySandbox(browser);}"));
++      writeFileSync(join(consumer,'run-receipt.mjs'),
++        "import { verifySandbox } from './sandbox-same-process.mjs';\n"+
++        "import { observeWorkerAttribution } from './worker-attribution.mjs';\n"+
++        original.replace(needle,
++          needle+"\n  if(mode==='staged'){at='sandbox-proof'; result.sandbox=await verifySandbox(browser);}")
++          .replace(observationAnchor,`      if(mode==='staged') {
++        try {
++          receipt.workerAttribution=observeWorkerAttribution({
++            events:page.events,targets:page.targets,errors:page.errors,
++            origin:receipt.origin,browser:receipt.browser,isAllowedWorker:config.isAllowedWorker,
++          });
++        }catch{} // Probe failure cannot complete, merge, alter or veto a receipt.
++      }
++`+observationAnchor));
+       copyFileSync(fileURLToPath(new URL('./probe-staged.mjs',import.meta.url)),join(consumer,'probe-staged.mjs'));
+       summary.stage='installed-exact-package';
+       const node=process.execPath, packageOut=join(work,'npmpackage');

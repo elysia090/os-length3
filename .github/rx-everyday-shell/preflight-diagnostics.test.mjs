@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 import {initTrace,traceMarker,readDoctor,renderTrace} from './preflight-diagnostics.mjs';
 
 const privateData='RAW_PRIVATE_/tmp/not-public?token=abc\n::error::do-not-print';
-const head='28c45a65649b1058da0ad5077624e8fd4fa3cee9',parent='783c012c0f2cc4d45c584717b37cb0e9e601eefa';
+const head='28c45a65649b1058da0ad5077624e8fd4fa3cee9',parent='9617595bbdf413ca596ebc9a34433d97288ee37f';
 const qa=new URL('../../ricebox/everyday/test/wayland/static-acceptance/',import.meta.url);
 const stock=process.env.EVERYDAY_STOCK_CHROME_SOURCE??new URL('../browser/stock-chrome.ts',qa);
 const stages=['doctor-invoke','doctor-owner','socket-unix','socket-ipv4','sandbox-fixture',
@@ -251,7 +251,7 @@ test('real Bash orchestration rejects stale parent, doctor/fixture/trace failure
     esac
   `);
   const cases=[
-    ['stale-parent','27a78377d65c0f4dac6a64ae4e2b668c462f35bc',1,'stage=opt-in code=1',null],
+    ['stale-parent','783c012c0f2cc4d45c584717b37cb0e9e601eefa',1,'stage=opt-in code=1',null],
     ['unhandled',parent,1,'stage=stock-chrome-sandbox code=1','doctor-invoke hold'],
     ['socket',parent,2,'stage=stock-chrome-sandbox code=2','socket-unix hold EPERM'],
     ['copy',parent,1,'stage=stock-chrome-sandbox code=1','sandbox-fixture hold'],

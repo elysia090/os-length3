@@ -25,7 +25,7 @@ w="${RUNNER_TEMP:?}/rx-everyday-shell-28c45a6"
 stock="$product/ricebox/everyday/test/wayland/browser/stock-chrome.ts"
 qa="$int/ricebox/everyday/test/wayland/static-acceptance"
 head=28c45a65649b1058da0ad5077624e8fd4fa3cee9
-base=783c012c0f2cc4d45c584717b37cb0e9e601eefa
+base=9617595bbdf413ca596ebc9a34433d97288ee37f
 release_sha=ec84d6a4f34359f322726e323e294b03987a19b1aa544563c846ca1a83060ee3
 root_sha=7420a34199c6708bc619cac3bce88af75559cf8ed6d8c495074e89e05b6fe509
 muk_sha=0668fceb53911c4a9f89f013ce94c92eeac9df62754dfba4bc563fe7384c6348
@@ -150,9 +150,25 @@ write_approval() {
    python3 -B "$p/collect-pins.py" approval "$p/expected-component-pins.json" "$w/observed-pins.json" > "$w/approved-root.json"
 }
 stage fixed-prior-approval write_approval
+attribution="$w/worker-attribution"
+stage_attribution() (
+   mkdir "$attribution"
+   cp "$qa/run-static-acceptance.mjs" "$qa/sandbox-same-process.mjs" "$qa/probe-staged.mjs" "$p/worker-attribution.mjs" "$attribution/"
+   cd "$attribution"
+   pin 10fcf6d070c128f9aa51bf50995ee28bb2117684d2df5c5a14ed473e76b00ca4 run-static-acceptance.mjs
+   pin 09ec7ff4a68a577ebe695669fff557710e04da68754af755dedba1b3fbe2af23 sandbox-same-process.mjs
+   pin 8c1908ee76a694d52ec2ad030e9f817de61dd644a770cb58b792cec96be1c79c probe-staged.mjs
+   pin fa1b385f5d4629c08947c5258da763a3b23a5e234c1934c55bc721bac8af30f7 worker-attribution.mjs
+   pin b22f57b1a2593b94e10981d5e8712fe0d6fade388893606c48fe46cfe75a6271 "$p/worker-attribution-observer.patch"
+   git apply --whitespace=error --check "$p/worker-attribution-observer.patch"
+   git apply --whitespace=error "$p/worker-attribution-observer.patch"
+   pin 74350247ee147de3de0d2ffdf903a79e837b4f5247476e28f9272e09aaac4521 run-static-acceptance.mjs
+)
+stage worker-attribution-observers stage_attribution
 phase=stock-chrome-shell
 rc=0
-node "$qa/run-static-acceptance.mjs" "$product" "$w/prepared" "$w/approved-root.json" \
+node "$attribution/run-static-acceptance.mjs" "$product" "$w/prepared" "$w/approved-root.json" \
   "$qa/sealed-parent" "$w/browser-report" > "$w/shell-summary.stdout" 2>"$w/shell-summary.stderr" || rc=$?
+node "$p/worker-attribution.mjs" "$w/browser-report" "$p/expected-component-pins.json" 2>/dev/null || :
 node "$p/allowlist-summary.mjs" "$w/shell-summary.stdout"
 exit "$rc"
