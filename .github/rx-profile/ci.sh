@@ -93,24 +93,39 @@ stage ninja-bootstrap bootstrap
 # Same validated programs/inputs are read-only on native and copied byte-for-byte into the Sods guest inputs.
 guest_env=(--clearenv --setenv HOME /root --setenv PATH /bin:/usr/bin --setenv LANG C --setenv LC_ALL C --setenv TZ UTC --setenv TERM dumb --setenv TMPDIR /tmp --setenv SOURCE_DATE_EPOCH 0)
 box() { timeout 180 sudo -n bwrap --unshare-all --unshare-user --uid 0 --gid 0 --die-with-parent --new-session --cap-drop ALL "${guest_env[@]}" --ro-bind "$root" / --proc /proc --dev /dev "$@"; }
-staging_timer() {
- cp -a "$self/fixture/." "$work/inputs/"
- chmod 0755 "$work/inputs" "$work/inputs/fixture.sh"
- chmod 0644 "$work/inputs/"*.cc "$work/inputs/"*.h "$work/inputs/build.ninja" "$work/inputs/rx-time.c"
- sudo -n install -d -m 1777 -o 0 -g 0 -- "$work/timer-stage"
- sudo -n install -m 0644 -o 0 -g 0 -- "$work/inputs/rx-time.c" "$work/timer-stage/rx-time.c"
- box --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec 'umask 022; exec /usr/bin/cc -O2 rx-time.c -o rx-time'
- test -r "$work/timer-stage/rx-time"
- install -m 0755 "$work/timer-stage/rx-time" "$work/inputs/rx-time"
- readelf -Whld "$work/inputs/ninja" >"$result/ninja.elf"
- readelf -Whld "$work/inputs/rx-time" >"$result/timer.elf"
- readelf -Whld "$root$ccPath" >"$result/cc1plus.elf"
- for f in "$result/"*.elf; do
-  grep -Eq 'Type: *DYN' "$f"; if grep -Eq '^ *INTERP |\(NEEDED\)|GNU_STACK.*RWE' "$f"; then return 1; fi; grep -q GNU_RELRO "$f"; grep -q GNU_STACK "$f"; grep -Eq 'BIND_NOW|FLAGS_1.*NOW' "$f"
- done
- sha256sum "$work/inputs/"* "$root$ccPath" >"$result/materials"
+stage timer-input-copy cp -a "$self/fixture/." "$work/inputs/"
+stage timer-input-dirs chmod 0755 "$work/inputs" "$work/inputs/fixture.sh"
+stage timer-input-files chmod 0644 "$work/inputs/"*.cc "$work/inputs/"*.h "$work/inputs/build.ninja" "$work/inputs/rx-time.c"
+stage timer-bind-dir sudo -n install -d -m 1777 -o 0 -g 0 -- "$work/timer-stage"
+stage timer-bind-source sudo -n install -m 0644 -o 0 -g 0 -- "$work/inputs/rx-time.c" "$work/timer-stage/rx-time.c"
+# Use the same root, uid, capabilities, namespace flags and bind as the actual compiler.
+# A /bin/sh exit code names the failed check without emitting guest or runner paths.
+stage native-isolation-probe box --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec '
+ test -r rx-time.c || exit 71
+ test -r /proc/self/status || exit 72
+ (umask 077; : > .rx-preflight) || exit 73
+ rm -- .rx-preflight || exit 74
+'
+stage timer-gcc box --bind "$work/timer-stage" /tmp --chdir /tmp /bin/sh -ec 'umask 022; exec /usr/bin/cc -O2 rx-time.c -o rx-time'
+stage timer-host-readable test -r "$work/timer-stage/rx-time"
+stage timer-install install -m 0755 "$work/timer-stage/rx-time" "$work/inputs/rx-time"
+record_elf() { readelf -Whld "$1" >"$2"; }
+stage elf-ninja record_elf "$work/inputs/ninja" "$result/ninja.elf"
+stage elf-timer record_elf "$work/inputs/rx-time" "$result/timer.elf"
+stage elf-cc1plus record_elf "$root$ccPath" "$result/cc1plus.elf"
+check_elf() {
+ local f=$1
+ grep -Eq 'Type: *DYN' "$f" || return 81
+ if grep -Eq '^ *INTERP |\(NEEDED\)|GNU_STACK.*RWE' "$f"; then return 82; fi
+ grep -q GNU_RELRO "$f" || return 83
+ grep -q GNU_STACK "$f" || return 84
+ grep -Eq 'BIND_NOW|FLAGS_1.*NOW' "$f" || return 85
 }
-stage timer-and-native-isolation staging_timer
+stage elf-ninja-contract check_elf "$result/ninja.elf"
+stage elf-timer-contract check_elf "$result/timer.elf"
+stage elf-cc1plus-contract check_elf "$result/cc1plus.elf"
+timer_materials() { sha256sum "$work/inputs/"* "$root$ccPath" >"$result/materials"; }
+stage timer-materials timer_materials
 # Serial ABBA pair order, full independent trials. Prime A and verify it first inside each selected engine,
 # then edit B and time at the same waitpid cut. No profiler or observer in these rows.
 native() {
