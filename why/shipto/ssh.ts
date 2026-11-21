@@ -1,9 +1,9 @@
 // Which of an account's devices listen for SSH, and to whom, as the Remote keeps it (why/shipto/remote/repos/ssh.ts):
 // that much and no more, so any page sees it and can turn one off. The listener itself, and where a device is
-// reached, are that device's own (why/cowboy/ssh.ts).
+// reached, are that device's own (why/ssh/host.ts).
 
 import {json} from './connection.ts';
-import type {Scope} from '../cowboy/ssh.ts';
+import type {Scope} from '../api/ssh-scope.ts';
 
 /** A device listening: its session, its user agent, to whom, when it was turned on and last heard from. */
 export interface Listening { device: string; agent: string | null; scope: Scope; since: number; seen: number; current: boolean }

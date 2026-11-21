@@ -16,5 +16,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["why/text", "why/agent", "why/api", "why/repo", "why/home", "why/shipto", "why/prompt", "why/device", "why/cowboy", "why/app", "why/test/app/*.ts", "scripts", "module/sods/runtime", "module/sods/test", "module/muk/make", "module/muk/test", "module/ricebox/make", "module/ricebox/layers", "module/you/make", "module/everyday"]
+  "include": ["why/**/*.ts", "ricebox/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["**/node_modules/**", "**/target/**", "**/dist/**", "why/test/app/.dist/**"]
 }

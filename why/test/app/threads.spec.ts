@@ -1,16 +1,14 @@
 import {existsSync} from 'node:fs';
-import {join} from 'node:path';
 import {expect, test} from './fixtures.ts';
-import {OS} from './paths.ts';
+import {WEBROOT_MANIFEST} from './paths.ts';
 
-// The page is cross-origin isolated (COOP and COEP, public/_headers and
+// The page is cross-origin isolated (COOP and COEP, why/app/public/_headers and
 // vite.config.ts), so it may share memory: the Prompt runs each guest
 // thread in a Worker of its own, all at once, as Linux runs processes.
 // What the Prompt then does is checked as Linux does it: a background job
 // does not hold its shell, a trap runs, Ctrl-C reaches what runs in front,
 // a job that computes without a system call is ended where it is.
 
-const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 
 test('the page is cross-origin isolated, and what it loads from its own origin and the Remote still comes', async ({app}) => {
   await app.page.goto('/');
@@ -30,7 +28,7 @@ test.describe('the Prompt with its threads apart', {tag: '@slow'}, () => {
   // On 'hello', made from C's files once for the worker and kept (fixtures.ts, helloC), opened again in Forge.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no why (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(WEBROOT_MANIFEST), 'Build or stage the app web root before running Prompt selftests').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

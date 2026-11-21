@@ -1,5 +1,5 @@
 // The web app's Content Security Policy, and the headers its own files are
-// served with (public/_headers): one source for the build's <meta> tag
+// served with (why/app/public/_headers): one source for the build's <meta> tag
 // (vite.config.ts), the preview the selftest runs against, and the test that
 // _headers says the same (headers.test.ts).
 
@@ -25,7 +25,7 @@ export const webPolicy = (remote: string) => [
 ].join('; ');
 
 /**
- * The desktop app's webview policy (why/desktop/tauri.conf.json, which says it for DEFAULT_REMOTE; scripts/desktop.sh
+ * The desktop app's webview policy (why/desktop/tauri.conf.json, which says it for DEFAULT_REMOTE; why/build/desktop.sh
  * gives Tauri this for the Remote a build is for): the web's, with the app's ipc: channel, and no inline style. Its
  * core is its own, but where Prompts do not run on the root (a machine other than Linux on x86-64, or one that keeps
  * user namespaces from why) they run translated, as in a browser: WebAssembly is compiled and Workers run, its own.

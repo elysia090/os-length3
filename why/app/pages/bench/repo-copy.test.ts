@@ -204,3 +204,47 @@ test('why excludes git metadata in both directions without imposing that policy 
   assert.deepEqual(reached, ['.gitignore', '.github/workflows/test.yml']);
   assert.deepEqual(written, ['.gitignore']);
 });
+
+test('write receipt waits for a slow store and does not turn waiter timeout into consumption', async (t) => {
+  journal(t);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  t.mock.method(store, 'put', async () => { await gate; return 1; });
+  const receipt = new WriteBack('slow-receipt', 'shell', () => {}).write(changed());
+  assert.equal(await Promise.race([receipt.then(() => 'completed'), new Promise(resolve => setTimeout(() => resolve('waiting'), 5))]), 'waiting');
+  release();
+  assert.deepEqual(await receipt, {storeAccepted: true, excluded: 0, skipped: [], journalCreated: true});
+});
+
+test('write receipt distinguishes excluded paths, failed store paths, and notification failure', async (t) => {
+  journal(t);
+  const notification = new Error('diagnostic failed');
+  t.mock.method(store, 'put', async () => { throw new Error('store refused'); });
+  const copy = new WriteBack('receipt-failure', 'shell', () => { throw notification; });
+  const result = await copy.write({dirs: ['.git'], files: [{path: '.git/config', bytes: new Uint8Array([0]), existed: false}, ...changed().files], removed: []});
+  assert.equal(result.storeAccepted, false); assert.equal(result.excluded, 2);
+  assert.deepEqual(result.skipped, ['same.txt']); assert.equal(result.notificationFailure, notification);
+  assert.equal(result.failure, undefined);
+  // A diagnostic failure is not a failed predecessor that blocks later work.
+  t.mock.method(store, 'put', async () => 1);
+  assert.equal((await copy.write(changed())).storeAccepted, true);
+});
+
+test('unexpected partial failure and blocked successor return outcomes without rolling back the prefix', async (t) => {
+  const kept = journal(t), calls: string[] = [], failure = new Error('synchronous sink failure');
+  t.mock.method(store, 'put', (_repo: string, path: string) => {
+    calls.push(path);
+    if (path === 'second') throw failure;
+    return Promise.resolve(1);
+  });
+  const copy = new WriteBack('receipt-prefix', 'shell', () => {});
+  const first = copy.write({dirs: [], files: ['first', 'second', 'third'].map(path => ({path, bytes: new Uint8Array([1]), existed: false})), removed: []});
+  const second = copy.write(changed());
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(calls, ['first', 'second']);
+  assert.ok(results.every(result => !result.storeAccepted && result.failure === failure));
+  assert.equal(Object.keys(kept).length, 2);
+  // The drained queue can accept a new batch, while recovery journals remain.
+  assert.equal((await copy.write(changed())).storeAccepted, true);
+  assert.deepEqual(calls, ['first', 'second', 'same.txt']);
+});

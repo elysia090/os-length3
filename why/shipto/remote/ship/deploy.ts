@@ -23,7 +23,7 @@
 //           else, the first time, a new one, whose link is handed on.
 //       Then the release's files the Remote serves to anyone (mirror.ts):
 //       every root why/prompt/roots/pins.rs pins and the desktop app of the version
-//       module/ricebox/RELEASE names (why/shipto/desktop-releases.json), each one the bucket
+//       why/LEGACY_RELEASE names (why/shipto/desktop-releases.json), each one the bucket
 //       lacks taken from the GitHub release with GITHUB_TOKEN (read-only;
 //       GITHUB_REPOSITORY names the repository when it is not this one),
 //       checked against its pin, and put with wrangler.
@@ -48,7 +48,8 @@ import {limitsOf, month, spent, take} from '../plan/budget.ts';
 import {rows, type Db} from '../serve/request.ts';
 import {mirror, type Store} from '../bytes/mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, retireWorkers, workerRole} from '../db/neon.ts';
-import {pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from './releases.ts';
+import {shipped} from '../../release-pins.ts';
+import {pinnedDesktop, pinnedDistros, pinnedRoots} from './releases.ts';
 
 const config = new URL('../../../../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');

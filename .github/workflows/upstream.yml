@@ -1,8 +1,8 @@
 name: Upstream
 
-# The newest release of every source the root is built from (module/ricebox/pins/sources.env), with digests to pin it by, and
-# every current pin downloaded and checked (module/ricebox/make/next.py): a table in the summary, the proposed files as an
-# artifact. Also the root's Rust and Go programs against advisories published since (module/ricebox/make/advisories.sh). A pin
+# The newest release of every source the root is built from (ricebox/distribution/pins/sources.env), with digests to pin it by, and
+# every current pin downloaded and checked (ricebox/distribution/maintenance/updates.py): a table in the summary, the proposed files as an
+# artifact. Also the root's Rust and Go programs against advisories published since (ricebox/distribution/maintenance/advisories.sh). A pin
 # that is broken or cannot be had, or an advisory that reaches one fails the run. Weekly, by hand, or when the pins or scripts change; nothing is
 # pushed.
 on:
@@ -10,7 +10,7 @@ on:
     - cron: '17 4 * * 1'
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/upstream.yml', 'module/ricebox/make/next.py', 'module/ricebox/make/next.test.py', 'module/ricebox/make/fetch.sh', 'module/ricebox/make/fetch.test.sh', 'module/ricebox/pins/sources.env', 'module/ricebox/make/advisories.sh', 'module/ricebox/pins/advisories.toml']
+    paths: ['.github/workflows/upstream.yml', 'ricebox/distribution/maintenance/updates.py', 'ricebox/distribution/maintenance/test/updates.test.py', 'ricebox/distribution/build/packages.sh', 'ricebox/distribution/build/lift-dependencies.sh', 'ricebox/distribution/build/fetch-sources.sh', 'ricebox/distribution/build/test/fetch-sources.test.sh', 'ricebox/distribution/pins/sources.env', 'ricebox/distribution/maintenance/advisories.sh', 'ricebox/distribution/pins/advisories.toml']
 
 permissions:
   contents: read
@@ -26,14 +26,14 @@ jobs:
           persist-credentials: false
       - name: What a pin that cannot be had ends as
         run: |
-          sh module/ricebox/make/fetch.test.sh
-          python3 module/ricebox/make/next.test.py
+          sh ricebox/distribution/build/test/fetch-sources.test.sh
+          python3 ricebox/distribution/maintenance/test/updates.test.py
       - name: Find newest releases
         run: |
           set -o pipefail
           # (a pin broken or not reached ends the run 1: the table is still shown and kept)
           status=0
-          python3 module/ricebox/make/next.py module/ricebox/pins/sources.env | tee table.txt || status=$?
+          python3 ricebox/distribution/maintenance/updates.py ricebox/distribution/pins/sources.env | tee table.txt || status=$?
           { echo '```'; cat table.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           for f in *.next; do echo "--- $f"; cat "$f"; done
           exit "$status"
@@ -60,4 +60,4 @@ jobs:
       - name: Scan the root's programs
         run: |
           set -o pipefail
-          OSV_FORMAT=markdown sh module/ricebox/make/advisories.sh ~/go/bin/osv-scanner | tee -a "$GITHUB_STEP_SUMMARY"
+          OSV_FORMAT=markdown sh ricebox/distribution/maintenance/advisories.sh ~/go/bin/osv-scanner | tee -a "$GITHUB_STEP_SUMMARY"

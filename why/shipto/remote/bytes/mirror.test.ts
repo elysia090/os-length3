@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import type {Pinned} from './mirror.ts';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, isRoot, pinnedDesktop, pinnedDistros, pinnedRoots, shipped} from '../ship/releases.ts';
+import {shipped} from '../../release-pins.ts';
+import {desktopFile, isRoot, pinnedDesktop, pinnedDistros, pinnedRoots} from '../ship/releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
@@ -102,7 +103,7 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
 });
 
 test('the pins: every root why/prompt/roots/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
-  // One at least: main pins the newest release alone (scripts/pin-root.ts), which a release makes as it is made.
+  // One at least: main pins the newest release alone (why/build/pin-root.ts), which a release makes as it is made.
   const roots = pinnedRoots(readFileSync(new URL('../../../prompt/roots/pins.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 1);
   for (const r of roots) {
@@ -132,11 +133,11 @@ test('the pins: every root why/prompt/roots/pins.rs pins, newest first, and the 
   for (const d of distros) assert.ok(web.includes(`'${d.tag.slice(d.tag.indexOf(' ') + 1)}'`), `environment.ts names ${d.tag}`);
 
   // The version this tree ships: the newest desktop app it pins, whose root is the newest it pins (the release's Pin
-  // pull request pins both); VERSION (or module/ricebox/RELEASE), the version being made, may name one not pinned yet. While a release is made
+  // pull request pins both); VERSION (or why/LEGACY_RELEASE), the version being made, may name one not pinned yet. While a release is made
   // (release.sh) its root is pinned first and the app built and tested on it, its desktop app pinned after: the
   // newest root is then the one being made.
   const version = shipped();
-  const making = process.env.VERSION || readFileSync(new URL('../../../../module/ricebox/RELEASE', import.meta.url), 'utf8').trim();
+  const making = process.env.VERSION || readFileSync(new URL('../../../LEGACY_RELEASE', import.meta.url), 'utf8').trim();
   assert.ok([version, making].includes(roots[0].version), `the newest root pinned is ${roots[0].version}: neither ${version} (shipped) nor ${making} (being made)`);
   assert.equal(shipped({'0.10.0': {}, '0.9.1': {}}), '0.10.0');
   const desktop = pinnedDesktop(version);

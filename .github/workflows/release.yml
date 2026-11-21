@@ -1,9 +1,9 @@
 name: Release
 
-# Publishes OS Length3 Linux X.Y.Z: the root (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), the web root, the web build and
+# Publishes OS Length3 Linux X.Y.Z: the root (ricebox/distribution/build/packages.sh, ricebox/distribution/build/assemble.sh), the web root, the web build and
 # the desktop app (.deb, AppImage), with digests and build provenance; then proposes the pins to main as one pull
 # request (Pin vX.Y.Z: why/prompt/roots/pins.rs, why/shipto/desktop-releases.json). Asked for by a tag
-# os-length3-linux-vX.Y.Z, by a push to main that changes module/ricebox/RELEASE, or by hand.
+# os-length3-linux-vX.Y.Z, by a push to main that changes why/LEGACY_RELEASE, or by hand.
 #
 # Only main's commits are released (audit R1), one version at a time (audit R2). Only this job's token writes.
 # No Cloudflare credentials are kept here.
@@ -12,7 +12,7 @@ on:
     tags: ['os-length3-linux-v*']
     branches: ['main']
     # A change to this workflow tries again (a published version is left as it is).
-    paths: ['module/ricebox/RELEASE', '.github/workflows/release.yml']
+    paths: ['why/LEGACY_RELEASE', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       version:
@@ -53,7 +53,7 @@ jobs:
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
           # Built as the lockfiles say (npm ci in web-release.sh; --locked in the scripts).
           cargo fetch --locked --manifest-path Cargo.toml
-          cargo fetch --locked --manifest-path module/sods/Cargo.toml
+          cargo fetch --locked --manifest-path ricebox/sods/Cargo.toml
       - name: Version
         env:
           INPUT_VERSION: ${{ inputs.version }}
@@ -69,7 +69,7 @@ jobs:
           esac
           case "$GITHUB_REF" in
             refs/tags/*) v=${GITHUB_REF_NAME#os-length3-linux-v} ;;
-            *) v=${INPUT_VERSION:-$(tr -d ' \n' < module/ricebox/RELEASE)} ;;
+            *) v=${INPUT_VERSION:-$(tr -d ' \n' < why/LEGACY_RELEASE)} ;;
           esac
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "not a version: $v" >&2; exit 1; }
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -84,7 +84,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ROOT_PACKAGES: ${{ github.workspace }}/target/root-packages
-        run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
+        run: sh why/build/release.sh "$GITHUB_WORKSPACE/out"
       # SLSA build provenance for every file, signed through Sigstore: `gh attestation verify FILE -R OWNER/REPO`.
       - name: Attest provenance
         if: env.SKIP != '1'
@@ -95,7 +95,7 @@ jobs:
         if: env.SKIP != '1'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.ts "$GITHUB_WORKSPACE/out"
+        run: node why/build/publish-release.ts "$GITHUB_WORKSPACE/out"
       # Merged, releases the pins no longer name are deleted (prune-releases.yml). A pull request opened with this
       # token runs no workflow: the pins are checked where they are read (the web build, the deploy). Where Actions
       # may not open pull requests, the branch is pushed and its link printed.

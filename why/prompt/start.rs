@@ -1,6 +1,6 @@
 //! A Prompt started on this machine: what why lends a box of the root, and nothing of how one is made or started.
-//! The root in a box is ricebox's to run (module/ricebox/src/run.rs: its bundle written, `muk run`, at a terminal its
-//! other end handed to `prompt attach`), and the box muk's to make (module/muk). What is here is a product's part:
+//! The root in a box is ricebox's to run (ricebox/distribution/src/run.rs: its bundle written, `muk run`, at a terminal its
+//! other end handed to `prompt attach`), and the box muk's to make (ricebox/muk). What is here is a product's part:
 //!
 //!   /root             the Prompt's home: a directory of its own, the person's dotfiles written in, gone with it
 //!   /root/<repo>      the repo

@@ -1,22 +1,10 @@
-// The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. Three
-// things, each thinner than the one over it, none holding another (docs/STRUCTURE.md). muk is the machine: an
-// OCI-compatible VMM, a box run from layers by its namespaces on Linux and by answering its calls itself in a browser.
-// ricebox is the neutral distribution, as BusyBox is one and as thin: the root and the command line #80 lists; no
-// window, ordinary POSIX, served from any web host as it is. It knows no service, so it can be cut out with the units
-// under it and put under another's: none
-// of them takes from one over them (UNDER_RICEBOX, checked). why is the product, as Alpine stands on BusyBox:
-// ricebox, the root's packages and the modules over it, of which shipto alone holds what a service wants. A face (the
-// app's pages and window, why's words) holds no judgement of its own and takes from any unit.
-//
-//   node scripts/units.ts        what each file is, and every import from one unit to another the table does not allow
-//
-// Only TypeScript's imports are followed here, by their paths; the Rust and the C are placed by their files, and each
-// is checked by its own (layers.ts for the core, lib/build.sh for the units of C) until it moves into its unit. An import a unit
-// may not make and still makes is owed: listed below with the step that takes it away, so a new one fails and an
-// owed one gone must be struck from the list.
+// Repository ownership and allowed TypeScript dependencies. The longest declared path owns a file.
+// Ricebox is reusable without the Why product. Public entry checks use owners, not directory prefixes.
+// Rust linkage and freestanding C builds are checked by their toolchains, not this TypeScript scanner.
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {references, relativeReferences} from './imports.ts';
 
 /** The repository's root. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,7 +15,7 @@ export interface Unit {
   says: string;
   /** Its files and folders, from the repository's root; the longest path that holds a file is its unit's. */
   holds: string[];
-  /** The units it may take from ('*': any, a face's). */
+  /** The other units it may take from. */
   takes: string[];
   /**
    * Its files that what is outside its folder may import; none besides. Not said: any of them. What a unit is made of
@@ -37,68 +25,48 @@ export interface Unit {
 }
 
 export const UNITS: Unit[] = [
-  {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
-  {name: 'muk', says: 'the machine: an OCI bundle\'s box made, isolated, started and waited for (`muk run`), in C on lib and nothing else. Where there is no Linux under it, the Linux it asks for is sods\'; no image, no terminal\'s other end, no KVM and no Firecracker',
-    holds: ['module/muk'],
-    takes: ['lib'], entries: []},
-  {name: 'prompt', says: "a terminal attached: the other end of the one muk makes in a box, given as one descriptor (`prompt attach FD`): what is typed and shown, its size, the frontend's terminal put back. It starts no process and keeps no box: whoever runs muk owns those",
-    holds: ['module/prompt'],
-    takes: [], entries: []},
-  {name: 'sods', says: 'a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, and every difference between hosts (#191: its table is runtime/targets.ts); no image, no OCI and no product policy',
-    holds: ['module/sods'],
-    takes: ['lib'],
-    entries: ['module/sods/runtime/translate.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/host.ts', 'module/sods/runtime/targets.ts']},
-  {name: 'disk', says: 'storage mechanics on an explicitly opened volume: atomic reads and writes; no owner, persistence policy or product known to it',
-    holds: ['module/disk'], takes: [], entries: ['module/disk/indexeddb.ts']},
-  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers (their form, what writes and what reads them), and the root where it is used: unpacked and held on a device, and run in a box (the bundle muk is given, the box started, in a page its Worker); no window, ordinary POSIX, and no service or product known to it',
-    holds: ['module/ricebox'],
-    takes: ['lib', 'muk', 'sods', 'everyday']},
-  {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',
-    holds: ['module/everyday'], takes: []},
-  {name: 'you', says: 'the tools a person reaches for, each a unit of C on lib made to its bound: you (the places one has been, zoxide\'s) and rg (a tree searched, ripgrep\'s), on regular expressions of its own', holds: ['module/you'], takes: ['lib']},
-  {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
-    holds: ['module/otter', 'why/device/storage'],
-    takes: ['lib', 'ricebox', 'muk', 'sods']},
-  {name: 'cowboy', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['module/cowboy', 'why/cowboy', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
-    takes: ['sods', 'ricebox']},
-  {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
-    holds: ['why/shipto', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs'],
-    takes: ['ricebox', 'muk', 'cowboy']},
-  {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
-    holds: [], takes: ['ricebox', 'muk', 'shipto']},
-  {name: 'app', says: "why's own parts (what a repo, a home, a Prompt, an Agent's work and a device are to it, its words, its one door) and the faces that show them: the pages and the window, which hold no judgement of their own",
-    holds: ['why'], takes: ['*']},
-  {name: 'why', says: "a face: why's words, read against its one table, and what it prints; no judgement of its own",
-    holds: ['why/cli'], takes: ['*']},
+  {name: 'toolchain', says: 'Freestanding C headers and a static x86-64 Linux build command',
+    holds: ['ricebox/toolchain'], takes: []},
+  {name: 'muk', says: 'Starts and waits for a sandboxed OCI bundle on Linux',
+    holds: ['ricebox/muk'], takes: ['toolchain'], entries: []},
+  {name: 'sods', says: 'Translates guest instructions, provides Linux services, and adapts host capabilities',
+    holds: ['ricebox/sods'], takes: ['toolchain'],
+    entries: ['translate', 'linux', 'host', 'targets'].map(name => `ricebox/sods/runtime/${name}.ts`)},
+  {name: 'ricebox', says: 'Assembles and verifies a pinned Linux distribution, and loads and runs it for an embedding host',
+    holds: ['ricebox/distribution'], takes: ['toolchain', 'muk', 'sods', 'you', 'otter']},
+  {name: 'everyday', says: 'Theme values; the independent Wayland display and input foundation is not implemented',
+    holds: ['ricebox/everyday'], takes: []},
+  {name: 'you', says: 'Freestanding C implementations of directory history and tree search',
+    holds: ['ricebox/you'], takes: ['toolchain']},
+  {name: 'otter', says: 'Command help and acquisition of explicitly pinned package catalogs',
+    holds: ['ricebox/otter'], takes: ['toolchain']},
+  {name: 'cowboy', says: 'Guest networking and relay protocol, without Why account or service policy',
+    holds: ['ricebox/cowboy'], takes: ['sods']},
+  {name: 'remote-contracts', says: 'SSH scope values and release pin metadata shared by Why and its Remote',
+    holds: ['why/api/ssh-scope.ts', 'why/shipto/release-pins.ts', 'why/shipto/desktop-releases.json'], takes: []},
+  {name: 'remote', says: 'The hosted Why service: identity, synchronization, links and release delivery',
+    holds: ['why/shipto/remote'], takes: ['remote-contracts']},
+  {name: 'app', says: 'Why product core, platform adapters, and app surfaces',
+    holds: ['why'], takes: ['ricebox', 'everyday', 'remote-contracts']},
+  {name: 'why', says: 'The Why command-line frontend',
+    holds: ['why/cli'], takes: ['app', 'ricebox', 'remote-contracts']},
+  {name: 'why-test-support', says: 'Why application fixtures that exercise real Remote code',
+    holds: ['why/app/testing'], takes: ['app', 'remote']},
 ];
 
-/** ricebox and the units under it: what is cut out with it. None takes from a unit over them. */
-export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'disk', 'everyday', 'ricebox'];
+/** Reusable components that may not depend on the Why product. */
+export const RICEBOX_UNITS = ['toolchain', 'muk', 'sods', 'ricebox', 'everyday', 'you', 'otter', 'cowboy'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'why/test', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test', 'module/cowboy/test', 'module/cowboy/target',
-  'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/prompt/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'why/test', 'ricebox/sods/test', 'ricebox/muk/test', 'ricebox/sods/examples', 'ricebox/otter/test', 'ricebox/cowboy/test', 'ricebox/cowboy/target',
+  'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'why/app/public', 'ricebox/sods/target', 'ricebox/distribution/terminal/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
-/**
- * Imports a unit makes that the table does not allow, each with the step of the work that takes it away (README.md,
- * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 cowboy). [from, to, file].
- */
-export const OWED: [string, string, string][] = [
-  // The half of shipto and of cowboy that is in why (why/shipto, why/cowboy: what a page and the core ask of a
-  // service, and this device's SSH) still asks through why's one door and says why's words. Each folder holds all of
-  // its responsibility now, so what it takes of why is seen here; 7 and 8 take it away.
-  ...['connection', 'inbox', 'lifecycle', 'news', 'passkeys.desktop', 'plan', 'policy', 'servers', 'settings']
-    .map((name): [string, string, string] => ['shipto', 'app', `why/shipto/${name}.ts`]),
-  ['cowboy', 'app', 'why/cowboy/ssh.ts'],
-];
-
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
-export function unitOf(rel: string): Unit | null {
+export function unitOf(rel: string, units: readonly Unit[] = UNITS): Unit | null {
   let best: Unit | null = null, length = -1;
-  for (const u of UNITS) for (const h of u.holds) {
+  for (const u of units) for (const h of u.holds) {
     if ((rel === h || rel.startsWith(h + '/')) && h.length > length) best = u, length = h.length;
   }
   return best;
@@ -118,26 +86,37 @@ export function codeFiles(dir = ROOT): string[] {
   return out;
 }
 
-const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
-
-/** Files no unit holds, and every import from one unit to another the table does not allow: [from, to, file]. */
-export function check(): {homeless: string[]; crossings: [string, string, string][]} {
-  const homeless: string[] = [], crossings: [string, string, string][] = [];
-  for (const rel of codeFiles()) {
-    const from = unitOf(rel);
-    if (!from) { homeless.push(rel); continue; }
-    if (!rel.endsWith('.ts')) continue;
+/** Imports that cross a forbidden ownership boundary: [from, to, file]. */
+export function dependencyViolations(sources: Iterable<readonly [string, string]>): [string, string, string][] {
+  const crossings: [string, string, string][] = [];
+  for (const [file, source] of sources) {
+    const from = unitOf(file);
+    if (!from) continue;
     const seen = new Set<string>();
-    for (const m of readFileSync(join(ROOT, rel), 'utf8').matchAll(IMPORT)) {
-      let target = relative(ROOT, resolve(ROOT, dirname(rel), m[1] ?? m[2] ?? '')).split(sep).join('/');
+    for (const reference of references(source)) {
+      if (reference.startsWith('<')) {
+        crossings.push([from.name, reference, file]);
+        continue;
+      }
+      if (!reference.startsWith('./') && !reference.startsWith('../')) continue;
+      let target = relative(ROOT, resolve(ROOT, dirname(file), reference.split(/[?#]/)[0]!)).split(sep).join('/');
       try { if (statSync(join(ROOT, target)).isDirectory()) target += '/index.ts'; } catch { /* a file, as written */ }
       const to = notUnit(target) ? null : unitOf(target);
-      if (!to || to === from || from.takes.includes('*') || from.takes.includes(to.name)) continue;
-      const key = `${from.name}>${to.name}`;
-      if (!seen.has(key)) seen.add(key), crossings.push([from.name, to.name, rel]);
+      if (!to || to === from || from.takes.includes(to.name) || seen.has(to.name)) continue;
+      seen.add(to.name);
+      crossings.push([from.name, to.name, file]);
     }
   }
-  return {homeless, crossings};
+  return crossings;
+}
+
+export function check(): {homeless: string[]; crossings: [string, string, string][]} {
+  const files = codeFiles();
+  return {
+    homeless: files.filter(file => !unitOf(file)),
+    crossings: dependencyViolations(files.filter(file => file.endsWith('.ts')).map(file =>
+      [file, readFileSync(join(ROOT, file), 'utf8')] as const)),
+  };
 }
 
 /** Every TypeScript file under the root, a unit's or not (tests and scripts too), but for what is made or fetched. */
@@ -157,28 +136,31 @@ function everyTs(dir = ROOT): string[] {
  * taken from through them alone by everything outside its own folder, tests and scripts included; its own files and
  * its own tests reach where they like.
  */
-export function reaches(): [string, string][] {
+export function entryViolations(
+  sources: Iterable<readonly [string, string]>,
+  units: readonly Unit[] = UNITS,
+): [string, string][] {
   const found: [string, string][] = [];
-  const guarded = UNITS.filter((u) => u.entries).map((u) => ({unit: u, folders: u.holds.filter((h) => h.startsWith('module/'))}));
-  for (const rel of everyTs()) {
-    for (const m of readFileSync(join(ROOT, rel), 'utf8').matchAll(IMPORT)) {
-      const target = relative(ROOT, resolve(ROOT, dirname(rel), m[1] ?? m[2] ?? '')).split(sep).join('/');
-      for (const {unit, folders} of guarded) {
-        const inside = (path: string) => folders.some((f) => path.startsWith(f + '/'));
-        if (inside(target) && !inside(rel) && !unit.entries!.includes(target)) found.push([rel, target]);
-      }
+  for (const [file, source] of sources) {
+    const from = unitOf(file, units);
+    for (const specifier of relativeReferences(source)) {
+      const target = relative(ROOT, resolve(ROOT, dirname(file), specifier)).split(sep).join('/');
+      const owner = unitOf(target, units);
+      if (owner?.entries && owner !== from && !owner.entries.includes(target)) found.push([file, target]);
     }
   }
   return found;
+}
+
+export function reaches(): [string, string][] {
+  return entryViolations(everyTs().map(file => [file, readFileSync(join(ROOT, file), 'utf8')] as const));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const [file, target] of reaches()) console.log(`NOT AN ENTRY: ${file} -> ${target}`);
   const {homeless, crossings} = check();
   for (const f of homeless) console.log(`no unit's: ${f}`);
-  const owed = new Set(OWED.map((o) => o.join(' ')));
-  for (const c of crossings) console.log(`${owed.has(c.join(' ')) ? 'owed' : 'NOT ALLOWED'}: ${c[0]} -> ${c[1]}\t${c[2]}`);
-  for (const o of OWED) if (!crossings.some((c) => c.join(' ') === o.join(' '))) console.log(`owed, but no longer made (strike it): ${o.join(' ')}`);
+  for (const c of crossings) console.log(`NOT ALLOWED: ${c[0]} -> ${c[1]}\t${c[2]}`);
   const counts = new Map<string, number>();
   for (const f of codeFiles()) { const u = unitOf(f)?.name ?? '-'; counts.set(u, (counts.get(u) ?? 0) + 1); }
   console.log([...counts].map(([u, n]) => `${u} ${n}`).join(', '));

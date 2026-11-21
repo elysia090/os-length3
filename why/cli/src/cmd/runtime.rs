@@ -264,7 +264,7 @@ pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
 /// SSH into the Prompts, said and as data: the listener, when it runs (why address lists where; why address ssh off stops it).
 #[cfg(unix)]
 fn ssh_here() -> (String, serde_json::Value) {
-    match why_core::cowboy::listening(paths::data_dir()) {
+    match why_core::ssh::listening(paths::data_dir()) {
         Some(l) => (tr!("SSH  on · {} · port {} (why address; why address ssh off stops it)", "SSH  オン · {} · ポート {}（why address。止めるなら why address ssh off）", l.scope.said(), l.port),
             json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})),
         None => (tr!("SSH  off (why address ssh on)", "SSH  オフ（why address ssh on）"), serde_json::Value::Null),

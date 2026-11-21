@@ -29,6 +29,7 @@ export function frame(payload: Uint8Array, opcode = 2): Buffer {
 export function frames(socket: Socket, message: (data: Buffer) => void, closed: () => void) {
   let buf = Buffer.alloc(0), parts: Buffer[] = [];
   socket.on('data', (chunk: Buffer) => {
+    if (socket.writableEnded) return;
     buf = Buffer.concat([buf, chunk]);
     for (;;) {
       if (buf.length < 2) return;
@@ -42,13 +43,13 @@ export function frames(socket: Socket, message: (data: Buffer) => void, closed: 
       const payload = Buffer.from(buf.subarray(at, at + len));
       if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
       buf = buf.subarray(at + len);
-      if (opcode === 8) { socket.end(frame(new Uint8Array(0), 8)); closed(); return; }
+      if (opcode === 8) { if (!socket.writableEnded) socket.end(frame(payload, 8)); return; }
       if (opcode === 9) { socket.write(frame(payload, 10)); continue; }
       if (opcode === 10) continue;
       parts.push(payload);
       if (fin) { const whole = Buffer.concat(parts); parts = []; message(whole); }
     }
   });
-  socket.on('close', closed);
-  socket.on('error', closed);
+  socket.once('close', closed);
+  socket.once('error', () => socket.destroy());
 }

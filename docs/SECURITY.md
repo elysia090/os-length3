@@ -33,14 +33,14 @@ is welcome, and so is a Remote of your own (`node why/shipto/remote/serve/dev.ts
 
 ## Supported versions
 
-Only the latest release is supported: the release `module/ricebox/RELEASE` names, which
+Only the latest release is supported: the release `why/LEGACY_RELEASE` names, which
 the web app at `os.length3.com` always is. Fixes go into the next release.
 Older desktop apps and `why` builds are asked to update. Nothing earlier is
 patched.
 
 ## Threat model, in short
 
-The whole model is in `docs/OS.md`:
+The [Why architecture guide](../why/docs/OS.md) covers the product threat model:
 
 - §5, "Names: who owns what, and what is trusted for it";
 - §6, "The canonical copy is on the Remote" and "The Remote";
@@ -75,11 +75,11 @@ request passes, and the one secret") and are tested in
   digest pinned in `why/prompt/roots/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
-  of that table (`module/ricebox/layers/table.ts`), before any of it is used.
+  of that table (`ricebox/distribution/format/pack.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter
-  (muk's: `module/muk/src/filter.h`; what why lends a box is `why/prompt/start.rs`). Its network is a per-device grant. The desktop
+  (muk's: `ricebox/muk/src/filter.h`; what why lends a box is `why/prompt/start.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
 - **A link carried.** The Remote opens TCP connections for a box in a page
@@ -102,11 +102,11 @@ request passes, and the one secret") and are tested in
   (`gh attestation verify`). Lockfiles are enforced, and Dependabot proposes
   updates; npm's, the app's crates' and the root's Rust and Go programs'
   dependencies are checked against published advisories with every change
-  and, for the root, every week (`module/ricebox/make/advisories.sh`).
+  and, for the root, every week (`ricebox/distribution/maintenance/advisories.sh`).
 - **How the root is built.** Every package from a source pinned by digest
-  (`module/ricebox/pins/sources.env`), in one Alpine pinned by digest, by a compiler
+  (`ricebox/distribution/pins/sources.env`), in one Alpine pinned by digest, by a compiler
   that hardens every unit it compiles (stack protector, stack clash
   protection, zeroed locals, `_FORTIFY_SOURCE=3`): each program and library
   is checked, unit by unit, to have been compiled so, and to be a static PIE
   with full RELRO and no executable stack; nothing is setuid or setgid
-  (`module/ricebox/make/build.sh`).
+  (`ricebox/distribution/build/packages.sh`).

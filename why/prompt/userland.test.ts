@@ -5,12 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {gunzipSync} from 'node:zlib';
-import {makeWebroot, standIn} from '../../module/ricebox/make/standin.ts';
+import {makeWebroot, standIn} from '../../ricebox/distribution/test/fixtures/distribution.ts';
 import type {About, Index} from './userland.ts';
 
 // What a Prompt in a browser is given of why: the root's own files at their
 // own paths, nothing in place of them. Served from why made from a stand-in
-// root (module/ricebox/make/standin.ts), as the page fetches it.
+// root (ricebox/distribution/test/fixtures/distribution.ts), as the page fetches it.
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 let work = '', out = '';
@@ -19,7 +19,7 @@ const asked: string[] = [];
 before(() => {
   work = mkdtempSync(join(tmpdir(), 'webroot-page-'));
   out = join(work, 'webroot');
-  const r = makeWebroot(standIn(work, '9.9.9'), out, work);
+  const r = makeWebroot(standIn(work, '9.9.9'), out, work, ['--name', 'why']);
   assert.equal(r.status, 0, r.stderr);
   // The page's origin: /webroot/… is the directory webroot.ts wrote.
   Object.assign(globalThis, {location: new URL('http://page.test/')});
@@ -32,6 +32,30 @@ before(() => {
   }) as typeof fetch;
 });
 after(() => rmSync(work, {recursive: true, force: true}));
+
+test('the explicit execution profile keeps canonical program bytes lazy without changing the legacy profile', async () => {
+  const {executionRoot} = await import('./userland.ts');
+  const root = await executionRoot.load();
+  assert.equal(root.profile, 'canonical-aot-v1');
+  assert.equal(root.generation, root.about.index.sha256);
+  assert.equal('files' in root, false, 'prepared roots do not pretend to have synchronous byte-bearing files');
+  const executables = executionRoot.executablesNow(root);
+  assert.deepEqual(executables.map(e => e.path), ['/usr/bin/busybox']);
+  for (const e of executables) {
+    assert.equal(e.generation, root.generation);
+    assert.ok(e.module instanceof WebAssembly.Module);
+    const translation = root.index.translations.find(t => t.path === e.path)!;
+    assert.equal(e.source.sha256, translation.sha256);
+    assert.equal(e.source.size, translation.elf.bytes);
+    assert.equal('bytes' in e, false);
+  }
+  const elfPaths = new Set(root.index.translations.map(t => `/webroot/${t.elf.path}`));
+  assert.equal(asked.some(path => elfPaths.has(path)), false, 'execution preparation never fetches source ELF blobs');
+  assert.equal(asked.some(path => path.includes('/packs/')), false, 'preparation never fetches canonical source packs');
+  // The following unchanged legacy test starts with its own request log. Its byte-bearing
+  // API must still independently fetch the ELF and retain the original meaning.
+  asked.length = 0;
+});
 
 test('a Prompt is given the root\'s own BusyBox at its own path, its translation beside it, and the whole root by its index', async () => {
   const {loadWebroot} = await import('./userland.ts');
@@ -69,7 +93,7 @@ test('webroot.json names what why is: the version and the root digest why/prompt
 });
 
 // why this build carries, when it carries one (npm run webroot, or prompt-files.ts): what webroot.json names is beside it.
-const built = new URL('../../public/webroot/', import.meta.url);
+const built = new URL('../../why/app/public/webroot/', import.meta.url);
 test('the why in public/ is whole: its index is the digest webroot.json says, and names only what is there', {skip: !existsSync(new URL('webroot.json', built))}, () => {
   const about = JSON.parse(readFileSync(new URL('webroot.json', built), 'utf8')) as About;
   const bytes = readFileSync(new URL(about.index.path, built));

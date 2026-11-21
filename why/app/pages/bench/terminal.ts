@@ -5,7 +5,7 @@ import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
 import {core, promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../../api/host.ts';
 import {currentLang, onLang, t, tn} from '../../../text/i18n.ts';
-import {aheadFor, BOX, filesNow, hearAhead, hearLater, holdAhead, translateAhead, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../../prompt/userland.ts';
+import {retireRootWorker, aheadFor, BOX, executionRoot, hearAhead, holdAhead, translateAhead, keepReached, keepTranslation, keptNow, promptWorker, usedKept, watchLoad, type Box, type PreparedRoot, type Stage} from '../../../prompt/userland.ts';
 import {every} from '../../../api/runs.ts';
 import {errorText} from '../../../api/errors.ts';
 import {still} from '../../ui/glide.ts';
@@ -16,6 +16,7 @@ import {Output, strip} from './output.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 import {sessions, type Prompt, type Run} from './sessions.ts';
+import {Consumption, type ConsumptionResult} from './consumption.ts';
 
 // A shell per repo: in a browser, why's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -82,7 +83,7 @@ function zone(): string {
   } catch { return 'UTC'; }
 }
 /**
- * The box a page's Prompt runs in: the bundle ricebox writes for muk (module/ricebox/src/bundle.rs, the one writer
+ * The box a page's Prompt runs in: the bundle ricebox writes for muk (ricebox/distribution/src/bundle.rs, the one writer
  * for every host, asked through the core: prompt/mod.rs), its shell and what it runs with said there, as for the
  * app's Prompts on the machine. What is
  * said here is what this host lends: the tree the Worker's kernel is given, whole and its own to write (the root is
@@ -95,22 +96,23 @@ const boxOf = (repo: string, more: [string, string][] = []) => core<Box>('prompt
   lent: {root: '/', written: true, uid: 0, gid: 0, console: '/dev/pts/0'}, dir: BOX,
 });
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell in the same box, in no repo yet, with no key. */
-const readyNext = (webroot: Webroot) => boxOf('').then((box) => readyPrompt(webroot, box), () => { /* the start itself says what is wrong */ });
+const readyNext = (webroot: PreparedRoot) => boxOf('').then((box) => executionRoot.readyWorker(webroot, box), () => { /* the start itself says what is wrong */ });
 
 /**
  * What a browser's Prompt's Worker is told to start with: why, the repo's copy (`copy`), what was kept of why, and the
  * Agent's key, if one is kept on this device, under its maker's variable (`key`), as the app's Prompts have it. A
- * Worker readied ahead (readyPrompt) has the translator, the root and the files `given` already: only the rest goes.
+ * Worker readied ahead has the translator, canonical root and prepared executable keys already: only the rest goes.
  */
-function startMessage(repo: string, webroot: Webroot, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, box: Box, given: Set<string> | null) {
+export function startMessage(repo: string, webroot: PreparedRoot, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, box: Box, givenExecutables: Set<string> | null) {
   const cwd = `/root/${repo}`;
   return {
-    type: 'start',
-    // why's hot programs at their own paths (the same bytes as the root's), the person's dotfiles fresh in every Prompt, and the repo.
-    files: [...filesNow(webroot).filter((f) => !given?.has(f.path)), ...dotfiles.asFiles(), ...copy.files],
+    type: 'start', profile: webroot.profile, generation: webroot.generation,
+    // Prepared programs name captured canonical sources; only ordinary overlays carry bytes.
+    executables: executionRoot.executablesNow(webroot).filter((e) => !givenExecutables?.has(e.key)),
+    files: [...dotfiles.asFiles(), ...copy.files],
     dirs: copy.dirs,
     // The whole root around them: the same programs, files and links as the app's Prompt, each file read when a program first opens it.
-    ...(given ? {} : {translator: webroot.translator, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk}),
+    ...(givenExecutables ? {} : {translator: webroot.translator, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk}),
     box,
     // It is a terminal, shown as a screen as wide as a box on the desk (80 columns) and 24 rows tall: a listing comes in
     // columns, and a whole-screen program (vi, less, top) has all of it.
@@ -135,6 +137,8 @@ export class Session implements Prompt {
   /** The prompt line put at the foot for a shell not yet started (a line the Agent ran, shown): its own takes its place. */
   private standIn = '';
   private worker: Worker | null = null;
+  private readonly consumption = new Consumption();
+  private consumptionBoundary: Promise<ConsumptionResult> | null = null;
   private repo: string;
   /** What was run here, newest last. */
   readonly runs: Run[] = [];
@@ -158,12 +162,12 @@ export class Session implements Prompt {
   private measuring: {stop(): void} | null = null;
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
   /** why, in a browser, until the shell's first prompt line. */
-  private webroot: Webroot | null = null;
+  private webroot: PreparedRoot | null = null;
   /** The why it runs, in a browser. */
-  private webrootOf: Webroot | null = null;
+  private webrootOf: PreparedRoot | null = null;
   private unwatch: (() => void) | null = null;
-  /** The paths its Worker was given (the hot programs among them), and how it stops hearing of those ready later. */
-  private given = new Set<string>();
+  /** Prepared association identities, never conflated with overlay file paths. */
+  private givenExecutables = new Set<string>();
   private unhear: (() => void) | null = null;
   private copy: WriteBack;
   /** Whether the shell has waited at a prompt line yet; what was sent before it did, held for it. */
@@ -246,7 +250,7 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
-  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (module/ricebox/layers/worker.ts). */
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (ricebox/distribution/runtime/worker.ts). */
   typing() { this.worker?.postMessage({type: 'typing'}); }
 
   /** `sig` to what runs in front (a key that makes a signal). */
@@ -257,7 +261,7 @@ export class Session implements Prompt {
 
   /**
    * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
-   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (module/ricebox/layers/worker.ts), so ^C
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (ricebox/distribution/runtime/worker.ts), so ^C
    * stands where the run was cut, not under the megabyte a flood had on its way.
    */
   private flush(): {flush?: number} {
@@ -421,21 +425,24 @@ export class Session implements Prompt {
     // so it takes nothing from the first line run.
     if (this.webroot && waits) {
       const webroot = this.webroot;
+      const worker = this.worker;
       this.webroot = null;
       setTimeout(() => {
-        if (!this.worker) return;
-        warmWebroot(webroot);
+        if (!worker || this.worker !== worker || this.webrootOf !== webroot) return;
+        executionRoot.warm(webroot);
         // And this Prompt runs each of them from its next run on, as it is ready.
-        const hot = hearLater((f) => {
-          if (this.given.has(f.path) || !this.worker) return;
-          this.given.add(f.path);
-          this.worker.postMessage({type: 'hot', files: [f]});
+        const hot = executionRoot.hearLater((f) => {
+          if (f.generation !== webroot.generation || this.givenExecutables.has(f.key) || this.worker !== worker || this.webrootOf !== webroot) return;
+          this.givenExecutables.add(f.key);
+          worker.postMessage({type: 'executables', generation: webroot.generation, executables: [f]});
           // Which programs it was given so, as its threads are said (data-threads).
           this.element.dataset.ahead = [this.element.dataset.ahead, f.path].filter(Boolean).join(' ');
         });
         // What this repo is likely to run next, translated by this browser while the person reads (ahead.ts): each one
         // kept is told to this Prompt's kernel, which reads it when it is first run rather than translating it then.
-        const ahead = hearAhead((origin, url) => this.worker?.postMessage({type: 'kept', at: {[origin]: {main: url, more: null}}}));
+        const ahead = hearAhead((origin, url) => {
+          if (this.worker === worker && this.webrootOf === webroot) worker.postMessage({type: 'kept', at: {[origin]: {main: url, more: null}}});
+        });
         this.unhear = () => { hot(); ahead(); };
         void translateAhead(webroot, aheadFor(webroot.index));
       }, 3000);
@@ -557,20 +564,34 @@ export class Session implements Prompt {
     // Its Worker was readied while the Prompt was shown (readyPrompt), else it is made now, while why and the repo's copy
     // come, and starts the Workers its first threads run in: their scripts are loaded and run by the time it is given
     // what to run, rather than after.
-    const ready = takeReady();
-    const worker = ready?.worker ?? promptWorker();
+    let ready = executionRoot.takeReady();
+    let worker = ready?.worker ?? promptWorker();
     this.worker = worker;
     if (!ready) worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
-    const [webroot, copy, kept, box] = await Promise.all([loadWebroot(), snapshot(this.repo), loadWebroot().then(keptNow).catch(() => null),
+    const loading = executionRoot.load();
+    const [webroot, copy, kept, box] = await Promise.all([loading, snapshot(this.repo), loading.then(keptNow).catch(() => null),
       // The Agent's key, if one is kept on this device, under its maker's variable, as the app's Prompts have it.
       agentUse(false).then((use) => boxOf(this.repo, use ? [[use.variable, use.key]] : []))]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
+    if (ready && ready.generation !== webroot.generation) {
+      // A rehearsed kernel belongs to exactly one release. Retirement closes admission;
+      // it does not prove host shutdown or permit recycling its resources.
+      worker.onmessage = null;
+      const retired = await retireRootWorker(worker);
+      if (retired.failures.length) this.retirementFailures.push(new AggregateError(retired.failures.map(f => f.error), 'Stale Worker retirement failed'));
+      if (this.worker !== worker) return;
+      ready = null;
+      worker = promptWorker();
+      this.worker = worker;
+      worker.onmessage = ({data}) => this.fromWorker(data);
+      worker.postMessage({type: 'warm'});
+    }
     this.webrootOf = webroot;
-    const start = startMessage(this.repo, webroot, copy, kept, box, ready?.given ?? null);
+    const start = startMessage(this.repo, webroot, copy, kept, box, ready?.givenExecutables ?? null);
     worker.postMessage(start);
-    this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
+    this.givenExecutables = new Set([...(ready?.givenExecutables ?? []), ...start.executables.map((e) => e.key)]);
     // What is saved elsewhere comes into the shell's copy.
     this.unwatch = mirror(this.repo, this.id, (m) => this.worker?.postMessage(m));
     // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
@@ -584,17 +605,23 @@ export class Session implements Prompt {
   /** What the Worker says. */
   private fromWorker(data: MessageEvent['data']) {
     this.activity.heard = Date.now();
+    if (this.consumption.closed && (data.type === 'output' || data.type === 'changes' || data.type === 'output-boundary')) {
+      this.end(() => t('Halted: {message}', {message: 'Data arrived after the final output boundary'}));
+      return;
+    }
     switch (data.type) {
       case 'output':
         // (Written before a key flushed it: taken in, not shown.)
         if ((data.epoch ?? 0) >= this.epoch) this.received(this.decoder.decode(data.bytes, {stream: true}));
+        this.consumption.output(data.bytes.length, (data.epoch ?? 0) < this.epoch);
         this.drained(data.bytes.length);
         break;
       case 'tty': this.setTty(data); break;
-      case 'changes': this.copy.write(data); break;
+      case 'changes': this.consumption.write(this.copy.write(data)); break;
+      case 'output-boundary': this.consumptionBoundary = this.consumption.boundary(data.sentBytes); break;
       // Code its shell reached later, a program of the root it translated and the code that reached later, and what it
       // read of what was kept: kept for the Prompts after it, and counted as used.
-      case 'more': keepMore(data.path, data.from, data.more); break;
+      case 'more': if (this.webrootOf) executionRoot.keepMore(this.webrootOf, data.path, data.from, data.more); break;
       case 'translated': if (this.webrootOf) keepTranslation(this.webrootOf, data.origin, data.wasm, data.segments); break;
       case 'reached': if (this.webrootOf) keepReached(this.webrootOf, data.origin, data.from, data.more); break;
       case 'used': usedKept(data.urls); break;
@@ -728,6 +755,8 @@ export class Session implements Prompt {
   }
   /** Started again: its own ending is not shown going dark, the new one comes at once. */
   private restarting = false;
+  private retirementGeneration = 0;
+  private readonly retirementFailures: unknown[] = [];
 
   /** What the ended Prompt says, drawn again in the language chosen meanwhile. */
   private said: (() => string) | null = null;
@@ -740,6 +769,7 @@ export class Session implements Prompt {
    * element: a desk takes its box off, to be opened again from the band), unless it is being started again.
    */
   private end(message: () => string, why = '', gone = false) {
+    const generation = ++this.retirementGeneration;
     this.ended = true;
     this.holding(false);
     this.said = message;
@@ -749,8 +779,27 @@ export class Session implements Prompt {
     this.unwatch = null;
     this.unhear?.();
     this.unhear = null;
-    this.worker?.terminate();
-    this.worker = null;
+    const worker = this.worker;
+    this.worker = null; // No more input/hot updates, including during retirement callbacks.
+    if (worker) {
+      worker.onmessage = null; // Closing remains abort-style; do not mutate the ended session from late messages.
+      void retireRootWorker(worker).then(result => {
+        if (!result.failures.length) return;
+        const failure = new AggregateError(result.failures.map(f => f.error), 'Worker retirement failed');
+        this.retirementFailures.push(failure);
+        if (generation !== this.retirementGeneration || this.restarting) return;
+        const detail = result.failures.map(({phase, error}) => `${phase}: ${errorText(error)}`).join('; ');
+        this.why = [this.why, detail].filter(Boolean).join('\n');
+        this.sayEnded(false);
+      });
+    }
+    if (this.consumptionBoundary) void this.consumptionBoundary.then(result => {
+      if (generation !== this.retirementGeneration || this.restarting) return;
+      if (result.prefixReceived && result.storeAccepted) return;
+      const detail = !result.prefixReceived ? 'Final output prefix was not received completely' : 'Repository writeback did not complete successfully';
+      this.why = [this.why, detail].filter(Boolean).join('\n');
+      this.sayEnded(false);
+    });
     this.measuring?.stop();
     this.measuring = null;
     this.native?.forget();
@@ -815,7 +864,7 @@ export function terminalFor(repo: string): HTMLElement {
   const session = sessionFor(repo);
   // (Not once it has begun: it made its own Worker, and another made beside it now only takes from its start.)
   void rootHere().then((here) => {
-    if (!here.native) void loadWebroot().then((webroot) => { if (!session.begun) readyNext(webroot); }, () => { /* said by the Prompt that starts, if it fails again there */ });
+    if (!here.native) void executionRoot.load().then((webroot) => { if (!session.begun) readyNext(webroot); }, () => { /* said by the Prompt that starts, if it fails again there */ });
   });
   return session.element;
 }

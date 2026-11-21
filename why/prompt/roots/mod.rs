@@ -1,5 +1,5 @@
 //! The roots why runs its Prompts on: which it trusts and where one comes from. A root itself (its bundle unpacked,
-//! the roots held on a device, the one in use) is ricebox's, all of it (module/ricebox/src): what is here is a
+//! the roots held on a device, the one in use) is ricebox's, all of it (ricebox/distribution/src): what is here is a
 //! product's part.
 //!
 //!   which        ricebox's releases by their pins, and the other distributions why takes (Ubuntu, Debian), each

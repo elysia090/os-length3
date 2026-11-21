@@ -4,7 +4,7 @@
 //!
 //! Unsafe code is only where the OS is called and no safe interface has the call yet, each block a single call with
 //! its arguments made just before it: a signal's handler, a child told to end with its parent, and the wait for a
-//! Prompt's box (prompt/start.rs; the box itself is muk's to make, module/muk). The host's other calls (a signal, a
+//! Prompt's box (prompt/start.rs; the box itself is muk's to make, ricebox/muk). The host's other calls (a signal, a
 //! sync, its name, a filesystem's room, the routes and interfaces a network is reached by) go through rustix's and nix's safe interfaces; the
 //! browser's core asks the page through why/api/web, which hands device/net.rs the call. A layer with none says
 //! `#![forbid(unsafe_code)]` once, for all its files (device/fs/), and so does every module without it.
@@ -21,7 +21,7 @@ pub mod home;
 pub mod repo;
 pub mod prompt;
 #[cfg(unix)]
-pub mod cowboy;
+pub mod ssh;
 pub mod agent;
 pub mod shipto;
 #[path = "repo/history/mod.rs"]

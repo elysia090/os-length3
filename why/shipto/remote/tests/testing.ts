@@ -12,7 +12,7 @@
 // stood, a session with nothing set), and lent to whatever asks next in the
 // process. Emptying takes a few milliseconds, a new one a hundred times that.
 // npm test runs the files a process a core, one after another in each
-// (testing-together.ts), so a process makes a database or a few and lends
+// (why/test/unit/together.ts), so a process makes a database or a few and lends
 // them from file to file.
 // `sharedService()` is one Remote for a whole file, its tests kept apart by
 // each signing in as people of their own (`person()`).
@@ -184,7 +184,7 @@ const DISCARD = 'close all; set session authorization default; reset all; unlist
 /**
  * Lent to the test running now, lent to the file (fileService, fileDb, sharedService), and emptied and waiting
  * for whatever asks next. A test's go back when it ends; a file's when the file is done, which
- * testing-together.ts says between the files it runs, or with the process.
+ * why/test/unit/together.ts says between the files it runs, or with the process.
  */
 const lent: PGlite[] = [], forFile: PGlite[] = [], idle: PGlite[] = [];
 /** Emptied, and kept for the next; one that cannot be is closed. */
@@ -194,7 +194,7 @@ async function giveBack(pg: PGlite) {
 }
 afterEach(async () => { for (const pg of lent.splice(0)) await giveBack(pg); });
 
-/** Whether testing-together.ts closes what the process holds itself, after its last file. */
+/** Whether why/test/unit/together.ts closes what the process holds itself, after its last file. */
 let held = false;
 /** Every Remote and database this process holds, closed: an open PGlite keeps its process up. */
 async function closeAll() {
@@ -203,11 +203,11 @@ async function closeAll() {
   if (s) await (await s).close();
   await Promise.all([...lent.splice(0), ...forFile.splice(0), ...idle.splice(0)].map((pg) => pg.close()));
 }
-// Loaded first at the root of a process's tests (by its file, or by testing-together.ts before the files it runs).
+// Loaded first at the root of a process's tests (by its file, or by why/test/unit/together.ts before the files it runs).
 after(async () => { if (!held) await closeAll(); });
 
 /**
- * For testing-together.ts, which runs a process's files one after another: what a file took for itself goes
+ * For why/test/unit/together.ts, which runs a process's files one after another: what a file took for itself goes
  * back when it says the file is done, and the rest is closed when it says the last is. Not on node:test's
  * root hooks, which run whenever its tests have all run, between two files too.
  */

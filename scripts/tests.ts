@@ -1,10 +1,10 @@
-// npm test: every test file (why's parts and its window, module/everyday, scripts/*.test.ts) under node:test, each
-// process with the core a page runs (why/app/testing/core.ts), reported as node --test reports.
+// npm test: local unit tests for Why, Ricebox, and the workspace checks. Tests that need a built Linux
+// translator or a prepared release run in their own CI jobs. Why's tests have the core a page runs.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
 // tests then took. Here there is a process a core, and each takes the next file no other has taken, the longest
-// first, and runs it with what the process has made already (why/shipto/remote/tests/testing-together.ts), so that they end
+// first, and runs it with what the process has made already (why/test/unit/together.ts), so that they end
 // about together; a long file whose tests are each their own (PARTS) is run in parts, several at once. The few
 // files that need a process of their own (ALONE) run beside them from the start.
 // Each process loads its modules as scripts/tests-load.ts says: their types stripped and their code compiled
@@ -32,16 +32,13 @@ const ALONE = new Set([
   // The Worker as an isolate has it: its app is made once a process, from the first env it is given, and Neon's
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
   'why/shipto/remote/serve/worker.test.ts',
-  // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
-  // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
-  'why/prompt/webroot-fetch.test.ts',
   // Builds why with child processes, and waits for them.
-  'scripts/webroot.test.ts',
+  'why/build/webroot.test.ts',
 ]);
 
 /**
  * Files whose tests are each their own (each makes the Remote or the database it uses, and nothing of the file is
- * kept from one test to the next), which may run in parts in several processes at once (testing-part.ts): one
+ * kept from one test to the next), which may run in parts in several processes at once (part.ts): one
  * of them, service.test.ts, was a third of all the Remote's tests, and the run waited for it alone at the end.
  */
 const PARTS = new Set(['why/shipto/remote/tests/service.test.ts', 'why/shipto/remote/tests/security.test.ts', 'why/shipto/remote/plan/budget.test.ts', 'why/shipto/remote/tests/audit.test.ts']);
@@ -51,16 +48,28 @@ const {values, positionals} = parseArgs({allowPositionals: true, options: {
   'test-only': {type: 'boolean'}, 'test-concurrency': {type: 'string'}, 'test-reporter': {type: 'string'}, 'test-shard': {type: 'string'},
 }});
 
-/** Each file under `dir` (and its folders, when `deep`) whose name `keep` takes, as a path from os/. */
-const under = (dir: string, keep: (name: string) => boolean, deep = false): string[] => readdirSync(dir, {withFileTypes: true}).flatMap((e) =>
-  e.isDirectory() ? (deep ? under(join(dir, e.name), keep, deep) : []) : keep(e.name) ? [join(dir, e.name)] : []);
+/** Unit tests under a directory, excluding generated outputs and suites with their own runner. */
+function under(dir: string, excludes: ReadonlySet<string> = new Set()): string[] {
+  return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('.') || ['node_modules', 'target', 'dist'].includes(entry.name) || excludes.has(path)) return [];
+      return under(path, excludes);
+    }
+    return entry.isFile() && entry.name.endsWith('.test.ts') ? [path] : [];
+  });
+}
+
+// Every path from here on is from the workspace root, as the tests expect.
 const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
-// Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
-// why's parts and its window: not what drives it whole (why/test, its own runs), nor the faces written in Rust.
-const WHY = readdirSync('why', {withFileTypes: true}).filter((e) => e.isDirectory() && !['test', 'cli', 'desktop'].includes(e.name)).map((e) => join('why', e.name));
-let files = named.length ? named : [...WHY.flatMap((dir) => under(dir, (n) => n.endsWith('.test.ts'), true)),
-  ...under('module/everyday', (n) => n.endsWith('.test.ts'), true), ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
+let files = named.length ? named : [
+  ...under('why', new Set(['why/test', 'why/cli', 'why/desktop', 'why/app/public'])),
+  ...under('ricebox/distribution', new Set(['ricebox/distribution/runtime'])),
+  ...under('ricebox/cowboy/host'),
+  ...under('ricebox/everyday'),
+  ...under('scripts'),
+].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
 const shard = values['test-shard'] ?? /--test-shard[= ](\S+)/.exec(process.env.NODE_OPTIONS ?? '')?.[1];
@@ -88,7 +97,9 @@ const weight = (f: string) => took[f] ?? guess(f);
 // As node --test, but every core: the runner itself only reports.
 const concurrency = Number(values['test-concurrency'] ?? availableParallelism());
 const alone = files.filter((f) => ALONE.has(f));
-const shared = files.filter((f) => !ALONE.has(f));
+// Only Why's suites borrow its database or use fresh application realms.
+const independent = files.filter(f => !f.startsWith('why/'));
+const shared = files.filter(f => f.startsWith('why/') && !ALONE.has(f));
 // As many processes for them as run at once.
 const processes = Math.min(shared.length, concurrency);
 // What they run: each file, or a long one of PARTS in parts, none longer than a third of what each process has to
@@ -105,11 +116,14 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 // it first); made for this run, gone when it ends.
 const kept = scratch('why-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
-const together = pathToFileURL(join(OS, 'why/shipto/remote/tests/testing-together.ts')).href;
+const together = pathToFileURL(join(OS, 'why/test/unit/together.ts')).href;
+// Import the app core only in these Why test processes. A command-line preload
+// would also execute in unrelated Workers such as Ricebox's build compressors.
+const core = pathToFileURL(join(OS, 'why/app/testing/core.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {
   const entry = join(kept, `together-${k + 1}.mjs`);
   writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.ts).\n` +
-    `import {together} from ${JSON.stringify(together)};\nawait together(${JSON.stringify(units)}, ${JSON.stringify(join(kept, 'taken'))});\n`);
+    `import ${JSON.stringify(core)};\nimport {together} from ${JSON.stringify(together)};\nawait together(${JSON.stringify(units)}, ${JSON.stringify(join(kept, 'taken'))});\n`);
   return entry;
 });
 mkdirSync(join(kept, 'taken'));
@@ -125,19 +139,20 @@ const took_: Record<string, number> = {};
 /** What node:test tells of a test that ended (its test:pass and test:fail events), as far as it is read here. */
 interface TestEvent { name: string; nesting: number; file?: string; todo?: string | boolean; details?: {type?: string; duration_ms?: number} }
 const timed = (t: TestEvent) => {
-  // A part's suite is named by its file and the part (testing-together.ts): what a file took is its parts' together.
+  // A part's suite is named by its file and the part (together.ts): what a file took is its parts' together.
   const suite = t.nesting === 0 && t.details?.type === 'suite' ? t.name.replace(/ \[\d+\/\d+\]$/, '') : null;
   const f = suite !== null && shared.includes(suite) ? suite : t.nesting === 0 && t.file && !t.file.startsWith(kept) ? relative(OS, t.file) : null;
   if (f) took_[f] = (took_[f] ?? 0) + Math.round(t.details?.duration_ms ?? 0);
 };
 run({
   // The files alone first: they wait more than they work, beside the shared processes from the start.
-  files: [...alone.map((f) => join(OS, f)), ...entries], concurrency: processes + alone.length, signal: stop.signal,
+  files: [...alone.map(f => join(OS, f)), ...entries, ...independent.map(f => join(OS, f))],
+  concurrency: concurrency + alone.length, signal: stop.signal,
   // WebAssembly (PGlite's Postgres, the core) as V8 first compiles it, and no further: compiling a hot function
   // again, optimized, took more CPU on other threads than the faster code saved.
   // node:test's mock timers are still marked experimental in Node 22: that notice is about the tests' own clock,
   // not about what is tested, and is the one notice of its kind they print.
-  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.ts')).href, '--import', pathToFileURL(join(OS, 'why/app/testing/core.ts')).href],
+  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

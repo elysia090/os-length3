@@ -3,15 +3,15 @@ import {existsSync, readFileSync, rmSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
-import {bootScript} from '../../scripts/boot.ts';
-import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
-import {putMuk} from '../../module/ricebox/make/muk.ts';
+import {bootScript} from '../build/boot.ts';
+import {buildCoreWasm, coreWasmPath} from '../build/core-wasm.ts';
+import {putMuk} from '../../ricebox/distribution/build/muk-artifact.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
-import {shipped} from '../shipto/remote/ship/releases.ts';
+import {shipped} from '../shipto/release-pins.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
-// lives in module/sods (the translator, and the Linux its programs ask for) and module/ricebox (the root's layers).
+// lives in ricebox/sods (the translator, and the Linux its programs ask for) and ricebox/distribution (the root's layers).
 
 // The web build's policy is why/shipto/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
@@ -28,8 +28,10 @@ const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (why/shipto/remote/ship/releases.ts shipped, the newest pinned; not module/ricebox/RELEASE, which names the one being
-// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/shipto/remote/bytes/mirror.ts).
+// The app being built and the published installer offered by Runtime have
+// separate identities. Keep the installer on the published pin.
+const WHY_VERSION = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
+process.env.VITE_LENGTH3_WHY_VERSION = WHY_VERSION;
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
@@ -54,7 +56,7 @@ function commit(): string {
 }
 
 /**
- * The page says which build it is (`<meta name="why-build">`: the release and the commit; boot.js puts it in
+ * The page says which build it is (`<meta name="why-build">`: the Why version and the commit; boot.js puts it in
  * what it shows when the app cannot start), so the page a site serves can be told from the tree. On the web its
  * script is marked data-cfasync="false": a CDN that defers scripts (Cloudflare's Rocket Loader) rewrites a
  * module script into one its own loader runs, which this page's policy never lets run, leaving the page blank.
@@ -65,7 +67,7 @@ const buildStamp = (): Plugin => ({
   transformIndexHtml: {
     order: 'post',
     handler(html) {
-      const stamped = html.replace('<head>', `<head>\n    <meta name="why-build" content="${`${process.env.VITE_LENGTH3_RELEASE} ${commit()}`.trim()}">`);
+      const stamped = html.replace('<head>', `<head>\n    <meta name="why-build" content="${`${WHY_VERSION} ${commit()}`.trim()}">`);
       return HOST === 'native' ? stamped : stamped.replace(/<script(?=[^>]*\stype="module")/g, '<script data-cfasync="false"');
     },
   },
@@ -87,7 +89,7 @@ const coreWasm = (): Plugin => ({
 });
 
 /**
- * The box's maker beside the web root (module/ricebox/make/muk.ts: muk.json and its blob in public/webroot), built from this tree
+ * The box's maker beside the web root (ricebox/distribution/build/muk-artifact.ts: muk.json and its blob in why/app/public/webroot), built from this tree
  * when its sources changed, once per dev-server start and per build: a page's Prompt runs the root's programs in a
  * box muk makes, as the app's does on Linux. Only where this build carries a web root (the web's; the desktop app
  * reads the Remote's), which is where muk can be built too.
@@ -95,7 +97,7 @@ const coreWasm = (): Plugin => ({
 const muk = (): Plugin => ({
   name: 'why-muk',
   buildStart() {
-    const web = resolve(TOP, 'public', 'webroot');
+    const web = resolve(TOP, 'why/app/public', 'webroot');
     if (HOST === 'web' && existsSync(resolve(web, 'webroot.json'))) putMuk(web);
   },
 });
@@ -117,7 +119,7 @@ const hostOnly = (): Plugin => {
     name: 'why-host',
     enforce: 'pre',
     configResolved(c) { out = resolve(c.root, c.build.outDir); },
-    // public/ is copied whole; the web root (public/webroot, made by npm run webroot) is the web's alone.
+    // public/ is copied whole; the web root (why/app/public/webroot, made by npm run webroot) is the web's alone.
     closeBundle() { if (HOST === 'native' && out) rmSync(resolve(out, 'webroot'), {recursive: true, force: true}); },
     async resolveId(source, importer, options) {
       if (!importer || !other.some((m) => source.endsWith(`/${m.split('/').pop()}.ts`))) return null;
@@ -157,7 +159,7 @@ const preloadApp = (): Plugin => ({
 
 /**
  * /boot.js, the page's first script (boot.ts: what the page says when the app cannot start), its types
- * taken away (scripts/boot.ts): a file of the build, and answered as it is by the development server.
+ * taken away (why/build/boot.ts): a file of the build, and answered as it is by the development server.
  */
 const boot = (): Plugin => ({
   name: 'why-boot',
@@ -170,7 +172,7 @@ const boot = (): Plugin => ({
 });
 
 /**
- * Cross-origin isolation, as public/_headers gives it in production: the page
+ * Cross-origin isolation, as why/app/public/_headers gives it in production: the page
  * may share memory, so the Prompt runs each guest thread in a Worker of its
  * own. The development server and the preview (the selftest's) say the same.
  */
@@ -181,14 +183,13 @@ const TOP = fileURLToPath(new URL('../..', import.meta.url));
 
 export default defineConfig({
   clearScreen: false,
-  // The page is this folder (index.html beside this file); what it ships beside its build is the repository's public/.
+  // Vite serves this app's public/ directory alongside its bundled assets.
   root: fileURLToPath(new URL('.', import.meta.url)),
-  publicDir: resolve(TOP, 'public'),
   envDir: TOP,
   cacheDir: resolve(TOP, 'node_modules/.vite'),
-  // The preview (the selftest's) serves the build with the headers Workers Assets gives it (public/_headers),
+  // The preview (the selftest's) serves the build with the headers Workers Assets gives it (why/app/public/_headers),
   // so the app is tested under its real policy, frame-ancestors and all.
-  preview: {headers: headersOf(readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8'))},
+  preview: {headers: headersOf(readFileSync(new URL('./public/_headers', import.meta.url), 'utf8'))},
   server: {port: 1420, strictPort: true, fs: {allow: [TOP]}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},

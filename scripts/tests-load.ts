@@ -22,6 +22,7 @@ import type {ResolveHookContext} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {threadId} from 'node:worker_threads';
 
 enableCompileCache();
 
@@ -54,7 +55,7 @@ function stripped(url: string, text: string): string {
     process.emitWarning = warn;
   }
   // Written aside, then named: a process reading it never meets half of it.
-  const aside = `${kept}.${process.pid}`;
+  const aside = `${kept}.${process.pid}.${threadId}`;
   writeFileSync(aside, of + code);
   renameSync(aside, kept);
   return code;
@@ -80,7 +81,7 @@ function typeAt(dir: string): string | null {
  * What was asked, as node found it for the folder asking (a file's own address, for any folder): any module of that
  * folder that asks the same finds the same. Half of what a run's processes resolve is asked again so: a package's
  * modules importing their neighbours, a package's CommonJS modules each requiring the same few by their addresses,
- * and npm test's realms (testing-together.ts), each importing the page's modules again.
+ * and npm test's realms (why/test/unit/together.ts), each importing the page's modules again.
  */
 const found = new Map();
 

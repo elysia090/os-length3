@@ -1,0 +1,205 @@
+#!/usr/bin/env node
+// node runtime/run.ts [--root DIR] [--cwd DIR] [--tty] PROGRAM [args...]
+//
+// Run a static x86-64 program translated by sods, on node. PROGRAM is a host path
+// (placed at /bin/<name>) or, with --root, a path inside that tree (a root unpacked).
+// stdin/stdout/stderr attach to this process. A root still in its layers is run by
+// what reads layers (ricebox: ricebox/distribution/verification/programs.ts), over the same linux.ts.
+import {execFileSync, spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
+import {basename, dirname, join, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import type {Translator} from './linux/process.ts';
+import {NotAProgram, loadTranslator} from './translation/translator.ts';
+import {steady} from './host.ts';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const build = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : join(here, '..', 'target');
+const selectedNative = process.env.SODS_NATIVE, selectedWasm = process.env.SODS_TRANSLATOR_WASM;
+const translator = resolve(selectedNative ?? join(build, 'release', 'sods'));
+const wasmTranslator = resolve(selectedWasm ?? join(build, 'wasm32-unknown-unknown', 'release', 'sods.wasm'));
+
+const args = process.argv.slice(2);
+let root: string | null = null, cwd = '/root', tty = false;
+const optionValue = (flag: string): string => {
+  const value = args.shift();
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+  return value;
+};
+while (args[0]?.startsWith('--')) {
+  const flag = args.shift()!;
+  if (flag === '--root') root = optionValue(flag);
+  else if (flag === '--cwd') cwd = optionValue(flag);
+  else if (flag === '--tty') tty = true;
+  else throw new Error(`Unknown runner option: ${flag}`);
+}
+const [program, ...rest] = args;
+if (!program) throw new Error('Expected a program to run');
+
+const {File, Link, Vfs} = await import('./linux/fs.ts');
+const {PROFILE} = await import('./linux/process.ts');
+const {linux} = await import('./linux.ts');
+
+// SODS_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
+const traced = process.env.SODS_BLOCKS ? ['--trace'] : [];
+// SODS_RUN=N: functions cut into runs of N blocks (sods' layout.rs RUN), so the cut is tested on small programs.
+const cut = process.env.SODS_RUN ? [`--run=${process.env.SODS_RUN}`] : [];
+
+// The translator built as wasm, run in this process as the browser runs
+// it, when explicitly selected or when it is no older than the default
+// native build. Trace and run-cut diagnostics require the native CLI. Code
+// reached later is translated from the same backend as the original module.
+const mtime = (f: string): number => (existsSync(f) ? statSync(f).mtimeMs : -1);
+const needsNative = traced.length > 0 || cut.length > 0;
+const useWasm = !needsNative && (selectedWasm !== undefined ||
+  (selectedNative === undefined && existsSync(wasmTranslator) && mtime(wasmTranslator) >= mtime(translator)));
+const inProcess = useWasm ? await loadTranslator(readFileSync(wasmTranslator)) : null;
+
+// Cached translations are keyed by the translator too, so rebuilding it
+// never reuses modules made by an older one.
+const fileDigest = (f: string): string => createHash('sha256').update(readFileSync(f)).digest('hex');
+const translatorId = fileDigest(inProcess ? wasmTranslator : translator);
+
+// Cache only complete translations. Different processes may start the same
+// compilation, but none reads another's temporary files or removes its cache.
+const cacheDir = join(build, 'sods-run-cache', translatorId);
+mkdirSync(cacheDir, {recursive: true});
+const wasmHeader = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
+const isWasm = (bytes: Buffer) => bytes.subarray(0, wasmHeader.length).equals(wasmHeader);
+function cached(name: string, make: (dir: string, output: string) => void): Uint8Array<ArrayBuffer> {
+  const final = join(cacheDir, name);
+  try {
+    const bytes = readFileSync(final);
+    if (isWasm(bytes)) return new Uint8Array(bytes);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const dir = mkdtempSync(join(cacheDir, '.translate-'));
+  try {
+    const output = join(dir, 'result.wasm');
+    make(dir, output);
+    const bytes = readFileSync(output);
+    if (!isWasm(bytes)) throw new Error('sods did not produce WebAssembly');
+    renameSync(output, final);
+    return new Uint8Array(bytes);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+}
+
+// Each program's digest, taken once however often its code is asked for.
+const digests = new WeakMap<Uint8Array, string>();
+const digest = (bytes: Uint8Array): string => {
+  let d = digests.get(bytes);
+  if (!d) digests.set(bytes, d = createHash('sha256').update(bytes).digest('hex'));
+  return d;
+};
+
+const translate: Translator = (bytes: Uint8Array): Uint8Array<ArrayBuffer> => {
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).digest('hex');
+  return cached(key + '.wasm', (dir, output) => {
+    if (inProcess) writeFileSync(output, inProcess(bytes));
+    else {
+      const elf = join(dir, 'input.elf');
+      writeFileSync(elf, bytes);
+      // The native translator uses status 8 for an input it does not accept.
+      const done = spawnSync(translator, [...traced, ...cut, elf, output], {stdio: ['ignore', 'ignore', 'pipe']});
+      if (done.error) throw done.error;
+      if (done.status === 8) throw new NotAProgram(done.stderr.toString().trim());
+      if (done.status !== 0) throw new Error(`sods failed: ${done.stderr}`);
+    }
+  });
+};
+// Only the runner knows which errors from its selected translator reject an input.
+translate.notProgram = (error: unknown): boolean => error instanceof NotAProgram;
+
+/** The program with the code it reached later (from the function starts `seeds`), as one module. */
+translate.seeded = inProcess ? inProcess.seeded : function seeded(bytes: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer> {
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`seeded|${seeds}`).digest('hex');
+  return cached(key + '.wasm', (dir, output) => {
+    const elf = join(dir, 'input.elf'), points = join(dir, 'seeds');
+    writeFileSync(elf, bytes);
+    writeFileSync(points, seeds.join('\n'));
+    execFileSync(translator, [...traced, ...cut, `--seeds=${points}`, elf, output], {stdio: ['ignore', 'ignore', 'ignore']});
+  });
+};
+
+/** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
+// What the translator keeps, and giving it back (Kernel.free), when it runs here.
+if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.spare, close: inProcess.close, renew: inProcess.renew});
+
+translate.more = inProcess ? inProcess.more : function more(bytes: Uint8Array, seeds: (bigint | number)[], starts: Set<bigint>, base: number): Uint8Array<ArrayBuffer> {
+  const known = [...starts];
+  const key = createHash('sha256').update(translatorId).update([...traced, ...cut].join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
+  return cached(key + '.more.wasm', (dir, output) => {
+    const elf = join(dir, 'input.elf'), points = join(dir, 'seeds'), knownFile = join(dir, 'known');
+    writeFileSync(elf, bytes);
+    writeFileSync(points, seeds.join('\n'));
+    writeFileSync(knownFile, known.join('\n'));
+    const done = spawnSync(translator, [...traced, ...cut, `--more=${points}`, `--known=${knownFile}`, `--base=${base}`, elf, output], {stdio: ['ignore', 'ignore', 'pipe']});
+    if (done.error) throw done.error;
+    if (done.status !== 0) throw new Error(`sods --more failed: ${done.stderr}`);
+    const report = done.stderr.toString();
+    if (process.env.SODS_UNSUPPORTED && !report.includes('"unsupported":{}')) process.stderr.write(`sods: at ${seeds}: ${report.trim()}\n`);
+  });
+};
+
+/** Mirror a host tree into the VFS; file contents load on first read. */
+function mount(vfs: InstanceType<typeof Vfs>, host: string, at: string): void {
+  const dir = vfs.mkdirp(at);
+  for (const name of readdirSync(host)) {
+    const full = join(host, name), st = lstatSync(full);
+    if (st.isSymbolicLink()) dir.entries.set(name, new Link(readlinkSync(full)));
+    else if (st.isDirectory()) { mount(vfs, full, join(at, name)); }
+    else if (st.isFile()) {
+      const file = new File(new Uint8Array(0), st.mode & 0o7777, () => new Uint8Array(readFileSync(full)));
+      file.size = st.size;
+      dir.entries.set(name, file);
+    }
+  }
+}
+
+const vfs = new Vfs();
+if (root) mount(vfs, root, '/');
+let path = program;
+if (!root) {
+  path = '/bin/' + basename(program);
+  vfs.writeFile(path, new Uint8Array(readFileSync(program)), 0o755);
+}
+vfs.mkdirp(cwd);
+
+let stdin = new Uint8Array(0), stdinAt = 0;
+try { if (!process.stdin.isTTY) stdin = new Uint8Array(readFileSync(0)); } catch { /* no input */ }
+// Each thread in a Worker of its own, as a cross-origin isolated page runs them; SODS_INLINE=1: all here, in turn.
+const kernel = linux({
+  vfs,
+  translate,
+  // The x87 is the translator's wasm's (x87.ts), whichever build translates.
+  x87: inProcess?.module ?? (existsSync(wasmTranslator) ? new WebAssembly.Module(readFileSync(wasmTranslator)) : undefined),
+  console: {
+    interactive: tty,
+    screen: tty, cols: 80, rows: 24,
+    // At once, not when this thread next idles: a sleep here holds it, and what was said before must show before.
+    write: (fd: number, bytes: Uint8Array) => { for (let at = 0; at < bytes.length;) { try { at += writeSync(fd === 2 ? 2 : 1, bytes, at); } catch (e) { if ((e as {code?: string}).code !== 'EAGAIN') throw e; } } },
+    read: (n: number) => { const out = stdin.subarray(stdinAt, stdinAt + n); stdinAt += out.length; return out; },
+  },
+});
+const started = steady();
+const status = await kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
+if (process.env.SODS_TIMING) {
+  // What the run still holds once its programs have ended (after a collection, when node allows one).
+  globalThis.gc?.();
+  const m = process.memoryUsage(), mb = (n: number): number => Math.round(n / 2 ** 20);
+  writeSync(2, JSON.stringify({ms: Math.round(steady() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
+    heldMB: {rss: mb(m.rss), heap: mb(m.heapUsed), buffers: mb(m.arrayBuffers), external: mb(m.external)},
+    kernelMB: Object.fromEntries(Object.entries(kernel.held()).map(([k, v]) => [k, mb(v)]))}) + '\n');
+  // SODS_FREE=1: then give back all that can go, and say what the host shows.
+  if (process.env.SODS_FREE) {
+    const r = kernel.free(0);
+    globalThis.gc?.();
+    const n = process.memoryUsage();
+    writeSync(2, JSON.stringify({freedMB: mb(r.before.total - r.after.total), kernelAfterMB: Object.fromEntries(Object.entries(r.after).map(([k, v]) => [k, mb(v)])), hostAfterMB: {rss: mb(n.rss), external: mb(n.external)}}) + '\n');
+  }
+}
+// Ended once the run has: V8 may still be optimizing the hottest translated code in the background (a second and
+// more after a compiler's run), and node would wait for that before it left. Everything said was written at once.
+process.exit(status & 0x7f ? 128 + (status & 0x7f) : status >> 8);

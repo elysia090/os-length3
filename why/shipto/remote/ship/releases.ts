@@ -14,24 +14,16 @@
 import desktopPins from '../../desktop-releases.json' with {type: 'json'};
 
 import type {Pinned} from '../bytes/mirror.ts';
+import {named, validName, pinnedRoots as rootPins, type DesktopKind, type DesktopPins, type RootPin} from '../../release-pins.ts';
 
 const DESKTOP_KINDS = {
   deb: 'application/vnd.debian.binary-package',
   // freedesktop.org's shared-mime-info name for it (IANA has none).
   appimage: 'application/vnd.appimage',
-} as const;
-type DesktopKind = keyof typeof DESKTOP_KINDS;
-type DesktopPins = Record<string, Partial<Record<DesktopKind, {file: string; bytes: number; sha256: string}>>>;
-
+} satisfies Record<DesktopKind, string>;
 const HEX = /^[0-9a-f]{64}$/;
 const tagOf = (version: string) => `os-length3-linux-v${version}`;
 
-const NAME = /^[A-Za-z0-9._+-]+$/;
-/** A plain name, one folder's or one file's: never a path, nor one a key could climb out of. */
-const named = (name: string, what: string) => {
-  if (!NAME.test(name) || /^\.+$/.test(name)) throw new Error(`a release's ${what} ${JSON.stringify(name)} is not a plain name`);
-  return name;
-};
 const releaseKey = (version: string, file: string) => `release/${named(version, 'version')}/${named(file, 'file')}`;
 // A distribution's version as its makers number it (26.04.1 LTS is 26.04.1).
 const distroKey = (id: string, version: string, file: string) => `distro/${id}-${named(version.split(' ')[0], 'version')}/${named(file, 'file')}`;
@@ -42,20 +34,12 @@ const distroKey = (id: string, version: string, file: string) => `distro/${id}-$
  */
 export const isRoot = (key: string) => /^(os|distro)\//.test(key) || /^release\/[^/]+\/[^/]+\.tar\.zst$/.test(key);
 
-/** A root as why/prompt/roots/pins.rs pins it: its version, and why's index for the browser made from it (`web`, its sha256; '' before why had one). */
-interface PinnedRoot extends Pinned { version: string; web: string }
-
-/** The roots why/prompt/roots/pins.rs pins, newest first, as RELEASES lists them. */
-export function pinnedRoots(rootRs: string): PinnedRoot[] {
-  const at = rootRs.indexOf('pub const RELEASES: &[Release] = &[');
-  const end = rootRs.indexOf('];', at);
-  if (at < 0 || end < 0) throw new Error('why/prompt/roots/pins.rs has no RELEASES');
-  const roots = [...rootRs.slice(at, end).matchAll(
-    /Release \{\s*name: "[^"]*",\s*version: "([^"]+)",\s*sha256: "([0-9a-f]{64})",\s*bytes: ([\d_]+),\s*file: "([^"]+)",\s*tag: "([^"]+)",\s*web: "((?:[0-9a-f]{64})?)",\s*\}/g)]
-    .map(([, version, sha256, bytes, file, tag, web]) => ({key: releaseKey(version, file), path: `/v1/os/${sha256}`, tag, file, sha256, bytes: Number(bytes.replace(/_/g, '')), type: 'application/octet-stream', version, web}));
-  // Every entry is read, or none is: an entry the pattern missed would be a root left out unsaid.
-  if (roots.length !== (rootRs.slice(at, end).match(/Release \{/g) ?? []).length) throw new Error('why/prompt/roots/pins.rs: a RELEASES entry is not as pin-root.ts writes one');
-  return roots;
+/** The pinned roots as served by digest and grouped by version in the bucket. */
+export function pinnedRoots(rootRs: string): (Pinned & Pick<RootPin, 'version' | 'web'>)[] {
+  return rootPins(rootRs).map(({version, file, tag, sha256, bytes, web}) => ({
+    key: releaseKey(version, file), path: `/v1/os/${sha256}`, tag, file, sha256, bytes,
+    type: 'application/octet-stream', version, web,
+  }));
 }
 
 /** The other distributions' roots why/prompt/roots/pins.rs pins (DISTROS), by digest as roots are, from their makers. */
@@ -72,20 +56,11 @@ export function pinnedDistros(rootRs: string): Pinned[] {
   return distros;
 }
 
-/**
- * The version this tree ships: the newest whose desktop app it pins (its root is pinned in the same change,
- * scripts/pin-root.ts and pin-desktop.ts). module/ricebox/RELEASE names the version being made, which is shipped once the
- * release has pinned it: the web, its build and the deploy take this one, never module/ricebox/RELEASE.
- */
-export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {
-  return Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1) ?? '';
-}
-
 /** The desktop app's files this tree pins for `version` (none when it pins none). */
 export function pinnedDesktop(version: string, pins: DesktopPins = desktopPins as DesktopPins): Pinned[] {
   return Object.entries(pins[version] ?? {}).map(([kind, p]) => {
     const type = DESKTOP_KINDS[kind as DesktopKind];
-    if (!type || !p || !HEX.test(p.sha256) || !Number.isSafeInteger(p.bytes) || p.bytes <= 0 || !p.file.includes(`-${version}-`) || !NAME.test(p.file) || !NAME.test(version))
+    if (!type || !p || !HEX.test(p.sha256) || !Number.isSafeInteger(p.bytes) || p.bytes <= 0 || !p.file.includes(`-${version}-`) || !validName(p.file) || !validName(version))
       throw new Error(`why/shipto/desktop-releases.json: ${version} ${kind} is not a pin (file, bytes, sha256)`);
     return {key: releaseKey(version, p.file), path: `/v1/desktop/${p.file}`, tag: tagOf(version), file: p.file, sha256: p.sha256, bytes: p.bytes, type};
   });

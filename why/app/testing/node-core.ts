@@ -12,7 +12,7 @@ interface Asked { id: number; name: string; args: unknown }
 interface Fetch { url: string; method: string; headers: [string, string][]; body: Uint8Array | null }
 interface Fetched { status: number; body: Uint8Array }
 
-/** A core of this test's own, from the module at `wasm` (scripts/core-wasm.ts builds it), told `env`. */
+/** A core of this test's own, from the module at `wasm` (why/build/core-wasm.ts builds it), told `env`. */
 export function nodeCore(wasm: string, env: Record<string, string>): Ask {
   const {port1: here, port2: there} = new MessageChannel();
   const signal = new Int32Array(new SharedArrayBuffer(4));

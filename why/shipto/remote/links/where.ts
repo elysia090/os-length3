@@ -1,5 +1,5 @@
 // Where a link carried by the Remote may go (relay.ts carries it): the whole of that judgement, and nothing that
-// touches a socket. A link is asked for by one line, as cowboy writes it (module/cowboy/src/frame.rs): a name or an
+// touches a socket. A link is asked for by one line, as cowboy writes it (ricebox/cowboy/src/frame.rs): a name or an
 // IPv4 address in dots, a colon, a port, the end of the line.
 //
 //   who         a session, asked from one of the app's own pages or by a device's token (relay.ts admit)

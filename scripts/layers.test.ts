@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {existsSync, readdirSync} from 'node:fs';
-import {CORE_PARTS} from './core-wasm.ts';
+import {CORE_PARTS} from '../why/build/core-wasm.ts';
 import {TREES, coreCycles, coreViolations, cycles, violations} from './layers.ts';
 
 test('every import goes down the layers, never up or across out of order (scripts/layers.ts)', () => {
@@ -30,5 +30,5 @@ test('why is its parts, faces, tests and release composition: every folder has o
   assert.deepEqual([...CORE_PARTS].sort(), [...parts].sort());
   for (const part of parts) assert.ok(existsSync(new URL(`${part}/mod.rs`, why)), `${part} has no Rust of the core`);
   // No folder is left from before the parts were why's own folders.
-  for (const gone of ['why/core', 'why/remote', 'why/shared', 'tests']) assert.ok(!existsSync(new URL(`../${gone}`, import.meta.url)), gone);
+  for (const gone of ['why/core', 'why/remote', 'why/shared', 'why/make', 'tests']) assert.ok(!existsSync(new URL(`../${gone}`, import.meta.url)), gone);
 });

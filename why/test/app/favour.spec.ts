@@ -1,6 +1,6 @@
 import {expect, test} from './fixtures.ts';
 
-// Read in the person's favour (docs/DESIGN.md §7): what a hand does is a little off what it meant. The frame's
+// Read in the person's favour (why/docs/DESIGN.md §7): what a hand does is a little off what it meant. The frame's
 // squares are pressed from the window's very edge and from half the room between two of them; a press that just
 // misses a menu is still the menu's.
 

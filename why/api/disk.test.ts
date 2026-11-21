@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {finished, whole} from '../../module/disk/indexeddb.ts';
+import {finished, whole} from './indexeddb.ts';
 
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
 test('a bubbling request error is not transaction completion', async () => {

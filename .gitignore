@@ -25,7 +25,10 @@ agent-key
 
 # What the build and the tests make (the OS's own: the app, the web root, the Worker, the selftests' runs).
 /target/
-/public/webroot/
+/why/app/public/webroot/
+/why/app/.webroot-*/
+/why/app/.ricebox-webroot.*/
+/why/app/.ricebox-recovery-*/
 /why-web.zip
 /why-web.zip.sha256
 /.wrangler/

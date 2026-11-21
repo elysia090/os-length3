@@ -1,7 +1,6 @@
 import {existsSync} from 'node:fs';
-import {join} from 'node:path';
 import {expect, test} from './fixtures.ts';
-import {OS} from './paths.ts';
+import {WEBROOT_MANIFEST} from './paths.ts';
 
 // The Prompt in a browser is Linux to what runs in it (issue #80, its runtime requirements and what it is accepted
 // by): files, their modes and links; files and folders kept across a reload (a mode and a link not yet: muk's); the
@@ -12,13 +11,12 @@ import {OS} from './paths.ts';
 // colours and the programs that draw on a screen are prompt.spec.ts's. Slow (the root through the translator): @slow,
 // run with SELFTEST_SLOW=1, as CI does.
 
-const PROMPT = join(OS, 'public', 'webroot', 'webroot.json');
 test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
 test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no why (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(WEBROOT_MANIFEST), 'Build or stage the app web root before running Prompt selftests').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

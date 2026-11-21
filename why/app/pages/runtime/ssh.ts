@@ -3,7 +3,8 @@ import {ago} from '../../../text/format.ts';
 import {isNative} from '../../../api/host.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {connection, deviceWord} from '../../../shipto/connection.ts';
-import * as ssh from '../../../cowboy/ssh.ts';
+import * as ssh from '../../../ssh/host.ts';
+import type {Scope} from '../../../api/ssh-scope.ts';
 import * as told from '../../../shipto/ssh.ts';
 import {copying} from '../kit/common.ts';
 import {every} from '../../../api/runs.ts';
@@ -67,7 +68,7 @@ function power(on: boolean, label: string, act: () => Promise<unknown> | void, s
   return b;
 }
 
-const whom = (s: ssh.Scope) => (s === 'network' ? t('Listening for SSH from local network devices') : t('Listening for SSH from this device only'));
+const whom = (s: Scope) => (s === 'network' ? t('Listening for SSH from local network devices') : t('Listening for SSH from this device only'));
 
 /** Another device of the account that listens: its name and to whom, and its switch, which turns it off there. */
 function otherCard(l: told.Listening, again: () => void): HTMLElement {
@@ -96,7 +97,7 @@ function offCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void
 /** Who may connect, asked in the card `el` before SSH goes on: this device only, or the same network too; or Not now. */
 function askScope(el: HTMLElement, m: ssh.Here, said: HTMLElement, again: () => void) {
   const was = [...el.childNodes];
-  const choose = (scope: ssh.Scope, label: string) => {
+  const choose = (scope: Scope, label: string) => {
     const b = button(label, `small-button${scope === m.scope ? ' primary' : ''}`);
     b.addEventListener('click', () => {
       for (const x of el.querySelectorAll('button')) (x as HTMLButtonElement).disabled = true;
@@ -122,7 +123,7 @@ function onCard(m: ssh.Here, keys: string, said: HTMLElement, again: () => void)
     ...(print ? [h('span', {class: 'muted small'}, t('Host key (presented on initial SSH connection):')), print] : []),
     m.started ? t('Active since {when}', {when: ago(m.started)}) : '', said], null, 'ssh-card');
   // The other scope, at once (its sessions from elsewhere end when it narrows); off at the right.
-  const other: ssh.Scope = m.scope === 'network' ? 'device' : 'network';
+  const other: Scope = m.scope === 'network' ? 'device' : 'network';
   const change = button(other === 'network' ? t('Local network') : t('This device only'));
   change.addEventListener('click', () => { change.disabled = true; void ssh.setHere(true, other).then(() => again(), (e) => { said.textContent = errorText(e); change.disabled = false; }); });
   el.append(h('div', {class: 'card-foot'}, change, h('span', {class: 'grow'}),

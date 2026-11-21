@@ -1,5 +1,8 @@
 import type {Locator} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {shipped} from '../../shipto/release-pins.ts';
 import {expect, test} from './fixtures.ts';
+import {desktopPolicy} from '../../shipto/policy.ts';
 
 // Runtime: dotfiles are rows of one box (name, size); a dotfile saved is one,
 // opens with its text under it, and is still there when the app is opened again.
@@ -126,6 +129,7 @@ test('the environments are one card two wide, the desktop app at its right and S
   const others = panel.getByRole('list', {name: 'Other environments'});
   await expect(others.getByRole('listitem')).toHaveText([/^Ubuntu 26\.04\.1 LTS.*App only/, /^Debian 13\.7.*App only/, /^Custom.*Not yet/]);
   const env = others.locator('xpath=..');
+  await expect(env.locator('.card-title')).toHaveText(/^Ricebox(?: \d+\.\d+\.\d+)?$/);
   const app_ = panel.getByRole('region', {name: 'Desktop App'});
   await expect(app_).toBeVisible();
   const [e, d] = [(await env.boundingBox())!, (await app_.locator('.card').boundingBox())!];
@@ -139,7 +143,9 @@ test('the environments are one card two wide, the desktop app at its right and S
   expect(Math.abs(ssh.x - e.x)).toBeLessThan(2);
   // One download: the .deb, which says what it is; no AppImage beside it.
   await expect(app_.getByRole('link')).toHaveCount(1);
-  await expect(app_.getByRole('link', {name: 'Download'})).toHaveAttribute('href', /\.deb$/);
+  const release = shipped();
+  await expect(app_.getByRole('link', {name: 'Download'})).toHaveAttribute('href', `/v1/desktop/os-length3-linux-${release}-desktop-amd64.deb`);
+  await expect(app_).toContainText(`Installer from distribution release ${release}`);
   await expect(app_).not.toContainText('AppImage');
   await expect(app_).toContainText('x86-64 Linux · .deb');
   // At the words' size (DESIGN §3: what says less is quieter, never smaller), 32 high to press.
@@ -149,7 +155,10 @@ test('the environments are one card two wide, the desktop app at its right and S
   const title = app_.getByText(/^why\* \d/);
   await expect(title).not.toContainText('OS');
   const version = title.locator('.version');
-  await expect(version).toHaveText(/^\d+\.\d+\.\d+$/);
+  const whyVersion = readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim();
+  await expect(version).toHaveText(whyVersion);
+  const build = await app.page.locator('meta[name="why-build"]').getAttribute('content');
+  expect(build?.split(' ')[0]).toBe(whyVersion);
   const face = (l: Locator) => l.evaluate((el) => getComputedStyle(el).fontFamily);
   expect(await face(version)).not.toBe(await face(title));
 });
@@ -341,28 +350,65 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   await expect(app.remote.card('hello')).toContainText('Disabled · Recoverable until');
 });
 
-// The look, changed by the one at it: the lines of a dotfile, .everyday (module/everyday holds each to what the
+// The look, changed by the one at it: the lines of a dotfile, .everyday (ricebox/everyday holds each to what the
 // sheets let be changed and to the words that must stay read). Worn as it is saved and when the app is opened
 // again; a line that would not be read, or is no change, is left out and the rest stands; with the file gone, the
 // page is as its sheets have it.
-test('a look changed in .everyday is worn, what would not be read left out, and gone with the file', async ({app, page}) => {
-  const ground = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ground').trim());
-  const worn = () => page.evaluate(() => document.getElementById('everyday')?.textContent ?? null);
+for (const strict of [false, true]) test(`a look changed in .everyday is worn, what would not be read left out, and gone with the file${strict ? ' under desktop CSP' : ''}`, async ({app, page}) => {
+  if (strict) {
+    // Apply the actual desktop policy as a document response header, not a
+    // permissive test page. The web meta policy cannot relax this header.
+    await page.route(new URL('/', page.url()).href, async route => {
+      if (route.request().resourceType() !== 'document') return route.fallback();
+      const response = await route.fetch();
+      await route.fulfill({response, headers: {...response.headers(), 'content-security-policy': desktopPolicy('')}});
+    });
+    await app.open();
+    const inline = await page.evaluate(() => {
+      const blocked = document.createElement('style');
+      blocked.textContent = ':root { --everyday-csp-probe: blocked; }';
+      document.head.append(blocked);
+      const value = getComputedStyle(document.documentElement).getPropertyValue('--everyday-csp-probe');
+      blocked.remove();
+      return value;
+    });
+    expect(inline).toBe('');
+  }
+  const colour = (token: string) => page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), token);
+  const ground = () => colour('--ground');
+  const worn = () => page.evaluate(() => {
+    const style = document.documentElement.style;
+    return {ground: style.getPropertyValue('--ground'), pace: style.getPropertyValue('--pace')};
+  });
   expect(await ground()).toBe('#dcd9d4');
-  expect(await worn()).toBeNull();
+  expect(await worn()).toEqual({ground: '', pace: ''});
+  await page.evaluate(() => document.documentElement.style.setProperty('--everyday-unrelated', 'kept'));
 
-  // The ground a shade warmer and moves at half their length; then ink the ground's own colour (not read), and a line that says nothing.
-  await app.runtime.makeDotfile('.everyday', 'ground: #e9e4d8\npace: 0.5\nink: #e9e4d8\nnonsense; } body { display: none\n');
-  await expect.poll(worn).toBe(':root { --ground: #e9e4d8; --pace: 0.5; }');
+  // The ground warmer and moves half as long; terminal text the same colour as its own background, and a line that says nothing.
+  const ink = await colour('--ink');
+  await app.runtime.makeDotfile('.everyday', `ground: #e9e4d8\npace: 0.5\ngreen: ${ink}\nnonsense; } body { display: none\n`);
+  await expect.poll(worn).toEqual({ground: '#e9e4d8', pace: '0.5'});
+  expect(await colour('--everyday-unrelated')).toBe('kept');
   expect(await ground()).toBe('#e9e4d8');
+  const notes = app.runtime.dotfiles.getByRole('status').filter({hasText: 'Theme lines not applied'});
+  await expect(notes).toContainText('Line 3: green would not be read on ink');
+  await expect(notes).toContainText('Line 4: not a change');
 
   await app.open();
   await expect.poll(ground).toBe('#e9e4d8');
 
   await app.runtime.open('Dotfiles');
   await app.runtime.dotfile('.everyday').click();
+  await expect(notes).toContainText('Line 3: green would not be read on ink');
+  await app.runtime.text('.everyday').fill('ground: #e9e4d8\npace: 0.5\n');
+  await app.runtime.dotfiles.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(notes).toHaveCount(0);
+  expect(await ground()).toBe('#e9e4d8');
+
+  await page.evaluate(() => document.documentElement.style.setProperty('--everyday-unrelated', 'kept'));
   const ask = await app.runtime.askRemove('.everyday');
   await app.answer(ask.getByRole('button', {name: 'Remove', exact: true}), ask);
-  await expect.poll(worn).toBeNull();
+  await expect.poll(worn).toEqual({ground: '', pace: ''});
+  expect(await colour('--everyday-unrelated')).toBe('kept');
   expect(await ground()).toBe('#dcd9d4');
 });

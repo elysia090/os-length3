@@ -3,9 +3,9 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {DEFAULT_REMOTE, desktopPolicy, headersOf, webPolicy} from './policy.ts';
 
-// The app's files are served by Workers Assets, not the Worker, so only public/_headers can say
+// The app's files are served by Workers Assets, not the Worker, so only why/app/public/_headers can say
 // these (security audit H1: a framable device-approval page; OWASP ASVS 14.4.1-14.4.7).
-const all = headersOf(readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8'));
+const all = headersOf(readFileSync(new URL('../../why/app/public/_headers', import.meta.url), 'utf8'));
 
 test('the app is never framed, and is reached only by HTTPS', () => {
   assert.match(all['Content-Security-Policy'], /(^|; )frame-ancestors 'none'(;|$)/);
@@ -34,7 +34,7 @@ test('no referrer, no sniffing, no window shared with another site, no file take
 test('the desktop webview runs only the app\'s own files, under a strict policy, with no host permission but events and its title', () => {
   const conf = JSON.parse(readFileSync(new URL('../desktop/tauri.conf.json', import.meta.url), 'utf8'));
   const csp: string = conf.app.security.csp;
-  // One policy, why/shipto/policy.ts's, for the Remote the app ships with (scripts/desktop.sh gives Tauri it for another).
+  // One policy, why/shipto/policy.ts's, for the Remote the app ships with (why/build/desktop.sh gives Tauri it for another).
   assert.equal(csp, desktopPolicy(DEFAULT_REMOTE));
   // WebAssembly compiled as the web's is (its Prompts run translated where they do not run on the root), never
   // JavaScript from text; isolated as the web's page is, so its translated Prompts share memory as they do there.

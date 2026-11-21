@@ -1,5 +1,5 @@
-// What `node:worker_threads` is in a browser: nothing. sods' runtime (linux/cpu.ts, linux/remote.ts) imports it only when it
-// runs under Node, and the app's build bundles the same files for the browser, where that import is never made;
-// the bundle takes this in its place rather than a Node module it cannot use.
+// Keep the shared bundle linkable, including the Node-only guest entry Vite
+// analyzes. None of these Node worker capabilities are available in a browser.
 export const parentPort = undefined;
 export const Worker = undefined;
+export const workerData = undefined;

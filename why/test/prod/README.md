@@ -11,7 +11,7 @@ production runs it, on this machine, reaching nothing else:
 | Neon Postgres, the Worker as `remote_worker_<when>` (member of `remote_app`), migrations as the owner | a Postgres 16 cluster of its own (`postgres.ts`: `/usr/lib/postgresql/16`, 127.0.0.1 only, a free port, a new directory, gone at the end); migrations by `migrateRemote` and the role by `workerRole` (`why/shipto/remote/db/neon.ts`), exactly what `deploy.ts` runs, a role of its own for each Remote on the cluster |
 | the Neon serverless driver over a WebSocket to Neon's proxy, startup pipelined | the same driver code, pointed (`worker.ts` here: `neonConfig.wsProxy`) at `wsbridge.ts`, a process that hands each WebSocket's bytes to a TCP connection to the Postgres; each `remote_worker_…` logs in by password so the driver pipelines its startup as it does to Neon |
 | R2 | Miniflare's local R2 (`--persist-to`), or none (`noBucket`) |
-| Workers Assets, SPA fallback, `run_worker_first`, `public/_headers` | the same, serving the app built for its own origin (`VITE_LENGTH3_REMOTE=''`, as `build:cloudflare` builds it; without the Prompt's files, which come from the release) |
+| Workers Assets, SPA fallback, `run_worker_first`, `why/app/public/_headers` | the same, serving the app built for its own origin (`VITE_LENGTH3_REMOTE=''`, as `build:cloudflare` builds it; without the Prompt's files, which come from the release) |
 | the Cron Trigger | wrangler's `/__scheduled` (`--test-scheduled`) |
 | secrets | a `.dev.vars` of throwaway values, made for the run in a temporary directory, never in the tree |
 | Stripe | `why/shipto/remote/plan/devbilling.ts`, answering Stripe's REST API inside the Worker (`LOCAL_STRIPE=1`); nothing reaches Stripe |
@@ -31,7 +31,7 @@ its log.
     node why/test/prod/drills.ts
 
 - **headers**: real answers of workerd and Workers Assets: `index.html`, the
-  SPA fallback and a hashed asset carry `public/_headers` (the whole CSP,
+  SPA fallback and a hashed asset carry `why/app/public/_headers` (the whole CSP,
   exactly `why/shipto/policy.ts`'s with frame-ancestors; X-Frame-Options, HSTS with
   subdomains, CORP, Permissions-Policy, …; the hashed files immutable); `/v1`,
   `/api` and `/.well-known` carry the Remote's own (`no-store`, `nosniff`,

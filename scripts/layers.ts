@@ -9,22 +9,22 @@
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {relativeReferences} from './imports.ts';
 
 const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
-export const TREES: {root: string; order: string[]; skip?: string[]; build?: string[]}[] = [
+export const TREES: {root: string; order: string[]; skip?: string[]; build?: string[]; buildHosts?: string[]}[] = [
   // why's parts (docs/STRUCTURE.md), each a folder of all it is whatever it is written in, then the window: a part
-  // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole. make/ composes the release; runtime code must never take from it.
-  {root: 'why', order: ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test'], build: ['make']},
+  // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole. build/ composes the release; runtime code must never take from it.
+  {root: 'why', order: ['text', 'agent', 'api', 'ssh', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'docs', 'test'], build: ['build'],
+    buildHosts: ['why/app/vite.config.ts', 'why/app/testing/', 'why/test/']},
   // The window: what is drawn with (ui), what a host is asked for a page (host), the pages, and what starts them.
   {root: 'why/app', order: ['ui', 'host', 'pages', 'main', '.'], skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
   {root: 'why/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
     'me']},
 ];
-
-const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 
 function files(dir: string): string[] {
   const out: string[] = [];
@@ -50,14 +50,16 @@ export function violations(): [string, string, string, string, string][] {
     for (const file of files(root)) {
       const from = moduleOf(tree, file);
       const src = readFileSync(file, 'utf8');
-      for (const m of src.matchAll(IMPORT)) {
-        const spec = m[1] ?? m[2] ?? '';
+      for (const spec of relativeReferences(src)) {
         const target = resolve(dirname(file), spec);
         if (!target.startsWith(root + sep)) continue;
         const to = moduleOf(tree, target);
         if (to === from) continue;
         if (tree.build?.includes(to)) {
-          found.push([tree.root, from, to, relative(OS, file), spec]);
+          const source = relative(OS, file).split(sep).join('/');
+          if (!tree.buildHosts?.some((host) => host.endsWith('/') ? source.startsWith(host) : source === host)) {
+            found.push([tree.root, from, to, source, spec]);
+          }
           continue;
         }
         if (tree.build?.includes(from) || tree.skip?.includes(from) || tree.skip?.includes(to)) continue;
@@ -75,14 +77,14 @@ export function violations(): [string, string, string, string, string][] {
  * too, what a file stands on is under it.
  */
 /** Where no file may reach back to itself: why (its parts, its window, the Remote), these scripts, sods' runtime and ricebox's layers. */
-export const ACYCLIC = [...TREES[0]!.order.map((part) => `why/${part}`), ...(TREES[0]!.build ?? []).map((part) => `why/${part}`), 'scripts', 'module/sods/runtime', 'module/ricebox/layers'];
+export const ACYCLIC = [...TREES[0]!.order.map((part) => `why/${part}`), ...(TREES[0]!.build ?? []).map((part) => `why/${part}`), 'scripts', 'ricebox/sods/runtime', 'ricebox/distribution/runtime'];
 
 export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
   const takes = new Map(all.map((f) => [f, new Set<string>()]));
   for (const f of all) {
-    for (const m of readFileSync(f, 'utf8').matchAll(IMPORT)) {
-      const t = resolve(dirname(f), m[1] ?? m[2] ?? '');
+    for (const specifier of relativeReferences(readFileSync(f, 'utf8'))) {
+      const t = resolve(dirname(f), specifier);
       if (takes.has(t)) takes.get(f)?.add(t);
     }
   }

@@ -29,9 +29,7 @@ import type {Marks} from '../serve/mark.ts';
 import {body, ms, type Db, type Vars} from '../serve/request.ts';
 import {session, ssh} from '../db/schema.ts';
 
-/** To whom a device listens: from itself only, or from its network's PCs too. */
-const SCOPES = ['device', 'network'] as const;
-export type Scope = typeof SCOPES[number];
+import {SCOPES, type Scope} from '../../../api/ssh-scope.ts';
 
 /** The scope a device says, checked: absent is `device`; null when it is not one. */
 function scopeOf(v: unknown): Scope | null {

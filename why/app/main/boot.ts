@@ -2,7 +2,7 @@
 // something it needs), the page says so: what failed, in which browser, and a way to try again, rather
 // than a blank page that says nothing. Plain ES5 and no module, so it runs where the app itself cannot;
 // a file of its own, as the page's policy runs no script written into the page. The page has it as /boot.js,
-// its types taken away (scripts/boot.ts, for the build and the development server).
+// its types taken away (why/build/boot.ts, for the build and the development server).
 (function () {
   // Scripts run: what index.html says for a page whose scripts never run is not shown (styles/index.css).
   document.documentElement.className += ' scripted';

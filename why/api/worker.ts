@@ -17,7 +17,7 @@
 import coreWasm from 'virtual:why-core.wasm?url';
 import {Core, type Answer, type Send} from './abi.ts';
 import {MemoryFS, WASI, type Changes, type Entry} from './wasi.ts';
-import {asked, finished, whole, commit as commitDisk} from '../../module/disk/indexeddb.ts';
+import {asked, finished, whole, commit as commitDisk} from './indexeddb.ts';
 import {ASKED, DATA, GENERATION, META, NAME, NODES, READ, TOO_BIG, VERSION, stand} from './kept.ts';
 
 const scope = self as unknown as {postMessage(m: unknown): void; onmessage: ((e: MessageEvent) => void) | null};

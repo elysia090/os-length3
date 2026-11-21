@@ -1,0 +1,38 @@
+#shell-output.vt-screen {
+  --vt-bg: #f5f6f7; --vt-fg: #20242a;
+  --ansi-0: #20242a; --ansi-1: #ad2433; --ansi-2: #236b43; --ansi-3: #715513;
+  --ansi-4: #234f9b; --ansi-5: #872a72; --ansi-6: #24636a; --ansi-7: #4d565f;
+  --ansi-8: #626c76; --ansi-9: #b32539; --ansi-10: #18794d; --ansi-11: #7a5409;
+  --ansi-12: #265ebf; --ansi-13: #962484; --ansi-14: #1a7076; --ansi-15: #20242a;
+  padding: 12px;
+  max-width: 100%;
+  margin-block: .5em;
+  overflow: auto;
+  background: var(--vt-bg);
+  color: var(--vt-fg);
+  font: 13px/1.35 ui-monospace, monospace;
+  white-space: pre;
+  font-variant-ligatures: none;
+}
+#shell-output .vt-row { min-height: 1lh; }
+#shell-output .vt-cursor {
+  background: var(--vt-fg);
+  color: var(--vt-bg);
+}
+
+/* Dedicated fit mode: printing rows cannot resize the measured content box. */
+#shell-output.vt-screen[data-fit] {
+  position: relative;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: clamp(8rem, 45vh, 24rem);
+  overflow: hidden;
+}
+#shell-output .vt-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  inset: 0 auto auto 0;
+  inline-size: 1ch;
+  block-size: 1lh;
+}

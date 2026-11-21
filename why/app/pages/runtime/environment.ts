@@ -15,7 +15,7 @@ import {button} from './parts.ts';
  * pinned by digest), and a root of one's own. In the app each other one can be
  * used with a press (Use, at its right): fetched if it is not here, then the
  * one Prompts run on, set up from .packages and .setup at the next Prompt. In
- * a browser only why runs (through muk, which does not link programs as they
+ * a browser only Ricebox runs (through muk, which does not link programs as they
  * run); the others say where they do. Custom is not yet.
  */
 export function environment(): HTMLElement {
@@ -27,7 +27,7 @@ export function environment(): HTMLElement {
     if (root) { card.replaceChildren(...inTheApp(root, paint)); return; }
     let a: Awaited<ReturnType<typeof about>>;
     try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    // In the app on a machine Prompts do not run on the root, translated as in a browser: said, with why.
+    // In the app on a machine Prompts do not run on the root, translated as in a browser: said, with the Ricebox root.
     card.replaceChildren(...onTheWeb(a), ...(here.why ? [h('p', {class: 'muted small env-why'}, t('Prompts run translated here: {why}', {why: here.why}))] : []));
   };
   void paint();
@@ -63,7 +63,7 @@ function use(id: string, note: HTMLElement, again: () => void): HTMLButtonElemen
   return b;
 }
 
-/** In the app: the root in effect at the top (why's or a distribution's), each other one with Use, and Custom. */
+/** In the app: the root in effect at the top (Ricebox or another distribution), each other one with Use, and Custom. */
 function inTheApp(root: RootStatus, again: () => void): Node[] {
   const now = root.current?.distro ?? (root.current ? 'why' : null);
   const all = roots(root, now);
@@ -73,23 +73,22 @@ function inTheApp(root: RootStatus, again: () => void): Node[] {
       custom())];
 }
 
-/** why and each distribution the app knows: its version, what it is (its size, when it is the one here), its digest. */
+/** Ricebox and each other distribution the app knows: its version, what it is (its size, when it is the one here), its digest. */
 function roots(root: RootStatus, now: string | null) {
   const own = root.current && now === 'why' ? root.current : null;
   return [
-    {id: 'why', name: 'why', version: own?.version ?? root.release.version, what: own ? t('{name} · {size}', {name: own.name, size: bytes(own.bytes)}) : root.release.name, sha: own?.sha256 ?? ''},
+    {id: 'why', name: 'Ricebox', version: own?.version ?? root.release.version, what: own ? t('{name} · {size}', {name: own.name, size: bytes(own.bytes)}) : root.release.name, sha: own?.sha256 ?? ''},
     ...root.distros.map((d) => {
       const held = root.current?.distro === d.id ? root.current : null;
       return {id: d.id, name: d.name, version: d.version, what: held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; provisioned via .packages and .setup'), sha: held?.sha256 ?? ''};
     })];
 }
 
-/** On the web: why at the top (`a`, as this build carries it), and the others, which run in the app. */
+/** On the web: Ricebox at the top (`a`, as this build carries it), and the others, which run in the app. */
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
-  // The same why as the app's: its version, and the digest of the root it is (why/prompt/roots/), run here through muk.
-  // A build that carries no why says so in why's own row: Ubuntu, Debian and Custom are under it all the same.
-  return [...(a ? top('why', a.version, t('{name} · via muk', {name: a.root.name}), a.sha256)
-    : top('why', '', t('why missing (run: npm run webroot)'), '')),
+  // The same Ricebox root as the app uses, with its own version and digest, run here through Muk.
+  return [...(a ? top('Ricebox', a.version, t('{name} · via muk', {name: a.root.name}), a.sha256)
+    : top('Ricebox', '', t('Ricebox root missing (run: npm run webroot)'), '')),
   others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
     other('Debian', '13.7', t('App only'), null),
     custom())];

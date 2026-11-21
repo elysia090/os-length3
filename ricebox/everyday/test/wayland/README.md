@@ -1,0 +1,116 @@
+# Wayland mirror conformance fixture
+
+This is a single-window test, not an Everyday or generic compositor API. Two
+Linux guest processes exchange real Wayland messages over their own anonymous
+AF_UNIX socket pair. The server exports only acknowledged wl_surface commits
+via the runtime's existing virtual file mirror. The C client has no access to
+browser input, host sockets, a display server, network or graphics devices.
+
+The test covers padded XRGB8888 SHM, separate release and frame-completion
+events, a Wayland pointer redraw, independent host camera geometry, and actual
+xdg configure/ack resize. Both native and translated consumers verify every
+pixel and receive the same three serial stages. Frame callbacks are not
+physical presentation or browser measurements.
+
+The native Sods CI lane stages the pinned upstream Wayland, Wayland Protocols
+and libffi trees before running this fixture. The same offline stages can be
+run with those trees in SOURCE_ROOT and the existing Linux x86-64 GNU tools:
+
+    sh build.sh scanner SOURCE_ROOT OUT
+    sh build.sh guest SOURCE_ROOT OUT
+    python3 native-check.py OUT/wayland-presenter
+    SODS_TRANSLATOR_WASM=/path/to/current/sods.wasm RICEBOX_MUK_FILE=/path/to/muk \
+      node guest.integration.mjs OUT/wayland-presenter inline
+    SODS_TRANSLATOR_WASM=/path/to/current/sods.wasm RICEBOX_MUK_FILE=/path/to/muk \
+      node guest.integration.mjs OUT/wayland-presenter worker
+
+The scanner uses host Expat; its outputs are checksum-checked before building
+guest code. The guest uses musl-gcc by default (CC can name another musl
+compiler). No host objects are linked into the fixture and it has no dynamic
+loader or shared-library dependency. None of these files or test artifacts
+is a requested release package or visible desktop.
+
+
+The same checks also run with a separately executed static client. Pass
+OUT/wayland-socket-client as the final argument to any of the three test
+commands. The guest server deliberately inherits only its guest-owned
+WAYLAND_SOCKET endpoint across exec (stdout/stderr remain normal). The client
+has no stdin and verifies an unrelated close-on-exec descriptor disappeared;
+ordinary libwayland consumes the environment value and takes that endpoint
+back to close-on-exec. This also keeps the in-process fork test as a control.
+
+### Optional native Qt Quick control
+
+This separate Linux x86-64 check reuses the test compositor with the real Alpine
+3.24 Qt 6.11.1-r0 Wayland client. It is not part of the default test path and
+does not install Qt into Ricebox or run Qt under Sods. Stage the official signed
+`qt6-qtdeclarative=6.11.1-r0` and `qt6-qtbase-wayland=6.11.1-r0` APKs and
+their dependencies in a disposable Alpine filesystem. The package manager also
+selects `qt6-qtbase-x11`, which contains the Wayland platform plugin despite
+its name. `qmlscene` lives in the runtime package; the dev package is not
+required. The runner checks the pinned qmlscene executable digest before running.
+
+After the scanner stage above, build with `EVERYDAY_WITH_QT=1` for the guest
+stage, then on the Linux host run:
+
+```sh
+python3 ricebox/everyday/test/wayland/qt/native-check.py \
+  "$ALPINE_ROOT" "$BUILD_ROOT/wayland-qt-launch"
+```
+
+The read-only root runs under normal unprivileged bubblewrap with no host
+display/device mounts. The launcher's local socketpair supplies
+`WAYLAND_SOCKET`; the display backend is Wayland, not offscreen or X11. The
+fixture checks Qt's software-renderer selection, every RGBA pixel of the first
+rectangle and its xdg resize, and close without a third frame. This optional
+control is not a general Qt, Chrome, or Quickshell compatibility claim.
+
+For a separate top-layer panel control, also stage the signed
+`layer-shell-qt=6.6.6-r0` runtime package and take
+`wlr-layer-shell-unstable-v1.xml` from the signed Alpine
+`wlr-protocols=0_git20250702-r0` package. Pass that XML as
+`EVERYDAY_WLR_LAYER_XML` during the scanner stage and
+`EVERYDAY_WITH_QT_LAYER=1` during the guest stage. Neither is enabled by
+default. Then run the same host check with:
+
+```sh
+python3 ricebox/everyday/test/wayland/qt/native-check.py \
+  "$ALPINE_ROOT" "$BUILD_ROOT/wayland-qt-layer-launch" --layer
+```
+
+The Qt/KDE client must request a top-layer role with top-left anchors for
+the explicitly advertised, private test output. The test checks that role
+and the software-rendered buffer/resize/close independently of xdg-shell.
+The renderer mirrors the committed buffer only; it does not show or
+measure a physically pinned panel or claim a Quickshell session.
+
+### Optional native Quickshell application
+
+This is the real Debian trixie-backports `quickshell 0.3.0-1~bpo13+1`
+application with a small `Quickshell.PanelWindow` QML configuration.
+It uses a Debian x86-64 test host with matching Qt 6.8.2 runtime libraries and
+the supplementary official `.deb` files listed in
+[`qt/quickshell/debs.sha256`](qt/quickshell/debs.sha256). Stage those files from
+Debian's authenticated trixie and trixie-backports archives; the optional
+staging script verifies their recorded hashes and only extracts payloads,
+without installing anything or running scripts.
+
+Use the same pinned protocol XML in the scanner stage as for the Qt layer
+test above. Then build the guest fixture with `EVERYDAY_WITH_QUICKSHELL=1`
+and run:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+sh "$q/stage-debs.sh" "$DEB_CACHE" "$NEW_OVERLAY"
+python3 "$q/native-check.py" "$NEW_OVERLAY" "$BUILD_ROOT/wayland-quickshell-launch"
+```
+
+Only system `/usr` and the staged payloads are mounted read-only, with fresh
+home, runtime, and display state; there is no external Wayland socket. The QML
+must render an actual translucent rectangle from ARGB8888 SHM at both sizes.
+The mirror converts premultiplied color to straight RGBA; the runner compares
+every pixel and checks the client destroys the layer after close. A finite
+QML timer exits the test application, not the behavior of a normal shell
+daemon. Shell IPC and physical/browser presentation are not tested. The
+official Quickshell executable is dynamically linked and this is not a
+translated Sods Quickshell result.

@@ -1,5 +1,5 @@
 // The keys heard on a control's activation and as the Agent's typing is played on screen (pages/bench/play.ts): each key pressed and, a beat after,
-// let go, from kbsim's recordings (MIT, Thomas Lai: public/sounds/keys/LICENSE.md): NovelKeys Cream's Space for a key,
+// let go, from kbsim's recordings (MIT, Thomas Lai: why/app/public/sounds/keys/LICENSE.md): NovelKeys Cream's Space for a key,
 // Cream's Backspace for Enter, Alpaca's Space for Space. No two strokes alike: each a little higher or lower, softer
 // or harder, duller or brighter, as a hand's are. Quiet beside what the person does, and silent while the page is
 // out of sight.

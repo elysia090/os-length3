@@ -50,7 +50,8 @@ function later(send: (b: Buffer) => void) {
 
 /** Postgres messages in a stream: `typed` once the first (untyped startup) is past when `startup`, each type byte seen. */
 function scan(startup: boolean, each: (type: number) => void) {
-  let buf = Buffer.alloc(0), started = !startup;
+  let buf: Buffer = Buffer.alloc(0);
+  let started = !startup;
   return (chunk: Buffer) => {
     buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
     let at = 0;

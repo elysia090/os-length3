@@ -10,15 +10,18 @@ export const OUT = join(OS, 'why', 'test', 'app', '.dist');
 /** What the Remote and the preview printed, for a failure to be read by. */
 export const LOGS = join(OS, 'why', 'test', 'app', '.logs');
 
+/** The web root staged beside the app's static files, before bundling. */
+const WEBROOT = fileURLToPath(new URL('../../app/public/webroot/', import.meta.url));
+export const WEBROOT_MANIFEST = join(WEBROOT, 'webroot.json');
+
 /**
  * The root's own command in the web root this build carries: why, or l3 in a root released before it was named so
  * (0.6.4, which main pins until the next release).
  */
 export function rootCommand(): string {
   try {
-    const dir = join(OS, 'public', 'webroot');
-    const about = JSON.parse(readFileSync(join(dir, 'webroot.json'), 'utf8')) as {index: {path: string}};
-    const index = JSON.parse(readFileSync(join(dir, about.index.path), 'utf8')) as {files: {path: string}[]};
+    const about = JSON.parse(readFileSync(WEBROOT_MANIFEST, 'utf8')) as {index: {path: string}};
+    const index = JSON.parse(readFileSync(join(WEBROOT, about.index.path), 'utf8')) as {files: {path: string}[]};
     return index.files.some((f) => f.path === '/usr/bin/why') ? 'why' : 'l3';
   } catch { return 'why'; }
 }
