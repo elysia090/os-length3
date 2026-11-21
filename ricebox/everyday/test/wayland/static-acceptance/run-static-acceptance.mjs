@@ -33,6 +33,7 @@ const expected={
   },
   [FRESH]:{
     'run-receipt-fresh-witness.patch':'0bc1fb42ef313feab8f21127224af167e1281c9971ae16c66be9632b0169dd4c',
+    'run-receipt-diagnostics.patch':'063b9134116f396890821881214228099900703905d499bd630fa730fc19515e',
   },
 };
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -57,6 +58,8 @@ export function checkOwner(version,owner,executable) {
 }
 export function checkBrowserResult(receipt,profile,pin) {
   need(receipt?.profile===profile&&receipt.sameReleaseDigest===pin,'BROWSER_RECEIPT_WRONG_RELEASE');
+  // A rejected or malformed run cannot contribute even individually green phase counters.
+  need(receipt.diagnosticFailure===null&&receipt.runError===null,'BROWSER_RUN_FAILED');
   const pages=receipt.phases;
   need(/^(?:Headless)?Chrome\/[0-9.]+$/.test(receipt.browser?.product??'')&&receipt.sandbox?.seccomp==='Yes'&&
     receipt.sandbox?.pid==='Yes'&&receipt.sandbox?.network==='Yes'&&
@@ -72,6 +75,81 @@ export function checkBrowserResult(receipt,profile,pin) {
   const cold=payload(pages[0]),revisit=payload(pages[1]);
   const pass=receipt.pass===true&&pages.every(p=>p.pass===true)&&cold>0&&revisit===0;
   return {status:pass?'pass':cold===null||revisit===null?'incomplete':'fail',chrome:receipt.browser.product,cold,revisit};
+}
+const phaseNames=['first','revisit'];
+const outsidePhaseStages=new Set(['origin-plan','browser-launch','sandbox-proof','browser-close','origin-close']);
+const insidePhaseStages=new Set(['cdp-arm','http-navigation','shell-prompt','shell-input','shell-witness',
+  'observation-drain','http-receipt','target-close']);
+const browserReasons=new Set(['BROWSER_RECEIPT_WRONG_RELEASE','BROWSER_SANDBOX_UNPROVEN','BROWSER_PHASES_UNPROVEN',
+  'BROWSER_RECEIPT_FLAGS_INVALID','BROWSER_GUEST_PROOF_MISSING','BROWSER_CHALLENGE_REUSED','BROWSER_RUN_FAILED']);
+const codes=new Set([
+  'cdp-target-capture','origin-duplicate-id','cdp-network-not-enabled','worker-script-unknown','worker-script-unrecognized',
+  'worker-target-missing','cdp-url-missing','cdp-url-out-of-scope','cdp-request-incomplete','cdp-request-ambiguous',
+  'cdp-request-event-missing','cdp-loading-failed','cdp-extra-info-missing','cdp-loading-finished-missing',
+  'cdp-request-target-missing','cdp-response-status-missing','cdp-service-worker','cdp-cache-status',
+  'cdp-cache-encoded-conflict','cdp-origin-receipt-missing','worker-script-cdp-origin-receipt-missing',
+  'cdp-origin-receipt-duplicate','origin-response-incomplete','http-response-mismatch','http-encoded-bytes-mismatch',
+  'http-invalid-304-body','http-status-out-of-scope','origin-cdp-response-missing',
+  'worker-script-cdp-lifecycle-incomplete','http-status-mismatch','http-range-mismatch','http-encoding-mismatch',
+  'worker-script-origin-cdp-response-missing','cold-asset-body-missing','cold-worker-pack-missing','cold-worker-range-missing',
+  'display-worker-before-opt-in','display-request-before-opt-in','http-root-range-served-full',
+  'display-origin-before-opt-in','cold-asset-body-duplicate','frozen-response-duplicate','revisit-frozen-payload']);
+const onlyCodes=xs=>Array.isArray(xs)&&xs.length<=codes.size?[...new Set(xs.filter(x=>codes.has(x)))].sort():[];
+const numericBody=n=>Number.isSafeInteger(n)&&n>=0;
+function onlyPhase(rows,phase){
+  if(!Array.isArray(rows)||rows.length>2||rows.some(x=>!phaseNames.includes(x?.phase)))return {state:'invalid'};
+  const matches=rows.filter(x=>x.phase===phase);
+  return matches.length===1?{record:matches[0]}:{state:matches.length?'invalid':'missing'};
+}
+export function classifyBrowserDiagnostic(receipt, child, profile, wrapperReason) {
+  const transport=['ok','nonzero','spawn-error','timeout','signal'].includes(child)?child:'unknown';
+  const wrapper=browserReasons.has(wrapperReason)?wrapperReason:wrapperReason===null?'none':'BROWSER_RECEIPT_MISSING_OR_INVALID';
+  const source=receipt?.profile===profile?receipt:null;
+  const fromChild=source?.diagnosticFailure;
+  const run=source?.pass===false&&typeof source.runError==='string'&&
+    ((fromChild?.phase===null&&outsidePhaseStages.has(fromChild?.stage))||
+      (phaseNames.includes(fromChild?.phase)&&insidePhaseStages.has(fromChild?.stage)))?
+      {stage:fromChild.stage,phase:fromChild.phase}:null;
+  const phases=phaseNames.map(phase=>{
+    const {record:p,state}=onlyPhase(source?.phases??[],phase);
+    if(!p)return {phase,state,codes:[]};
+    const observations=p.observations;
+    if(typeof p.pass!=='boolean'||typeof p.coverageComplete!=='boolean')return {phase,state:'invalid',codes:[]};
+    if(observations?.stage!=='prompt'||observations.focus!=='host-focus'||observations.marker!==true||observations.cleanExit!==true)
+      return {phase,state:'guest-unproven',codes:[]};
+    if(!p.coverageComplete)return {phase,state:'coverage-gap',codes:onlyCodes(p.coverageCodes)};
+    if(!numericBody(p.payloadBodyBytes))return {phase,state:'body-counter-invalid',codes:[]};
+    if(!p.pass)return {phase,state:'policy-fail',codes:onlyCodes(p.failureCodes)};
+    return {phase,state:'recorded',codes:[]};
+  });
+  return {transport,wrapper,run,phases};
+}
+export function diagnosticMarkers(d) {
+  const lines=[];
+  if(['ok','nonzero','spawn-error','timeout','signal','unknown'].includes(d?.transport))lines.push('transport='+d.transport);
+  if(browserReasons.has(d?.wrapper)||['none','BROWSER_RECEIPT_MISSING_OR_INVALID'].includes(d?.wrapper))
+    lines.push('wrapper='+d.wrapper);
+  if(d?.run?.phase===null&&outsidePhaseStages.has(d.run.stage))lines.push('run='+d.run.stage);
+  else if(phaseNames.includes(d?.run?.phase)&&insidePhaseStages.has(d.run.stage))lines.push('run='+d.run.phase+':'+d.run.stage);
+  for(const phase of phaseNames){
+    const {record:p,state}=onlyPhase(d?.phases,phase);
+    if(!p){if(d?.phases!==undefined)lines.push('phase='+phase+':'+state);continue;}
+    if(!['missing','invalid','guest-unproven','coverage-gap','body-counter-invalid','policy-fail','recorded'].includes(p.state))continue;
+    lines.push('phase='+phase+':'+p.state);
+    if(['coverage-gap','policy-fail'].includes(p.state)){
+      const known=onlyCodes(p.codes);
+      if(known.length)lines.push('codes='+phase+':'+known.join(','));
+    }
+  }
+  return lines;
+}
+export function hasAdmissibleBrowserDiagnostic(d,status){
+  if(d?.run!==null||d?.wrapper!=='none'||!(status==='pass'?d.transport==='ok':
+    status==='fail'&&['ok','nonzero'].includes(d.transport)))return false;
+  return phaseNames.every(phase=>{
+    const p=onlyPhase(d.phases,phase).record;
+    return p?.state==='recorded'||(status==='fail'&&p?.state==='policy-fail');
+  });
 }
 const cmd=(bin,args,opts={})=>execFileSync(bin,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:10_000,...opts}).trim();
 async function localSockets() {
@@ -127,7 +205,8 @@ if(import.meta.main) {
       const stderr=openSync(join(report,name+'.stderr'),'wx',0o600);
       try {
         const r=spawnSync(bin,argv,{cwd,timeout,env,stdio:['ignore',stdout,stderr]});
-        return {status:r.status,ok:!r.error&&r.status===0};
+        return {status:r.status,ok:!r.error&&r.status===0,
+          transport:r.error?(r.error.code==='ETIMEDOUT'?'timeout':'spawn-error'):r.signal?'signal':r.status===0?'ok':'nonzero'};
       } finally {closeSync(stdout);closeSync(stderr)}
     };
     try {
@@ -157,13 +236,15 @@ if(import.meta.main) {
       writeFileSync(join(consumer,'stock-chrome.ts'),stock,{flag:'wx'});
       need(run('apply-witness','git',['apply','--check','run-receipt-fresh-witness.patch'],{cwd:consumer}).ok,'FRESH_WITNESS_PATCH_INVALID');
       need(run('patch-witness','git',['apply','run-receipt-fresh-witness.patch'],{cwd:consumer}).ok,'FRESH_WITNESS_PATCH_FAILED');
+      need(run('apply-diagnostics','git',['apply','--check','run-receipt-diagnostics.patch'],{cwd:consumer}).ok,'RECEIPT_DIAGNOSTICS_PATCH_INVALID');
+      need(run('patch-diagnostics','git',['apply','run-receipt-diagnostics.patch'],{cwd:consumer}).ok,'RECEIPT_DIAGNOSTICS_PATCH_FAILED');
       // Gate the exact CDP process used for acceptance before it sees any /demo/ URL.
       const original=readFileSync(join(consumer,'run-receipt.mjs'),'utf8');
       const needle='  result.browser=browser.version;';
       need(original.split(needle).length===2,'SANDBOX_HOOK_ANCHOR_MISMATCH');
       writeFileSync(join(consumer,'sandbox-same-process.mjs'),readFileSync(fileURLToPath(new URL('./sandbox-same-process.mjs',import.meta.url))),{flag:'wx'});
       writeFileSync(join(consumer,'run-receipt.mjs'),"import { verifySandbox } from './sandbox-same-process.mjs';\n"+original.replace(needle,
-        needle+"\n  if(mode==='staged') result.sandbox=await verifySandbox(browser);"));
+        needle+"\n  if(mode==='staged'){at='sandbox-proof'; result.sandbox=await verifySandbox(browser);}"));
       copyFileSync(fileURLToPath(new URL('./probe-staged.mjs',import.meta.url)),join(consumer,'probe-staged.mjs'));
       summary.stage='installed-exact-package';
       const node=process.execPath, packageOut=join(work,'npmpackage');
@@ -189,13 +270,18 @@ if(import.meta.main) {
       let failed=false;
       for(const profile of ['local-revalidate','local-immutable']) {
         const r=run(profile,node,['run-receipt.mjs','staged',CHROME,site,profile],{cwd:consumer,timeout:180_000});
+        let receipt=null,measured,reason=null;
         try {
-          const receipt=json(join(report,profile+'.stdout'));
-          const measured=checkBrowserResult(receipt,profile,approved.sha256.webroot);
+          receipt=json(join(report,profile+'.stdout'));
+          measured=checkBrowserResult(receipt,profile,approved.sha256.webroot);
           if(!r.ok&&measured.status==='pass')measured.status='not_accepted';
-          summary.browserRuns[profile]=measured;
-          if(measured.status!=='pass')failed=true;
-        } catch(error) { summary.browserRuns[profile]={status:'not_accepted',reason:/^[A-Z0-9_]+$/.test(error.message)?error.message:'BROWSER_RECEIPT_MISSING_OR_INVALID'};failed=true; }
+        } catch(error) {
+          reason=browserReasons.has(error.message)?error.message:'BROWSER_RECEIPT_MISSING_OR_INVALID';
+          measured={status:'not_accepted',reason};
+        }
+        measured.diagnostic=classifyBrowserDiagnostic(receipt,r.transport,profile,reason);
+        summary.browserRuns[profile]=measured;
+        if(measured.status!=='pass')failed=true;
       }
       if(muslPresenter){
         summary.stage='musl-wayland-display';

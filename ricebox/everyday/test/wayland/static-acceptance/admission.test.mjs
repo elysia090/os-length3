@@ -12,7 +12,7 @@ const sample=()=>({
   provenance:Object.fromEntries(components.map(c=>[c,'Synthetic test statement for '+c])),
 });
 const good=()=>({
-  profile,sameReleaseDigest:pin,pass:true,browser:{product:'Chrome/156.0.1.3'},
+  profile,sameReleaseDigest:pin,pass:true,runError:null,diagnosticFailure:null,browser:{product:'Chrome/156.0.1.3'},
   sandbox:{layer:'Namespace',pid:'Yes',network:'Yes',seccomp:'Yes'},
   phases:['first','revisit'].map((phase,i)=>({phase,pass:true,payloadBodyBytes:i===0?404:0,coverageComplete:true,
     observations:{stage:'prompt',focus:'host-focus',marker:true,cleanExit:true,expectedMarker:'RICEBOX-BOOT:'+(41+i)}})),

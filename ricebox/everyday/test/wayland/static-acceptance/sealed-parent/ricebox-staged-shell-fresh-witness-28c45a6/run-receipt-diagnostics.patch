@@ -1,0 +1,251 @@
+--- a/run-receipt.mjs
++++ b/run-receipt.mjs
+@@ -13,8 +13,7 @@
+ const evidence=mode==='staged'?
+   'Controlled loopback shell fixture only; independently verify the exact staged release and browser sandbox before acceptance':
+   'Synthetic HTTP diagnostic only; no guest, pinned runtime, or stock Chrome claim';
+-const config=mode==='staged'?await stagedPlan(stage,profile):await diagnosticPlan(stage?{rootCache:'no-store'}:{});
+-let browser;
++let config,browser,at='origin-plan',activePhase=null;
+ const usedWitnessProducts=new Set();
+ async function waitFor(page,expression) {
+   const end=Date.now()+30_000;
+@@ -30,20 +29,35 @@
+   }
+   throw Error('Timed out waiting for page/guest witness: '+expression);
+ }
+-let result={evidence,profile:config.profile,sameReleaseDigest:config.sameReleaseDigest??null,
++const result={evidence,profile:profile??'diagnostic-configured',sameReleaseDigest:null,
+   startedAt:new Date().toISOString(),runnerMode:'headless isolated temp profile, no cache manipulation',
+   revisit:'ordinary Page.navigate to the identical URL in a fresh tab of the same browser/profile',
+   observation:'through normal command exit (staged) or completed fixture reads (diagnostic), then four-second observation and at least 400 ms quiet',
+-  phases:[],browser:null,runError:null};
++  phases:[],browser:null,runError:null,diagnosticFailure:null};
++const noteFailure=(error,stage=at,phase=activePhase)=>{
++  if(result.diagnosticFailure!==null) return;
++  // Failure is the catch itself, not the truthiness or convertibility of what was thrown.
++  result.diagnosticFailure={stage,phase};
++  try {result.runError=String(error);}
++  catch {result.runError='Unprintable browser exception';}
++};
+ try {
++  config=mode==='staged'?await stagedPlan(stage,profile):await diagnosticPlan(stage?{rootCache:'no-store'}:{});
++  result.profile=config.profile;
++  result.sameReleaseDigest=config.sameReleaseDigest??null;
++  at='browser-launch';
+   browser=await launchIsolatedChrome(executable);
+   result.browser=browser.version;
+   for(const phase of ['first','revisit']) {
++    activePhase=phase;
++    at='cdp-arm';
+     for(const o of config.origins) o.setPhase(phase);
+     const page=await armCapture(browser);
+     try {
++      at='http-navigation';
+       const nav=await page.call('Page.navigate',{url:config.url});
+       if(nav.errorText) throw Error(nav.errorText);
++      at='shell-prompt';
+       const readiness=await waitFor(page,mode==='staged'?`(()=>{
+         const p=document.querySelector('#state')?.dataset.phase;
+         if(p==='failed') return {error:document.querySelector('#state').textContent};
+@@ -68,11 +82,13 @@
+         if(!Number.isSafeInteger(product)||product>0x7fffffff||command.includes(expected)||before.includes(expected)) {
+           throw Error('Invalid challenge or expected guest result already present before submit');
+         }
++        at='shell-input';
+         await page.evaluate(`document.querySelector('#line').focus()`);
+         // Ordinary keyboard input, not direct invocation of the guest API.
+         await page.call('Input.insertText',{text:command});
+         await page.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13});
+         await page.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
++        at='shell-witness';
+         const guest=await waitFor(page,`(()=>{
+           const state=document.querySelector('#state'), p=state?.dataset.phase;
+           if(p==='failed') return {error:state.textContent};
+@@ -86,6 +102,7 @@
+         if(!guest.marker||!guest.cleanExit) throw Error('Calculated guest marker and clean exit not both observed');
+         Object.assign(readiness,guest,{witnessOperands:[left,right],expectedMarker:expected});
+       }
++      at='observation-drain';
+       await sleep(4_000);
+       let previous=-1;
+       const end=Date.now()+5_000;
+@@ -102,6 +119,7 @@
+           url:x.name,transferSize:x.transferSize,encodedBodySize:x.encodedBodySize,decodedBodySize:x.decodedBodySize
+         }))})`);
+       if(perfs.nav.length!==1||perfs.nav[0]!=='navigate') throw Error('Not an ordinary forward navigation');
++      at='http-receipt';
+       const receipt=buildReceipt({phase,events:page.events,targets:page.targets,errors:page.errors,
+         origin:config.origins.flatMap(o=>o.rows),scope:config.scope,isAllowedWorker:config.isAllowedWorker,isDisplay,
+         requireWorkers:config.requireWorkers,requireAssets:phase==='first'?config.requireAssets:[],
+@@ -110,14 +128,22 @@
+       result.phases.push(receipt);
+     } catch(error) {
+       result.failedPhase={phase,events:page.events.length,origin:config.origins.flatMap(o=>o.rows).filter(r=>r.phase===phase)};
++      noteFailure(error);
+       throw error;
+-    } finally {await page.close();}
++    } finally {
++      at='target-close';
++      await page.close();
++    }
+   }
+-} catch(error){result.runError=String(error);}
++} catch(error){noteFailure(error);}
+ finally{
+   try {await browser?.close();}
+-  finally {for(const o of config.origins) await o.close();}
++  catch(error){noteFailure(error,'browser-close',null);}
++  for(const o of config?.origins??[]){
++    try {await o.close();}
++    catch(error){noteFailure(error,'origin-close',null);}
++  }
+ }
+-result.pass=!result.runError&&result.phases.length===2&&result.phases.every(p=>p.pass);
++result.pass=result.diagnosticFailure===null&&result.runError===null&&result.phases.length===2&&result.phases.every(p=>p.pass);
+ process.stdout.write(JSON.stringify(result,null,2)+'\n');
+ if(!result.pass) process.exitCode=1;
+--- a/receipt.mjs
++++ b/receipt.mjs
+@@ -59,62 +59,80 @@
+ export function buildReceipt({phase,events,targets,errors=[],origin,scope,requireAssets=[],requireWorkerAssets=[],
+   requireWorkers=[],requireWorkerPack=false,isAllowedWorker=()=>false,isDisplay=()=>false,observations=null}) {
+   const coverage=[...errors], misuse=[], results=[], totals={}, matched=new Set(), addresses=new Map();
++  const coverageCodes=new Set(errors.length?['cdp-target-capture']:[]);
++  const failureCodes=new Set();
++  const gap=(code,detail)=>{coverageCodes.add(code);coverage.push(detail)};
++  const fail=(code,detail)=>{failureCodes.add(code);misuse.push(detail)};
+   const originRows=origin.filter(row=>row.phase===phase);
+   const captured=collectBrowser(events,targets);
+   const browserRows=captured.filter(row=>http(row.url));
+   const originByID=new Map(originRows.map(row=>[row.id,row]));
+-  if(originRows.length!==originByID.size) coverage.push('Duplicate controlled-origin receipt ID');
++  if(originRows.length!==originByID.size) gap('origin-duplicate-id','Duplicate controlled-origin receipt ID');
+   const workerURLs=new Set();
+   for(const target of targets.values()) {
+-    if(!target.enabled) coverage.push('Network not enabled for target '+target.sessionId);
++    if(!target.enabled) gap('cdp-network-not-enabled','Network not enabled for target '+target.sessionId);
+     if(!targetWorker(target.type)) continue;
+-    if(!target.url) coverage.push('Unknown Worker script: '+target.sessionId);
+-    else if(isDisplay(target.url)) misuse.push('Display Worker before opt-in: '+target.url);
+-    else if(!isAllowedWorker(target.url)) coverage.push('Unrecognized Worker script: '+target.url);
++    if(!target.url) gap('worker-script-unknown','Unknown Worker script: '+target.sessionId);
++    else if(isDisplay(target.url)) fail('display-worker-before-opt-in','Display Worker before opt-in: '+target.url);
++    else if(!isAllowedWorker(target.url)) gap('worker-script-unrecognized','Unrecognized Worker script: '+target.url);
+     workerURLs.add(target.url);
+   }
+-  for(const url of requireWorkers) if(!workerURLs.has(url)) coverage.push('Missing Worker target: '+url);
++  for(const url of requireWorkers) if(!workerURLs.has(url)) gap('worker-target-missing','Missing Worker target: '+url);
+
+   // Ancillary favicon omitted by caller's scope must not mask unknown asset paths.
+   for(const b of captured) if(!b.url&&(b.status!==null||b.failed||b.complete)) {
+-    coverage.push('CDP network event missing its request URL: '+b.sessionId+'/'+b.requestId);
++    gap('cdp-url-missing','CDP network event missing its request URL: '+b.sessionId+'/'+b.requestId);
+   }
+   for(const b of browserRows) {
+-    if(isDisplay(b.url)) misuse.push('Display request before opt-in: '+b.url);
++    if(isDisplay(b.url)) fail('display-request-before-opt-in','Display request before opt-in: '+b.url);
+     const group=scope(b.url);
+     if(group==='ignore') continue;
+-    if(!group) {coverage.push('Unexpected browser URL: '+b.url);continue;}
++    if(!group) {gap('cdp-url-out-of-scope','Unexpected browser URL: '+b.url);continue;}
+     if(b.redirect||b.ambiguous||!b.requested||b.failed||b.missingExtra||!b.complete||!b.target||b.status===null) {
+-      coverage.push('Incomplete or ambiguous CDP request: '+b.url+' '+b.requestId+(b.failed?' '+b.failed:''));
++      gap('cdp-request-incomplete','Incomplete or ambiguous CDP request: '+b.url+' '+b.requestId+(b.failed?' '+b.failed:''));
++      if(b.redirect||b.ambiguous) coverageCodes.add('cdp-request-ambiguous');
++      if(!b.requested) coverageCodes.add('cdp-request-event-missing');
++      if(b.failed) coverageCodes.add('cdp-loading-failed');
++      if(b.missingExtra) coverageCodes.add('cdp-extra-info-missing');
++      if(!b.complete) coverageCodes.add('cdp-loading-finished-missing');
++      if(!b.target) coverageCodes.add('cdp-request-target-missing');
++      if(b.status===null) coverageCodes.add('cdp-response-status-missing');
++      if(isAllowedWorker(b.url)) coverageCodes.add('worker-script-cdp-lifecycle-incomplete');
+     }
+-    if(b.cacheFlags.serviceWorker) coverage.push('Unexpected Service Worker cache path: '+b.url);
++    if(b.cacheFlags.serviceWorker) gap('cdp-service-worker','Unexpected Service Worker cache path: '+b.url);
+     const o=originByID.get(b.receiptId);
+     if(b.cache) {
+-      if(![200,206].includes(b.status)) coverage.push('Unexpected local-cache status '+b.status+': '+b.url);
+-      if(b.cdpEncodedBodyBytes!==null) coverage.push('Local cache classification conflicts with encoded CDP data: '+b.url);
++      if(![200,206].includes(b.status)) gap('cdp-cache-status','Unexpected local-cache status '+b.status+': '+b.url);
++      if(b.cdpEncodedBodyBytes!==null) gap('cdp-cache-encoded-conflict','Local cache classification conflicts with encoded CDP data: '+b.url);
+       // Do not match a stale cache-stored receipt header for an earlier response.
+       results.push({...b,group,classification:'browser-cache',bodyBytes:null});
+       continue;
+     }
+     if(!o) {
+-      coverage.push('Browser request without a matching current origin receipt: '+b.url);
++      gap('cdp-origin-receipt-missing','Browser request without a matching current origin receipt: '+b.url);
++      if(isAllowedWorker(b.url)) coverageCodes.add('worker-script-cdp-origin-receipt-missing');
+       results.push({...b,group,classification:'unknown',bodyBytes:null});continue;
+     }
+-    if(matched.has(o.id)) coverage.push('Duplicate CDP receipt for origin response: '+o.id);
++    if(matched.has(o.id)) gap('cdp-origin-receipt-duplicate','Duplicate CDP receipt for origin response: '+o.id);
+     matched.add(o.id);
+-    if(!o.completed||!Number.isSafeInteger(o.bytes)||o.bytes<0) coverage.push('Incomplete origin response: '+b.url);
++    if(!o.completed||!Number.isSafeInteger(o.bytes)||o.bytes<0) gap('origin-response-incomplete','Incomplete origin response: '+b.url);
+     if(b.url!==o.url||b.status!==o.status||b.method!==o.method||b.range!==o.range||
+-      b.contentRange!==o.contentRange||b.encoding!==o.encoding) coverage.push('Browser/origin mismatch: '+b.url);
++      b.contentRange!==o.contentRange||b.encoding!==o.encoding) {
++      gap('http-response-mismatch','Browser/origin mismatch: '+b.url);
++      if(b.status!==o.status) coverageCodes.add('http-status-mismatch');
++      if(b.range!==o.range||b.contentRange!==o.contentRange) coverageCodes.add('http-range-mismatch');
++      if(b.encoding!==o.encoding) coverageCodes.add('http-encoding-mismatch');
++    }
+     // The raw request headers are not implemented on every target; the origin
+     // remains authoritative for If-None-Match and Cache-Control sent on wire.
+     if(b.cdpEncodedBodyBytes!==null&&b.cdpEncodedBodyBytes!==o.bytes) {
+-      coverage.push('Encoded CDP chunk total disagrees with origin: '+b.url);
++      gap('http-encoded-bytes-mismatch','Encoded CDP chunk total disagrees with origin: '+b.url);
+     }
+-    if(o.status===304&&o.bytes!==0) coverage.push('Invalid body on 304: '+b.url);
+-    if(![200,206,304].includes(o.status)) coverage.push('Unexpected HTTP '+o.status+': '+b.url);
++    if(o.status===304&&o.bytes!==0) gap('http-invalid-304-body','Invalid body on 304: '+b.url);
++    if(![200,206,304].includes(o.status)) gap('http-status-out-of-scope','Unexpected HTTP '+o.status+': '+b.url);
+     if(o.method==='GET'&&o.status===200&&o.range&&group==='root') {
+       // A server can ignore a Range; don't call the resulting full response 206.
+-      misuse.push('Root Range answered 200; full body served: '+b.url+' '+o.range);
++      fail('http-root-range-served-full','Root Range answered 200; full body served: '+b.url+' '+o.range);
+     }
+     const classification=o.status===304?'network-revalidation':o.status===206?'network-range':'network-response';
+     const summary=totals[group]??=counts();
+@@ -128,27 +146,31 @@
+     results.push({...b,group,classification,bodyBytes:o.bytes,originReceipt:o.id});
+   }
+   for(const o of originRows) {
+-    if(isDisplay(o.url)) misuse.push('Origin served display before opt-in: '+o.url);
++    if(isDisplay(o.url)) fail('display-origin-before-opt-in','Origin served display before opt-in: '+o.url);
+     const group=scope(o.url);
+-    if(group!=='ignore'&&!matched.has(o.id)) coverage.push('Origin response missing from page/Worker capture: '+o.url+' '+o.status);
++    if(group!=='ignore'&&!matched.has(o.id)) {
++      gap('origin-cdp-response-missing','Origin response missing from page/Worker capture: '+o.url+' '+o.status);
++      if(isAllowedWorker(o.url)) coverageCodes.add('worker-script-origin-cdp-response-missing');
++    }
+   }
+   for(const u of requireAssets) {
+     const found=results.filter(r=>r.url===u&&['network-response','network-range'].includes(r.classification)&&r.bodyBytes>0&&r.complete);
+-    if(!found.length) coverage.push('Expected first-load body missing: '+u);
+-    if(found.length>1) misuse.push('Expected exactly one first-load asset response: '+u);
++    if(!found.length) gap('cold-asset-body-missing','Expected first-load body missing: '+u);
++    if(found.length>1) fail('cold-asset-body-duplicate','Expected exactly one first-load asset response: '+u);
+   }
+   if(requireWorkerPack&&!results.some(r=>r.group==='root'&&new URL(r.url).pathname.endsWith('.pack')
+-    &&targetWorker(r.target)&&r.bodyBytes>0&&r.complete)) coverage.push('Missing first-load Worker pack data');
++    &&targetWorker(r.target)&&r.bodyBytes>0&&r.complete)) gap('cold-worker-pack-missing','Missing first-load Worker pack data');
+   for(const u of requireWorkerAssets) {
+     if(!results.some(r=>r.url===u&&targetWorker(r.target)&&r.classification==='network-range'&&r.bodyBytes>0&&r.complete)) {
+-      coverage.push('Expected first-load Worker Range body missing: '+u);
++      gap('cold-worker-range-missing','Expected first-load Worker Range body missing: '+u);
+     }
+   }
+   for(const [key,count] of addresses) {
+-    if(count>1) misuse.push('Repeated full request or identical Content-Range: '+key+' × '+count);
++    if(count>1) fail('frozen-response-duplicate','Repeated full request or identical Content-Range: '+key+' × '+count);
+   }
+   const repeatedPayloadBodyBytes=[...frozenGroups].reduce((n,k)=>n+(totals[k]?.bodyBytes??0),0);
+-  if(phase==='revisit'&&repeatedPayloadBodyBytes>0) misuse.push('Revisit sent '+repeatedPayloadBodyBytes+' index/Wasm/root response body bytes');
++  if(phase==='revisit'&&repeatedPayloadBodyBytes>0) fail('revisit-frozen-payload','Revisit sent '+repeatedPayloadBodyBytes+' index/Wasm/root response body bytes');
+   return {phase,observations,coverageComplete:!coverage.length,pass:!coverage.length&&!misuse.length,coverage,failures:misuse,
++    coverageCodes:[...coverageCodes].sort(),failureCodes:[...failureCodes].sort(),
+     payloadBodyBytes:coverage.length?null:repeatedPayloadBodyBytes,totals,browser:results,origin:originRows,targets:[...targets.values()]};
+ }
