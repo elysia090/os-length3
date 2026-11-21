@@ -5,7 +5,17 @@ umask 077
 p=$(cd -- "$(dirname -- "$0")" && pwd)
 int=$(cd -- "$p/../.." && pwd)
 phase=opt-in
-trap 'rc=$?; if ((rc)); then printf "RX_EVERYDAY_DERIVATIVE_HOLD stage=%s code=%d\n" "$phase" "$rc"; fi' EXIT
+trace_reported=0
+finish() {
+   local rc=$?
+   if ((rc)); then
+      if [[ "$phase" == stock-chrome-sandbox && ${trace:-} ]] && ((!trace_reported)); then
+         node "$p/preflight-diagnostics.mjs" report "$trace" partial 2>/dev/null || :
+      fi
+      printf 'RX_EVERYDAY_DERIVATIVE_HOLD stage=%s code=%d\n' "$phase" "$rc"
+   fi
+}
+trap finish EXIT
 [[ ${GITHUB_REPOSITORY:-} == elysia090/os-length3 &&
    ${GITHUB_EVENT_NAME:-} == workflow_dispatch && ${GITHUB_ACTOR_ID:-} == 148540043 &&
    ${GITHUB_ACTOR:-} == elysia090 && ${GITHUB_TRIGGERING_ACTOR:-} == elysia090 &&
@@ -15,7 +25,7 @@ w="${RUNNER_TEMP:?}/rx-everyday-shell-28c45a6"
 stock="$product/ricebox/everyday/test/wayland/browser/stock-chrome.ts"
 qa="$int/ricebox/everyday/test/wayland/static-acceptance"
 head=28c45a65649b1058da0ad5077624e8fd4fa3cee9
-base=27a78377d65c0f4dac6a64ae4e2b668c462f35bc
+base=783c012c0f2cc4d45c584717b37cb0e9e601eefa
 release_sha=ec84d6a4f34359f322726e323e294b03987a19b1aa544563c846ca1a83060ee3
 root_sha=7420a34199c6708bc619cac3bce88af75559cf8ed6d8c495074e89e05b6fe509
 muk_sha=0668fceb53911c4a9f89f013ce94c92eeac9df62754dfba4bc563fe7384c6348
@@ -24,6 +34,7 @@ api=https://api.github.com/repos/elysia090/os-length3
 assets=https://github.com/elysia090/os-length3/releases/download/os-length3-linux-v0.6.5
 archive="$w/native/ricebox-0.0.1-x86_64-$root_sha.tar.zst"
 stock_path="$w/sandbox"
+trace="$w/sandbox.trace"
 export LC_ALL=C LANG=C TZ=UTC SOURCE_DATE_EPOCH=0
 [[ $(git -C "$product" rev-parse HEAD 2>/dev/null) == "$head" && -z $(git -C "$product" status --porcelain --untracked-files=no 2>/dev/null) ]]
 [[ $(git -C "$int" rev-parse HEAD^ 2>/dev/null) == "$base" && $(git hash-object "$stock" 2>/dev/null) == 6db7dd3f7583c3aa695a37ce0cb86d7068b80dbf ]]
@@ -38,12 +49,34 @@ tools() {
    command -v curl; command -v docker; command -v npm; command -v python3
 }
 chrome() {
-   node "$qa/run-static-acceptance.mjs" --doctor
-   mkdir "$stock_path"
-   cp "$stock" "$stock_path/stock-chrome.ts"
-   cp "$qa/sealed-parent/ricebox-transfer-receipt-f0748b1/capture.mjs" "$stock_path/"
-   cp "$qa/sandbox-same-process.mjs" "$p/sandbox-preflight.mjs" "$stock_path/"
-   node "$stock_path/sandbox-preflight.mjs"
+   local doctor_rc=0
+   local diag="$p/preflight-diagnostics.mjs"
+   node "$diag" init "$trace"
+   node "$diag" mark "$trace" doctor-invoke start
+   node "$qa/run-static-acceptance.mjs" --doctor >"$w/doctor.json" 2>"$w/doctor.stderr" || doctor_rc=$?
+   if ((doctor_rc)); then
+      node "$diag" doctor "$trace" "$w/doctor.json" "$doctor_rc" || :
+      return "$doctor_rc"
+   fi
+   node "$diag" doctor "$trace" "$w/doctor.json" "$doctor_rc"
+   node "$diag" mark "$trace" sandbox-fixture start
+   if ! (mkdir "$stock_path" &&
+      cp "$stock" "$stock_path/stock-chrome.ts" &&
+      cp "$qa/sealed-parent/ricebox-transfer-receipt-f0748b1/capture.mjs" "$stock_path/" &&
+      cp "$qa/sandbox-same-process.mjs" "$p/sandbox-preflight.mjs" "$diag" "$stock_path/" &&
+      cd "$stock_path" &&
+      pin 78eaee010b2ff951c163984f258b8574ca255a9710a327db1b13f2f5c5c9c42f capture.mjs &&
+      pin 09ec7ff4a68a577ebe695669fff557710e04da68754af755dedba1b3fbe2af23 sandbox-same-process.mjs &&
+      pin ca21ab0f38293bf4331576e341132f8a129d5650e85f6702ebed9b29494d4b4b "$p/sandbox-observers.patch" &&
+      git apply --whitespace=error --check "$p/sandbox-observers.patch" &&
+      git apply --whitespace=error "$p/sandbox-observers.patch" &&
+      pin d230c0bc69e7cba13ac5101f4865afb71d6c7fbbf3cf68a9307afdfb60a3a14f capture.mjs &&
+      pin 3e09238fac5e189fbbf0e9d0499b65802ec8612055f8e2b102ee03435f8bd8be sandbox-same-process.mjs); then
+      node "$diag" mark "$trace" sandbox-fixture hold
+      return 1
+   fi
+   node "$diag" mark "$trace" sandbox-fixture pass
+   node "$stock_path/sandbox-preflight.mjs" "$trace"
 }
 muk() {
    # Raw Muk includes Debian GCC's .comment; a stock Ubuntu GCC can have the
@@ -72,6 +105,8 @@ if [[ "$mode" == preflight ]]; then
    mkdir -m 0700 -- "$w"
    stage tools tools
    stage stock-chrome-sandbox chrome
+   trace_reported=1
+   node "$p/preflight-diagnostics.mjs" report "$trace" complete 2>/dev/null
    stage exact-muk muk
    printf '%s\n' "$head" > "$w/preflight.ok"
    exit 0

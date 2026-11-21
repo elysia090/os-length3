@@ -1,0 +1,121 @@
+--- a/capture.mjs
++++ b/capture.mjs
+@@ -6,16 +6,25 @@
+ import {once} from 'node:events';
+
+ const auto={autoAttach:true,waitForDebuggerOnStart:true,flatten:true};
+-export async function launchIsolatedChrome(executable) {
+-  if(!executable.startsWith('/')) throw Error('Supply an explicit executable path');
+-  const profile=await mkdtemp(join(tmpdir(),'ricebox-receipt-'));
+-  const config=join(profile,'config'), cache=join(profile,'cache');
+-  await Promise.all([mkdir(config),mkdir(cache)]);
+-  const child=spawn(executable,[
+-    '--headless','--no-first-run','--disable-background-networking',
+-    '--remote-debugging-pipe','--user-data-dir='+join(profile,'browser'),'about:blank',
+-  ],{stdio:['ignore','ignore','pipe','pipe','pipe'],
+-  env:{...process.env,XDG_CONFIG_HOME:config,XDG_CACHE_HOME:cache}});
++export async function launchIsolatedChrome(executable, observe=()=>{}) {
++  let profile,config,cache,child;
++  observe('launch-storage','start');
++  try {
++    if(!executable.startsWith('/')) throw Error('Supply an explicit executable path');
++    profile=await mkdtemp(join(tmpdir(),'ricebox-receipt-'));
++    config=join(profile,'config'); cache=join(profile,'cache');
++    await Promise.all([mkdir(config),mkdir(cache)]);
++  }catch(error){observe('launch-storage','hold');throw error}
++  observe('launch-storage','pass');
++  observe('launch-spawn-call','start');
++  try {
++    child=spawn(executable,[
++      '--headless','--no-first-run','--disable-background-networking',
++      '--remote-debugging-pipe','--user-data-dir='+join(profile,'browser'),'about:blank',
++    ],{stdio:['ignore','ignore','pipe','pipe','pipe'],
++    env:{...process.env,XDG_CONFIG_HOME:config,XDG_CACHE_HOME:cache}});
++  }catch(error){observe('launch-spawn-call','hold');throw error}
++  observe('launch-spawn-call','pass');
+   let id=0, frame='', stderr='', dead=null;
+   const pending=new Map(), listeners=new Set();
+   const fail=error=>{
+@@ -58,7 +67,7 @@
+       });
+     } finally {clearTimeout(timer);}
+   }
+-  const close=async()=>{
++  const closeBrowser=async()=>{
+     if(child.pid && child.exitCode===null && child.signalCode===null) {
+       const done=once(child,'exit').catch(()=>{});
+       // Ask Chrome to close; signal only the child we own if startup failed.
+@@ -70,10 +79,18 @@
+     }
+     await rm(profile,{recursive:true,force:true});
+   };
+-  try {
+-    const version=await command('Browser.getVersion');
+-    return {version,command,close,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);}};
+-  } catch(error){await close();throw error;}
++  const close=async()=>{
++    observe('browser-cleanup','start');
++    try {await closeBrowser();}
++    catch(error){observe('browser-cleanup','hold');throw error}
++    observe('browser-cleanup','pass');
++  };
++  observe('browser-get-version','start');
++  let version;
++  try {version=await command('Browser.getVersion');}
++  catch(error){observe('browser-get-version','hold');await close();throw error}
++  observe('browser-get-version','pass',version?.product);
++  return {version,command,close,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);}};
+ }
+
+ export async function armCapture(browser) {
+--- a/sandbox-same-process.mjs
++++ b/sandbox-same-process.mjs
+@@ -3,19 +3,34 @@
+
+ // Consult the exact source's existing policy in the identical stock process.
+ // This opens a chrome:// tab before any test-origin traffic, not a cache warmup.
+-export async function verifySandbox(browser) {
+-  if(!/^(?:Headless)?Chrome\/[0-9.]+$/.test(browser.version?.product??'')) throw Error('Stock Chrome product did not identify itself');
+-  const page=await armCapture(browser);
++export async function verifySandbox(browser, observe=()=>{}) {
++  const step=async(name,operation)=>{
++    observe(name,'start');
++    let result;
++    try{result=await operation();}
++    catch(error){observe(name,'hold');throw error}
++    observe(name,'pass');
++    return result;
++  };
++  await step('stock-product',()=>{
++    if(!/^(?:Headless)?Chrome\/[0-9.]+$/.test(browser.version?.product??'')) throw Error('Stock Chrome product did not identify itself');
++  });
++  const page=await step('cdp-target-arm',()=>armCapture(browser));
+   try {
+-    const nav=await page.call('Page.navigate',{url:'chrome://sandbox/'});
+-    if(nav.errorText)throw Error('chrome sandbox report navigation failed');
+-    const end=Date.now()+8_000;
+-    do {
+-      const rows=await page.evaluate(`Array.from(document.querySelectorAll('#sandbox-status tr'), element=>[
+-        element.cells[0]?.textContent?.trim()??'',element.cells[1]?.textContent?.trim()??''])`).catch(()=>null);
+-      if(rows?.some(([label])=>label==='Seccomp-BPF sandbox'))return linuxSandboxReport(rows);
+-      await new Promise(r=>setTimeout(r,80));
+-    }while(Date.now()<end);
+-    throw Error('Stock Chrome sandbox report did not become available');
+-  } finally {await page.close()}
++    await step('cdp-sandbox-navigation',async()=>{
++      const nav=await page.call('Page.navigate',{url:'chrome://sandbox/'});
++      if(nav.errorText)throw Error('chrome sandbox report navigation failed');
++    });
++    const rows=await step('cdp-sandbox-report',async()=>{
++      const end=Date.now()+8_000;
++      do {
++        const rows=await page.evaluate(`Array.from(document.querySelectorAll('#sandbox-status tr'), element=>[
++          element.cells[0]?.textContent?.trim()??'',element.cells[1]?.textContent?.trim()??''])`).catch(()=>null);
++        if(rows?.some(([label])=>label==='Seccomp-BPF sandbox'))return rows;
++        await new Promise(r=>setTimeout(r,80));
++      }while(Date.now()<end);
++      throw Error('Stock Chrome sandbox report did not become available');
++    });
++    return await step('cdp-sandbox-policy',()=>linuxSandboxReport(rows));
++  } finally {await step('cdp-target-cleanup',()=>page.close())}
+ }
