@@ -18,6 +18,7 @@ const PT_STACK_RW = 6; // ELF p_flags, not mmap PROT_* values
 const INPUT_LIMIT = 4 * P, STEPS = 4096;
 const syscallRoute = Symbol('guarded Task syscall route');
 const EXPECTED_IMPORTS = ['read64','write64','reg','set','syscall','target'];
+const VECTOR_IMPORTS = [...EXPECTED_IMPORTS,'xmmLow','setXmm','storeAligned128'];
 const enc = new TextEncoder();
 const minus = (errno: number): bigint => BigInt(-errno);
 const hexHash = async (bytes: Uint8Array<ArrayBuffer>): Promise<string> =>
@@ -44,8 +45,9 @@ async function compiler(bytes: Uint8Array, expected: string): Promise<Compile> {
     if (status !== 0 || !n || n > 1024) throw new Error('Invalid guarded Task compiler output');
     const m = new WebAssembly.Module(new Uint8Array(memory.buffer, sods_output_ptr() >>> 0, n).slice());
     const ins = WebAssembly.Module.imports(m), outs = WebAssembly.Module.exports(m);
-    if (ins.length !== EXPECTED_IMPORTS.length || ins.some((it, i) => it.module !== 'guard' || it.kind !== 'function'
-      || it.name !== EXPECTED_IMPORTS[i]) || outs.length !== 1 || outs[0]!.kind !== 'function' || outs[0]!.name !== 'step')
+    const expected = ins.length === EXPECTED_IMPORTS.length ? EXPECTED_IMPORTS : VECTOR_IMPORTS;
+    if (ins.length !== expected.length || ins.some((it, i) => it.module !== 'guard' || it.kind !== 'function'
+      || it.name !== expected[i]) || outs.length !== 1 || outs[0]!.kind !== 'function' || outs[0]!.name !== 'step')
       throw new Error('Invalid guarded Task Wasm ABI');
     return m;
   };
@@ -194,7 +196,9 @@ function interpreterPlans(main: FilePlan, ld: FilePlan, cfg: InterpreterInput): 
   return Object.freeze({main:a,ld:b});
 }
 
-type InterpreterTrace = Readonly<{rip: bigint; rsp: bigint; rdi: bigint; rsi: bigint; rax: bigint; rbp: bigint; flags: bigint; stackWord: bigint | null}>;
+type InterpreterTrace = Readonly<{rip: bigint; rsp: bigint; rdi: bigint; rsi: bigint; rax: bigint; rbp: bigint;
+  flags: bigint; stackWord: bigint | null; frameArg: bigint | null; xmm2Low: bigint; xmm2High: bigint; xmm3Low: bigint; xmm3High: bigint}>;
+type InterpreterStore = Readonly<{rip: bigint; address: bigint; low: bigint; high: bigint}>;
 
 interface PreparedSpace {
   readonly guard: GuardedInlineMemory;
@@ -276,6 +280,7 @@ class StaticTask extends Task {
   readonly #steps = new Map<bigint, Step>();
   readonly #protections: Map<number,number>;
   readonly #regs = new BigInt64Array(19);
+  readonly #xmm = new BigInt64Array(16); // 8 closed-profile XMM registers, two private lanes each
   readonly #exports: Translation;
   #identity: (() => void) | undefined;
   #running = false;
@@ -286,6 +291,7 @@ class StaticTask extends Task {
   readonly #interpreter: InterpreterPlans | undefined;
   readonly #stepsSeen: InterpreterTrace[] = [];
   readonly #syscallsSeen: bigint[] = [];
+  readonly #storesSeen: InterpreterStore[] = [];
   constructor(p: Process, compile: Compile, space: PreparedSpace) {
     super(p);
     this.#compile = compile;
@@ -307,7 +313,7 @@ class StaticTask extends Task {
     return this.#backing;
   }
   get memoryFault(): Readonly<GuardedFault> | undefined { return this.#fault; }
-  interpreterTrace() { return {steps:this.#stepsSeen.slice(),syscalls:this.#syscallsSeen.slice()}; }
+  interpreterTrace() { return {steps:this.#stepsSeen.slice(),syscalls:this.#syscallsSeen.slice(),stores:this.#storesSeen.slice()}; }
   /** Inspect only the actual starting image facts before any guest effect.
    * These are bounded reads through the guard, not an exported guest view. */
   entryReceipt(mainWord?: number) {
@@ -358,6 +364,7 @@ class StaticTask extends Task {
     this.#retired = true;
     this.#identity = undefined;
     this.#steps.clear();
+    this.#xmm.fill(0n);
     this.#protections.clear();
     const backing = this.#backing;
     this.#backing = undefined; // never pooled, even while a dead Task handle is retained
@@ -374,6 +381,10 @@ class StaticTask extends Task {
   #next(address: bigint): bigint {
     if (BigInt.asIntN(48,address) !== address) throw new GuardedFault('unmapped', address);
     return address; // mapping and execute checks have not yet happened
+  }
+  #lane(n: number): number {
+    if (!Number.isInteger(n) || n<0 || n>=this.#xmm.length/2) throw new Error('Invalid guarded XMM register');
+    return n*2;
   }
   #step(rip: bigint): Step {
     const hit = this.#steps.get(rip);
@@ -399,6 +410,21 @@ class StaticTask extends Task {
         set:(n: number, value: bigint) => { permit(); this.setReg(n, value); },
         target:(addr: bigint) => { permit(); return this.#next(addr); },
         syscall:(next: bigint) => { permit(); this.#syscall(next); },
+        xmmLow:(n:number) => { permit(); return this.#xmm[this.#lane(n)]!; },
+        setXmm:(n:number,low:bigint,high:bigint) => {
+          permit();
+          const k=this.#lane(n);
+          this.#xmm[k]=low;
+          this.#xmm[k+1]=high;
+        },
+        storeAligned128:(at:bigint,n:number) => {
+          permit();
+          const k=this.#lane(n);
+          this.#guard.writeAligned128(this.#owner,at,this.#xmm[k]!,this.#xmm[k+1]!);
+          if(this.#interpreter && this.#storesSeen.length<8) this.#storesSeen.push(Object.freeze({
+            rip,address:at,low:this.#guard.read(this.#owner,at,8),high:this.#guard.read(this.#owner,at+8n,8),
+          }));
+        },
       }});
       const entry = instance.exports.step as (rip: bigint) => bigint;
       const step = {code, run:entry};
@@ -419,10 +445,13 @@ class StaticTask extends Task {
         this.#alive(rip);
         if(this.#interpreter && this.#stepsSeen.length<32) {
           const rsp=this.reg(RSP);
-          let stackWord:bigint|null=null;
-          try { stackWord=this.#guard.read(this.#owner,rsp,8); } catch(e) { if(!(e instanceof GuardedFault))throw e; }
-          this.#stepsSeen.push(Object.freeze({rip,rsp,rdi:this.reg(7),rsi:this.reg(6),rax:this.reg(0),rbp:this.reg(5),
-            flags:this.reg(RFLAGS),stackWord}));
+          const observed=(at:bigint)=>{
+            try { return this.#guard.read(this.#owner,at,8); } catch(e) { if(!(e instanceof GuardedFault))throw e; return null; }
+          };
+          const rbp=this.reg(5);
+          this.#stepsSeen.push(Object.freeze({rip,rsp,rdi:this.reg(7),rsi:this.reg(6),rax:this.reg(0),rbp,
+            flags:this.reg(RFLAGS),stackWord:observed(rsp),frameArg:observed(rbp-0x88n),
+            xmm2Low:this.#xmm[4]!,xmm2High:this.#xmm[5]!,xmm3Low:this.#xmm[6]!,xmm3High:this.#xmm[7]!}));
         }
         // An entire step is synchronous. A syscall is its last guest action,
         // and even a successful protection change cannot run its next step

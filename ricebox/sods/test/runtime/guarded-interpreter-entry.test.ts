@@ -12,7 +12,7 @@ const fixture=process.env.SODS_GUARDED_INTERPRETER_FIXTURE;
 const producer=process.env.SODS_GUARDED_TASK_TRANSLATOR_WASM;
 const producerHash=process.env.SODS_GUARDED_TASK_TRANSLATOR_SHA256 ?? '';
 const beforeProducer=process.env.SODS_GUARDED_INTERPRETER_PREVIOUS_WASM;
-const beforeProducerHash='c510b843160f9e5e18917a349779b791727f21781c00400cd70ffc017b2456c5';
+const beforeProducerHash='2deae347e29e496cd9f16862f630b02be5500c529300510f4735c95809f2361a';
 const skip=!fixture||!producer ? 'needs published diagnostic predecessor and pinned true PIE/GNU interpreter fixture' :
   process.platform!=='linux'||process.arch!=='x64';
 const h=(v:Uint8Array)=>createHash('sha256').update(v).digest('hex');
@@ -90,29 +90,37 @@ test('exact GNU ld.so starts on guarded Linux entry stack; first real RIP-relati
     assert.equal(boot.plans.ld.loads.filter(s=>s.prot===5).length,1);
     assert.equal(p.kernel.pump().status,4);
     const observed=p.interpreterTrace(), states=observed.steps;
-    const offsets=[0x1d2c0,0x1d2c3,0x1de30,0x1de31,0x1de38,0x1de3f];
+    const offsets=[0x1d2c0,0x1d2c3,0x1de30,0x1de31,0x1de38,0x1de3f,0x1de44,0x1de49,0x1de4d,
+      0x1de50,0x1de52,0x1de54,0x1de56,0x1de58,0x1de59,0x1de60,0x1de67,0x1de6b];
     assert.deepEqual(states.map(s=>s.rip),offsets.map(k=>at(ldBias,k)));
-    assert.deepEqual(states.map(s=>s.rsp-boot.sp),[0n,0n,-8n,-16n,-16n,-16n]);
-    assert.deepEqual(states.map(s=>s.flags),Array(6).fill(states[0]!.flags));
+    assert.deepEqual(states.map(s=>s.rsp-boot.sp),[0n,0n,-8n,-16n,-16n,-16n,-16n,-16n,-16n,
+      -16n,-24n,-32n,-40n,-48n,-56n,-192n,-192n,-192n]);
+    assert.deepEqual(states.slice(0,15).map(s=>s.flags),Array(15).fill(states[0]!.flags));
+    assert.deepEqual(states.slice(15).map(s=>s.flags),Array(3).fill(states[15]!.flags));
     assert.equal(states[1]!.rdi,boot.sp);
     assert.equal(states[2]!.stackWord,at(ldBias,0x1d2c8));
     assert.equal(states[3]!.stackWord,states[2]!.rbp);
     assert.equal(states[4]!.rsi,BigInt(ldBias));  // LEA #1 made the actual ELF base
     assert.equal(states[5]!.rax,at(ldBias,0x375e8));
+    assert.deepEqual([states[6]!.xmm2Low,states[6]!.xmm2High],[BigInt(ldBias),0n]);
+    assert.deepEqual([states[7]!.xmm3Low,states[7]!.xmm3High],[at(ldBias,0x375e8),0n]);
+    assert.deepEqual([states[8]!.xmm2Low,states[8]!.xmm2High],[BigInt(ldBias),at(ldBias,0x375e8)]);
+    assert.equal(states[17]!.frameArg,boot.sp); // actual saved 64-bit scalar word
+    assert.deepEqual(observed.stores,[{rip:at(ldBias,0x1de67),address:boot.sp-0x90n,low:BigInt(ldBias),high:at(ldBias,0x375e8)}]);
     assert.deepEqual(observed.syscalls,[]); // DSO not staged, mapped, called or claimed
     assert(!out.some(x=>x.fd===1));
-    assert.match(out.map(x=>x.text).join(''),new RegExp('unsupported instruction at '+hex(at(ldBias,0x1de3f))));
+    assert.match(out.map(x=>x.text).join(''),new RegExp('unsupported instruction at '+hex(at(ldBias,0x1de6b))));
     assert(p.task.dead && p.kernel.tasks.size===0);
     t.diagnostic(JSON.stringify({primary:mainSha,interpreter:ldSha,mainBias:hex(BigInt(mainBias)),loaderBias:hex(BigInt(ldBias)),
       nativeExit:37,nativeAuxvMatch:'normalized kernel page/PHDR/entry values',guestOffsets:states.map(x=>hex(x.rip-BigInt(ldBias))),
-      guestInstructionsCompleted:5,guestStatus:4,guestStdout:'',guestSyscalls:0,guestDSOLoaded:false}));
+      guestInstructionsCompleted:17,guardedVectorStores:observed.stores.map(x=>({rip:hex(x.rip),address:hex(x.address),low:hex(x.low),high:hex(x.high)})),guestStatus:4,guestStdout:'',guestSyscalls:0,guestDSOLoaded:false}));
   }
   if(beforeProducer) {
     const {args,out}=setup(0x400000,0x800000);
     const old=await guardedStaticTask({...args,compiler:readFileSync(beforeProducer),compilerSha256:beforeProducerHash});
     assert.equal(old.kernel.pump().status,4);
-    assert.deepEqual(old.interpreterTrace().steps.map(x=>x.rip-0x800000n),[0x1d2c0n,0x1d2c3n,0x1de30n,0x1de31n]);
-    assert.match(out.map(x=>x.text).join(''),/unsupported instruction at 0x81de31/);
+    assert.deepEqual(old.interpreterTrace().steps.map(x=>x.rip-0x800000n),[0x1d2c0n,0x1d2c3n,0x1de30n,0x1de31n,0x1de38n,0x1de3fn]);
+    assert.match(out.map(x=>x.text).join(''),/unsupported instruction at 0x81de3f/);
   }
   const no=(e:unknown)=>e instanceof FsError && e.errno===E.NOEXEC;
   const hidden=setup(0x400000,0x800000).args;

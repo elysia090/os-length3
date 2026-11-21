@@ -18,7 +18,7 @@ declare const ownerToken: unique symbol;
 export interface GuardedOwner { readonly [ownerToken]: true }
 
 export class GuardedFault extends Error {
-  readonly kind: 'owner' | 'unmapped' | 'permission';
+  readonly kind: 'owner' | 'unmapped' | 'permission' | 'alignment';
   readonly address: bigint;
   constructor(kind: GuardedFault['kind'], address: bigint) {
     super(`guarded memory: ${kind} at guest 0x${address.toString(16)}`);
@@ -149,6 +149,19 @@ export class GuardedInlineMemory {
     const k = this.#allowed(address, width, WRITE); // both pages before any scalar store
     let word = BigInt.asUintN(64, value);
     for (let n = 0; n < width; ++n) { this.#bytes[k + n] = Number(word & 255n); word >>= 8n; }
+  }
+
+  /** Legacy aligned 128-bit store. Check all effects before either lane is
+   * committed. No raw Memory, partial-write path, or permission promotion. */
+  writeAligned128(token: GuardedOwner, address: bigint, low: bigint, high: bigint): void {
+    this.#current(token, address);
+    if (address & 15n) throw new GuardedFault('alignment', address);
+    const first = this.#allowed(address, 8, WRITE);
+    const second = this.#allowed(address + 8n, 8, WRITE);
+    const lo = BigInt.asUintN(64,low), hi = BigInt.asUintN(64,high);
+    const bytes = new DataView(this.#bytes.buffer);
+    bytes.setBigUint64(first,lo,true);
+    bytes.setBigUint64(second,hi,true);
   }
 
   /** Observe exact authenticated file bytes. Does not create a dispatch target or execute an ELF. */
