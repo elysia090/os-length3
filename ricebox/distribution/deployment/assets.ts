@@ -1,7 +1,7 @@
 // Verify and collect only the assets named by a prepared distribution.
 // No bundler, composition or execution dependency; the caller owns the returned bytes.
 import {readFileSync, lstatSync} from 'node:fs';
-import {visitDistributionAssets} from './asset-source.ts';
+import {visitDistributionAssets} from './local.ts';
 
 /** Copy native ES modules from the built npm package, preserving relative Worker URLs. */
 export function browserModules({display = false}: {display?: boolean} = {}): Map<string, Buffer> {

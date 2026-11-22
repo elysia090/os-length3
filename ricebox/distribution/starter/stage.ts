@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {constants, copyFileSync, existsSync, linkSync, lstatSync, readFileSync, realpathSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join, posix, resolve} from 'node:path';
 import {browserModules} from '../deployment/assets.ts';
-import {visitDistributionAssets} from '../deployment/asset-source.ts';
+import {visitDistributionAssets} from '../deployment/local.ts';
 import type {Index} from '../format/manifest.ts';
 import {authoredPlan} from './plan.ts';
 
