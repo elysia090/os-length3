@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
+import {setImmediate as turn} from 'node:timers/promises';
 import {gzipSync} from 'node:zlib';
 import {madeBy} from '../../../sods/runtime/translate.ts';
 import {createRoot, type Stage} from '../root.ts';
@@ -107,6 +108,112 @@ test('all runtime readers bind an authenticated index to this release', async t 
   for (const read of [root.rootIndex, root.loadWebroot, root.execution.load]) {
     await assert.rejects(read(), /distribution and index disagree/);
   }
+});
+
+test('overlapping metadata and execution demand read one exact index cold and warm', {timeout: 5000}, async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish();
+  const indexURL = f.url(base + about.index.path);
+  const body = f.assets.get(indexURL)!;
+  const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  f.streams.set(indexURL, () => new ReadableStream({
+    async start(stream) {
+      started.resolve();
+      await release.promise;
+      stream.enqueue(new Uint8Array(body));
+      stream.close();
+    },
+  }));
+  const root = f.root();
+  const cold = Promise.all([root.rootIndex(), root.execution.load()]);
+  await started.promise;
+  await turn(); // The second consumer reaches its read before the first body finishes.
+  release.resolve();
+  const [metadata, prepared] = await cold;
+  assert.deepEqual(metadata, prepared.index);
+  assert.notEqual(metadata, prepared.index, 'each consumer owns its parsed index');
+  assert.notEqual(metadata?.files, prepared.index.files);
+  assert.equal(f.requests.filter(url => url === indexURL).length, 1);
+  assert.equal(f.requests.filter(url => url === f.url(base + 'webroot.json')).length, 2, 'not a shared release selection');
+  await turn();
+  assert.ok(f.entries.has(indexURL));
+
+  const match = t.mock.method(f.cache, 'match');
+  f.requests.length = 0;
+  const warm = f.root();
+  await Promise.all([warm.rootIndex(), warm.execution.load()]);
+  assert.ok(!f.requests.includes(indexURL));
+  assert.equal(match.mock.calls.filter(({arguments: [name]}) => f.url(name) === indexURL).length, 1);
+});
+
+test('sharing verified bytes does not share a release binding', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish();
+  const get = fetch;
+  t.mock.method(globalThis, 'fetch', (input: string, init?: RequestInit) =>
+    f.url(input) === f.url(base + 'webroot.json') && init?.cache === 'no-cache'
+      ? Promise.resolve(Response.json({...about, version: 'another release'})) : get(input, init));
+  const root = f.root();
+  const [metadata, prepared] = await Promise.allSettled([root.rootIndex(), root.execution.load()]);
+  assert.equal(metadata.status, 'rejected');
+  assert.match(String(metadata.reason), /distribution and index disagree/);
+  assert.equal(prepared.status, 'fulfilled');
+  assert.equal(prepared.value.index.version, about.version);
+});
+
+test('same-path descriptors with different sizes cannot join the same read', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish(), at = base + about.index.path;
+  // Both assets are already warm: a cold translator write also inspects the
+  // cache's index response header for quota accounting, not an index demand.
+  for (const url of [at, base + f.index.translator.path]) {
+    await f.cache.put(url, new Response(new Uint8Array(f.assets.get(f.url(url))!)));
+  }
+  const get = fetch;
+  t.mock.method(globalThis, 'fetch', (input: string, init?: RequestInit) =>
+    f.url(input) === f.url(base + 'webroot.json') && init?.cache === 'no-cache'
+      ? Promise.resolve(Response.json({...about, index: {...about.index, size: about.index.size + 1}})) : get(input, init));
+  const root = f.root(), match = t.mock.method(f.cache, 'match');
+  const [metadata, prepared] = await Promise.allSettled([root.rootIndex(), root.execution.load()]);
+  assert.equal(metadata.status, 'rejected');
+  assert.match(String(metadata.reason), /wrong size/);
+  assert.equal(prepared.status, 'fulfilled');
+  assert.equal(prepared.value.generation, about.index.sha256);
+  assert.equal(match.mock.calls.filter(({arguments: [name]}) => f.url(name) === f.url(at)).length, 2);
+});
+
+test('a shared index failure does not survive a retry in the same loader', {timeout: 5000}, async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish(), indexURL = f.url(base + about.index.path);
+  const body = f.assets.get(indexURL)!;
+  f.assets.delete(indexURL);
+  const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(), get = fetch;
+  t.mock.method(globalThis, 'fetch', async (input: string, init?: RequestInit) => {
+    if (f.url(input) === indexURL) {
+      started.resolve();
+      await release.promise;
+    }
+    return get(input, init);
+  });
+  const root = f.root(), failed = Promise.allSettled([root.rootIndex(), root.execution.load()]);
+  await started.promise;
+  await turn();
+  release.resolve();
+  for (const result of await failed) {
+    assert.equal(result.status, 'rejected');
+    assert.match(String(result.reason), /404/);
+  }
+  assert.equal(f.requests.filter(url => url === indexURL).length, 1);
+
+  f.assets.set(indexURL, body);
+  const [metadata, prepared] = await Promise.all([root.rootIndex(), root.execution.load()]);
+  assert.deepEqual(metadata, prepared.index);
+  assert.equal(f.requests.filter(url => url === indexURL).length, 2);
+});
+
+test('a settled index read is not a second asset cache', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish(), root = f.root();
+  await root.rootIndex();
+  await turn();
+  await f.cache.delete(base + about.index.path);
+  await root.execution.load();
+  assert.equal(f.requests.filter(url => url === f.url(base + about.index.path)).length, 2);
 });
 
 test('the read-only index does not accept a retired file owner', async t => {

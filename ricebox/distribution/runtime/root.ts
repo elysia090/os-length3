@@ -362,13 +362,28 @@ export function createRoot(config: RootConfig) {
     return maker;
   }
 
+  // Share demand reads of exactly the same stored index while pending. Each
+  // consumer still parses it and binds it to the release it saw; cache-only
+  // speculation and later reads keep their existing policies.
+  const indexReads = new Map<string, Promise<Uint8Array>>();
+  function verifiedIndexBytes(asset: About['index']): Promise<Uint8Array> {
+    const key = `${asset.path}:${asset.sha256}:${asset.size}`;
+    const pending = indexReads.get(key);
+    if (pending) return pending;
+    const reading = Promise.resolve().then(() => bytesOf(asset.path, asset));
+    indexReads.set(key, reading);
+    const clear = () => { indexReads.delete(key); };
+    void reading.then(clear, clear);
+    return reading;
+  }
+
   /** The authenticated index for consumers that do not start a guest. */
   let indexing: Promise<Index | null> | null = null;
   const rootIndex = (): Promise<Index | null> => (indexing ??= (async () => {
     const a = await about();
     if (!a) return null;
     const asset = releaseIndexAsset(a);
-    return readReleaseIndex(await bytesOf(asset.path, asset), a);
+    return readReleaseIndex(await verifiedIndexBytes(asset), a);
   })().catch((e) => { indexing = null; throw e; }));
 
   /**
@@ -510,7 +525,7 @@ export function createRoot(config: RootConfig) {
       worker();
       const a = await loadAbout(), asset = releaseIndexAsset(a);
       const maker = loadMaker();
-      const index = readReleaseIndex(await bytesOf(asset.path, asset), a);
+      const index = readReleaseIndex(await verifiedIndexBytes(asset), a);
       // Check every hot association before source capture or asynchronous image work.
       canonicalHotSources(index);
       const first = index.translations.filter(t => startupPrograms.includes(t.path));
