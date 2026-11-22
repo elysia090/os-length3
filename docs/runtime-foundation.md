@@ -63,6 +63,32 @@ Relevant implementations:
 - `ricebox/sods/runtime/linux/executable-source.ts` and `linux/process.ts`
 - `ricebox/sods/runtime/translation/share.ts`
 
+### Static exec transaction
+
+The translated initial start and guest `execve` use the same static
+execution transaction under `ricebox/sods/runtime/linux/exec/`. Preparing
+walks the caller's root and mounts, selects the source-bound artifact or
+ordinary translation, calculates the SysV stack and prepares a private
+descriptor table where necessary. It changes no guest image or descriptor
+slots. Lazy canonical files remain lazy on prepared static starts.
+
+Rejected input (including an overlong initial stack) leaves a live caller
+running the old image. An initial candidate with rejected input has neither
+a runnable task nor a published PID. Once exec starts retiring the old
+image, later host/cleanup failures are not reported as recoverable guest
+errno. `ExecCommitError` retains the uncertain owners and prevents resuming
+or retiring them through an ordinary retry. It does not prove a Worker
+stopped or grant permission to release the host's tree. An unresolved tree
+cannot be adopted for another kernel or exec, and a fatal Worker rehearsal
+does not hand it off to the foreground. The embedding closes admission,
+requests Worker stop separately, and replaces the isolated owner rather
+than recycling its resources on an unconfirmed stop. Memory allocation
+and backend installation still belong to this irreversible phase; they
+are not claimed to roll back.
+
+This boundary does not admit dynamic ELF executables. The static auxiliary
+vector and same-image memory/instance reuse remain in effect.
+
 ## Lifetime, failure and retirement
 
 A prepared tree can outlive several rehearsals and runs. Its disposal requires

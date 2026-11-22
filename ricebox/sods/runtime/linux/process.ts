@@ -2,6 +2,11 @@ import {forkFailure, forkIdentity} from './fork-preparation.ts';
 export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
+import {checkExecTree, execMayRun, replaceExec, retainExecFailure, type ExecCommitError} from './exec/commit.ts';
+import {sourceRevision} from './exec/source.ts';
+import {WASM_PAGE} from './exec/stack.ts';
+export {ExecCommitError} from './exec/commit.ts';
+export {ImageSourceChangedError} from './exec/source.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
 // calls land in the tables of sys-file.ts, sys-proc.ts and signal.ts.
@@ -23,7 +28,7 @@ import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} f
 //     memory shared (SharedArrayBuffer) and system calls made to this
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
-import {Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
+import {Exec, Exit, Redirect, Wait, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
 import {namesIn, x87Of, type X87} from '../translation/x87.ts';
 import {machine} from './machine.ts';
@@ -33,8 +38,8 @@ import {devpts, type Instance} from './pty.ts';
 import {MOUNT_CALLS} from './sys-mount.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Dir, Mapping, Place, Super} from './fs.ts';
-import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
-import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
+import {E, File, FsError, Link, MNT, Mount, Vfs, walk} from './fs.ts';
+import {CAP, HOST, ROOT, capable, type Cred} from './cred.ts';
 import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
 import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, publishInitialPid, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
@@ -42,7 +47,7 @@ import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
-import {lay, prepare, type Segment} from '../translation/share.ts';
+import {prepare, type Segment} from '../translation/share.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
@@ -121,7 +126,6 @@ interface Kept extends ImageEntry { image: Image }
 export interface Pumped { status?: number; waiting?: true; until?: number }
 
 const PAGE = 4096;
-const WASM_PAGE = 65536;
 const STACK_BYTES = 8 << 20;
 /**
  * Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them (systemd's descriptors: 1024,
@@ -130,7 +134,6 @@ const STACK_BYTES = 8 << 20;
 const INF = 0xffffffffffffffffn;
 const RLIMITS: [bigint, bigint][] = [[INF, INF], [INF, INF], [INF, INF], [BigInt(STACK_BYTES), INF], [0n, INF], [INF, INF], [63432n, 63432n],
   [1024n, 524288n], [8n << 20n, 8n << 20n], [INF, INF], [INF, INF], [63432n, 63432n], [819200n, 819200n], [0n, 0n], [0n, 0n], [INF, INF]];
-const GUARD = 1 << 16;
 /** The kernel's clocks (clock.ts). */
 const CLOCK = clocks();
 
@@ -235,15 +238,6 @@ const u64s = (module: WebAssembly.Module, name: string): BigUint64Array => {
   const [s] = WebAssembly.Module.customSections(module, name);
   return s ? new BigUint64Array(s.slice(0)) : new BigUint64Array(0);
 };
-
-/** A version-managed executable changed during preparation. Never retry a
- * callback automatically or label its old bytes with the new inode revision. */
-export class ImageSourceChangedError extends Error {
-  constructor() { super('Executable source changed during image preparation'); this.name = 'ImageSourceChangedError'; }
-}
-function sourceRevision(node: File, revision: number): void {
-  if (node.version !== revision) throw new ImageSourceChangedError();
-}
 
 /**
  * A loaded program: its first module, its loader facts, and the code reached
@@ -374,6 +368,11 @@ export class Kernel implements Kern {
   /** Unresolved preparation evidence. Lazily allocated only on failed cleanup;
    * no automatic cleanup retry or tree disposal is authorized by these roots. */
   declare failedPreparations?: Set<Process>;
+  declare failedExecs?: Set<ExecCommitError>;
+  #executionEpoch: object = {};
+  #starting = false;
+  get executionEpoch(): object { return this.#executionEpoch; }
+  protected invalidateExecPreparation(): void { this.#executionEpoch = {}; }
   declare readonly vfs: Vfs;
   declare readonly consolidateIdle: boolean;
   declare readonly due: Map<File, Kept>;
@@ -423,6 +422,7 @@ export class Kernel implements Kern {
    * rows?} (`screen`: its output is shown as a terminal's screen, `cols` by `rows`, though keys come a line at a time).
    */
   constructor({vfs = new Vfs(), translate, console, keeper = null, outside = null, machine: host = machine(), consolidateIdle = false, x87}: Made) {
+    checkExecTree(vfs);
     this.vfs = vfs;
     // The x87 its threads run (x87.ts), made when the first is.
     this.x87Module = x87 ?? translate?.module ?? null;
@@ -692,7 +692,7 @@ export class Kernel implements Kern {
    * what lies past them may still hold what its last process left, up to `dirty` (bytes): Process.cover zeroes each
    * part of that as it is mapped. Of its first pages, `over` ([[start, end]]) is not zeroed: the caller writes it whole.
    */
-  takeMemory(pages: number, image: Image | null = null, over: Range[] = []): Mem | null {
+  takeMemory(pages: number, image: Image | null = null, over: Range[] = [], took?: (memory: Mem) => void): Mem | null {
     // One that last ran `image` first: what of the program no correct run can change is in it already (as a page
     // cache gives a program its file), and is neither zeroed nor laid again (`keeps`).
     const same = (m: Mem): boolean => !!image && !!m.imageOf && (m.imageOf === image || (!!image.file && m.imageOf.file === image.file));
@@ -705,6 +705,7 @@ export class Kernel implements Kern {
     if (k < 0) k = this.spareMemories.length - 1;
     if (k < 0) return null;
     const [m] = this.spareMemories.splice(k, 1);
+    took?.(m); // An exec owns this take even if growth or reuse fails.
     retireMemoryView(m);
     const have = m.buffer.byteLength / WASM_PAGE;
     if (have < pages) m.grow(pages - have);
@@ -829,7 +830,10 @@ export class Kernel implements Kern {
     return keep;
   }
   /** Its run is over: it keeps nothing of its tree from going any longer (and the tree does not keep it). */
-  ended(): void { this.vfs.loaded.keepers.delete(this); }
+  ended(): void {
+    this.invalidateExecPreparation();
+    this.vfs.loaded.keepers.delete(this);
+  }
 
   /** Explicit embedding-owner action, never automatic process exit cleanup.
    * Caller must prevent future execution and confirm host stop where required.
@@ -839,7 +843,7 @@ export class Kernel implements Kern {
     // Closing an nsfs descriptor does not prove raw File/Place/bind aliases
     // disappeared. Do not infer namespace ownership from mount refs alone.
     if (namespaceWasExposed(this.spaces.mnt)) return false;
-    if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size || this.failedPreparations?.size
+    if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size || this.failedPreparations?.size || this.failedExecs?.size
       || this.vfs.loaded.keepers.has(this)) return false;
     const restore = this.vfs.who.root === this.root;
     const base = this.vfs.mount;
@@ -897,19 +901,48 @@ export class Kernel implements Kern {
 
   /** Create the first process (pid 1, a session and group of its own, in front on the console). */
   start(path: string, argv: string[], env: string[], cwd = '/'): void {
-    const p = new Process(this, null);
-    const at = this.vfs.walk(cwd);
-    if (typeof at !== 'number' && at.node) p.fs.go({mnt: at.mnt, node: at.node});
-    ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
-    const t = this.newTask(p);
-    p.pid = p.pgid = p.sid = t.tid;
-    p.tasks.add(t);
-    this.procs.set(p.pid, p);
-    this.tasks.set(t.tid, t);
-    this.tty = {sid: p.sid, fg: p.pgid};
-    p.task = t;
-    p.execve(path, argv, env);
-    this.ready(t);
+    checkExecTree(this.vfs);
+    if (this.#starting) throw new Error('Initial process preparation is already in progress');
+    this.#starting = true;
+    try { this.startInitial(path, argv, env, cwd); }
+    finally { this.#starting = false; }
+  }
+
+  private startInitial(path: string, argv: string[], env: string[], cwd: string): void {
+    // The candidate owns its private Fs and descriptors, but no runnable
+    // process, cgroup member or PID is published while input can still fail.
+    const p = new Process(this, null, false, false, null, null, false);
+    let task: Task | undefined, committed = false;
+    try {
+      const at = walk(p, cwd, p.fs.pwd);
+      if (typeof at !== 'number' && at.node) p.fs.go({mnt: at.mnt, node: at.node});
+      ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
+      replaceExec(p, {path, argv, env}, () => {
+        const t = task = this.newTask(p);
+        p.pid = p.pgid = p.sid = t.tid;
+        p.tasks.add(t);
+        return p.task = t;
+      });
+      committed = true;
+      const t = task!;
+      enter(p, p.cgroup);
+      this.procs.set(p.pid, p);
+      this.tasks.set(t.tid, t);
+      this.tty = {sid: p.sid, fg: p.pgid};
+      this.ready(t);
+    } catch (cause) {
+      if (p.execFailure) throw cause; // Preparation/commit already retained its owner.
+      if (committed) retainExecFailure(p, 'initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
+      const failures = [cause];
+      const retire = (action: () => void): void => { try { action(); } catch (cleanup) { failures.push(cleanup); } };
+      // No child was published or sent to a Worker. Do not run ordinary exit
+      // (no status, signals, or startup event for the failed candidate).
+      if (task) retire(() => task!.end());
+      retire(() => p.fs.drop());
+      retire(() => p.fds.letGo());
+      if (failures.length > 1) retainExecFailure(p, 'initial-preparation', new AggregateError(failures), {task, newFds: p.fds});
+      throw cause;
+    }
   }
 
   // ---- threads in turn (the backend here) ----
@@ -944,6 +977,7 @@ export class Kernel implements Kern {
 
   /** Run `t` here until it waits, yields, or ends. */
   run(t: Task): void {
+    if (t.proc.execTransition) execMayRun(t.proc);
     if (t.dead || t.proc.stopped) { t.state = t.dead ? 'dead' : 'stopped'; return; }
     this.current = t;
     t.state = 'running';
@@ -1103,6 +1137,7 @@ export class Kernel implements Kern {
   /** Make `call` for `t`: its value, or WAITS. Exit, Exec and Redirect go through. */
   attempt(t: {proc: Process; tid: number}, call: Call): bigint | typeof WAITS {
     const p = t.proc;
+    if (p.execTransition) execMayRun(p);
     if (t instanceof Task) p.task = t;
     p.call = call;
     if (t instanceof Task && (t.filters || t.strict) && !call.state.screened) {
@@ -1147,7 +1182,7 @@ export class Kernel implements Kern {
       this.current = was;
       p.call = null;
       // What the call wrote into shared memory (a read into it, a futex word) is seen by the others.
-      if (shares && p.state === 'live') p.syncShared();
+      if (shares && p.state === 'live' && !p.execTransition) p.syncShared();
     }
   }
 
@@ -1327,6 +1362,9 @@ export class Kernel implements Kern {
 
   /** A process ends with wait status `status`: its threads, its files; its parent is told, and its children go to init. */
   exitProcess(p: Process, status: number): void {
+    // A failed irreversible exec is not an ordinary second retirement.
+    // Backends may separately request worker stop; this still owns evidence.
+    execMayRun(p);
     if (p.state !== 'live') return;
     // Ended by a signal in front of the terminal: the shell gets it back as it had it (sys-file.ts handed).
     if (status & 0x7f && p.pgid === this.tty.fg) this.tty.cut = p.pgid;
@@ -1583,6 +1621,9 @@ export class Kernel implements Kern {
   halt(): void {
     const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
     if (init) this.exitProcess(init, SIG.KILL);
+    // An unpublished initial candidate may still own a partial exec.
+    const pending = this.failedExecs?.values().next();
+    if (pending && !pending.done) throw pending.value;
     this.ended();
   }
 
@@ -1660,7 +1701,6 @@ function zeroExcept(memory: Mem, from: number, to: number, keep: Range[]): numbe
   return n;
 }
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
-const within = (s: Segment, ranges: Range[] = []): boolean => ranges.some(([a, b]) => s.offset >= a && s.offset + s.bytes.length <= b);
 
 /** Each process mapping `node`: whether it shares memory with another, where its threads see it (SHARES). */
 function markShares(node: File): void {
@@ -1715,6 +1755,9 @@ export class Process implements Proc {
   declare exitStatus: number | undefined;
   declare exitSignal: number;
   declare stopped: number;
+  /** A synchronous irreversible replacement or retained uncertainty. */
+  execTransition?: true | ExecCommitError;
+  get execFailure(): ExecCommitError | undefined { return this.execTransition === true ? undefined : this.execTransition; }
   declare report: {kind: 'stopped' | 'continued'; sig?: number; seen: boolean} | null;
   declare vfork: {released: boolean} | null;
   declare alarm?: {at: number; interval: number; timer: Timer} | null;
@@ -1747,7 +1790,7 @@ export class Process implements Proc {
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   declare viewOf: DataView;
-  constructor(kernel: Kernel, parent: Process | null, files = false, fs = false, ns: Spaces | null = null, cgroup: Cgroup | null = null) {
+  constructor(kernel: Kernel, parent: Process | null, files = false, fs = false, ns: Spaces | null = null, cgroup: Cgroup | null = null, publishMembership = true) {
     this.kernel = kernel;
     this.pid = 0;
     this.ppid = parent?.pid ?? 0;
@@ -1799,7 +1842,7 @@ export class Process implements Proc {
       catch (cleanup) { throw new AggregateError([error, cleanup], 'process Fs preparation and FD cleanup failed'); }
       throw error;
     }
-    enter(this, group);
+    if (publishMembership) enter(this, group); else this.cgroup = group;
   }
 
   /** Make one system call as this process's thread (or as a thread of it that has none yet), as the dispatcher does. */
@@ -1940,7 +1983,7 @@ export class Process implements Proc {
     }
   }
 
-  /** Final process retirement only. Failed writeback is reported, but its
+  /** Permanent retirement of an address space (exit or exec). Failed writeback is reported, but its
    * observation is abandoned so it cannot later publish from recycled memory. */
   retireShared(): void {
     retireMemoryView(this.memory);
@@ -1959,9 +2002,9 @@ export class Process implements Proc {
    * A memory for this process of `pages` wasm pages (shared between threads where the backend runs them apart); `over`:
    * ranges ([[start, end]]) the caller writes whole before it is used, left as they are meanwhile.
    */
-  newMemory(pages: number, image: Image | null = null, over: Range[] = []): Mem {
+  newMemory(pages: number, image: Image | null = null, over: Range[] = [], took?: (memory: Mem) => void): Mem {
     // What a process wrote that is not zeroed yet (Kernel.letGo): none, in a new one.
-    const m: Mem = this.kernel.takeMemory(pages, image, over)
+    const m: Mem = this.kernel.takeMemory(pages, image, over, took)
       ?? Object.assign(new WebAssembly.Memory({initial: pages, maximum: 65536, ...(this.kernel.shared ? {shared: true} : {})}), {users: 0, written: [], keeps: false, imageOf: null});
     m.users = 1;
     m.deepest = undefined; // how deep its stack has been written (Process.written): its process's to say
@@ -1971,125 +2014,8 @@ export class Process implements Proc {
 
   // ---- images ----
 
-  /**
-   * Replace the image (the calling thread's, `this.task`). Throws FsError
-   * before replacing anything; on success the old image is gone, every
-   * other thread with it, and the calling thread starts at the entry.
-   */
-  execve(path: string, argv: string[], env: string[]): void {
-    const at = walk(this, path, this.fs.pwd);
-    if (typeof at === 'number') throw new FsError(at);
-    if (!at.node) throw new FsError(E.NOENT);
-    const node = at.node;
-    if (!(node instanceof File)) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
-    // One that may be run: by its mode and who asks, and from a mount that programs are run from.
-    if (!(node.mode & 0o111) || !may(this.cred, node, MAY.EXEC) || at.mnt.flags & MNT.NOEXEC) throw new FsError(E.ACCES);
-    // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
-    // be run (a compiler's is tens of megabytes; a shell's commands are run again and again).
-    const identity = this.readIdentity();
-    try { if (node.maps) node.settle(); }
-    finally { identity(); }
-    const revision = node.version;
-    let head: Uint8Array | null;
-    try { head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128); }
-    finally { identity(); sourceRevision(node, revision); }
-    if (head && head[0] === 0x23 && head[1] === 0x21) {
-      // #!interpreter [arg]
-      const line = utf8(head).split('\n')[0].slice(2).trim();
-      const [interpreter = '', ...rest] = line.split(/\s+/);
-      return this.execve(interpreter, [interpreter, ...rest.slice(0, 1), path, ...argv.slice(1)], env);
-    }
-    let image: Image;
-    try { image = this.kernel.image(node, !!this.call); }
-    finally { identity(); sourceRevision(node, revision); }
-    const f = image.facts;
-    // The point of no return: the other threads go (Linux's de_thread), and so does a memory shared with a vfork parent.
-    const t = this.task, written = this.memory ? this.written() : null;
-    for (const other of [...this.tasks]) if (other !== t) { this.kernel.endTask(other); this.tasks.delete(other); }
-    // The program it runs, on a memory of its own (not a vfork parent's), its data laid here: it starts again where it
-    // is, its memory zeroed as if taken anew and its translation's instance kept (a shell's commands are mostly its own
-    // binary: BusyBox's applets).
-    const memory = this.memory, again = !!(image === this.image && image.segments && memory?.users === 1 && !memory.tainted && this.tasks.size === 1);
-    this.image = image;
-    this.stackLow = Math.ceil((f.imageEnd + GUARD) / PAGE) * PAGE;
-    this.stackTop = this.stackLow + STACK_BYTES;
-    this.mapBase = Math.ceil((this.stackTop + GUARD) / WASM_PAGE) * WASM_PAGE;
-    this.mapEnd = this.mapBase;
-    this.free = [];
-    this.fixed = []; // MAP_FIXED mappings below mapBase
-    this.unmapShared(); // a vfork child's list is its own: empty, though the memory it ran on was its parent's
-    this.maps = [];
-    let fresh: Mem;
-    // What its data segments will be laid over (below) is not zeroed first.
-    const laid = (image.segments ?? []).map((x): Range => [x.offset, x.offset + x.bytes.length]);
-    if (again && memory) { this.kernel.renew(memory, written, this.mapBase / WASM_PAGE, image, laid); fresh = memory; }
-    else {
-      // The new memory is taken before the old one is let go of, so each goes back to the program it ran, with its
-      // instance (a shell's fork's to the shell, the command's to the command), for that program's next process.
-      this.kernel.leaveInstance(this);
-      fresh = this.newMemory(this.mapBase / WASM_PAGE, image, laid);
-      this.kernel.letGo(memory, written); // its own, or still its vfork parent's
-      this.memory = fresh;
-    }
-    this.argv = argv;
-    this.env = env;
-    this.comm = null;
-    // Who it is as it runs this: the file's owner or group where its mode says so (not from a mount that gives no
-    // such thing, nor for one that may gain nothing, nor an owner its user namespace has no number for).
-    const c = this.cred, suid = !(at.mnt.flags & MNT.NOSUID) && !this.noNewPrivs;
-    const setuid = suid && node.mode & 0o4000 && idIn(c.ns, node.uid) >= 0 ? node.uid : -1;
-    const setgid = suid && (node.mode & 0o2010) === 0o2010 && idIn(c.ns, node.gid, true) >= 0 ? node.gid : -1;
-    const next = asProgram(c, setuid, setgid);
-    // (one that may gain nothing has, of what a program of root's would be given, only what it had)
-    this.cred = this.noNewPrivs ? next.with({permitted: next.permitted & (c.permitted | next.ambient), effective: next.effective & (c.permitted | next.ambient)}) : next;
-    this.dumpable = setuid < 0 && setgid < 0;
-    this.exe = pathOf(this.fs.root, at.mnt, node, at.parent, at.name);
-    this.exeAt = {mnt: at.mnt, node, dir: at.parent, name: at.name};
-    // It execs with a table of descriptors of its own: one shared till now (clone's CLONE_FILES) is left to the others,
-    // so what exec closes here is closed for it alone. (Before: closed in the shared table, under its parent.)
-    const shared = this.fds;
-    this.fds = shared.own();
-    if (this.fds !== shared) for (const x of this.tasks) x.tableLeft(shared);
-    this.fds.exec();
-    // Handled signals go back to their default; ignored ones stay ignored.
-    for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
-    t.altstack = {sp: 0n, size: 0n, flags: 2};
-    if (image.segments) { const keep = kept(image, !!fresh.exact); lay(this.bytes, fresh.keeps ? image.segments.filter((x) => !within(x, keep)) : image.segments); }
-    if (again) t.renew(); else t.load(image, fresh);
-    // A program starts with every register zero but its stack pointer (as Linux's start_thread leaves them).
-    t.setContext(REG.map(() => 0n), 0n);
-    const sp = this.stack(argv, env);
-    t.setReg(4, BigInt(sp));
-    fresh.deepest = sp; // the kernel wrote from here up (argv, the environment, auxv)
-    t.resumeAt = BigInt(f.entry);
-    t.redirected = true;
-    this.kernel.releaseVfork(this);
-    this.kernel.noteRootConsoleExec(this);
-  }
-
-  /** SysV entry stack: argc, argv, envp, auxv, then the strings. */
-  stack(argv: string[], env: string[]): number {
-    // As Linux lays it, upwards: the words (argc, argv, envp, auxv), the random bytes, then the strings, argv's and
-    // the environment's each after the last and the program's name at the top; written in two copies, not one a string.
-    const strings = enc.encode([...argv, ...env, argv[0] ?? ''].map((x) => x + '\0').join(''));
-    const at = (this.stackTop - 8 - strings.length) & ~7, bytes = this.bytes;
-    bytes.set(strings, at);
-    const starts = [at];
-    for (let k = 0; k < strings.length - 1; k++) if (strings[k] === 0) starts.push(at + k + 1);
-    const random = (at - 16) & ~15;
-    bytes.set(randomBytes(16), random);
-    const args = starts.slice(0, argv.length), envp = starts.slice(argv.length, argv.length + env.length), execfn = starts[argv.length + env.length];
-    const f = this.image.facts;
-    const aux = [[3, f.phdr], [4, f.phent], [5, f.phnum], [6, PAGE], [7, 0], [9, f.entry], [11, 0], [12, 0], [13, 0], [14, 0],
-      [23, 0], [25, random], [31, execfn], [0, 0]];
-    const words = [args.length, ...args, 0, ...envp, 0, ...aux.flat()];
-    const top = (random - words.length * 8) & ~15;
-    // Each below 4 GiB (a wasm32 address, or a small number): its high half zero.
-    const out = new Uint32Array(words.length * 2);
-    for (let k = 0; k < words.length; k++) out[2 * k] = words[k];
-    bytes.set(new Uint8Array(out.buffer), top);
-    return top;
-  }
+  /** Replace the calling process's image through the same transaction as start(). */
+  execve(path: string, argv: string[], env: string[]): void { replaceExec(this, {path, argv, env}); }
 
   // ---- fork ----
 

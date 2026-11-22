@@ -1,3 +1,4 @@
+import {execMayRun} from './exec/commit.ts';
 // The kernel with each guest thread in a Worker of its own (cpu.ts), all
 // running at once: memory is a shared WebAssembly.Memory (the kernel reads
 // and writes it directly, as process.ts does), and a thread's system call
@@ -379,6 +380,7 @@ export class RemoteKernel extends Kernel {
   }
 
   handle(t: RemoteTask): void {
+    if (t.proc.execTransition) execMayRun(t.proc);
     const op = t.i32[CH.OP];
     if (op === OP.SYSCALL) return this.call(t);
     if (op === OP.MISS) {
@@ -517,6 +519,7 @@ export class RemoteKernel extends Kernel {
   /** End every Worker (threads, and spares unless they are passed on). */
   close(): void {
     this.closing = true;
+    this.invalidateExecPreparation();
     const tasks = [...this.tasks.values()].map(t => ({t, worker: t.worker}));
     const spares = this.spares.splice(0);
     let errors: unknown[] | undefined;
@@ -527,7 +530,7 @@ export class RemoteKernel extends Kernel {
     // Only healthy spares may pass on. Each captured stop request is attempted
     // even when another synchronously fails; this does not await host termination.
     for (const w of spares) {
-      try { if (this.passOn && reusable(w)) { w.kernel = undefined; w.unownedFailure = this.unownedWorkerFailure; warmed.push(w); } else w.end(); }
+      try { if (this.passOn && !this.failedExecs?.size && reusable(w)) { w.kernel = undefined; w.unownedFailure = this.unownedWorkerFailure; warmed.push(w); } else w.end(); }
       catch (error) { (errors ??= []).push(error); }
     }
     if (errors?.length === 1) throw errors[0];

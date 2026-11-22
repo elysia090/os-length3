@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {preparedLinux, RemoteKernel} from '../../../sods/runtime/linux.ts';
+import {Kernel, preparedLinux, RemoteKernel} from '../../../sods/runtime/linux.ts';
 import {loadTranslator, prepare} from '../../../sods/runtime/translate.ts';
 import {packOf} from '../../format/pack.ts';
 import {canonicalExecutableSource} from '../../format/executable-source.ts';
@@ -119,6 +119,40 @@ for(const rehearsed of [false,true])test(`actual prepared Worker runs the real m
     // This is a Node adapter test, not a browser network trace.
     assert.equal(sourceRequests,0);
   }finally{await host.onmessage?.({data:{type:'retire'}});if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');if(previousXHR)Object.defineProperty(globalThis,'XMLHttpRequest',previousXHR);else Reflect.deleteProperty(globalThis,'XMLHttpRequest');}
+});
+
+test('actual prepared Worker cannot reuse a tree after a fatal rehearsal exec', {skip: !translatorPath, timeout: 15_000}, async () => {
+  const r = root(elf()), generation = 'f'.repeat(64), box = {config: '{}', words: []};
+  const messages: {type: string; message?: string; failures?: string[]}[] = [];
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>),
+    postMessage(message: typeof messages[number]) { messages.push(message); }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  const takeMemory = Kernel.prototype.takeMemory;
+  let attempts = 0;
+  Kernel.prototype.takeMemory = function () {
+    // Real Sods preparation has accepted the run. Fail at old-image
+    // replacement, after admission, rather than fabricating a Worker receipt.
+    attempts++;
+    throw new Error('injected irreversible exec allocation failure');
+  };
+  try {
+    await import(new URL('../worker.ts?prepared-fatal-rehearsal', import.meta.url).href);
+    const data = {type: 'start', profile: 'canonical-aot-v1', generation, translator: readFileSync(translatorPath!),
+      muk: elf(), root: {index: r.index, url: 'https://must-not-read-source.test/'}, executables: [], rehearse: box, box, cwd: '/'};
+    await host.onmessage!({data});
+    assert.equal(attempts, 1, 'no foreground allocation or new ownership follows the failed rehearsal');
+    const outcome = messages.find(m => m.type === 'error');
+    assert.match(outcome?.message ?? '', /^ExecCommitError: Exec transaction could not complete \(address-space\)/);
+    assert.ok(messages.every(m => m.type !== 'threads' && m.type !== 'exit'));
+    await host.onmessage!({data: {type: 'retire'}});
+    const retirement = messages.find(m => m.type === 'retiring');
+    assert.deepEqual(retirement?.failures, ['ExecCommitError: Exec transaction could not complete (address-space)']);
+  } finally {
+    if (!messages.some(m => m.type === 'retiring')) await host.onmessage?.({data: {type: 'retire'}});
+    Kernel.prototype.takeMemory = takeMemory;
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
 });
 
 test('prepared Worker cancellation during asynchronous preparation publishes no kernel or late source association',async()=>{

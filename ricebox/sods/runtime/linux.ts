@@ -21,7 +21,7 @@ import type {Segment} from './translation/share.ts';
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
 export {captureExecutableSource, type ExecutableSource} from './linux/executable-source.ts';
 export {Mirror} from './linux/mirror.ts';
-export {Kernel, validConsoleWindow, type Image, type Pumped} from './linux/process.ts';
+export {ExecCommitError, Kernel, validConsoleWindow, type Image, type Pumped} from './linux/process.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';
 export {keeper, type Kept, type Reading, type RetirableReading} from './linux/keeper.ts';
 export {said, type Said} from './linux/waiting.ts';

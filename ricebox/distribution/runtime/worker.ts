@@ -95,7 +95,7 @@ import {validateExecutable, canonicalHotSources} from './prepared-executable.ts'
 import type {Index, PreparedExecutable} from './root-types.ts';
 import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
-import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads, validConsoleWindow,
+import {ExecCommitError, Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads, validConsoleWindow,
   type Console, type File, type Image, type SourceBoundExecutable, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from '../format/mount.ts';
@@ -296,6 +296,9 @@ function ready(data: Ready): Promise<Readied> {
         // Rehearsal is optional for startup speed, not optional ownership
         // evidence. A later successful foreground run cannot erase its failure.
         lifetime.failures.push(error);
+        // An uncertain exec owns this very tree. It is not a failed warm-up
+        // that a foreground start may ignore and replace on the same owner.
+        if (error instanceof ExecCommitError) throw error;
       });
       return r;
     } finally { preparing.release(); }
@@ -563,7 +566,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // This is only this private global reference, not every Image/source or
       // a Worker-stop or reference-release barrier. Do not mutate shared images.
       const inactive = (): boolean => k.current === null && k.tasks.size === 0 && k.procs.size === 0
-        && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.vfs.loaded.keepers.has(k);
+        && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.failedExecs?.size && !k.vfs.loaded.keepers.has(k);
       if (!inactive()) return;
       if (k instanceof RemoteKernel) {
         const evidence = await k.snapshotWorkerStops();
