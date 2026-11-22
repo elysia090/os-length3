@@ -1,12 +1,13 @@
 // Detached initial image for the inline mapped profile. This does not
-// publish a process, load a Task, run the interpreter, or admit PT_INTERP
-// on a normal start/exec. A later exec transaction owns any live handoff.
+// publish a process, run the interpreter, or admit PT_INTERP on a normal
+// start/exec. Only the original unpublished Task can reserve a held handoff.
 import type {Translate} from '../../translation/translator.ts';
+import type {MappedTranslate} from '../../translation/mapped.ts';
 import {E, FsError} from '../fs.ts';
-import {MAPPED_VM_LIMIT, MappedVm, type DetachedMappedMemory, type InitialMappedRegion} from '../mapped-vm.ts';
+import {MAPPED_VM_LIMIT, MappedVm, type DetachedMappedMemory, type InitialMappedRegion, type StagedMappedMemory} from '../mapped-vm.ts';
 import {planDynamicExec, type DynamicExecOwner, type DynamicExecPlan, type DynamicSources, type PlacedObject} from './dynamic-plan.ts';
 import type {ExecRequest} from './plan.ts';
-import {execScope} from './source.ts';
+import {ExecPreparationChangedError, execScope} from './source.ts';
 import {mappedStack, WASM_PAGE, type StackLayout} from './stack.ts';
 
 const PAGE = 4096, PF_R = 4, PF_W = 2, PF_X = 1, PROT_R = 1, PROT_W = 2, PROT_X = 4;
@@ -22,6 +23,57 @@ export interface DetachedDynamicImage {
   readonly stack: StackLayout;
   /** No raw memory, entries, descriptors, or attachment capability. */
   readonly pages: DetachedMappedMemory;
+}
+
+type ClaimOwner = DynamicExecOwner & Parameters<StagedMappedMemory['claim']>[0];
+interface DetachedOwner {
+  readonly process: DynamicExecOwner;
+  readonly task: object | undefined;
+  readonly staged: StagedMappedMemory;
+  readonly reader: object;
+  readonly compiler: MappedTranslate;
+  reserved: boolean;
+}
+const heldImages = new WeakMap<DetachedDynamicImage, DetachedOwner>();
+
+/** Only available to the internal handoff transaction, not the image view. */
+export interface InitialImageLease {
+  readonly memory: StagedMappedMemory['memory'];
+  readonly pc: bigint;
+  readonly sp: bigint;
+  check(): void;
+  claim(): void;
+  discard(): void;
+}
+
+export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimOwner, task: object,
+    reader: object, compiler: MappedTranslate): InitialImageLease {
+  const held = heldImages.get(image);
+  if (!held || held.reserved || held.process !== process || held.task !== task || process.own !== task ||
+      process.memory || process.state !== 'live' || held.reader !== reader || held.compiler !== compiler)
+    throw new ExecPreparationChangedError();
+  const {staged} = held, pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = image.stack.sp;
+  const check = (): void => {
+    if (heldImages.get(image) !== held || process.own !== task || process.memory || process.state !== 'live')
+      throw new ExecPreparationChangedError();
+    staged.checkEntry(pc, main, sp);
+  };
+  check();
+  const memory = staged.memory;
+  held.reserved = true;
+  return Object.freeze({
+    memory, pc, sp: BigInt(sp), check,
+    claim() {
+      check();
+      staged.claim(process, pc, main, sp);
+      heldImages.delete(image);
+    },
+    discard() {
+      if (heldImages.get(image) !== held) return;
+      heldImages.delete(image);
+      staged.pages.discard();
+    },
+  });
 }
 
 function regions(object: PlacedObject, verify: () => void): InitialMappedRegion[] {
@@ -52,10 +104,10 @@ function regions(object: PlacedObject, verify: () => void): InitialMappedRegion[
 const placed = ({path, bias, start, end}: PlacedObject): PlacedImage => Object.freeze({path, bias, start, end});
 
 export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequest, sources: DynamicSources,
-    reader: Pick<Translate, 'describeDynamic' | 'notProgram'>): DetachedDynamicImage {
-  const describeDynamic = reader.describeDynamic;
+    reader: Pick<Translate, 'describeDynamic' | 'notProgram' | 'mapped'>): DetachedDynamicImage {
+  const {describeDynamic, mapped: compiler} = reader;
   if (!describeDynamic) throw new Error('This Sods translator has no dynamic load-spec support');
-  const scope = execScope(process), {path} = request;
+  const task = process.own, scope = execScope(process), {path} = request;
   if (typeof path !== 'string' || path.includes('\0')) throw new FsError(E.INVAL);
   const argv = [...request.argv], env = [...request.env];
   scope();
@@ -66,14 +118,17 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   if (stack.mapBase >= MAPPED_VM_LIMIT) throw new FsError(E.NOMEM);
   const layout: InitialMappedRegion[] = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
     {kind: 'stack', start: stack.stackLow, end: stack.stackTop, prot: PROT_R | PROT_W, writes: stack.writes}];
-  const pages = MappedVm.detached({vfs: process.kernel.vfs, base: stack.mapBase, pages: stack.mapBase / WASM_PAGE,
+  const staged = MappedVm.stage({vfs: process.kernel.vfs, base: stack.mapBase, pages: stack.mapBase / WASM_PAGE,
     sources: [], reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
+  const {pages} = staged;
   try {
-    if (!pages.hasText(BigInt(plan.firstPc)) || !pages.hasText(BigInt(plan.aux.entry)) ||
-        !pages.permits(plan.aux.phdr, plan.aux.phent * plan.aux.phnum, 'read') || !pages.permits(stack.sp, 8, 'write'))
+    staged.checkEntry(BigInt(plan.firstPc), BigInt(plan.aux.entry), stack.sp);
+    if (!pages.permits(plan.aux.phdr, plan.aux.phent * plan.aux.phnum, 'read'))
       throw new FsError(E.NOEXEC);
-    return Object.freeze({main: placed(plan.main), interpreter: placed(plan.interpreter), firstPc: plan.firstPc,
+    const view = Object.freeze({main: placed(plan.main), interpreter: placed(plan.interpreter), firstPc: plan.firstPc,
       aux: Object.freeze({...plan.aux}),
       stack: Object.freeze({stackLow: stack.stackLow, stackTop: stack.stackTop, mapBase: stack.mapBase, sp: stack.sp}), pages});
+    if (task && compiler) heldImages.set(view, {process, task, staged, reader, compiler, reserved: false});
+    return view;
   } catch (error) { pages.discard(); throw error; }
 }

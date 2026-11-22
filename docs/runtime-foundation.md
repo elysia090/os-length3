@@ -231,21 +231,19 @@ Linux stack for the mapped profile with argv, env, IDs, random bytes
 and an AT_EXECFN copy of the named guest path. This adds no privilege
 transition.
 
-The returned handle exposes only permission evidence and bounded
-copies, not memory or a way to start a task. A later handoff must use
-the exec transaction; this does not replace the old address space,
-close descriptors or enqueue a task. A stale caller or revoked
-source discards the detached view. Tests cover the guest fixture's
-initial RELRO pages and live mprotect on the same VM policy separately.
+The returned image exposes only permission evidence and bounded copies,
+not memory or a way to start a task. A stale caller or revoked source
+discards the detached view. Tests cover the guest fixture's initial
+RELRO pages and live mprotect on the same VM policy separately.
 
 ### Inline mapped Task lifecycle (not executable admission)
 
 An internal, unpublished Task can prepare its CPU over a single owned
 mapped VM with already authenticated library text and a writable arena
-stack. It cannot take a detached initial image. The normal Kernel run
-queue, slice handling, syscall screening and wait/retry logic own both
-task kinds. Mapped execution uses its own checked dispatcher; it never
-uses the static byte views, clock fast path or instance pool.
+stack. The normal Kernel run queue, slice handling, syscall screening
+and wait/retry logic own that Task and ordinary static Tasks. Mapped
+execution uses its own checked dispatcher; it never uses the static
+byte views, clock fast path or instance pool.
 
 On a wait, Wasm frames unwind. The same dispatcher restores the completed
 call's result and next PC as it does for a completed mapping-changing
@@ -255,10 +253,21 @@ only after the frame has unwound and the backend releases its artifacts.
 Unconfirmed backend retirement retains the task and tree, not a wait
 status or permission to try cleanup again.
 
-The scheduler proof is a small interpreter-free guest assembly fixture,
-not a loader handoff. Initial-image handoff, the remaining loader ABI,
-precise signals/faults and Worker execution still need proof. Normal
-PT_INTERP exec is still refused.
+The scheduler proof is a small interpreter-free guest assembly fixture.
+Separately, an authenticated initial image can be reserved by exactly
+the unpublished Task it was prepared for. A single-use grant checks
+the captured caller, descriptor table, source revisions, mapped entries
+and stack again after CPU setup and at transfer. Rollback releases the
+candidate without changing the prior process. Transfer retires the
+old inspection and assigns the checked backing and initial context
+to that Task in a held state. The owner can discard it without guest
+exit, descriptor changes, or an execution event.
+
+Held image Tasks cannot be queued, run or enter the syscall table, even
+when a mapped translator is present. No normal launch path uses this
+handoff. The checked loader ABI (including x86-64 FS-base startup
+operations), regular exec lifecycle, precise signals/faults and Worker
+execution still need proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

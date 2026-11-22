@@ -39,3 +39,9 @@ pages named by each object's mapped headers) and stack without
 publishing a task or running an interpreter. The mapped-VM tests check
 the ordinary mprotect permission reduction on initialized data pages
 with an internal process owner. Default Sods exec still refuses the PIE.
+
+With a translator built with `mapped-code`, set `SODS_TEST_MAPPED_WASM`
+to the same Wasm path to also prove the one-use transfer to an
+unpublished Task and rollback on a stale descriptor table or holding
+mount. The resulting Task is held: no guest instructions are compiled
+or executed during this test.

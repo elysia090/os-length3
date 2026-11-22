@@ -81,6 +81,14 @@ export interface DetachedMappedMemory {
   discard(): void;
 }
 
+/** Internal build/claim authority, never part of the detached inspection. */
+export interface StagedMappedMemory {
+  readonly memory: MappedMemory;
+  readonly pages: DetachedMappedMemory;
+  checkEntry(pc: bigint, main: bigint, sp: number): void;
+  claim(owner: Caller, pc: bigint, main: bigint, sp: number): void;
+}
+
 export type DataAccess = 'read' | 'write';
 export type MappedRunView = MappedCodeView & {
   readonly memory: WebAssembly.Memory;
@@ -160,35 +168,57 @@ export class MappedVm {
   /** Commit to an inaccessible, private candidate first. If initialization
    * or a late source fence fails, no result or live memory is published. */
   static detached(spec: MemorySpec, regions: readonly InitialMappedRegion[], verify: () => void): DetachedMappedMemory {
-    let held: MappedVm | null = MappedVm.allocate(spec, {regions, verify}).mappedVm;
+    return MappedVm.stage(spec, regions, verify).pages;
+  }
+
+  static stage(spec: MemorySpec, regions: readonly InitialMappedRegion[], verify: () => void): StagedMappedMemory {
+    let held: MappedMemory | null = MappedVm.allocate(spec, {regions, verify});
     const discard = (): void => {
       const retired = held; held = null;
-      retired?.close();
+      if (retired) { retired.mappedVm.close(); retired.users = 0; }
     };
-    const current = (): MappedVm => {
-      if (!held) throw new Error('Detached mapped memory was discarded');
+    const current = (): MappedMemory => {
+      if (!held) throw new Error('Detached mapped memory was discarded or claimed');
       try { verify(); } catch (error) { discard(); throw error; }
       return held;
     };
     const permits = (address: number, length: number, access: DataAccess): boolean => {
-      const vm = current();
+      const vm = current().mappedVm;
       vm.#copyLength(length);
       return vm.#prefix(address, length, access) === length;
     };
-    return Object.freeze({
+    const pages: DetachedMappedMemory = Object.freeze({
       permits,
       read(address: number, length: number) {
-        const vm = current();
+        const vm = current().mappedVm;
         vm.#copyLength(length);
         if (vm.#prefix(address, length, 'read') !== length) fail(E.FAULT);
         return length ? new Uint8Array(vm.memory.buffer, address, length).slice() : new Uint8Array(0);
       },
       hasText(address: bigint) {
-        const code = current().#code;
+        const code = current().mappedVm.#code;
         return !!code.find(address, code.generation);
       },
       check: () => { current(); },
       discard,
+    });
+    const starting = (pc: bigint, main: bigint, sp: number): MappedVm => {
+      const vm = current().mappedVm, code = vm.#code, generation = code.generation;
+      if (vm.#closed || vm.#owner || code.find(pc, generation)?.text.role !== 'interpreter' ||
+          code.find(main, generation)?.text.role !== 'main' || !Number.isSafeInteger(sp) || sp % 16 ||
+          !vm.#regions.some(r => r.initial === 'stack' && r.start <= sp - 128 && sp + 8 <= r.end) ||
+          vm.#prefix(sp - 128, 136, 'write') !== 136) throw new FsError(E.NOEXEC);
+      return vm;
+    };
+    return Object.freeze({
+      get memory() { return current(); },
+      pages,
+      checkEntry(pc: bigint, main: bigint, sp: number) { starting(pc, main, sp); },
+      claim(owner: Caller, pc: bigint, main: bigint, sp: number) {
+        const vm = starting(pc, main, sp);
+        vm.claim(owner);
+        held = null; // Inspection cannot read or close the claimed address space.
+      },
     });
   }
 

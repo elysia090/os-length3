@@ -10,7 +10,7 @@ import {WASM_PAGE} from './stack.ts';
 import {ExecPreparationChangedError} from './source.ts';
 
 export type ExecPhase = 'prepared-descriptors' | 'initial-preparation' | 'initial-publication' | 'threads' |
-  'address-space' | 'descriptors' | 'backend' | 'memory-retirement' | 'resume';
+  'address-space' | 'descriptors' | 'backend' | 'memory-retirement' | 'resume' | 'held-mapped-handoff';
 
 export type ExecOwners<T> = Readonly<{task?: T; oldMemory?: Mem; newMemory?: Mem; oldFds?: FdTable; newFds?: FdTable}>;
 

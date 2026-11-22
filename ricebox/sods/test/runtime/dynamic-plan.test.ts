@@ -9,6 +9,7 @@ import {planDynamicExec, type DynamicExecPlan} from '../../runtime/linux/exec/dy
 import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, MNT, Mount, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
 import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
+import type {Mem} from '../../runtime/linux/parts.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
 import {ImageSourceChangedError, Kernel, Process} from '../../runtime/linux/process.ts';
@@ -17,6 +18,7 @@ import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 
 const root = process.env.SODS_TEST_DYNAMIC_ROOT;
 const translatorPath = process.env.SODS_CURRENT_TRANSLATOR_WASM;
+const mappedWasm = process.env.SODS_TEST_MAPPED_WASM;
 const skip = !root || !translatorPath ? 'requires the staged dynamic fixture and current Sods translator' : false;
 const mainPath = '/usr/bin/ricebox-pie-fixture', builtin = '/lib64/ld-linux-x86-64.so.2';
 const lib = '/usr/lib/x86_64-linux-gnu', interpreterPath = lib + '/ld-linux-x86-64.so.2';
@@ -327,4 +329,107 @@ test('ordinary native exec succeeds inside the exact matched Debian fixture root
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
   assert.equal(result.stdout, 'dynamic-pie:42\n');
+});
+
+test('the authenticated initial image transfers once to its exact unpublished Task without admitting execution', {
+  skip: !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false,
+}, async () => {
+  const f = fixture(), translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
+  assert.ok(compiler);
+  const vfs = new Vfs(), target = mountTarget(vfs);
+  const file = target.file(mainPath, 0o755, f.main.length, () => f.main, sha(f.main));
+  target.file(interpreterPath, 0o755, f.loader.length, () => f.loader, sha(f.loader));
+  for (const [path, to] of f.links) vfs.symlink(to, path);
+  const sources = {
+    main: captureExecutableSource(vfs, mainPath, {origin: sha(f.main), size: f.main.length}),
+    interpreter: captureExecutableSource(vfs, interpreterPath, {origin: sha(f.loader), size: f.loader.length}),
+  };
+  const k = new Kernel({vfs, translate, console: quiet});
+  const p = new Process(k, null, false, false, null, null, false);
+  p.noNewPrivs = true;
+  p.cred = p.cred.with({uid: 1001, euid: 1001, fsuid: 1001, gid: 1002, egid: 1002, fsgid: 1002, effective: 0n, permitted: 0n});
+  const task = k.newTask(p);
+  p.pid = p.pgid = p.sid = task.tid;
+  p.tasks.add(task); p.task = task;
+  const fd = p.fds.install(new Description('file', {node: file}), {cloexec: true}), description = p.fds.get(fd)!;
+  const stage = () => prepareDynamicImage(p, {path: mainPath, argv: ['ricebox-pie-fixture'], env: ['LC_ALL=C']}, sources, translate);
+  const unpublished = () => {
+    assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, k.blocked.size, p.cgroup.procs.size, k.images.size], [0, 0, 0, 0, 0, 0]);
+    assert.equal(k.status, null);
+    assert.equal(task.state, 'new');
+    assert.equal(task.dead, false);
+    assert.equal(p.fds.get(fd), description);
+    assert.equal(p.fds.cloexec(fd), true);
+    assert.equal(description.closed, false);
+  };
+  const more = compiler.more;
+  compiler.more = () => { assert.fail('no guest instruction is compiled by a held handoff'); };
+  try {
+    const rolled = stage(), canceled = task.prepareHeldMapped(rolled);
+    unpublished();
+    assert.equal(p.memory, null);
+    assert.throws(() => k.ready(task), /held initial Task is disabled/);
+    task.rollbackHeldMapped(canceled);
+    assert.throws(() => rolled.pages.check(), /discarded/);
+    assert.throws(() => task.commitHeldMapped(canceled), /lost its calling process or authority/);
+    unpublished();
+
+    const stale = stage(), staleGrant = task.prepareHeldMapped(stale);
+    const changed = p.fds.install(new Description('console', {path: 'stdout'}));
+    assert.throws(() => task.commitHeldMapped(staleGrant), /fresh unpublished inline owner/);
+    assert.throws(() => stale.pages.check(), /discarded/);
+    assert.ok(p.fds.get(changed), 'rollback does not undo an independent descriptor change');
+    p.fds.close(changed);
+    assert.equal(p.memory, null);
+    unpublished();
+
+    const revoked = stage(), revokedGrant = task.prepareHeldMapped(revoked);
+    k.root.mnt.flags |= MNT.NOEXEC;
+    try { assert.throws(() => task.commitHeldMapped(revokedGrant), hasErrno(E.ACCES)); }
+    finally { k.root.mnt.flags &= ~MNT.NOEXEC; }
+    assert.throws(() => revoked.pages.check(), /discarded/);
+    assert.equal(p.memory, null);
+    unpublished();
+
+    const image = stage(), grant = task.prepareHeldMapped(image);
+    const receipt = task.commitHeldMapped(grant);
+    try {
+      const memory = p.memory as Mem | null;
+      assert.ok(memory?.mappedVm);
+      assert.equal(receipt.kind, 'held-initial');
+      assert.equal(task.memory, memory, 'the ordinary Task and Process own the same prepared backing');
+      assert.equal(memory.users, 1);
+      assert.equal(task.context().rip, BigInt(image.firstPc));
+      assert.equal(task.reg(4), BigInt(image.stack.sp));
+      assert.equal(task.context().regs.filter(r => r !== 0n).length, 1);
+      assert.throws(() => image.pages.check(), /claimed/);
+      image.pages.discard(); // Old inspection cannot close the claimed backing.
+      const user = memory.mappedVm.userMemory(p);
+      assert.equal(new DataView(user.copyIn(image.stack.sp, 8).buffer).getBigUint64(0, true), 1n);
+      const code = memory.mappedVm.code, generation = code.generation;
+      assert.equal(code.find(BigInt(image.firstPc), generation)?.text.role, 'interpreter');
+      assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
+      assert.throws(() => task.commitHeldMapped(grant), /lost its calling process or authority/);
+      assert.throws(() => task.setReg(4, 0n), /Held initial Task registers/);
+      assert.throws(() => k.ready(task), /held initial Task is disabled/);
+      assert.throws(() => k.run(task), /held initial Task is disabled/);
+      assert.throws(() => p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), /held initial Task is disabled/);
+      assert.throws(() => k.halt(), /held initial handoff still owns/);
+      assert.throws(() => { p.memory = null; }, /Only the held handoff owner/);
+      unpublished();
+      receipt.discard();
+      assert.equal(memory.users, 0);
+      assert.equal(k.spareMemories.includes(memory), false);
+      assert.equal(code.find(BigInt(image.firstPc), code.generation), undefined);
+      assert.throws(() => user.check(), ReadLifetimeError);
+    } finally { receipt.discard(); }
+    assert.equal(p.memory, null);
+    assert.equal(task.resumeAt, 0n);
+    unpublished();
+  } finally {
+    compiler.more = more;
+    p.fds.letGo();
+    p.fs0.drop();
+    k.halt();
+  }
 });
