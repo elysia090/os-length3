@@ -4,7 +4,6 @@ import {lendRaster, rasterFile} from '../support/mirror-raster.ts';
 import {rasterStart} from './raster-fixture.ts';
 import {offerShell} from './shell-page.mts';
 import {placeCamera} from './camera-placement.mts';
-import {bindGuestViewWindow} from './guest-view-window.mts';
 
 function required<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -59,13 +58,19 @@ async function start() {
   const root = createRoot({base:'/fixture/', first:[], usedKey:'everyday-proof-used',
     planKey:'everyday-proof-plan', message:key=>key, missing:()=> 'No default root',
     errorText:error=>String(error)});
-  let ended = false, retireShell: (() => Promise<void>) | undefined, endKeeper: (() => void) | undefined;
-  const canDetach = shell && profile.get('terminal') !== 'screen' && !profile.get('over') && !profile.get('camera');
+  let ended = false, retireShell: (() => Promise<void>) | undefined;
+  // Match the default line-console fixture; the overlay and camera profiles keep their own layout.
+  const session = shell && profile.get('terminal') !== 'screen' && !profile.get('over') && !profile.get('camera') ? {
+    panel: required('#drawing-window'), titlebar: required('#drawing-window-titlebar'),
+    close: required<HTMLButtonElement>('#drawing-window-close'), open: required<HTMLButtonElement>('#drawing-window-open'),
+    controls: required('#view-session'), end: required<HTMLButtonElement>('#view-end'), status: required('#view-status'),
+  } : null;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
   const totalMs = 15 * 60 * 1000, deadline = performance.now() + totalMs, wallDeadline = Date.now() + totalMs;
   function canAct() {
     if (ended) return false;
-    if (canDetach && (performance.now() >= deadline || Date.now() >= wallDeadline)) {
-      endKeeper?.();return false;
+    if (session && (performance.now() >= deadline || Date.now() >= wallDeadline)) {
+      endSession();return false;
     }
     return true;
   }
@@ -108,8 +113,29 @@ async function start() {
     } else setupShell();
   }
   let current: ReturnType<typeof launchDrawing> | undefined, drawingHeld = false;
+  function updateDrawingWindow() {
+    if (!session) return;
+    const closed = session.panel.hidden;
+    session.open.hidden = !closed;
+    // Keep the next action focusable while a close settles, but reject activation.
+    session.open.setAttribute('aria-disabled', String(!closed || ended || drawingHeld || !!current));
+    session.status.textContent = ended ? 'Guest session ended.' : !closed ? '' :
+      drawingHeld ? 'Drawing could not be retired. The window will stay closed.' :
+      current ? 'Closing drawing window…' : 'Drawing window closed. The guest shell stays open.';
+  }
+  function endSession() {
+    if (ended) return;
+    ended = true;
+    clearTimeout(expiry);
+    window.removeEventListener('pagehide', endSession);
+    if (session) { session.panel.hidden = true; session.end.disabled = true; }
+    showDrawing.disabled = true;
+    closeDrawing();
+    updateDrawingWindow();
+    void retireShell?.();
+  }
   function openDrawing() {
-    if (!canAct() || drawingHeld || current) return;
+    if (!canAct() || drawingHeld || current || session?.panel.hidden) return;
     showDrawing.disabled = true;
     try {
       const instance=launchDrawing();
@@ -120,7 +146,8 @@ async function start() {
         current=undefined;
         stopDrawing.disabled=true;
         if (!clean) drawingHeld=true;
-        showDrawing.disabled=ended||drawingHeld;
+        showDrawing.disabled=ended||drawingHeld||!!session?.panel.hidden;
+        updateDrawingWindow();
       });
     } catch {
       drawingHeld=true;showDrawing.disabled=stopDrawing.disabled=true;
@@ -133,13 +160,31 @@ async function start() {
   }
   showDrawing.onclick = event => { if (event.isTrusted) openDrawing(); };
   stopDrawing.onclick = event => { if (event.isTrusted) closeDrawing(); };
-  if (canDetach) {
-    required('#view-keeper').hidden = false;
-    endKeeper = bindGuestViewWindow({view:required('#guest-view'),slot:required('#guest-view-slot'),
-      openButton:required('#view-open'),endButton:required('#view-end'),status:required('#view-status'),
-      stopDrawing:closeDrawing,canAct,budgetMs:Math.max(0,deadline-performance.now()),endSession() {
-        ended=true;showDrawing.disabled=true;closeDrawing();void retireShell?.();
-      }});
+  if (session) {
+    const {panel, titlebar, close, open, controls: sessionControls, end} = session;
+    panel.classList.add('windowed-drawing');
+    titlebar.hidden = sessionControls.hidden = false;
+    updateDrawingWindow();
+    close.onclick = event => {
+      if (!event.isTrusted || !canAct() || panel.hidden) return;
+      const returnFocus = panel.contains(document.activeElement);
+      panel.hidden = true;
+      showDrawing.disabled = true;
+      closeDrawing();
+      updateDrawingWindow();
+      if (returnFocus) open.focus({preventScroll:true});
+    };
+    open.onclick = event => {
+      if (!event.isTrusted || !canAct() || !panel.hidden || current || drawingHeld) return;
+      const restoreFocus = document.activeElement === open;
+      panel.hidden = false;
+      updateDrawingWindow();
+      openDrawing();
+      if (restoreFocus) close.focus({preventScroll:true});
+    };
+    end.onclick = event => { if (event.isTrusted) endSession(); };
+    window.addEventListener('pagehide', endSession, {once:true});
+    expiry = setTimeout(endSession, Math.max(0, deadline-performance.now()));
   }
   openDrawing();
   function launchDrawing() {

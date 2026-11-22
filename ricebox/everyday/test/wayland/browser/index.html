@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Everyday Wayland commit proof</title>
 <link rel="stylesheet" href="/camera-scrollbars.css">
-<style id="guest-demo-styles">
+<style>
   body { margin: 24px; font: 15px/1.45 system-ui, sans-serif; }
   #status { min-height: 22px; }
   #camera { width: 256px; height: 184px; overflow: auto; border: 1px solid #52565d; }
@@ -15,16 +15,26 @@
   #camera-handle { touch-action: none; cursor: move; }
   #camera-pane[data-placement="pinned"] #camera-handle { cursor: default; }
   canvas { display: block; image-rendering: pixelated; }
+  .windowed-drawing { width: fit-content; max-width: 100%; box-sizing: border-box; border: 1px solid #52565d; border-radius: 4px; }
+  .windowed-drawing > :not(header) { margin-inline: 12px; }
+  #drawing-window-titlebar:not([hidden]) { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 6px 12px; border-bottom: 1px solid #52565d; }
+  #drawing-window-title { margin: 0; font-size: 1rem; }
+  #drawing-window-open[aria-disabled="true"] { opacity: .55; }
 </style>
 <h1>Guest Wayland commit proof</h1>
 <p>A guest Wayland client draws these pixels into a committed surface. The browser only presents the exported buffer and moves the camera.</p>
-<section id="view-keeper" aria-label="Guest session keeper" hidden>
-  <p>Keep this tab open to reopen the same guest shell. The session ends after 15 minutes or when you end it here.</p>
-  <button type="button" id="view-open">Open guest view window</button>
+<section id="view-session" aria-label="Guest session controls" hidden>
+  <p>The drawing window can close without stopping the guest shell. The session ends after 15 minutes or when you end it here.</p>
+  <button type="button" id="drawing-window-open" aria-controls="drawing-window" hidden>Open drawing window</button>
   <button type="button" id="view-end">End guest session</button>
   <p role="status" id="view-status"></p>
 </section>
-<div id="guest-view-slot"><main id="guest-view">
+<main>
+<section id="drawing-window" aria-labelledby="drawing-window-title">
+<header id="drawing-window-titlebar" hidden>
+  <h2 id="drawing-window-title">Drawing window</h2>
+  <button type="button" id="drawing-window-close" aria-label="Close drawing window">Close</button>
+</header>
 <p id="status" role="status" data-phase="loading">Loading guest…</p>
 <div id="camera-pane">
   <div id="camera-toolbar" hidden>
@@ -44,6 +54,7 @@
   <button id="show-drawing" disabled>Show drawing</button>
 </p>
 <pre id="protocol" aria-label="Guest Wayland receipts"></pre>
+</section>
 <section id="shell" aria-label="Guest shell" hidden>
   <h2>Independent guest shell</h2>
   <p>This line console runs commands in a separate Ricebox guest.</p>
@@ -55,6 +66,6 @@
     <button disabled>Run command</button>
   </form>
 </section>
-</main></div>
+</main>
 <script type="module" src="/demo.mts"></script>
 </html>
