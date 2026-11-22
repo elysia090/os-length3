@@ -45,9 +45,26 @@ From the repository root with locked dependencies:
     node ricebox/everyday/test/wayland/browser/stage-consumer.mjs "$stage"
     node ricebox/everyday/test/wayland/browser/display-owner.integration.mjs \
       "$stage/consumer/browser"
+    node ricebox/everyday/test/wayland/browser/display-owner.integration.mjs \
+      "$stage/consumer/browser" --inner-window
 
 This checks that delivered frames draw synchronously with no pending renderer
 work, and that an injected Worker message decoding error clears the surface,
 disables its controls, and retires its owner. The fixture substitutes a DOM
-and Worker event target, not a guest or a browser. This is not a Chrome frame
+and Worker event target, not a guest or a browser. The inner-window case checks that
+an early reopen cannot overtake retirement or accept stale frames. This is not a Chrome frame
 rate, transport backlog, or Wayland buffer-release measurement.
+
+### Close and reopen the drawing window
+
+With the default line console and an explicitly staged BusyBox, use **Close**
+in the **Drawing window** title bar. It hides the drawing and retires its
+renderer. The guest shell remains in the same page and keeps running. Once
+retirement is confirmed, **Open drawing window** brings the drawing back
+with a fresh renderer. It does not open a Chrome window or tab. **Stop
+drawing** and **Show drawing** restart the drawing without hiding its window.
+
+**End guest session**, leaving the page, or the 15-minute expiry ends the
+session. A suspended page may not retire its Workers until it resumes;
+expired sessions admit no new input or drawing. This window control is not
+offered in the optional VT, camera-placement, or shell-overlay variants.

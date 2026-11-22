@@ -1,3 +1,4 @@
+import {randomInt} from 'node:crypto';
 import {expect,test,type Page} from '@playwright/test';
 // Sample a real browser-composited screenshot, not just Canvas backing.
 async function screenRegion(page: Page, x: number, y: number,
@@ -96,6 +97,86 @@ test.describe('with explicitly staged static BusyBox', () => {
     await command('exit');
     await expect(shellStatus).toHaveText('Shell admission closed');
   });
+  test('the in-page drawing window closes and reopens without replacing the BusyBox shell', async ({page}) => {
+    const context=page.context(), otherPages: unknown[]=[];
+    let shellAcquisitions=0, navigations=0;
+    context.on('page',x=>otherPages.push(x));
+    context.on('request', request => {
+      if (new URL(request.url()).pathname === '/fixture/busybox') shellAcquisitions++;
+    });
+    await page.goto('/');
+    page.on('framenavigated',frame => { if(frame===page.mainFrame()) navigations++; });
+    const panel=page.getByRole('region',{name:'Drawing window'});
+    const close=panel.getByRole('button',{name:'Close drawing window'});
+    const open=page.getByRole('button',{name:'Open drawing window'});
+    const shell=page.getByRole('region',{name:'Guest shell'});
+    const input=shell.getByRole('textbox',{name:'Shell command'}), output=shell.getByLabel('Guest shell output');
+    const surface=page.locator('canvas'), status=page.locator('#status');
+    async function command(value: string) {
+      await expect(input).toBeEnabled(); await input.fill(value); await input.press('Enter');
+    }
+    await expect(panel).toBeVisible();
+    await expect(open).toBeHidden();
+    await expect(surface).toHaveAttribute('data-sequence','1');
+    await shell.getByRole('button',{name:'Open guest shell'}).click();
+    const nonce=randomInt(1024,30000);
+    await command("unset kept_nonce; kept_nonce="+nonce+"; printf 'original-pid=%s\\n' \"$$\"");
+    await expect(output).toContainText(/original-pid=[1-9][0-9]*/);
+    const before=(await output.textContent())!.match(/original-pid=([1-9][0-9]*)/)![1]!;
+
+    await panel.getByRole('button',{name:'Stop drawing',exact:true}).click();
+    await expect(panel).toBeVisible();
+    await expect(status).toHaveText('admission acknowledged');
+    expect(await surface.evaluate(canvas=>{
+      const c=canvas as HTMLCanvasElement;
+      return Array.from(c.getContext('2d')!.getImageData(0,0,c.width,c.height).data).every(x=>x===0);
+    })).toBe(true);
+    await panel.getByRole('button',{name:'Show drawing',exact:true}).click();
+    await expect(surface).toHaveAttribute('data-sequence','1');
+    await panel.getByRole('button',{name:'Resize guest raster'}).click();
+    await expect(surface).toHaveAttribute('data-sequence','2');
+    await expect(surface).toHaveAttribute('width','47');
+
+    await close.dispatchEvent('click'); // Untrusted is not a window action.
+    await expect(panel).toBeVisible();
+    await input.fill('a draft that belongs to the shell');
+    await close.press('Enter');
+    await expect(panel).toBeHidden();
+    await expect(surface).toBeHidden();
+    await expect(open).toBeFocused();
+    await expect(open).toBeEnabled();
+    await expect(status).toHaveText('admission acknowledged');
+    await expect(input).toHaveValue('a draft that belongs to the shell');
+    expect(await surface.evaluate(canvas=>{
+      const c=canvas as HTMLCanvasElement;
+      return Array.from(c.getContext('2d')!.getImageData(0,0,c.width,c.height).data).every(x=>x===0);
+    })).toBe(true);
+    await command("printf 'while-closed=%s pid=%s\\n' \"$((kept_nonce+31))\" \"$$\"");
+    await expect(output).toContainText('while-closed='+(nonce+31)+' pid='+before);
+
+    await open.press('Enter');
+    await expect(panel).toBeVisible();
+    await expect(close).toBeFocused();
+    await expect(surface).toHaveAttribute('data-sequence','1');
+    await expect(surface).toHaveAttribute('width','32');
+    await expect(surface).toHaveAttribute('height','24');
+    await close.click();
+    await expect(panel).toBeHidden();
+    await expect(open).toBeEnabled();
+    await open.click();
+    await expect(surface).toHaveAttribute('data-sequence','1');
+    await expect(surface).toHaveAttribute('width','32');
+    await command("printf 'after-reopen=%s pid=%s\\n' \"$((kept_nonce*2))\" \"$$\"");
+    await expect(output).toContainText('after-reopen='+nonce*2+' pid='+before);
+    expect(shellAcquisitions).toBe(1);
+    expect(otherPages).toEqual([]);
+    expect(context.pages()).toEqual([page]);
+    expect(navigations).toBe(0);
+    await page.getByRole('button',{name:'End guest session'}).click();
+    await expect(shell.getByRole('status')).toHaveText('Shell admission closed');
+    await expect(open).toBeDisabled();
+  });
+
 });
 
 test.describe('with actual Wayland ARGB SHM', () => {
