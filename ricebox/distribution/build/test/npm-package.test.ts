@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -265,7 +265,9 @@ test('built npm package contains builder dependencies and imports public JS with
       writeFileSync(join(release,'webroot.json'),about);
       return hash(about);
     };
-    const preview=join(work,'preview'), staged=join(preview,'prefix');mkdirSync(preview);
+    const physicalPreview=join(work,'preview-owned'), preview=join(work,'preview'), staged=join(preview,'prefix');
+    mkdirSync(physicalPreview);
+    symlinkSync(physicalPreview,preview,'junction'); // An ordinary supported alias for the output parent.
     const declaration=join(work,'terminal.json');
     const source=(webPin:string,mukPin=hash(muk), terminal:unknown={argv:['/bin/terminal','-i'],cols:96}) =>
       ({guest:{directory:'./shell-release',webrootSha256:webPin,mukSha256:mukPin},terminal});
@@ -296,8 +298,26 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.ok(!existsSync(staged));
     // This authenticates a self-consistent descriptor; it does not relabel it to npm's version.
     const exactWebPin=descriptor('9.8.7');
+    const packedFile=join(release,'packs',pack.name), changedPack=pack.bytes.slice();
+    changedPack[changedPack.length-1]^=1;
+    writeFileSync(packedFile,changedPack);
+    const stalePack=execStage(source(exactWebPin));
+    assert.equal(stalePack.status,1,stalePack.stderr);
+    assert.match(stalePack.stderr,/not the file its table names/);
+    assert.deepEqual(readdirSync(preview),[],'invalid input publishes nothing and leaves no private snapshot');
+    writeFileSync(packedFile,pack.bytes);
     const stagedResult=execStage(source(exactWebPin));
     assert.equal(stagedResult.status,0,stagedResult.stderr);
+    assert.deepEqual(readdirSync(preview),['prefix'],'success leaves only the selected output');
+    assert.deepEqual(readdirSync(physicalPreview),['prefix'],'the same physical parent owns publication and cleanup');
+    writeFileSync(packedFile,changedPack);
+    assert.deepEqual(new Uint8Array(readFileSync(join(staged,'ricebox','packs',pack.name))),pack.bytes,
+      'staged bytes belong to the verified snapshot, not the mutable source file');
+    writeFileSync(packedFile,pack.bytes);
+    const existing=execStage(source(exactWebPin));
+    assert.equal(existing.status,1,existing.stderr);
+    assert.match(existing.stderr,/Output already exists/);
+    assert.deepEqual(readdirSync(preview),['prefix']);
     const stagedWebroot=readFileSync(join(staged,'ricebox/webroot.json'));
     assert.equal(hash(stagedWebroot),exactWebPin);
     assert.equal(JSON.parse(stagedWebroot.toString()).version,'9.8.7');

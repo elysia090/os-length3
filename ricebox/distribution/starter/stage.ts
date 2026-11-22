@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Only stage an explicitly trusted prepared environment. No acquisition, execution or publishing.
 import {createHash} from 'node:crypto';
-import {existsSync, lstatSync, readFileSync, mkdirSync, writeFileSync} from 'node:fs';
-import {dirname, join, posix, resolve} from 'node:path';
-import {browserModules, distributionAssets} from '../deployment/assets.ts';
-import {blobAsset, releaseIndexAsset, readReleaseIndex, type About, type Index} from '../format/manifest.ts';
+import {constants, copyFileSync, existsSync, linkSync, lstatSync, readFileSync, realpathSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
+import {basename, dirname, join, posix, resolve} from 'node:path';
+import {browserModules} from '../deployment/assets.ts';
+import {visitDistributionAssets} from '../deployment/asset-source.ts';
+import type {Index} from '../format/manifest.ts';
 import {authoredPlan} from './plan.ts';
 
 const usage = 'Usage: ricebox-stage-shell DECLARATION_JSON NEW_SITE';
@@ -41,7 +42,9 @@ try {
   const [config, destination, ...extra] = process.argv.slice(2);
   if (!config || !destination || extra.length) throw new Error(usage);
   const source = resolve(config), plan = authoredPlan(JSON.parse(readFileSync(source, 'utf8')));
-  const out = resolve(destination), root = resolve(dirname(source), plan.guest.directory);
+  const requested = resolve(destination), root = resolve(dirname(source), plan.guest.directory);
+  // Resolve a supported parent alias once for both staging and publication.
+  const parent = realpathSync(dirname(requested)), out = join(parent, basename(requested));
   if (existsSync(out)) throw new Error(`Output already exists: ${out}`);
   const pins = [['webroot.json', plan.guest.webrootSha256], ['muk.json', plan.guest.mukSha256]] as const;
   for (const [name, expected] of pins) {
@@ -49,28 +52,53 @@ try {
     if (!lstatSync(path).isFile()) throw new Error(`${name} is not a regular file.`);
     checkPin(name, readFileSync(path), expected);
   }
-  const files = distributionAssets(root);
-  for (const [name, expected] of pins) checkPin(name, files.get('ricebox/' + name)!, expected);
-  const release = JSON.parse(files.get('ricebox/webroot.json')!.toString('utf8')) as About;
-  const descriptor = releaseIndexAsset(release);
-  const index = readReleaseIndex(files.get('ricebox/' + descriptor.path)!, release);
-  const maker = blobAsset(JSON.parse(files.get('ricebox/muk.json')!.toString('utf8')));
-  const program = executable(index, plan.terminal.argv[0]!);
-  files.set('ricebox-starter.json', Buffer.from(JSON.stringify({
-    v: 1, generation: descriptor.sha256, makerSha256: maker.sha256, program, terminal: plan.terminal,
-  }) + '\n'));
-  for (const [name, bytes] of browserModules()) files.set(name, bytes);
-  for (const name of ['index.html', 'shell.css']) files.set(name, readFileSync(new URL(name, import.meta.url)));
-  for (const name of ['distribution/starter/shell.js', 'distribution/starter/plan.js',
-    'everyday/terminal/vt.js', 'everyday/terminal/vt-view.js']) {
-    files.set('ricebox-js/' + name, readFileSync(new URL('../../' + name, import.meta.url)));
-  }
-  // Missing or invalid inputs leave no output. Never overwrite an existing site.
-  mkdirSync(out);
-  for (const [name, bytes] of files) {
-    const path = join(out, name);
-    mkdirSync(dirname(path), {recursive: true});
-    writeFileSync(path, bytes, {flag: 'wx'});
+  // Store the verified bytes themselves, not paths back into the mutable input.
+  const scratch = mkdtempSync(join(parent, '.ricebox-stage-'));
+  const owner = lstatSync(scratch, {bigint: true});
+  if (!owner.isDirectory()) throw new Error('Private staging directory is no longer a directory.');
+  const ownsScratch = (): boolean => {
+    const actual = lstatSync(scratch, {bigint: true, throwIfNoEntry: false});
+    return !!actual?.isDirectory() && actual.dev === owner.dev && actual.ino === owner.ino;
+  };
+  try {
+    const files = new Set<string>();
+    const store = (name: string, bytes: Buffer) => {
+      if (files.has(name)) return; // Repeated content addresses are still checked by the reader.
+      const path = join(scratch, name);
+      mkdirSync(dirname(path), {recursive: true});
+      writeFileSync(path, bytes, {flag: 'wx'});
+      files.add(name);
+    };
+    const {descriptor, index, maker} = visitDistributionAssets(root, {}, (path, bytes) => {
+      for (const [name, expected] of pins) if (path === `ricebox/${name}`) checkPin(name, bytes, expected);
+      store(path, bytes);
+    });
+    const program = executable(index, plan.terminal.argv[0]!);
+    store('ricebox-starter.json', Buffer.from(JSON.stringify({
+      v: 1, generation: descriptor.sha256, makerSha256: maker.sha256, program, terminal: plan.terminal,
+    }) + '\n'));
+    for (const [name, bytes] of browserModules()) store(name, bytes);
+    for (const name of ['index.html', 'shell.css']) store(name, readFileSync(new URL(name, import.meta.url)));
+    for (const name of ['distribution/starter/shell.js', 'distribution/starter/plan.js',
+      'everyday/terminal/vt.js', 'everyday/terminal/vt-view.js']) {
+      store('ricebox-js/' + name, readFileSync(new URL('../../' + name, import.meta.url)));
+    }
+    // The destination stays absent on validation failure. Link only from our own
+    // private snapshot: neither this nor the fallback overwrites an existing file.
+    if (!ownsScratch()) throw new Error('Private staging directory changed.');
+    mkdirSync(out);
+    for (const name of files) {
+      const source = join(scratch, name), target = join(out, name);
+      mkdirSync(dirname(target), {recursive: true});
+      try { linkSync(source, target); }
+      catch (error) {
+        if (!['EPERM', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+        copyFileSync(source, target, constants.COPYFILE_EXCL);
+        unlinkSync(source); // Copying need not retain a second copy of the rest of the site.
+      }
+    }
+  } finally {
+    if (ownsScratch()) rmSync(scratch, {recursive: true, force: true});
   }
   console.log(`Ricebox terminal staged: ${out}`);
 } catch (error) {
