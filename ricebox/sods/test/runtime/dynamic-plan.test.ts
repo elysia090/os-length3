@@ -479,12 +479,12 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
       assert.equal(code.find(BigInt(image.firstPc), generation)?.text.role, 'interpreter');
       assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
       assert.throws(() => task.commitHeldMapped(grant), /lost its calling process or authority/);
-      assert.throws(() => task.setReg(4, 0n), /Held initial Task registers/);
+      assert.throws(() => task.setReg(4, 0n), /Initial mapped Task registers/);
       assert.throws(() => k.ready(task), /held initial Task is disabled/);
       assert.throws(() => k.run(task), /held initial Task is disabled/);
       assert.throws(() => p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), /held initial Task is disabled/);
       assert.throws(() => k.halt(), /held initial handoff still owns/);
-      assert.throws(() => { p.memory = null; }, /Only the held handoff owner/);
+      assert.throws(() => { p.memory = null; }, /Only the initial handoff owner/);
       unpublished();
       assert.deepEqual(k.pump(), {waiting: true}, 'a checked held entry is not a runnable process');
       for (const executable of [file, mounted.loader]) {
@@ -496,7 +496,11 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
         } finally { executable.mode = mode; }
       }
       k.root.mnt.flags |= MNT.NOEXEC;
-      try { assert.throws(() => receipt.checkStart(), hasErrno(E.ACCES)); }
+      try {
+        assert.throws(() => receipt.checkStart(), hasErrno(E.ACCES));
+        assert.throws(() => receipt.publishInitial(), hasErrno(E.ACCES));
+        unpublished(); // Rejected publication leaves the same discard owner.
+      }
       finally { k.root.mnt.flags &= ~MNT.NOEXEC; }
       assert.throws(() => receipt.checkStart(), hasErrno(E.ACCES), 'the original checked generation cannot revive');
       receipt.discard();
@@ -545,6 +549,60 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
     compiler.more = more;
     if (p.fds.holders) p.fds.letGo();
     if (p.fs0.users) p.fs0.drop();
+    k.halt();
+  }
+});
+
+test('the exact held init receipt transfers one ordinary queue slot without executing the guest linker', {skip: skipHeld}, async () => {
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
+  const vfs = new Vfs(), {sources, reads} = matchedSources(vfs);
+  const k = new Kernel({vfs, translate, console: quiet}), {p, task} = freshHeld(k), {fds: table, fs} = p;
+  const stdout = new Description('console', {path: 'stdout'});
+  table.install(stdout, {fd: 1});
+  const request = {path: mainPath, argv: [mainPath, 'queue'], env: ['LC_ALL=C']};
+  const more = compiler.more;
+  compiler.more = () => { assert.fail('this proof must not compile any guest instructions'); };
+  const image = prepareDynamicImage(p, request, sources, translate), receipt = task.commitHeldMapped(task.prepareHeldMapped(image));
+  try {
+    const memory = p.memory!, code = memory.mappedVm!.code, generation = code.generation;
+    const context = task.context(), revision = table.revision, readsBefore = [...reads];
+    assert.equal(context.rip, BigInt(image.firstPc));
+    assert.equal(k.initOf(), undefined);
+    assert.deepEqual(k.runq, []);
+    receipt.publishInitial();
+    receipt.discard(); // A consumed receipt cannot retire the scheduler's owner.
+    assert.throws(() => receipt.publishInitial(), ExecPreparationChangedError);
+    assert.throws(() => receipt.checkStart(), ExecPreparationChangedError);
+    assert.equal(k.initOf(), p);
+    assert.equal(k.tasks.get(task.tid), task);
+    assert.equal(p.cgroup.procs.has(p), true);
+    assert.deepEqual(k.tty, {sid: p.sid, fg: p.pgid});
+    assert.deepEqual(k.runq, [task]);
+    assert.equal(task.state, 'ready');
+    assert.deepEqual(task.context(), context);
+    assert.equal(code.generation, generation);
+    assert.equal(code.find(context.rip, generation)?.text.role, 'interpreter');
+    assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
+    assert.equal(p.fds, table);
+    assert.equal(table.revision, revision);
+    assert.equal(table.get(1), stdout);
+    assert.deepEqual([...reads], readsBefore, 'the transfer reads no executable payload');
+    assert.throws(() => p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), /Mapped syscall requires a confirmed first entry/);
+    assert.throws(() => task.setReg(4, context.regs[4]), /Initial mapped Task registers/);
+    assert.equal(p.call, null);
+    assert.equal(k.calls, 0);
+    assert.equal(k.status, null);
+    assert.equal(k.current, null);
+    // Host shutdown, not a scheduler turn or a guest exit result.
+    k.halt();
+    assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size], [0, 0, 0, 0]);
+    assert.deepEqual([memory.users, table.holders, table.slots.size, fs.users], [0, 0, 0, 0]);
+    assert.equal(stdout.closed, true);
+    assert.equal(code.find(context.rip, code.generation), undefined);
+    assert.equal(k.spareMemories.includes(memory), false);
+  } finally {
+    compiler.more = more;
+    receipt.discard();
     k.halt();
   }
 });

@@ -301,19 +301,20 @@ PID or queue entry. Discard retires the whole unpublished owner,
 including an empty, fully returned descriptor table. The retired Process
 cannot run a syscall or publish a guest exit or startup event.
 
-Held image Tasks cannot be queued, run or enter the syscall table, even
-when a mapped translator is present. The held receipt can recheck the
-original mapped generation, loader and main entries and file permissions,
-stack, and dependency catalogue against the installed owner. This check
-has no publication or execution effect. An internal, interpreter-free
-arena's exact prepared initial Task can use the same Kernel publication
-as static start: one PID/cgroup/terminal owner and the ordinary queue.
-The original entry proof is consumed after a recheck before its first
-dispatcher turn. System calls cannot start while that proof is pending.
-Nothing admits held interpreter images or changes normal start/exec
-selection. Distribution-side catalogue provisioning, the remaining
-loader ABI, regular exec lifecycle, precise signals/faults and Worker
-execution still need proof. Normal PT_INTERP exec is still refused.
+A held image cannot run or enter the syscall table. Its receipt can
+recheck the original generation, entries, permissions, stack and library
+catalogue without publishing it. Only the explicit internal handoff can
+consume that exact receipt and publish its Task. Like the interpreter-free
+arena and ordinary static start, it uses one PID/cgroup/terminal owner and
+the normal queue. The same original entry proof is rechecked before the
+first dispatcher turn. Registers, memory ownership and syscall admission
+remain fenced until then, or through retirement if that proof is revoked.
+A rejected preflight leaves the receipt available for discard; uncertain
+publication retains the exact owner without retry.
+The pinned fixture verifies publication and retirement without running
+the linker. Distribution provisioning, loader ABI, regular exec, signals,
+faults and Worker execution still need proof. Default PT_INTERP exec is
+still refused.
 
 ## Lifetime, failure and retirement
 

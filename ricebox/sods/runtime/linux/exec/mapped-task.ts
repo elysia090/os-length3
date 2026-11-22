@@ -12,32 +12,34 @@ export class MappedExitRequest extends Exit {}
 
 export const MAPPED_ARCH_PRCTL = 158;
 const SET_FS = 0x1002n, GET_FS = 0x1003n, ADDRESS_LIMIT = BigInt(MAPPED_VM_LIMIT);
+const HELD_ENTRY = Symbol('held initial entry'), REVOKED_ENTRY = Symbol('revoked initial entry awaiting retirement');
 type Owner = Parameters<MappedVm['userMemory']>[0];
+type EntryCheck = (pc: bigint) => void;
 
 export class MappedTaskCpu {
   readonly memory: Mem;
   #vm: MappedVm;
   #dispatcher: MappedDispatcher;
-  #kind: 'arena' | 'held-initial';
   #active = false;
   #retiring = false;
   #retired = false;
   #pending?: MappedExitRequest;
   #finishTidClear?: () => void;
-  #firstEntry?: (pc: bigint) => void;
+  #firstEntry?: typeof HELD_ENTRY | EntryCheck | typeof REVOKED_ENTRY;
 
   constructor(memory: Mem, vm: MappedVm, compiler: MappedTranslate, imports: WebAssembly.ModuleImports,
       kind: 'arena' | 'held-initial') {
     if (memory.mappedVm !== vm || vm.memory !== memory) throw new TypeError('Invalid mapped Task backing');
     this.memory = memory;
     this.#vm = vm;
-    this.#kind = kind;
+    if (kind === 'held-initial') this.#firstEntry = HELD_ENTRY;
     this.#dispatcher = new MappedDispatcher(this.#vm.code, compiler, imports);
   }
 
   get active(): boolean { return this.#active; }
-  get heldInitial(): boolean { return this.#kind === 'held-initial'; }
-  get firstEntryPending(): boolean { return this.#firstEntry !== undefined; }
+  get heldInitial(): boolean { return this.#firstEntry === HELD_ENTRY; }
+  get firstEntryPending(): boolean { return this.#firstEntry !== undefined && this.#firstEntry !== HELD_ENTRY; }
+  get initialEntryProtected(): boolean { return this.#firstEntry !== undefined; }
   get pendingExit(): MappedExitRequest | undefined { return this.#pending; }
   syscallAt(pc: bigint): boolean { return this.#active && this.#dispatcher.syscallAt(pc); }
   reg(name: RegName): bigint { return this.#dispatcher.reg(name); }
@@ -71,20 +73,23 @@ export class MappedTaskCpu {
   discardPreparation(): void { this.#dispatcher.close(); this.#retired = true; }
 
   /** Transfer the publisher's original proof, not a new entry or generation. */
-  armFirstEntry(check: (pc: bigint) => void): void {
-    if (this.heldInitial || this.#active || this.#retiring || this.#retired || this.#firstEntry)
+  armFirstEntry(check: EntryCheck, fromHeld: boolean): void {
+    if (this.#active || this.#retiring || this.#retired || this.#firstEntry !== (fromHeld ? HELD_ENTRY : undefined))
       throw new Error('Mapped Task cannot take an initial entry');
     this.#firstEntry = check;
   }
 
   run(pc: bigint, budget: number): void {
-    if (this.heldInitial) throw new Error('Loader entry from a held initial Task is disabled');
-    if (this.#active || this.#retiring || this.#retired) throw new Error('Mapped Task cannot run');
+    const first = this.#firstEntry;
+    if (first === HELD_ENTRY) throw new Error('Loader entry from a held initial Task is disabled');
+    if (first === REVOKED_ENTRY || this.#active || this.#retiring || this.#retired) throw new Error('Mapped Task cannot run');
     this.#active = true;
     try {
-      const first = this.#firstEntry;
       if (first) {
-        try { first(pc); }
+        try {
+          first(pc);
+          if (this.#firstEntry !== first) throw new Error('Mapped initial entry was revoked');
+        }
         catch (cause) {
           // This is not a guest wait, yield or resumed syscall.
           throw this.#pending ?? new Error('Mapped initial entry was not confirmed', {cause});
@@ -102,7 +107,9 @@ export class MappedTaskCpu {
   }
 
   #revokeAccess(reason: object): void {
-    this.#firstEntry = undefined;
+    // Drop the callable proof now, but hold its backing through unwind and
+    // confirmed retirement. An exit during proof has not released ownership.
+    if (typeof this.#firstEntry === 'function') this.#firstEntry = REVOKED_ENTRY;
     this.#dispatcher.revoke(reason);
     this.#vm.close();
   }
@@ -128,6 +135,7 @@ export class MappedTaskCpu {
       this.#finishTidClear = undefined;
       this.#dispatcher.close();
       this.#retired = true;
+      if (this.#firstEntry === REVOKED_ENTRY) this.#firstEntry = undefined;
       return clear;
     } finally { this.#retiring = false; }
   }

@@ -163,12 +163,13 @@ const MAPPED_CPU = Symbol('mapped Task CPU');
 const MAPPED_HANDOFF = Symbol('pending initial mapped Task');
 const HELD_MEMORY = Symbol('transfer held mapped memory');
 const HELD_TASKS = Symbol('unpublished initial handoff owners');
-const PUBLISH_MAPPED_INITIAL = Symbol('publish checked inline arena init');
+const PUBLISH_MAPPED_INITIAL = Symbol('publish checked inline init');
 declare const initialMappedGrant: unique symbol;
 export interface InitialMappedGrant { readonly [initialMappedGrant]: true }
 export interface HeldMappedTask {
   readonly kind: 'held-initial';
   checkStart(): void;
+  publishInitial(): void;
   discard(): void;
 }
 interface PendingMappedTask {
@@ -1010,9 +1011,16 @@ export class Kernel implements Kern {
     this.#withInitialStart(() => this.startInitial(path, argv, env, cwd));
   }
 
-  #withInitialStart(start: () => void): void {
+  #checkInitialHandoff(held?: Task): void {
+    const owners = this[HELD_TASKS];
+    if (held) {
+      if (owners?.size !== 1 || !owners.has(held)) throw new ExecPreparationChangedError();
+    } else if (owners?.size) throw new Error('An initial handoff is already held');
+  }
+
+  #withInitialStart(start: () => void, held?: Task): void {
     checkExecTree(this.vfs);
-    if (this[HELD_TASKS]?.size) throw new Error('An initial handoff is already held');
+    this.#checkInitialHandoff(held);
     if (this.#starting) throw new Error('Initial process preparation is already in progress');
     this.#starting = true;
     try { start(); }
@@ -1059,30 +1067,50 @@ export class Kernel implements Kern {
     this.ready(t);
   }
 
-  [PUBLISH_MAPPED_INITIAL](t: Task, cpu: MappedTaskCpu, table: FdTable, pc: bigint, checkEntry: (entry: bigint) => void): void {
+  [PUBLISH_MAPPED_INITIAL](t: Task, cpu: MappedTaskCpu, table: FdTable, pc: bigint, checkEntry: (entry: bigint) => void,
+      consumeHeld?: () => void): void {
+    const held = consumeHeld ? t : undefined;
     this.#withInitialStart(() => {
       const p = t.proc;
       withExecPreparation(p, commit => {
         const fresh = (): void => {
           this.#schedulerEntry();
+          this.#checkInitialHandoff(held);
           if (this.shared || t.kernel !== this || p.kernel !== this || this.status !== null || this.current ||
               this.procs.size || this.tasks.size || this.runq.length || this.blocked.size ||
               p.pid !== 1 || t.tid !== p.pid || p.ppid || p.pgid !== p.pid || p.sid !== p.pid || p.pidns !== this.spaces.children ||
               p.state !== 'live' || p.children.size || p.cgroup.procs.has(p) || p.own !== t || p.tasks.size !== 1 || !p.tasks.has(t) ||
-              p.memory !== cpu.memory || t.memory !== cpu.memory || cpu.memory.users !== 1 || p.fs.users !== 1 || p.fds.holders !== 1 ||
-              t[MAPPED_CPU] !== cpu || cpu.heldInitial || t.dead || t.state !== 'new' || t.call || p.call || p.stopped ||
+              p.memory !== cpu.memory || t.memory !== cpu.memory || cpu.memory.users !== 1 || p.fs.users !== 1 ||
+              p.fds !== table || table.holders !== 1 || t[MAPPED_CPU] !== cpu || cpu.heldInitial !== !!held || cpu.firstEntryPending ||
+              t.dead || t.state !== 'new' || t.call || p.call || p.stopped ||
               p.pending.mask || t.pending.mask || p.vfork)
             throw new ExecPreparationChangedError();
         };
         fresh(); checkEntry(pc); fresh();
         commit(() => {
           try {
-            cpu.armFirstEntry(checkEntry);
+            cpu.armFirstEntry(entry => {
+              checkEntry(entry);
+              if (this.#failedMapped) throw this.#failedMapped;
+              execMayRun(p);
+              if (this.current !== t || this.#mappedTurn !== t || t.state !== 'running') throw new ExecPreparationChangedError();
+              this.#checkMappedSchedulerOwner(t, cpu);
+            }, !!held);
+            if (consumeHeld) {
+              if (!this[HELD_TASKS]?.delete(t)) throw new ExecPreparationChangedError();
+              consumeHeld();
+            }
+            const group = p.cgroup;
             this.#publishInitial(p, t);
+            this.#checkMappedSchedulerOwner(t, cpu);
+            if (p.cgroup !== group || !group.procs.has(p) || this.tty.sid !== p.sid || this.tty.fg !== p.pgid ||
+                p.fds !== table || t[MAPPED_CPU] !== cpu || !cpu.firstEntryPending || t.dead || t.state !== 'ready' ||
+                this.current || this.runq.length !== 1 || this.runq[0] !== t || this.blocked.size)
+              throw new ExecPreparationChangedError();
           } catch (cause) { p.retainExecFailure('initial-publication', cause, {task: t, newMemory: cpu.memory, newFds: table}); }
         });
       });
-    });
+    }, held);
   }
 
   // ---- threads in turn (the backend here) ----
@@ -1361,11 +1389,15 @@ export class Kernel implements Kern {
     if (this.current?.[MAPPED_CPU] && this.current.proc.call) throw new Error('A mapped syscall cannot reenter');
     if (p.execTransition) execMayRun(p);
     if (p.state !== 'live') return BigInt(-E.SRCH);
-    // Publication is not a syscall owner. Use the installed owner, not the
-    // supplied call context, including while the first-entry proof calls out.
-    if (p.own?.[MAPPED_CPU]?.firstEntryPending) throw new Error('Mapped syscall requires a confirmed first entry');
+    // The installed owner is authoritative even for a bare call context.
+    // A published Task still cannot make calls while entry is unconfirmed.
+    const owner = p.own;
+    if (owner) {
+      checkMappedAdmission(owner);
+      if (owner[MAPPED_CPU]?.firstEntryPending) throw new Error('Mapped syscall requires a confirmed first entry');
+    }
     if (t instanceof Task) {
-      checkMappedAdmission(t);
+      if (t !== owner) checkMappedAdmission(t);
       if (t[MAPPED_CPU]) this.#checkMappedTask(t, t[MAPPED_CPU]);
       p.task = t;
     }
@@ -2052,8 +2084,8 @@ export class Process implements Proc {
   private readGeneration: object = {};
   get memory(): Mem | null { return this.memory0; }
   set memory(value: Mem | null) {
-    if (this.memory0?.mappedVm && this.own?.[MAPPED_CPU]?.heldInitial)
-      throw new Error('Only the held handoff owner may change this memory');
+    if (this.memory0?.mappedVm && this.own?.[MAPPED_CPU]?.initialEntryProtected)
+      throw new Error('Only the initial handoff owner may change this memory');
     if (value?.mappedVm) {
       if (this.kernel.shared || value.users !== 1 || value.mappedVm.memory !== value) throw new Error('Mapped memory requires one inline owner');
       if (this.tasks.size || this.maps.length) throw new Error('Mapped memory cannot replace a live static owner');
@@ -2767,12 +2799,16 @@ export class Task implements Thread {
     return withExecPreparation(p, commit => {
       const held = this.#handoff(grant), {image, cpu, caller, checkReader} = held, memory = image.memory;
       const {table} = caller, fs = p.fs;
-      let owner: Pick<HeldMappedTask, 'checkStart' | 'discard'> | undefined;
+      let owner: Omit<HeldMappedTask, 'kind'> | undefined;
       const result: HeldMappedTask = Object.freeze({
         kind: 'held-initial',
         checkStart() {
           if (!owner) throw new ExecPreparationChangedError();
           owner.checkStart();
+        },
+        publishInitial() {
+          if (!owner) throw new ExecPreparationChangedError();
+          owner.publishInitial();
         },
         discard() {
           owner?.discard();
@@ -2791,7 +2827,7 @@ export class Task implements Thread {
           const checkDescriptors = caller.afterDescriptors();
           held.check();
           phase = 'held-mapped-handoff';
-          const checkEntry = image.claim(); // Rechecks both initial objects, stack and dependency catalogue.
+          const checkImage = image.claim(); // Rechecks both initial objects, stack and dependency catalogue.
           claimed = true;
           held.check(); checkDescriptors();
           const {pc, sp, metadata: {stack}} = image;
@@ -2803,31 +2839,34 @@ export class Task implements Thread {
           const startScope = execScope(p);
           const {cgroup, argv, env, exe, exeAt} = p;
           const {filters, strict, mask} = this;
-          const checkOwner = (): void => {
+          const checkOwner = (entry: bigint): void => {
             startScope(); checkReader();
-            this.#checkHeldOwner(memory, cpu, fs, table);
-            if (Object.getOwnPropertyDescriptor(this, 'resumeAt')?.value !== pc)
+            this.#checkMappedBacking(memory, cpu, fs, table);
+            if (entry !== pc || Object.getOwnPropertyDescriptor(this, 'resumeAt')?.value !== pc || cpu.reg('r4') !== sp ||
+                p.cgroup !== cgroup || p.argv !== argv || p.env !== env || p.exe !== exe || p.exeAt !== exeAt ||
+                this.filters !== filters || this.strict !== strict || this.mask !== mask || this.call || p.stopped ||
+                p.actions.size || p.alarm || p.pending.mask || this.pending.mask || p.vfork || p.stackLow !== stack.stackLow ||
+                p.stackTop !== stack.stackTop || p.mapBase !== stack.mapBase || p.mapEnd !== p.mapBase || p.free.length || p.fixed.length)
               throw new ExecPreparationChangedError();
             checkDescriptors();
           };
+          const checkEntry = (entry: bigint): void => {
+            execMayRun(p); checkImage(); execMayRun(p);
+            checkOwner(entry);
+          };
           this.resumeAt = pc;
-          checkOwner();
+          this.#checkUnpublishedHeld();
+          checkOwner(pc);
           owner = {
             checkStart: () => {
-              execMayRun(p);
-              checkEntry();
-              execMayRun(p);
-              if (!cpu.heldInitial || cpu.reg('r4') !== sp || this.state !== 'new' ||
+              checkEntry(pc);
+              this.#checkUnpublishedHeld();
+              if (!cpu.heldInitial || this.state !== 'new' ||
                   p.ppid || p.pidns !== k.spaces.children || p.pid !== this.tid || p.pgid !== p.pid || p.sid !== p.pid ||
-                  this.call || p.stopped ||
-                  p.cgroup !== cgroup || p.argv !== argv || p.env !== env || p.exe !== exe || p.exeAt !== exeAt ||
-                  this.filters !== filters || this.strict !== strict || this.mask !== mask || p.actions.size || p.alarm ||
-                  p.pending.mask || this.pending.mask || p.vfork || p.stackLow !== stack.stackLow || p.stackTop !== stack.stackTop ||
-                  p.mapBase !== stack.mapBase || p.mapEnd !== p.mapBase || p.free.length || p.fixed.length ||
                   k.shared || k.status !== null || k.procs.size || k.tasks.size || k.runq.length || k.blocked.size)
                 throw new ExecPreparationChangedError();
-              checkOwner();
             },
+            publishInitial: () => k[PUBLISH_MAPPED_INITIAL](this, cpu, table, pc, checkEntry, () => { owner = undefined; }),
             discard: () => this.#retireCommittedHeld(memory, cpu, fs, table),
           };
           this[MAPPED_HANDOFF] = undefined;
@@ -2849,9 +2888,8 @@ export class Task implements Thread {
       throw new ExecPreparationChangedError();
   }
 
-  #checkHeldOwner(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
+  #checkMappedBacking(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
     const p = this.proc;
-    this.#checkUnpublishedHeld();
     if (p.memory !== memory || this.memory !== memory || this[MAPPED_CPU] !== cpu || memory.users !== 1 ||
         p.fs !== fs || fs.users !== 1 || p.fds !== table || table.holders !== 1)
       throw new ExecPreparationChangedError();
@@ -2860,7 +2898,8 @@ export class Task implements Thread {
   #retireCommittedHeld(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
     const p = this.proc, k = this.kernel;
     withExecPreparation(p, retire => {
-      this.#checkHeldOwner(memory, cpu, fs, table);
+      this.#checkUnpublishedHeld();
+      this.#checkMappedBacking(memory, cpu, fs, table);
       retire(() => {
         let newMemory: Mem | undefined = memory, newFds: FdTable | undefined = table;
         try {
@@ -3045,7 +3084,7 @@ export class Task implements Thread {
   low(): bigint | null { return this.instance ? this.exports.low?.value ?? null : null; }
   setReg(n: number, v: bigint | number): void {
     if (this[MAPPED_CPU]) {
-      if (this[MAPPED_CPU].heldInitial) throw new Error('Held initial Task registers cannot change');
+      if (this[MAPPED_CPU].initialEntryProtected) throw new Error('Initial mapped Task registers cannot change before entry');
       this[MAPPED_CPU].setReg(REG[n], BigInt(v)); return;
     }
     const g = this.exports[REG[n]]; if (g) g.value = BigInt.asIntN(64, BigInt(v));
