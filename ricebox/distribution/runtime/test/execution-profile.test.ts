@@ -51,7 +51,13 @@ test('prepared loader defers ELF independently of legacy files; verified compile
     });
     try {
       const root = createRoot({base: '/', first: [f.translation.path], usedKey: 'test-used', planKey: 'test-plan', message: key => key, missing: () => 'missing', errorText: String});
-      const prepared = await root.execution.load();
+      const stages: string[] = [], unwatch = root.watchLoad(stage => stages.push(stage.at));
+      const first = root.execution.load();
+      assert.equal(root.execution.load(), first);
+      const prepared = await first;
+      unwatch();
+      assert.equal(stages.at(-1), 'ready');
+      assert.equal(stages.filter(stage => stage === 'ready').length, 1);
       assert.equal('files' in prepared, false); assert.equal(prepared.executables.length, image === empty ? 1 : 0);
       assert.equal(asked.includes(f.translation.elf.path), false); assert.equal(asked.some(path => path.startsWith('packs/')), false);
       assert.deepEqual(root.execution.executablesNow(prepared), prepared.executables.map(value => ({...value, more: []})));
@@ -83,8 +89,9 @@ test('same inode hardlink hot records deduplicate; conflicting source/artifact r
   f.index.translations.push({...f.translation, path: alias});
   assert.equal(canonicalHotSources(f.index).length, 1);
   const {base, value} = context(f);
-  const profile = createExecutionProfile({first: [f.translation.path, alias], load: async () => base,
-    executable: async () => ({value, moreURL: '/more', reached: []}), worker() { throw new Error('unused'); }, save() {}});
+  const result = {value, moreURL: '/more', reached: []};
+  const profile = createExecutionProfile({first: [f.translation.path, alias], load: async () => ({base, initial: [result, result]}),
+    async executable() { throw new Error('initial artifacts are already prepared'); }, worker() { throw new Error('unused'); }, save() {}});
   const root = await profile.load(); assert.equal(root.executables.length, 1); assert.equal(profile.executablesNow(root).length, 1);
   f.index.translations[1] = {...f.index.translations[1]!, wasm: {...f.translation.wasm, sha256: 'b'.repeat(64)}};
   assert.throws(() => canonicalHotSources(f.index), /Conflicting/);
@@ -99,14 +106,19 @@ test('wire validation refuses same-size wrong source, foreign generation and cha
 });
 
 test('profile does not publish failed warming and keeps extras/spares generation scoped', async () => {
-  const f = fixture(), {base, value} = context(f), sent: unknown[] = [], saves: unknown[] = [];
+  const f = fixture(), {base, value} = context(f), sent: unknown[] = [], saves: unknown[] = [], calls: string[] = [];
   f.index.translations.push({...f.translation, path: '/later'});
   let fail = true;
   const worker = {postMessage(message: unknown) { sent.push(message); }, addEventListener() {}, removeEventListener() {}, terminate() {}} as unknown as Worker;
-  const profile = createExecutionProfile({first: [f.translation.path], load: async () => base, worker: () => worker, save: entry => saves.push(entry),
-    executable: async (_root, translation) => { if (translation.path === '/later') { if (fail) throw new Error('integrity failure'); return null; } return {value, moreURL: '/more', reached: []}; }});
+  const profile = createExecutionProfile({first: [f.translation.path], load: async () => ({base, initial: [{value, moreURL: '/more', reached: []}]}),
+    worker: () => worker, save: entry => saves.push(entry),
+    executable: async (_root, translation) => { calls.push(translation.path); if (fail) throw new Error('integrity failure'); return null; }});
   const root = await profile.load(), heard: PreparedExecutable[] = []; profile.hearLater(value => heard.push(value));
-  await assert.rejects(profile.warm(root), /integrity/); assert.equal(profile.failures.length, 1); assert.deepEqual(heard, []);
+  assert.deepEqual(calls, []);
+  const warming = profile.warm(root);
+  assert.equal(profile.warm(root), warming);
+  await assert.rejects(warming, /integrity/); assert.equal(profile.failures.length, 1); assert.deepEqual(heard, []);
+  assert.deepEqual(calls, ['/later']);
   profile.keepMore(root, value.path, 0, [{module: value.module, bytes: empty, base: 0}]); assert.equal(saves.length, 1);
   assert.equal(profile.executablesNow(root)[0]!.more!.length, 1);
   profile.readyWorker(root, {config: '{}', words: []});

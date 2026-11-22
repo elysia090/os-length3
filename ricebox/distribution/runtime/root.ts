@@ -520,7 +520,7 @@ export function createRoot(config: RootConfig) {
       if (config.restCheckerAfterLoad) restChecker();
       tell({at: 'ready'});
     }, failed: error => tell({at: 'failed', message: config.errorText(error)}),
-    executable: (root, t, quiet) => preparedHot(root.index, root.generation, t, quiet),
+    executable: (root, t) => preparedHot(root.index, root.generation, t, true),
     async load() {
       worker();
       const a = await loadAbout(), asset = releaseIndexAsset(a);
@@ -531,14 +531,14 @@ export function createRoot(config: RootConfig) {
       const first = index.translations.filter(t => startupPrograms.includes(t.path));
       const progress = trackTransfers([index.translator, ...first.map(t => t.wasm)], tell);
       try {
-        const [translator, muk] = await Promise.all([
+        const [translator, muk, ...initial] = await Promise.all([
           unblob(index.translator, progress.forBlob(index.translator)).then(bytes => WebAssembly.compile(bytes as BufferSource)),
           maker,
           ...first.map(t => preparedHot(index, a.index.sha256, t, false, progress.forBlob(t.wasm))),
         ]);
         keepReleaseFiles(a, index, muk?.path);
-        return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
-          translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+        return {base: {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
+          translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null}, initial};
       } finally { progress.stop(); }
     },
   });
