@@ -1,7 +1,7 @@
 // Linux's bounded inline mapped-memory profile. One fresh memory, no sharing
 // or reuse by the static runtime. Records and executable authority are
 // changed together. The same installed records authorize checked user
-// copies. This is not yet a translated data-access backend or exec entry.
+// copies and translated data accesses. It is not an exec entry.
 import {DYNAMIC_FILE_LIMIT, type ElfLoadSpec} from '../translation/dynamic-load.ts';
 import type {Translate} from '../translation/translator.ts';
 import type {Description} from './fd.ts';
@@ -52,6 +52,10 @@ interface MappedMemory extends WebAssembly.Memory {
 }
 
 export type DataAccess = 'read' | 'write';
+export type MappedRunView = MappedCodeView & {
+  readonly memory: WebAssembly.Memory;
+  permits(address: bigint, length: bigint, access: DataAccess): boolean;
+};
 
 /** A scoped kernel copy capability, not a borrow of guest RAM. */
 export interface MappedUserMemory {
@@ -94,8 +98,8 @@ export class MappedVm {
   #busy = false;
   #closed = false;
   #owner?: Caller;
-  /** Read-only code view; the VM is the only publisher for this memory. */
-  readonly code: MappedCodeView & {readonly memory: WebAssembly.Memory};
+  /** The dispatcher observes this owner's code and data authority. */
+  readonly code: MappedRunView;
 
   constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, sources: readonly ExecutableSource[], reader: Reader) {
     this.#vfs = vfs;
@@ -109,7 +113,10 @@ export class MappedVm {
       this.#sources.set(node, source);
     }
     const code = this.#code = new MappedCodeSpace(vfs, memory);
-    this.code = Object.freeze({memory, get generation() { return code.generation; }, find: code.find.bind(code)});
+    this.code = Object.freeze({
+      memory, get generation() { return code.generation; },
+      find: code.find.bind(code), permits: this.permits.bind(this),
+    });
   }
 
   claim(owner: Caller): void {

@@ -28,6 +28,7 @@ const T_RUN: u32 = 7;
 const T_FPU: u32 = 8; // (registers, op, size, st a, st b, operand, its top word) -> i64
 const T_TRACE: u32 = 9; // (i64) -> ()
 const T_TIME: u32 = 10; // (clock id) -> ms, NaN when the kernel is to answer
+const T_MAPPED_ACCESS: u32 = 11; // (wide address, displacement, bytes, write) -> checked i32 address
 
 /// The first module's own functions (mulhu to run), made before the guest's.
 const HELPERS: u32 = FIRST_GUEST - F_MULHU;
@@ -181,7 +182,7 @@ fn run_loop(code: &mut Out) {
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
 fn lower_all(elf: &Elf, program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
     let summaries = summarize(elf, program);
-    let resumable_syscalls = elf.resumable_syscalls();
+    let resumable_syscalls = elf.mapped();
     let handed = Liveness::for_lowering(program, &summaries, resumable_syscalls);
     let cx = Lowering { elf, program, handed: &handed, summaries: &summaries, trace: options.trace, resumable_syscalls };
     let n = program.functions.len();
@@ -348,12 +349,18 @@ fn types() -> TypeSection {
 /// from `base`, are in the `sods.entries` custom section as (address,
 /// function << 32 | block) pairs.
 pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options) -> Translation {
+    let mapped = elf.mapped();
+    let mut types = types();
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
     let mut imports = ImportSection::new();
     imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
     let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE, T_TIME];
     for (name, ty) in HOST_IMPORTS.iter().zip(host_types) { imports.import("env", name, EntityType::Function(ty)); }
     for (name, ty) in SHARED.iter().zip([T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN]) { imports.import("main", name, EntityType::Function(ty)); }
+    if mapped {
+        types.ty().function([ValType::I64, ValType::I64, ValType::I32, ValType::I32], [ValType::I32]);
+        imports.import("env", "mapped_access", EntityType::Function(T_MAPPED_ACCESS));
+    }
     for n in 0..GLOBALS {
         imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
     }
@@ -373,18 +380,19 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     exports.export("table", ExportKind::Table, 0);
 
     let mut elements = ElementSection::new();
-    let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
+    let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| guest_function(f, mapped)).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
 
-    let mut code = Out::new(&[&types(), &imports, &functions, &tables, &exports, &elements], program.functions.len() as u32, room(program, 0));
+    let mut code = Out::new(&[&types, &imports, &functions, &tables, &exports, &elements], program.functions.len() as u32, room(program, 0));
     lower_all(elf, program, base, options, &mut report, &mut code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
     let mut names = wasm_encoder::NameMap::new();
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() { names.append(k as u32, n); }
+    if mapped { names.append(F_MAPPED_ACCESS, "mapped_access"); }
     let mut name = String::new();
-    for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, f.shown(&mut name)); }
+    for (k, f) in program.functions.iter().enumerate() { names.append(guest_function(k as u32, mapped), f.shown(&mut name)); }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
 
@@ -398,7 +406,9 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
     let starts = CustomSection { name: Cow::Borrowed("sods.starts"), data: Cow::Owned(starts) };
 
-    let wasm = code.finish(None, &[&name_section, &entries, &starts]);
+    let mapped_abi = CustomSection { name: Cow::Borrowed("sods.mapped-piece-v3"), data: Cow::Borrowed(&[]) };
+    let wasm = if mapped { code.finish(None, &[&name_section, &entries, &starts, &mapped_abi]) }
+        else { code.finish(None, &[&name_section, &entries, &starts]) };
     Translation { wasm, report }
 }
 
@@ -448,11 +458,12 @@ pub(crate) fn mapped_core() -> Vec<u8> {
     math_helpers(&mut code);
     mapped_lookup(&mut code);
     run_loop(&mut code);
-    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v2"), data: Cow::Borrowed(&[]) };
+    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v3"), data: Cow::Borrowed(&[]) };
     code.finish(None, &[&abi])
 }
 
 pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
+    assert!(!elf.mapped(), "mapped code must be emitted as checked fragments");
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
 
     let mut imports = ImportSection::new();
@@ -537,4 +548,43 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let wasm = code.finish(Some(&image), &[&name_section, &facts, &fpu, &starts]);
     Translation { wasm, report }
+}
+
+#[cfg(all(test, feature = "mapped-code"))]
+mod mapped_tests {
+    use super::*;
+    use wasmparser::{Operator, Parser, Payload};
+
+    #[test]
+    fn unaudited_data_instructions_emit_refusals_not_memory_effects() {
+        let forms: &[(&str, &[u8])] = &[
+            ("Movsb", &[0xf3, 0xa4]),               // repeat move
+            ("Add", &[0xf0, 0x48, 0x01, 0x07]),    // locked add
+            ("Xchg", &[0x48, 0x87, 0x07]),          // implicit lock
+            ("Fld", &[0xdb, 0x2f]),                 // extended x87 memory operand
+            ("Maskmovdqu", &[0x66, 0x0f, 0xf7, 0xc1]), // masked vector store
+            ("Mov", &[0x65, 0x48, 0x8b, 0x07]),     // unsupported GS base
+            ("Call", &[0x65, 0xff, 0x17]),         // same rule for indirect control
+        ];
+        for &(name, bytes) in forms {
+            let mut code = bytes.to_vec();
+            code.push(0xf4); // End discovery; compile only, do not execute.
+            let mut elf = Elf::of_code(0x10000, code);
+            elf.mapped = true;
+            let program = crate::find::discover_seeded(&elf, &[elf.entry]);
+            let translated = translate_more(&elf, &program, 0, Options::default());
+            assert_eq!(translated.report.unsupported.get(name), Some(&1), "{name}");
+            for payload in Parser::new(0).parse_all(&translated.wasm) {
+                if let Payload::CodeSectionEntry(f) = payload.unwrap() {
+                    for op in f.get_operators_reader().unwrap() {
+                        assert!(!matches!(op.unwrap(),
+                            Operator::MemoryCopy { .. } | Operator::MemoryFill { .. } |
+                            Operator::I32Load { .. } | Operator::I32Load16U { .. } |
+                            Operator::I64Load { .. } | Operator::I64Store { .. } |
+                            Operator::V128Load { .. } | Operator::V128Store { .. }), "{name}");
+                    }
+                }
+            }
+        }
+    }
 }

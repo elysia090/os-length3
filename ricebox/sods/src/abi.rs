@@ -19,6 +19,10 @@ pub const F_MULHS: u32 = 9;
 pub const F_RESOLVE: u32 = 10;
 pub const F_DISPATCH: u32 = 11;
 pub const FIRST_GUEST: u32 = 13;
+/// An extra function import of mapped fragments only, after their core
+/// imports. The static function indices are unchanged.
+pub const F_MAPPED_ACCESS: u32 = FIRST_GUEST;
+pub const fn guest_function(index: u32, mapped: bool) -> u32 { FIRST_GUEST + mapped as u32 + index }
 
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, then these.
 pub const G_FS: u32 = 16;

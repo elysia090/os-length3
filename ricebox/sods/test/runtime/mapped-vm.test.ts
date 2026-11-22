@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import {MappedCodeChanged} from '../../runtime/linux/exec/mapped-code-space.ts';
-import {MappedDispatcher} from '../../runtime/linux/exec/mapped-dispatcher.ts';
+import {MappedDataFault, MappedDispatcher} from '../../runtime/linux/exec/mapped-dispatcher.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import type {ExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Exit} from '../../runtime/linux/flow.ts';
@@ -378,6 +378,97 @@ test('one real mprotect invalidates old Wasm, restores RAX, RCX and flags, and r
       assert.equal(p.exitStatus, 42 << 8);
       assert.equal(p.memory, null);
       assert.equal(code.find(BigInt(m.pc), code.generation), undefined, 'exit retires all the map owner\'s code');
+    } finally { dispatcher.close(); clean(); }
+  } finally { rmSync(scratch, {recursive: true, force: true}); }
+});
+
+test('mapped scalar, stack and SIMD accesses use the VM authority before touching data', {skip}, async (test) => {
+  const vfs = new Vfs(), t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!;
+  const scratch = mkdtempSync(join(tmpdir(), 'sods-checked-data-'));
+  try {
+    const src = fileURLToPath(new URL('../fixtures/mapped-code/data.S', import.meta.url)), dst = join(scratch, 'data.so');
+    execFileSync(process.env.SODS_FIXTURE_CC ?? 'cc', ['-nostdlib', '-shared', '-fPIC', '-s',
+      '-Wl,-e,data,--build-id=none', src, '-o', dst], {timeout: 6_000});
+    const binary = new Uint8Array(readFileSync(dst)), f = fixture(vfs, '/data.so', binary);
+    const {p, code, user, open, clean} = processWithVm(vfs, {sources: [f.source], translate: t});
+    const {addr, length, offset, pc} = textMap(t.describeDynamic!(binary, 'library'), 0x30000);
+    const source = BASE + PAGE - 24, dest = 0x20000 + PAGE - 24, stack = 0x40000;
+    const payload = Uint8Array.from({length: 32}, (_, i) => i + 1), results: bigint[] = [];
+    let reads = 0, writes = 0;
+    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find,
+      permits(a: bigint, n: bigint, access: 'read' | 'write') {
+        if (access === 'read') reads++; else writes++;
+        return code.permits(a, n, access);
+      }};
+    const done = new Error('Completed CPU fixture');
+    const imports = {
+      syscall(nr: bigint, value: bigint) { assert.equal(nr, 231n); results.push(value); throw done; },
+      trap() { assert.fail('the data fixture has no instruction trap'); },
+      div128() { assert.fail('unused div128'); }, fpu() { assert.fail('unused fpu'); },
+      clock: () => 0n, time: () => NaN, trace() {},
+    };
+    assert.throws(() => new MappedDispatcher(observed, compiler, {...imports, mapped_access() {}}), /own VM authority/);
+    const previous = (bytes: Uint8Array<ArrayBuffer>, marker: string): Uint8Array<ArrayBuffer> => {
+      const output = bytes.slice(), at = Buffer.from(output).indexOf(marker);
+      assert.ok(at >= 0);
+      output[at + marker.length - 1] = '2'.charCodeAt(0);
+      return output;
+    };
+    assert.throws(() => new MappedDispatcher(observed,
+      {...compiler, core: () => previous(compiler.core(), 'sods.mapped-core-v3')}, imports), /checked dispatcher/);
+    const dispatcher = new MappedDispatcher(observed, compiler, imports);
+    const normal = (mode: bigint, a = BigInt(source), d = BigInt(dest), rounds = 1n) => {
+      dispatcher.setReg('r7', a); dispatcher.setReg('r6', d); dispatcher.setReg('r2', mode);
+      dispatcher.setReg('r4', BigInt(stack + PAGE)); dispatcher.setReg('r1', rounds);
+      return () => dispatcher.run(BigInt(pc));
+    };
+    const permission = (a: bigint, n: number, access: 'read' | 'write') =>
+      (e: unknown) => e instanceof MappedDataFault && e.address === a && e.length === n && e.access === access;
+    try {
+      assert.equal(syscall(p, 9, addr, length, 5, 0x12, open('/data.so'), offset), BigInt(addr));
+      for (const [start, size] of [[BASE, 2 * PAGE], [0x20000, 2 * PAGE], [stack, PAGE]]) {
+        assert.equal(syscall(p, 9, start, size, 3, 0x32, -1, 0), BigInt(start));
+      }
+      user().copyOut(source, payload);
+      assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+      const stale = new MappedDispatcher(observed, {...compiler,
+        more: (...args) => previous(compiler.more(...args), 'sods.mapped-piece-v3')}, imports);
+      try {
+        assert.throws(() => stale.run(BigInt(pc)), /checked data ABI/);
+        assert.deepEqual([reads, writes], [0, 0], 'an older fragment is not attached or run');
+      } finally { stale.close(); }
+      assert.throws(normal(0n), error => error === done);
+      const expected = new Uint8Array(32);
+      expected[0] = 1;
+      expected.set(payload.subarray(0, 8), 8);
+      expected.set(payload.subarray(16), 16);
+      assert.deepEqual(user().copyIn(dest, 32), expected);
+      assert.deepEqual(results, [42n]);
+      assert.deepEqual([reads, writes], [5, 5], 'each emitted load and store takes one whole-span decision');
+
+      // Warm loop: exact policy work, optional diagnostic throughput;
+      // this is not a browser/loader performance measurement.
+      assert.throws(normal(2n, BigInt(source), BigInt(dest), 1000n), error => error === done);
+      const before = [reads, writes], now = performance.now(), rounds = 160_000n;
+      assert.throws(normal(2n, BigInt(source), BigInt(dest), rounds), error => error === done);
+      const ms = performance.now() - now;
+      assert.deepEqual([reads - before[0], writes - before[1]], [Number(rounds), Number(rounds)]);
+      if (process.env.SODS_MEASURE_MAPPED) test.diagnostic(`checked-access loop: ${reads + writes - before[0] - before[1]} decisions in ${ms.toFixed(1)} ms`);
+
+      dispatcher.setReg('fs', BigInt(source - 8));
+      assert.throws(normal(3n, 0n), error => error === done);
+      assert.deepEqual(user().copyIn(dest, 8), payload.subarray(0, 8));
+      assert.throws(normal(4n, BigInt(source - 8) + (1n << 32n)), error => error === done);
+      assert.deepEqual(user().copyIn(dest, 8), payload.subarray(0, 8), 'explicit addr32 has its legitimate x86 width');
+
+      const snapshot = user().copyIn(dest, 32), unchangedCode = code.generation;
+      assert.equal(syscall(p, 10, 0x20000 + PAGE, PAGE, 1), 0n);
+      assert.equal(code.generation, unchangedCode, 'already-compiled code must observe new data permissions');
+      assert.throws(normal(1n), permission(BigInt(dest + 16), 16, 'write'));
+      assert.deepEqual(user().copyIn(dest, 32), snapshot, 'a refused whole vector store has no partial write');
+      assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
+      assert.throws(normal(1n), permission(BigInt(source + 16), 16, 'read'));
+      assert.throws(normal(0n, BigInt(source) + (1n << 32n)), permission(BigInt(source) + (1n << 32n), 8, 'read'));
     } finally { dispatcher.close(); clean(); }
   } finally { rmSync(scratch, {recursive: true, force: true}); }
 });

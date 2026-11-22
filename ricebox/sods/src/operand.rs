@@ -128,12 +128,24 @@ impl Fx<'_> {
     }
 
     pub(crate) fn address(&mut self, i: &Instruction) {
-        self.effective_from(i, true, false, true);
+        if self.checked_memory {
+            self.effective_from(i, false, false, false);
+            let (base, index) = (i.memory_base(), i.memory_index());
+            // The x86 address-size override wraps its offset before the
+            // segment base is added. A 64-bit operand is never narrowed.
+            if base == Register::EIP || base.size() == 4 || index.size() == 4
+                || base == Register::None && index == Register::None && i.memory_displ_size() == 4 {
+                self.zext32();
+            }
+            if i.memory_segment() == Register::FS { self.gget(G_FS); self.e(I64_ADD); }
+        } else {
+            self.effective_from(i, true, false, true);
+        }
     }
 
     /// The address for a load or store of operand memory, and the offset that load or store adds.
     pub(crate) fn place(&mut self, i: &Instruction) -> u64 {
-        self.effective_from(i, true, true, true)
+        if self.checked_memory { self.address(i); 0 } else { self.effective_from(i, true, true, true) }
     }
 
     pub(crate) fn load_sized(&mut self, size: u8) { self.load_at(size, 0) }
@@ -218,7 +230,7 @@ impl Fx<'_> {
     /// Push what `value` puts on the stack, made after rsp moved (so it must not read rsp).
     pub(crate) fn push_with(&mut self, value: impl FnOnce(&mut Self) -> bool) -> bool {
         self.get(l_reg(RSP)); self.c64(8); self.e(I64_SUB); self.tee(l_reg(RSP));
-        self.e(I32_WRAP_I64);
+        self.guest_address();
         if !value(self) { return false; }
         self.e(Mem(I64_STORE, 3, 0));
         true
@@ -254,7 +266,7 @@ impl Fx<'_> {
     }
 
     pub(crate) fn pop_value(&mut self, into: u32) {
-        self.get(l_reg(RSP)); self.e(I32_WRAP_I64); self.e(Mem(I64_LOAD, 3, 0)); self.set(into);
+        self.get(l_reg(RSP)); self.guest_address(); self.e(Mem(I64_LOAD, 3, 0)); self.set(into);
         self.get(l_reg(RSP)); self.c64(8); self.e(I64_ADD); self.set(l_reg(RSP));
     }
 

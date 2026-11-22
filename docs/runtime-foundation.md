@@ -141,7 +141,7 @@ withdraws its entire text binding. Data-only changes do not discard
 unrelated generations. An incomplete commit retires the address space,
 rather than presenting an errno for an unconfirmed rollback.
 
-The mapped dispatcher and compiler's v2 core can unwind after a **completed**
+The mapped dispatcher and compiler can unwind after a **completed**
 host syscall that changed the relevant generation. It restores the result,
 next instruction and saved flags, retires old code, and re-dispatches
 without retrying the syscall. Throws used for wait, signal redirection,
@@ -167,14 +167,30 @@ cannot reach the static raw-memory path. Vector I/O, devices, sockets,
 signal frames, clocks and shared mappings are not enabled here. The
 static process and task backends are unchanged for ordinary memories.
 
-This proves executable-mapping authority, backend resumption and
-checked kernel copies, not arbitrary translated guest load/store
-protection. Before dynamic startup the runtime still needs checked
-compiler memory accesses (including scalar, vector, stack and bulk
-operations), initial executable and stack publication, and normal
-scheduler integration. Worker execution requires a separate
-synchronization proof. Tests do not launch the guest loader or
-establish an app startup.
+### Checked mapped CPU data access
+
+The opt-in mapped v3 compiler and dispatcher use the same installed
+VM records as the kernel copies. An explicit scalar, stack or
+supported SIMD load/store is checked over its entire width before
+touching memory. An AMD64 address stays wide until checked; explicit
+addr32 is normalized as an x86 offset before adding FS. One host
+permission decision precedes each emitted load/store, including both
+decisions for a read-modify-write lowering. A denied vector store has
+no partial effect. The compiler-authored interrupt poll is a separate
+fixed low-word read, not a guest memory grant.
+
+The checked dispatcher refuses older and static fragments instead of
+running them as mapped code. Unported string/bulk operations, locks
+and implicit atomic forms, memory bit strings, masked vector stores,
+x87 memory and GS forms do not use their static lowerings. The mapped
+compiler also omits the unchecked clock fast path. Ordinary static
+output is unchanged.
+
+This still is not a mapped launch profile. Bulk and the other needed
+unported operations, precise task/signal handling, executable image
+and stack publication, and normal scheduling need separate proof.
+Worker execution requires its own synchronization. No test here
+starts the guest loader or proves an application's startup.
 
 ## Lifetime, failure and retirement
 

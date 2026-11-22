@@ -68,7 +68,7 @@ impl Fx<'_> {
         }
         if let Some(&r) = regs.first() { a = r; }
         if let Some(&r) = regs.get(1) { b = r; }
-        if memory && !matches!(size, 2 | 4 | 8 | 10) { return Some(false); }
+        if memory && (self.checked_memory || !matches!(size, 2 | 4 | 8 | 10)) { return Some(false); }
         // Integer forms tell the coprocessor the memory holds an integer.
         let integer = name.starts_with("fi") && name != "fincstp";
         let stores = memory && op.stores();

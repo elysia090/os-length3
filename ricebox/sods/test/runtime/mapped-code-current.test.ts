@@ -95,7 +95,10 @@ test('two compiled objects share registers, with private table entries scoped to
     assert.ok(first);
     assert.throws(() => first.compile(space.generation, tracked, target, known, 0), MappedCodeChanged);
     assert.equal(compileCalls, 0, 'a different file cannot supply code for the requested PC');
-    const dispatcher = new MappedDispatcher(space, tracked, ordinaryImports((nr, value) => {
+    // This code-only fixture grants no data access. The VM-backed tests
+    // use the actual address-space authority for stack and data operations.
+    const noData = {memory, get generation() { return space.generation; }, find: space.find.bind(space), permits: () => false};
+    const dispatcher = new MappedDispatcher(noData, tracked, ordinaryImports((nr, value) => {
       if (nr === 39n) {
         if (mode === 'invalidate') space.invalidate(aText.text.address, 1);
         if (mode === 'noexec') vfs.mount.flags |= MNT.NOEXEC;

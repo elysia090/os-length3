@@ -42,7 +42,11 @@ impl Fx<'_> {
         }
         // The destination's address once, kept for the store.
         let mut at = 0;
-        if memory && write { at = self.place(i); self.tee_raw(l_u(0)); self.get_raw(l_u(0)); self.load_at(size, at); } else if !self.read(i, 0, size) { return false; }
+        if memory && write {
+            at = self.place(i);
+            let address = self.address_scratch();
+            self.tee_raw(address); self.get_raw(address); self.load_at(size, at);
+        } else if !self.read(i, 0, size) { return false; }
         let logic = matches!(state, Flags::Logic(_));
         if need && !logic {
             self.set(L_FA);
@@ -466,6 +470,9 @@ impl Fx<'_> {
     /// movs and stos, alone or repeated, each way. The way is the block's where its code says it (std or cld before,
     /// in this block); elsewhere it is the thread's as it runs (G_RF), and both ways are made for DF to choose.
     pub(crate) fn string(&mut self, i: &Instruction) -> bool {
+        // These implicit ranges have size, direction and restart semantics
+        // of their own. Do not emit the static bulk lowering in mapped code.
+        if self.checked_memory { return false; }
         use Mnemonic::*;
         let (size, store): (u8, bool) = match i.mnemonic() {
             Movsb => (1, false), Movsw => (2, false), Movsd => (4, false), Movsq => (8, false),
@@ -690,6 +697,14 @@ impl Fx<'_> {
     pub(crate) fn instruction(&mut self, i: &Instruction, need: bool) {
         use Mnemonic::*;
         let m = i.mnemonic();
+        if self.checked_memory {
+            let memory = (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Memory);
+            if i.has_lock_prefix() || (memory && (i.memory_segment() == Register::GS ||
+                matches!(m, Xchg | Xadd | Cmpxchg | Bt | Bts | Btr | Btc))) {
+                self.unsupported(i);
+                return;
+            }
+        }
         let ok = match m {
             Nop | Endbr64 | Pause | Prefetchnta | Prefetcht0 | Prefetcht1 | Prefetcht2 | Prefetchw | Lfence | Mfence
             | Sfence => true,
@@ -833,9 +848,11 @@ impl Fx<'_> {
             Syscall => {
                 self.save();
                 self.block();
-                self.block();
-                self.clock_gettime();
-                self.end();
+                if !self.checked_memory {
+                    self.block();
+                    self.clock_gettime();
+                    self.end();
+                }
                 // The last argument is where execution resumes; a forked
                 // child starts there.
                 for r in [RAX, RDI, RSI, RDX, 10, 8, 9] { self.get(l_reg(r)); }

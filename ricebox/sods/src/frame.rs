@@ -3,6 +3,7 @@
 //! moved (sync.rs decides from it what each sync moves). What each x86 instruction means is written on it by
 //! operand.rs, flags.rs, integer.rs, sse.rs and fpu.rs; its control flow by lower.rs.
 
+use crate::abi::{F_MAPPED_ACCESS, INTERRUPT};
 use crate::facts::{Liveness, Summary};
 use crate::flags::Flags;
 use crate::layout::Loop;
@@ -49,12 +50,18 @@ pub(crate) const L_BUDGET: u32 = 55;
 pub(crate) const L_INTO: u32 = 56;
 /// Auxiliary carry, appended to preserve every existing local index.
 pub const L_AF: u32 = 57;
-pub(crate) const LOCALS: usize = 58;
+// Mapped-only scratch; untouched by the static emitter.
+const L_STORE64: u32 = 58;
+const L_STORE32: u32 = 59;
+const L_STOREV: u32 = 60;
+const L_ADDRESS: u32 = 61;
+pub(crate) const LOCALS: usize = 62;
 
 /// Each local's type (a function declares only those it touches: V8's first tier zeroes them at every entry).
 const fn local_type(l: u32) -> u8 {
     match l {
-        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO | L_AF => I32,
+        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO | L_AF | L_STORE32 => I32,
+        L_STOREV => V128,
         _ if l >= l_u(0) && l < l_x(0) => I32,
         _ if l >= l_x(0) && l < l_d(0) => V128,
         _ if l >= l_d(0) && l < L_SP0 => F64,
@@ -102,6 +109,7 @@ pub struct Fx<'p> {
     pub fr_pending: bool,
     pub fused: Option<Instruction>,
     pub rsp_up: bool,
+    pub(crate) checked_memory: bool,
     /// DF where the code before in this block says it (std, cld): elsewhere it is the thread's (G_RF), read as the
     /// string instruction runs.
     pub backward: Option<bool>,
@@ -149,6 +157,20 @@ const REG_BIT: [u8; LOCALS] = {
 impl Fx<'_> {
     // ---- Emit ----
     pub fn op(&mut self, o: Op) {
+        // A new lowering must not silently emit a raw memory operator
+        // into the mapped ABI. Typed memory operators go through mem().
+        if self.checked_memory {
+            let sub = (o.0 >> 8) as u8;
+            assert!(!match o.0 as u8 {
+                0x28..=0x40 | 0xfe => true,
+                0xfc => matches!(sub, 8..=11),
+                0xfd => matches!(sub, 0..=11 | 0x54..=0x5d),
+                _ => false,
+            }, "unchecked mapped memory opcode");
+        }
+        self.raw_op(o);
+    }
+    fn raw_op(&mut self, o: Op) {
         if o.1 == 1 { self.f.push(o.0 as u8) } else { self.f.extend_from_slice(&o.0.to_le_bytes()[..o.1 as usize]) }
     }
     fn imm(&mut self, o: Op, v: u32) { self.op(o); uleb(&mut self.f, v as u64); }
@@ -160,8 +182,50 @@ impl Fx<'_> {
     pub fn f64c(&mut self, v: f64) { self.f.push(0x44); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn v128c(&mut self, v: i128) { self.f.extend_from_slice(&[0xfd, 0x0c]); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn shuffle(&mut self, lanes: [u8; 16]) { self.f.extend_from_slice(&[0xfd, 0x0d]); self.f.extend_from_slice(&lanes); }
-    /// A load or store (its opcode) of memory 0 at `offset` past the address, aligned to 2^align.
-    pub fn mem(&mut self, o: Op, align: u32, offset: u64) { self.op(o); uleb(&mut self.f, align as u64); uleb(&mut self.f, offset); }
+    /// A load or store of guest data. Mapped lowering leaves the address
+    /// wide until its full extent has been authorized by the VM owner.
+    fn mem(&mut self, o: Op, align: u32, mut offset: u64) {
+        if self.checked_memory {
+            let (width, store) = match o {
+                I32_LOAD8_U | I64_LOAD8_U => (1, None),
+                I32_LOAD16_U | I64_LOAD16_U => (2, None),
+                I32_LOAD | I64_LOAD32_U | V128_LOAD32_ZERO => (4, None),
+                I64_LOAD | V128_LOAD64_ZERO => (8, None),
+                V128_LOAD => (16, None),
+                I64_STORE8 => (1, Some(L_STORE64)),
+                I64_STORE16 => (2, Some(L_STORE64)),
+                I64_STORE32 => (4, Some(L_STORE64)),
+                I64_STORE => (8, Some(L_STORE64)),
+                I32_STORE => (4, Some(L_STORE32)),
+                V128_STORE32_LANE => (4, Some(L_STOREV)),
+                V128_STORE64_LANE => (8, Some(L_STOREV)),
+                V128_STORE => (16, Some(L_STOREV)),
+                _ => panic!("unclassified mapped data operation {o:?}"),
+            };
+            if let Some(value) = store { self.set_raw(value); }
+            self.c64(offset.try_into().expect("mapped displacement fits i64"));
+            self.c32(width);
+            self.c32(store.is_some() as i32);
+            self.call(F_MAPPED_ACCESS);
+            if let Some(value) = store { self.get_raw(value); }
+            offset = 0; // The checked address already includes the displacement.
+        }
+        self.raw_mem(o, align, offset);
+    }
+    fn raw_mem(&mut self, o: Op, align: u32, offset: u64) {
+        self.raw_op(o); uleb(&mut self.f, align as u64); uleb(&mut self.f, offset);
+    }
+    /// Scheduler-authored, fixed low word. No guest operand can use it.
+    pub(crate) fn interrupt_word(&mut self) {
+        self.c32(0); self.raw_mem(I32_LOAD, 2, INTERRUPT as u64);
+    }
+    pub(crate) fn address_scratch(&self) -> u32 {
+        if self.checked_memory { L_ADDRESS } else { l_u(0) }
+    }
+    /// Stack and other fixed-width guest addresses already present as i64.
+    pub(crate) fn guest_address(&mut self) {
+        if !self.checked_memory { self.op(I32_WRAP_I64); }
+    }
     pub fn e(&mut self, x: impl Emit) { x.emit(self) }
     pub fn gget(&mut self, g: u32) { self.imm(Op(0x23, 1), g) }
     pub fn gset(&mut self, g: u32) { self.imm(Op(0x24, 1), g) }

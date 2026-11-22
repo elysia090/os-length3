@@ -18,7 +18,10 @@ warm lookup reuse, and refusal of old or foreign executable extents.
 after a nested Wasm frame is retired. It is not a guest exec test.
 The VM tests also exercise checked copies through the ordinary file
 and console syscall paths, including protection changes and callback
-lifetime. These tests do not establish compiler-side data protection.
+lifetime. `data.S` then uses the same VM regions for actual translated
+scalar, stack and vector operations. Set `SODS_MEASURE_MAPPED=1` to
+report the checked-loop timing in the local Node test. It is not an
+application or browser benchmark.
 
 Set `SODS_TEST_DYNAMIC_ROOT` to the separate [authenticated PIE and
 DSO fixture](../dynamic/) to additionally validate biased code generated

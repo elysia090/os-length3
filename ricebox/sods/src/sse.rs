@@ -538,6 +538,7 @@ impl Fx<'_> {
             },
             // The bytes of the first whose mask byte (in the second) has its top bit, to [rdi] (operand 0, implied).
             Maskmovdqu => {
+                if self.checked_memory { return false; }
                 self.get(l_reg(RDI)); self.e(I32_WRAP_I64); self.set(l_u(1));
                 self.xread(i, 1, 16) && {
                     self.get(l_u(1)); self.e(Mem(V128_LOAD, 0, 0));

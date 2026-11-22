@@ -165,7 +165,7 @@ impl Elf {
 }
 
 impl Elf {
-    pub(crate) const fn resumable_syscalls(&self) -> bool {
+    pub(crate) const fn mapped(&self) -> bool {
         #[cfg(feature = "mapped-code")]
         { self.mapped }
         #[cfg(not(feature = "mapped-code"))]

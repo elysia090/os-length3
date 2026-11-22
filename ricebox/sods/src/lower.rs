@@ -105,7 +105,7 @@ impl Fx<'_> {
     /// loop as a CPU takes an interrupt, so `while (!got) pause();` takes it at the call).
     fn time_slice(&mut self, address: u64) {
         self.spent();
-        self.c32(0); self.mem(I32_LOAD, 2, INTERRUPT as u64);
+        self.interrupt_word();
         self.op(I32_OR);
         self.if_();
         self.depth += 1;
@@ -144,7 +144,7 @@ impl Fx<'_> {
         let e = self.program.entries.index(address);
         self.save_flags(self.handed.handed_at(e));
         match e.map(|e| self.program.entries.at(e)) {
-            Some((f, b)) => { self.c32(b as i32); self.return_call(FIRST_GUEST + f); }
+            Some((f, b)) => { self.c32(b as i32); self.return_call(guest_function(f, self.checked_memory)); }
             None => { self.c64(address as i64); self.return_call(F_DISPATCH); }
         }
     }
@@ -296,6 +296,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     let mut fx = Fx {
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
         slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: None,
+        checked_memory: resumable_syscalls,
         entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
         loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at, tables: s.tables,
     };
@@ -385,6 +386,9 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         let to = fx.succ[k];
         if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags_mask(held | ext); }
         match block.exit {
+            Exit::IndirectCall { .. } | Exit::IndirectJump
+                if resumable_syscalls && term.op0_kind() == OpKind::Memory && term.memory_segment() == Register::GS =>
+            { fx.unsupported(&term); }
             Exit::Fall(a) | Exit::Jump(a) => fx.goto((a, to[0]), next),
             Exit::TailJump(a) => fx.tail(a),
             Exit::Branch { taken, fall } => {
@@ -458,14 +462,14 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                         CallFlags::Held
                     };
                     fx.sync_in(true, s.reads | s.writes);
-                    fx.c32(0); fx.call(FIRST_GUEST + f);
+                    fx.c32(0); fx.call(guest_function(f, resumable_syscalls));
                     fx.set(l_t(0));
                     fx.after_call((ret, to[0]), next, Some(s.writes), flags);
                 } else {
                     fx.save();
                     fx.enter_call(ALL_FLAGS, |fx| fx.c64(target as i64));
                     match e.map(|e| program.entries.at(e)) {
-                        Some((f, b)) => { fx.c32(b as i32); fx.call(FIRST_GUEST + f); }
+                        Some((f, b)) => { fx.c32(b as i32); fx.call(guest_function(f, resumable_syscalls)); }
                         None => { fx.c64(target as i64); fx.call(F_DISPATCH); }
                     }
                     fx.set(l_t(0));
