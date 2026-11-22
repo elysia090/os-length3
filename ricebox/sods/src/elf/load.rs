@@ -190,6 +190,34 @@ impl LoadSpec {
             phdr: program_headers, phnum, interpreter, loads})
     }
 
+    /// Code visible through one complete, immutable, file-backed RX mapping.
+    /// Discovery cannot walk into another segment or use unmapped file data.
+    #[cfg(feature = "mapped-code")]
+    pub(crate) fn placed_text(
+        file: Vec<u8>, role: Role, bias: u64, address: u64, offset: u64, length: u64,
+    ) -> Result<super::Elf, Error> {
+        use super::{Bytes, Elf, Segment};
+        use std::sync::Arc;
+        let spec = Self::read(&file, role)?;
+        let alignment = spec.loads.iter().map(|h| h.align).max().unwrap_or(PAGE).max(PAGE);
+        if bias % alignment != 0 || address < PAGE || length == 0
+            || address.checked_add(length).is_none_or(|end| end > 1 << 32)
+        {
+            return err("mapped text does not fit a biased ELF");
+        }
+        let h = spec.loads.iter().find(|h| {
+            h.flags == R | X && h.offset == offset && h.filesz == length &&
+                bias.checked_add(h.vaddr) == Some(address)
+        }).ok_or_else(|| Error("executable bytes do not match one file-backed RX segment".into()))?;
+        let data = Bytes {file: Arc::new(file), start: h.offset as usize, len: h.filesz as usize};
+        Ok(Elf {
+            entry: address,
+            segments: vec![Segment {offset, vaddr: address, memsz: length, data, executable: true, writable: false}],
+            symbols: Vec::new(), relocation_targets: Vec::new(), data_pointers: Vec::new(),
+            fixed: false, relative_slots: Vec::new(), tls: None, phoff: 0, phnum: 0,
+        })
+    }
+
     /// Versioned little-endian wire data between the translator and the
     /// runtime; no usable guest address until the runtime chooses a bias.
     pub(crate) fn encode(&self) -> Vec<u8> {

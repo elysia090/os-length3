@@ -187,8 +187,40 @@ pub unsafe extern "C" fn sods_translate_seeded(ptr: *mut u8, len: usize, seeds: 
 /// taken), and `known` must point to `n_known` u64s.
 #[no_mangle]
 pub unsafe extern "C" fn sods_open(ptr: *mut u8, len: usize, known: *const u8, n_known: usize) -> u32 {
+    open_file(crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)), known, n_known)
+}
+
+/// A thread core whose table is supplied only by its authorized code mappings.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub extern "C" fn sods_mapped_core_v1() -> i32 {
+    OUTPUT.with(|o| *o.borrow_mut() = crate::image::mapped_core());
+    0
+}
+
+/// Open one admitted, biased RX segment for incremental code translation.
+/// Does not map the file or enable exec in the guest.
+///
+/// # Safety
+/// `ptr` transfers an initialized `sods_alloc` allocation as in `sods_open`;
+/// `known` must point to `n_known` initialized u64s.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_open_mapped_v1(
+    ptr: *mut u8, len: usize, role: u32, bias: u32, address: u32, offset: u32, bytes: u32,
+    known: *const u8, n_known: usize,
+) -> u32 {
+    use crate::elf::load::{LoadSpec, Role};
+    let file = Vec::from_raw_parts(ptr, len, len);
+    let elf = Role::from_wire(role).and_then(|role| {
+        LoadSpec::placed_text(file, role, bias.into(), address.into(), offset.into(), bytes.into())
+    });
+    open_file(elf, known, n_known)
+}
+
+unsafe fn open_file(elf: Result<crate::elf::Elf, crate::elf::Error>, known: *const u8, n_known: usize) -> u32 {
     const KEPT: usize = 6;
-    match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+    match elf {
         Ok(elf) => {
             let handle = NEXT.with(|n| { let h = n.get(); n.set(h + 1); h });
             let known = words(known, n_known).into_iter().collect();

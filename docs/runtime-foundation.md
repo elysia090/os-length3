@@ -104,9 +104,26 @@ main/interpreter placements plus the initial entry and auxiliary facts.
 A shared library's optional PT_INTERP is not a second interpreter.
 
 The plan is not authorization to run. Normal static exec still rejects
-PT_INTERP. A later runtime change must implement file-backed code
-mapping and dispatch across objects before an execution opt-in is
-made available. No test-only launcher supplies that missing step.
+PT_INTERP. The non-default `mapped-code` feature supplies the next code
+boundary, not a launch profile:
+
+- A compiler handle describes one authorized RX file extent at its actual
+  bias. Discovering code cannot walk into another segment or another file.
+- `MappedCodeSpace` belongs to one existing unshared address space. It
+  binds an unchanged authenticated inode's private RX bytes, checks the
+  holding mount, and revokes overlapping ranges before a VM owner changes
+  them. A lookup or compile cannot reuse a revoked record.
+- The alternate Wasm dispatcher has one register context and table across
+  its objects. It asks the owning runtime generation for indirect targets
+  instead of caching them in guest memory. It unwinds if generation
+  changes during a host callback, and retires old slots before resuming
+  against another generation. This does not change the static dispatcher.
+
+This code boundary is inline only and does not implement Linux VM
+mutations, initial mapping/stack publication, or syscall resumption after
+revocation. Those need an authoritative process memory owner before the
+guest loader can run. Worker execution requires a separate synchronization
+proof. No test-only launcher supplies any of these missing steps.
 
 ## Lifetime, failure and retirement
 

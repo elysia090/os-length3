@@ -6,6 +6,7 @@
 // fresh one from the same compiled module.
 
 import {said} from '../host.ts';
+import type {MappedText, MappedTranslate} from './mapped.ts';
 import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES, dynamicLoadSpec, type DynamicRole, type ElfLoadSpec} from './dynamic-load.ts';
 
 /** The translator's own exports. */
@@ -24,6 +25,9 @@ interface Exports {
   sods_translate_more(handle: number, seeds: number, count: number, base: number): number;
   sods_close(handle: number): void;
   sods_describe_dynamic_v1?(elf: number, length: number, role: number): number;
+  sods_mapped_core_v1?(): number;
+  sods_open_mapped_v1?(elf: number, length: number, role: number, bias: number, address: number,
+    offset: number, bytes: number, known: number, nKnown: number): number;
   sods_unzstd(at: number, length: number, size: number): number;
   sods_sha256(at: number, length: number): number;
 }
@@ -45,6 +49,7 @@ export interface Translate {
   notProgram(error: unknown): boolean;
   /** Metadata only. Older translator releases do not have this capability. */
   describeDynamic?(elf: Uint8Array, role: DynamicRole): ElfLoadSpec;
+  readonly mapped?: MappedTranslate;
   whole(elf: Uint8Array): Uint8Array<ArrayBuffer>;
   seeded(elf: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer>;
   more(elf: Uint8Array, seeds: (bigint | number)[], known: Set<bigint>, base: number): Uint8Array<ArrayBuffer>;
@@ -136,6 +141,47 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     handles.delete(known);
     open.delete(handle);
   };
+  let translatorEpoch: object = {};
+  if (x.sods_mapped_core_v1 && x.sods_open_mapped_v1) {
+    // Preserve parsed ELF bytes per authorized text generation. The old
+    // Wasm instance itself is not retained when the translator is renewed.
+    const sources = new WeakMap<Set<bigint>, {epoch: object; handle: number; elf: Uint8Array; text: MappedText}>();
+    const openMapped = (elf: Uint8Array, text: MappedText, known: Set<bigint>): number => {
+      const u32 = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0xffff_ffff;
+      if (!Object.hasOwn(DYNAMIC_ROLES, text.role) || !elf.length || elf.length > DYNAMIC_FILE_LIMIT ||
+          ![text.bias, text.address, text.offset, text.length].every(u32))
+        throw new NotAProgram('Invalid mapped ELF input');
+      const list = [...known], k = put(words(list));
+      try {
+        const handle = x.sods_open_mapped_v1!(put(elf), elf.length, DYNAMIC_ROLES[text.role], text.bias,
+          text.address, text.offset, text.length, k, list.length);
+        if (!handle) output(1, true);
+        sources.set(known, {epoch: translatorEpoch, handle, elf, text});
+        return handle;
+      } finally { x.sods_free(k, list.length * 8); }
+    };
+    const mapped: MappedTranslate = {
+      core: () => output(x.sods_mapped_core_v1!()),
+      more(elf, text, address, known, base) {
+        const cached = sources.get(known);
+        if (cached && (cached.elf !== elf || cached.text !== text)) throw new Error('Mapped translator source identity changed');
+        const s = put(words([address]));
+        try {
+          const go = (handle: number): number => x.sods_translate_more(handle, s, 1, base);
+          let status = go(cached?.epoch === translatorEpoch ? cached.handle : openMapped(elf, text, known));
+          if (status && new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len())) === 'that ELF is not open')
+            status = go(openMapped(elf, text, known));
+          return output(status);
+        } finally { x.sods_free(s, 8); }
+      },
+      close(known) {
+        const cached = sources.get(known);
+        if (cached?.epoch === translatorEpoch) x.sods_close(cached.handle);
+        sources.delete(known);
+      },
+    };
+    translate.mapped = mapped;
+  }
   /** A root file from a pack: its zstd frames decoded, `size` bytes (sods_unzstd). */
   translate.unzstd = (bytes: Uint8Array, size: number): Uint8Array<ArrayBuffer> => {
     const p = put(bytes);
@@ -161,6 +207,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
    */
   translate.renew = (): boolean => {
     x = instance(module);
+    translatorEpoch = {};
     if (budget) x.sods_budget(Number(budget));
     if (run) x.sods_run(Number(run));
     base = x.memory.buffer.byteLength;

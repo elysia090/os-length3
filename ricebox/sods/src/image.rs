@@ -47,10 +47,8 @@ fn mem_at(offset: u64, align: u32) -> MemArg { MemArg { offset, align, target: M
 /// million times to code made later, each a call out to the host before.
 const DISPATCH_CACHE: u64 = 1 << 14;
 
-/// Helpers: 64x64 high products, entry resolution and the dispatcher.
-/// `table` is where the sorted entry table sits in guest memory, `cache`
-/// where the dispatcher keeps what it found (DISPATCH_CACHE slots).
-fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
+/// Common 64x64 high products.
+fn math_helpers(code: &mut Out) {
     // mulhu(a, b): schoolbook on 32-bit halves.
     let mut f = WasmFunction::new([(6, ValType::I64)]);
     let (a, b, al, ah, bl, bh, mid, t) = (0, 1, 2, 3, 4, 5, 6, 7);
@@ -80,6 +78,10 @@ fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
     ] { f.instruction(&i); }
     code.encoded(&f);
 
+}
+
+/// The static entry table and cache are in guest memory, past a fixed image.
+fn static_lookup(code: &mut Out, entries: u32, table: u64, cache: u64) {
     // resolve(addr): what the dispatch cache (below) holds for it, else a binary search of the sorted 16-byte entries
     // in memory 1, what it finds kept there: an indirect jump within a function (a switch's table), and the frame a
     // longjmp lands in, look it up again and again.
@@ -141,6 +143,30 @@ fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
     ] { f.instruction(&i); }
     code.encoded(&f);
 
+}
+
+/// Look up against the owning mapping generation, never a guest-writable
+/// address cache. It shares exactly the same function/table ABI as the static
+/// dispatcher and its code attachments.
+#[cfg(feature = "mapped-code")]
+fn mapped_lookup(code: &mut Out) {
+    let mut f = WasmFunction::new([]);
+    for i in [W::LocalGet(0), W::Call(F_MISS), W::End] { f.instruction(&i); }
+    code.encoded(&f);
+
+    let mut f = WasmFunction::new([(1, ValType::I64)]);
+    for i in [
+        W::LocalGet(0), W::Call(F_RESOLVE), W::LocalTee(1), W::I64Const(0), W::I64LtS,
+        W::If(BlockType::Empty), W::LocalGet(0), W::I32Const(TRAP_UNMAPPED_TARGET),
+        W::Call(F_TRAP), W::Unreachable, W::End,
+        W::LocalGet(1), W::I32WrapI64,
+        W::LocalGet(1), W::I64Const(32), W::I64ShrU, W::I32WrapI64,
+        W::ReturnCallIndirect { type_index: T_FN, table_index: 0 }, W::End,
+    ] { f.instruction(&i); }
+    code.encoded(&f);
+}
+
+fn run_loop(code: &mut Out) {
     // run(addr): follow returns that leave every translated frame.
     let mut f = WasmFunction::new([]);
     for i in [
@@ -375,6 +401,56 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     Translation { wasm, report }
 }
 
+fn registers_and_exports() -> (GlobalSection, ExportSection) {
+    let mut globals = GlobalSection::new();
+    for _ in 0..17 {
+        globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
+    }
+    for _ in 0..16 {
+        globals.global(GlobalType { val_type: ValType::V128, mutable: true, shared: false }, &ConstExpr::v128_const(0));
+    }
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
+    // The time slice and the frames in use (the kernel sets both each time it runs a thread).
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(1 << 20));
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
+    // How deep the stack has gone (G_LOW): not at all yet.
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
+    // Its x87 registers (G_X87): no thread's until the kernel says.
+    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
+    // The rest of rflags (G_RF): DF clear, as a program starts.
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
+
+    let mut exports = ExportSection::new();
+    // What a module made later for this program imports: the helpers, every register, the table.
+    for (k, name) in SHARED.iter().enumerate() { exports.export(name, ExportKind::Func, F_MULHU + k as u32); }
+    for n in 0..GLOBALS { exports.export(&global_name(n), ExportKind::Global, n); }
+    exports.export("table", ExportKind::Table, 0);
+
+    (globals, exports)
+}
+
+/// A thread's dispatcher with no guest image, data or preauthorized code.
+#[cfg(feature = "mapped-code")]
+pub(crate) fn mapped_core() -> Vec<u8> {
+    let mut imports = ImportSection::new();
+    imports.import("env", "memory", EntityType::Memory(MemoryType {
+        minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None,
+    }));
+    let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE, T_TIME];
+    for (name, ty) in HOST_IMPORTS.iter().zip(host_types) { imports.import("env", name, EntityType::Function(ty)); }
+    let mut functions = FunctionSection::new();
+    for ty in [T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN] { functions.function(ty); }
+    let mut tables = TableSection::new();
+    tables.table(TableType { element_type: RefType::FUNCREF, minimum: 0, maximum: None, table64: false, shared: false });
+    let (globals, exports) = registers_and_exports();
+    let mut code = Out::new(&[&types(), &imports, &functions, &tables, &globals, &exports], HELPERS, 1024);
+    math_helpers(&mut code);
+    mapped_lookup(&mut code);
+    run_loop(&mut code);
+    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v1"), data: Cow::Borrowed(&[]) };
+    code.finish(None, &[&abi])
+}
+
 pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
 
@@ -410,29 +486,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let entries = program.entries.len() as u64;
 
-    let mut globals = GlobalSection::new();
-    for _ in 0..17 {
-        globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
-    }
-    for _ in 0..16 {
-        globals.global(GlobalType { val_type: ValType::V128, mutable: true, shared: false }, &ConstExpr::v128_const(0));
-    }
-    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
-    // The time slice and the frames in use (the kernel sets both each time it runs a thread).
-    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(1 << 20));
-    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
-    // How deep the stack has gone (G_LOW): not at all yet.
-    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
-    // Its x87 registers (G_X87): no thread's until the kernel says.
-    globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
-    // The rest of rflags (G_RF): DF clear, as a program starts.
-    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
-
-    let mut exports = ExportSection::new();
-    // What a module made later for this program imports: the helpers, every register, the table.
-    for (k, name) in SHARED.iter().enumerate() { exports.export(name, ExportKind::Func, F_MULHU + k as u32); }
-    for n in 0..GLOBALS { exports.export(&global_name(n), ExportKind::Global, n); }
-    exports.export("table", ExportKind::Table, 0);
+    let (globals, exports) = registers_and_exports();
 
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
@@ -440,7 +494,9 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let data: usize = elf.segments.iter().map(|s| s.data.len()).sum();
     let mut code = Out::new(&[&types(), &imports, &functions, &tables, &globals, &exports, &elements], HELPERS + program.functions.len() as u32, room(program, data));
-    helpers(&mut code, entries as u32, table_base, cache);
+    math_helpers(&mut code);
+    static_lookup(&mut code, entries as u32, table_base, cache);
+    run_loop(&mut code);
     lower_all(elf, program, 0, options, &mut report, &mut code);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
