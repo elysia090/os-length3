@@ -3,33 +3,50 @@
 import {asProgram, idIn, type Cred} from '../cred.ts';
 import type {FdTable} from '../fd.ts';
 import {MNT, type Vfs} from '../fs.ts';
-import type {Mem} from '../parts.ts';
-import {REG, kept, type Process, type Task} from '../process.ts';
+import {REG, keptImageRanges, type Mem, type Proc, type Program, type Range, type Thread} from '../parts.ts';
 import {lay} from '../../translation/share.ts';
-import {planStaticExec, type ExecRequest, type StaticExecPlan} from './plan.ts';
+import {planStaticExec, type ExecRequest, type StaticExecOwner, type StaticExecPlan} from './plan.ts';
 import {WASM_PAGE} from './stack.ts';
 import {ExecPreparationChangedError} from './source.ts';
 
-type ExecPhase = 'prepared-descriptors' | 'initial-preparation' | 'initial-publication' | 'threads' |
+export type ExecPhase = 'prepared-descriptors' | 'initial-preparation' | 'initial-publication' | 'threads' |
   'address-space' | 'descriptors' | 'backend' | 'memory-retirement' | 'resume';
 
-/** A possibly partial transaction. No guest errno, rollback, worker stop or
- * release is implied. The retained references are for ownership evidence,
- * not authorization to retry a failed operation. */
-export class ExecCommitError extends Error {
-  declare readonly process: Process;
-  declare readonly phase: ExecPhase;
-  declare readonly owners: Readonly<{task?: Task; oldMemory?: Mem; newMemory?: Mem; oldFds?: FdTable; newFds?: FdTable}>;
-  constructor(process: Process, phase: ExecPhase, cause: unknown, owners: ExecCommitError['owners'] = {}) {
-    super(`Exec transaction could not complete (${phase})`, {cause});
-    this.name = 'ExecCommitError';
-    this.process = process;
-    this.phase = phase;
-    this.owners = owners;
-  }
+export type ExecOwners<T> = Readonly<{task?: T; oldMemory?: Mem; newMemory?: Mem; oldFds?: FdTable; newFds?: FdTable}>;
+
+interface ExecTransition { execTransition?: true | Error }
+
+interface ExecThread<I extends Program> extends Pick<Thread, 'dead' | 'altstack' | 'setContext' | 'setReg'> {
+  load(image: I, memory: Mem): void;
+  renew(): void;
+  tableLeft(was: FdTable): void;
 }
 
-const preparing = new WeakSet<Process>();
+/** The portion of process/task/kernel ownership used by the transaction.
+ * The concrete owners keep backend and failure evidence; they need not be
+ * imported back into their execution operation. */
+interface ExecProcess<P, I extends Program, T extends ExecThread<I>> extends StaticExecOwner<I>, ExecTransition,
+  Pick<Proc, 'fds' | 'memory' | 'stackLow' | 'stackTop' | 'mapBase' | 'mapEnd' | 'free' | 'fixed' | 'argv' |
+    'env' | 'comm' | 'dumpable' | 'exe' | 'exeAt' | 'actions' | 'bytes' | 'written'> {
+  readonly kernel: StaticExecOwner<I>['kernel'] & {
+    readonly vfs: Vfs;
+    readonly spareMemories: Mem[];
+    endTask(task: T): void;
+    renew(memory: Mem, written: Range[] | null, pages: number, image: I, over: Range[]): void;
+    leaveInstance(proc: P): void;
+    letGo(memory: Mem | null, written: Range[] | null): void;
+    releaseVfork(proc: P): void;
+    noteRootConsoleExec(proc: P): void;
+  };
+  image: I;
+  task: T;
+  readonly tasks: Set<T>;
+  retireShared(): void;
+  newMemory(pages: number, image: I, over: Range[], took: (memory: Mem) => void): Mem;
+  retainExecFailure(phase: ExecPhase, cause: unknown, owners: ExecOwners<T>): never;
+}
+
+const preparing = new WeakSet<object>();
 const unresolvedTrees = new WeakSet<Vfs>();
 
 /** A fatal executor still owns its original tree. A second kernel cannot
@@ -38,21 +55,18 @@ export function checkExecTree(vfs: Vfs): void {
   if (unresolvedTrees.has(vfs)) throw new Error('Exec source tree has an unresolved transaction; a new tree is required');
 }
 
-export function execMayRun(process: Process): void {
+export function execMayRun(process: ExecTransition): void {
   const state = process.execTransition;
   if (state === true) throw new ExecPreparationChangedError();
   if (state) throw state;
 }
 
-export function retainExecFailure(process: Process, phase: ExecPhase, cause: unknown, owners?: ExecCommitError['owners']): never {
-  const failure = new ExecCommitError(process, phase, cause, owners);
-  process.execTransition = failure;
-  unresolvedTrees.add(process.kernel.vfs);
-  (process.kernel.failedExecs ??= new Set()).add(failure);
-  throw failure;
-}
+/** An irreversible failure has left an owner of this tree. */
+export function blockExecTree(vfs: Vfs): void { unresolvedTrees.add(vfs); }
 
-export function replaceExec(process: Process, request: ExecRequest, firstTask?: () => Task): void {
+export function replaceExec<P, I extends Program, T extends ExecThread<I>>(
+  process: P & ExecProcess<P, I, T>, request: ExecRequest, firstTask?: () => T,
+): void {
   execMayRun(process);
   checkExecTree(process.kernel.vfs);
   if (preparing.has(process)) throw new ExecPreparationChangedError();
@@ -74,7 +88,7 @@ export function replaceExec(process: Process, request: ExecRequest, firstTask?: 
       identity = execIdentity(process, plan);
     } catch (cause) {
       try { own?.letGo(); }
-      catch (cleanup) { retainExecFailure(process, 'prepared-descriptors', new AggregateError([cause, cleanup]), {task, newFds: own!}); }
+      catch (cleanup) { process.retainExecFailure('prepared-descriptors', new AggregateError([cause, cleanup]), {task, newFds: own!}); }
       throw cause;
     }
     process.execTransition = true;
@@ -85,7 +99,7 @@ export function replaceExec(process: Process, request: ExecRequest, firstTask?: 
 
 interface ExecIdentity { readonly cred: Cred; readonly dumpable: boolean; check(installed: boolean): void }
 
-function execIdentity(p: Process, plan: StaticExecPlan): ExecIdentity {
+function execIdentity(p: StaticExecOwner<Program>, plan: StaticExecPlan<Program>): ExecIdentity {
   const {mnt, node} = plan.source.at, c = p.cred;
   const suid = !(mnt.flags & MNT.NOSUID) && !p.noNewPrivs;
   const setuid = suid && node.mode & 0o4000 && idIn(c.ns, node.uid) >= 0 ? node.uid : -1;
@@ -106,7 +120,9 @@ function execIdentity(p: Process, plan: StaticExecPlan): ExecIdentity {
   }};
 }
 
-function commit(p: Process, task: Task, plan: StaticExecPlan, identity: ExecIdentity, table: FdTable, own: FdTable | null): void {
+function commit<P, I extends Program, T extends ExecThread<I>>(
+  p: P & ExecProcess<P, I, T>, task: T, plan: StaticExecPlan<I>, identity: ExecIdentity, table: FdTable, own: FdTable | null,
+): void {
   const k = p.kernel, {image, stack, laid} = plan, {mnt, node, parent: dir, name} = plan.source.at;
   const memory = p.memory;
   let phase: ExecPhase = 'threads', fresh: Mem | undefined;
@@ -160,7 +176,7 @@ function commit(p: Process, task: Task, plan: StaticExecPlan, identity: ExecIden
 
     phase = 'backend';
     if (image.segments) {
-      const reuse = fresh.keeps ? kept(image, !!fresh.exact) : [];
+      const reuse = fresh.keeps ? keptImageRanges(image, !!fresh.exact) : [];
       lay(p.bytes, reuse.length ? image.segments.filter((s) => !reuse.some(([a, b]) => s.offset >= a && s.offset + s.bytes.length <= b)) : image.segments);
     }
     if (again) task.renew(); else task.load(image, fresh);
@@ -188,7 +204,7 @@ function commit(p: Process, task: Task, plan: StaticExecPlan, identity: ExecIden
     };
     if (!returnedMemory && memory) quarantine(memory);
     if (fresh && fresh !== memory) quarantine(fresh);
-    retainExecFailure(p, phase, cause, {task, oldMemory: returnedMemory ? undefined : memory ?? undefined, newMemory: fresh,
+    p.retainExecFailure(phase, cause, {task, oldMemory: returnedMemory ? undefined : memory ?? undefined, newMemory: fresh,
       oldFds: returnedFds ? undefined : table, newFds: own ?? undefined});
   }
 }

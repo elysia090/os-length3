@@ -4,8 +4,7 @@
 // the registers; the data area carries text and module bytes.
 
 import type {Saved} from '../translation/x87.ts';
-import type {Range} from './parts.ts';
-import {REG} from './process.ts';
+import {REG, type Range} from './parts.ts';
 import {steady} from '../host.ts';
 
 export const CH = {

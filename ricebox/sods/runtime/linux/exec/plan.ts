@@ -1,10 +1,9 @@
 // Plan a static Linux replacement without changing a task or making its old
 // process image unavailable. Artifact selection stays with the kernel cache.
 import {utf8} from '../flow.ts';
-import {E, FsError} from '../fs.ts';
-import type {Range} from '../parts.ts';
-import type {Image, Process} from '../process.ts';
-import {execScope, execSource, type ExecSource} from './source.ts';
+import {E, FsError, type File} from '../fs.ts';
+import type {Program, Range} from '../parts.ts';
+import {execScope, execSource, type ExecSource, type ExecSourceOwner} from './source.ts';
 import {staticStack, type StaticStack} from './stack.ts';
 
 export interface ExecRequest {
@@ -12,10 +11,19 @@ export interface ExecRequest {
   readonly argv: readonly string[];
   readonly env: readonly string[];
 }
-export interface StaticExecPlan {
+/** Artifact lookup is owned by the embedding kernel, not the plan. */
+export interface StaticExecOwner<I extends Program> extends ExecSourceOwner {
+  readonly kernel: ExecSourceOwner['kernel'] & {
+    translated(node: File): boolean;
+    keptFor(node: File): boolean;
+    image(node: File, wait: boolean): I;
+  };
+}
+
+export interface StaticExecPlan<I extends Program> {
   readonly source: ExecSource;
   readonly exe: string;
-  readonly image: Image;
+  readonly image: I;
   readonly entry: bigint;
   readonly argv: string[];
   readonly env: string[];
@@ -28,7 +36,7 @@ export interface StaticExecPlan {
 // depending on the host's recursion limit. No PT_INTERP support in this path.
 const SCRIPT_LIMIT = 4;
 
-export function planStaticExec(process: Process, request: ExecRequest): StaticExecPlan {
+export function planStaticExec<I extends Program>(process: StaticExecOwner<I>, request: ExecRequest): StaticExecPlan<I> {
   const scope = execScope(process), sources: ExecSource[] = [];
   const kernel = process.kernel, env = [...request.env];
   let {path} = request, argv = [...request.argv];
@@ -48,7 +56,7 @@ export function planStaticExec(process: Process, request: ExecRequest): StaticEx
       path = interpreter;
       continue;
     }
-    let image: Image;
+    let image: I;
     try { image = kernel.image(node, !!process.call); }
     finally { source.check(); }
     const exe = source.describe(), entry = BigInt(image.facts.entry);

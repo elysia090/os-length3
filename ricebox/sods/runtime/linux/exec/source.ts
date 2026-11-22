@@ -3,7 +3,7 @@
 import {MAY, may} from '../cred.ts';
 import {E, File, FsError, MNT, pathOf, walk} from '../fs.ts';
 import type {Found} from '../fs.ts';
-import type {Process} from '../process.ts';
+import type {Proc} from '../parts.ts';
 
 export class ImageSourceChangedError extends Error {
   constructor() { super('Executable source changed during image preparation'); this.name = 'ImageSourceChangedError'; }
@@ -16,8 +16,14 @@ export class ExecPreparationChangedError extends Error {
   constructor() { super('Exec preparation lost its calling process or authority'); this.name = 'ExecPreparationChangedError'; }
 }
 
+/** The calling context required for pathname permission and source checks. */
+export interface ExecSourceOwner extends Pick<Proc, 'readIdentity' | 'fs' | 'root' | 'cred' | 'ns' | 'noNewPrivs' | 'call'> {
+  readonly own: object | undefined;
+  readonly kernel: {readonly executionEpoch: object};
+}
+
 /** An unpublished initial process has no task until its exec is planned. */
-export function execScope(process: Process): () => void {
+export function execScope(process: ExecSourceOwner): () => void {
   const identity = process.readIdentity(), task = process.own;
   const kernel = process.kernel, executionEpoch = kernel.executionEpoch;
   const {fs, ns, cred, noNewPrivs, call} = process, {root, pwd} = fs;
@@ -38,7 +44,7 @@ export interface ExecSource {
 }
 
 /** Settle a possibly dirty source mapping before capturing its revision. */
-export function execSource(process: Process, path: string, scope: () => void): ExecSource {
+export function execSource(process: ExecSourceOwner, path: string, scope: () => void): ExecSource {
   let at: Found | number;
   try { at = walk(process, path, process.fs.pwd); }
   finally { scope(); }

@@ -1,4 +1,3 @@
-import {execMayRun} from './exec/commit.ts';
 // The kernel with each guest thread in a Worker of its own (cpu.ts), all
 // running at once: memory is a shared WebAssembly.Memory (the kernel reads
 // and writes it directly, as process.ts does), and a thread's system call
@@ -15,11 +14,12 @@ import {execMayRun} from './exec/commit.ts';
 // one at a time.
 
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
-import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../host.ts';
 import type {Saved} from '../translation/x87.ts';
-import type {Call, Filter, Mem, Range} from './parts.ts';
+import {REG, type Call, type Filter, type Mem, type Range} from './parts.ts';
+import {execMayRun} from './exec/commit.ts';
 import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
 import {WorkerStop} from './worker-stop.ts';

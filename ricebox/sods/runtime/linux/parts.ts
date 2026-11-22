@@ -158,6 +158,10 @@ export interface Program {
   mainTold?: boolean;
   opened?(): boolean;
 }
+/** What need not be zeroed, copied or laid again when reusing image memory. */
+export function keptImageRanges({facts}: Pick<Program, 'facts'>, exact: boolean): Range[] {
+  return exact && facts.derived ? [...facts.readOnly ?? [], facts.derived] : facts.readOnly ?? [];
+}
 /** A file's translation, as the kernel keeps it: of which version, the image, when last used, and whether kept for good. */
 export interface ImageEntry { version: number; image: Program; used: number; kept: boolean }
 
@@ -294,6 +298,11 @@ export interface Proc {
 }
 
 // ---- a thread ----
+
+/** Register exports of a translation: general registers, FS, and flags. */
+export type RegName = `r${number}` | 'fs' | 'fl' | 'rf';
+// 18: what a translation keeps of rflags beyond fl and of MXCSR (DF, AC, ID), when it has it.
+export const REG: readonly RegName[] = [...Array.from({length: 16}, (_, n): RegName => `r${n}`), 'fs', 'fl', 'rf'];
 
 /** A thread as the calls see it (process.ts Task; cpu.ts and remote.ts's own). */
 export interface Thread {

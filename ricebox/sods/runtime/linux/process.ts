@@ -2,10 +2,9 @@ import {forkFailure, forkIdentity} from './fork-preparation.ts';
 export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
-import {checkExecTree, execMayRun, replaceExec, retainExecFailure, type ExecCommitError} from './exec/commit.ts';
+import {blockExecTree, checkExecTree, execMayRun, replaceExec, type ExecOwners, type ExecPhase} from './exec/commit.ts';
 import {sourceRevision} from './exec/source.ts';
 import {WASM_PAGE} from './exec/stack.ts';
-export {ExecCommitError} from './exec/commit.ts';
 export {ImageSourceChangedError} from './exec/source.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
@@ -52,6 +51,7 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
 import type {Machine} from './machine.ts';
+import {REG, keptImageRanges} from './parts.ts';
 import type {ForkOptions, AltStack, Call, Calls, Console, Outside, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {ARCH, RET, STRICT, verdict} from './seccomp.ts';
 import {said, steady} from '../host.ts';
@@ -84,8 +84,6 @@ export interface Translator {
   /** The coprocessor's module, until its execution interface is supplied independently. */
   readonly module?: WebAssembly.Module;
 }
-/** A register's export in a translation: the sixteen general ones, fs, the flags and the rest of rflags. */
-type RegName = `r${number}` | 'fs' | 'fl' | 'rf';
 /** What a translation's instance exports: its entry, its table, its registers and its counters. */
 export interface Translation {
   run(at: bigint): void;
@@ -362,6 +360,22 @@ export interface Made {
   consolidateIdle?: boolean;
   /** The translator's module, its x87 an instance of (x87.ts); else the translator's own (`translate.module`). */
   x87?: WebAssembly.Module;
+}
+
+/** A possibly partial transaction. No guest errno, rollback, Worker stop or
+ * release is implied. Retained references are for ownership evidence,
+ * not authorization to retry a failed operation. */
+export class ExecCommitError extends Error {
+  declare readonly process: Process;
+  declare readonly phase: ExecPhase;
+  declare readonly owners: ExecOwners<Task>;
+  constructor(process: Process, phase: ExecPhase, cause: unknown, owners: ExecOwners<Task> = {}) {
+    super(`Exec transaction could not complete (${phase})`, {cause});
+    this.name = 'ExecCommitError';
+    this.process = process;
+    this.phase = phase;
+    this.owners = owners;
+  }
 }
 
 export class Kernel implements Kern {
@@ -713,7 +727,7 @@ export class Kernel implements Kern {
     m.exact = !!image && m.imageOf === image;
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    clean(m, pages, [...m.keeps && image ? kept(image, m.exact) : [], ...over]);
+    clean(m, pages, [...m.keeps && image ? keptImageRanges(image, m.exact) : [], ...over]);
     this.reuseMemory(m);
     return m;
   }
@@ -728,7 +742,7 @@ export class Kernel implements Kern {
     memory.exact = memory.imageOf === image;
     memory.imageOf = image;
     memory.deepest = undefined;
-    clean(memory, pages, [...kept(image, memory.exact), ...over]);
+    clean(memory, pages, [...keptImageRanges(image, memory.exact), ...over]);
     PROFILE.renewed++;
   }
   /**
@@ -917,7 +931,7 @@ export class Kernel implements Kern {
       const at = walk(p, cwd, p.fs.pwd);
       if (typeof at !== 'number' && at.node) p.fs.go({mnt: at.mnt, node: at.node});
       ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
-      replaceExec(p, {path, argv, env}, () => {
+      replaceExec<Process, Image, Task>(p, {path, argv, env}, () => {
         const t = task = this.newTask(p);
         p.pid = p.pgid = p.sid = t.tid;
         p.tasks.add(t);
@@ -932,7 +946,7 @@ export class Kernel implements Kern {
       this.ready(t);
     } catch (cause) {
       if (p.execFailure) throw cause; // Preparation/commit already retained its owner.
-      if (committed) retainExecFailure(p, 'initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
+      if (committed) p.retainExecFailure('initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
       const failures = [cause];
       const retire = (action: () => void): void => { try { action(); } catch (cleanup) { failures.push(cleanup); } };
       // No child was published or sent to a Worker. Do not run ordinary exit
@@ -940,7 +954,7 @@ export class Kernel implements Kern {
       if (task) retire(() => task!.end());
       retire(() => p.fs.drop());
       retire(() => p.fds.letGo());
-      if (failures.length > 1) retainExecFailure(p, 'initial-preparation', new AggregateError(failures), {task, newFds: p.fds});
+      if (failures.length > 1) p.retainExecFailure('initial-preparation', new AggregateError(failures), {task, newFds: p.fds});
       throw cause;
     }
   }
@@ -2014,8 +2028,17 @@ export class Process implements Proc {
 
   // ---- images ----
 
+  /** Retain the exact owners; a partial commit cannot resume or lend its tree. */
+  retainExecFailure(phase: ExecPhase, cause: unknown, owners: ExecOwners<Task>): never {
+    const failure = new ExecCommitError(this, phase, cause, owners);
+    this.execTransition = failure;
+    blockExecTree(this.kernel.vfs);
+    (this.kernel.failedExecs ??= new Set()).add(failure);
+    throw failure;
+  }
+
   /** Replace the calling process's image through the same transaction as start(). */
-  execve(path: string, argv: string[], env: string[]): void { replaceExec(this, {path, argv, env}); }
+  execve(path: string, argv: string[], env: string[]): void { replaceExec<Process, Image, Task>(this, {path, argv, env}); }
 
   // ---- fork ----
 
@@ -2054,7 +2077,7 @@ export class Process implements Proc {
     const from = this.bytes, to = child.bytes, memory = child.memory;
     const span = ([a, b]: Range): void => { if (b > a) to.set(from.subarray(a, b), a); };
     // What no correct run changes, a memory that ran the same program has already.
-    for (const r of gaps(...live.image, memory?.keeps ? kept(this.image, !!memory.exact) : [])) span(r);
+    for (const r of gaps(...live.image, memory?.keeps ? keptImageRanges(this.image, !!memory.exact) : [])) span(r);
     for (const r of live.rest) span(r);
     if (memory) memory.deepest = live.low; // its stack is written from here up (Process.written), as its own calls go deeper
   }
@@ -2457,23 +2480,11 @@ export class Task implements Thread {
   end(): void {}
 }
 
-// 18: what a translation keeps of rflags beyond fl and of MXCSR (DF, AC, ID), when it has it.
-export const REG: RegName[] = [...Array.from({length: 16}, (_, n): RegName => `r${n}`), 'fs', 'fl', 'rf'];
-
 /**
  * The instances kept on a memory its processes ended on, each of its own program (Task.load; a Worker's, remote.ts
  * and cpu.ts): a shell's fork child and the command it runs take turns on one memory.
  */
 export const KEEP_INSTANCES = 2;
-
-/**
- * What of `image` a memory that ran its program holds still, and is neither zeroed, copied nor laid again: what no
- * correct run writes, and, where it ran this very translation (`exact`), the translation's own table and cache.
- */
-export const kept = (image: Image, exact: boolean): Range[] => {
-  const f = image.facts;
-  return exact && f.derived ? [...f.readOnly ?? [], f.derived] : f.readOnly ?? [];
-};
 
 /**
  * Whether an instance of `image` made before on the memory it is to run on may run it in place of a new one
