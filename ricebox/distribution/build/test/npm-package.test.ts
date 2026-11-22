@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {execFileSync, spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {packOf} from '../../format/pack.ts';
 const builder = fileURLToPath(new URL('../npm.ts', import.meta.url));
 function files(dir: string): string[] {
   return readdirSync(dir, {withFileTypes:true}).flatMap(e=>e.isDirectory()?files(join(dir,e.name)):[join(dir,e.name)]);
@@ -74,6 +76,7 @@ test('built npm package contains builder dependencies and imports public JS with
       'ricebox/distribution/integrations/vite.ts','ricebox/distribution/integrations/vite.js','ricebox/distribution/build/prepare.ts','ricebox/distribution/build/prepare.js']) {
       assert.ok(existsSync(join(out,name)),`missing ${name}`);
     }
+    assert.deepEqual(pkg.bin, {'ricebox-stage-shell': './ricebox/distribution/starter/stage.js'});
     // Cover the copied builder as well as the root's transitive runtime closure.
     for(const path of files(out).filter(p=>/\.(ts|js|mjs)$/.test(p))) {
       assert.doesNotMatch(path.slice(out.length), /\/(?:test|verification)\/|\.(?:test|spec)\.[cm]?[jt]s$/, 'tests and verification are not package content');
@@ -233,6 +236,153 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.match(composed,/everyday-js-ok/);
     assert.match(composed,/static-assets-ok/);
     assert.match(composed,/browser-modules-ok/);
+    // Synthetic distribution for packaging/staging only; its binaries do not run.
+    const release=join(work,'shell-release');
+    mkdirSync(join(release,'blobs'),{recursive:true});mkdirSync(join(release,'packs'));
+    const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
+    const blob=(text:string)=>{
+      const bytes=Buffer.from(text),sha256=hash(bytes),path='blobs/'+sha256+'.bin';
+      writeFileSync(join(release,path),bytes);
+      return {path,sha256,size:bytes.length,bytes:bytes.length};
+    };
+    const translator=blob('translator'),maker=blob('muk'),rootSHA='a'.repeat(64);
+    const shell=Buffer.from('busybox placeholder, not executable machine code');
+    const pack=packOf([shell],bytes=>createHash('sha256').update(bytes).digest());
+    writeFileSync(join(release,'packs',pack.name),pack.bytes);
+    const muk=Buffer.from(JSON.stringify(maker));writeFileSync(join(release,'muk.json'),muk);
+    const descriptor=(version:string,path='/usr/bin/busybox')=>{
+      const index=Buffer.from(JSON.stringify({sha256:rootSHA,version,codec:'zstd',dirs:[],links:[],translator,
+        translations:[],packs:[{name:pack.name,bytes:pack.bytes.length}],
+        files:[{path,mode:0o755,size:shell.length,pack:0,at:pack.at[0],len:shell.length,raw:true}],
+      }));
+      const sha256=hash(index),indexPath='index-'+sha256+'.json';
+      writeFileSync(join(release,indexPath),index);
+      const about=Buffer.from(JSON.stringify({sha256:rootSHA,version,index:{path:indexPath,sha256,size:index.length}}));
+      writeFileSync(join(release,'webroot.json'),about);
+      return hash(about);
+    };
+    const preview=join(work,'preview'), staged=join(preview,'prefix');mkdirSync(preview);
+    const execStage=(webPin:string,mukPin=hash(muk))=>spawnSync('npm',
+      ['exec','--offline','--','ricebox-stage-shell',release,staged,webPin,mukPin],
+      {cwd:consumer,encoding:'utf8',timeout:15_000,env:{...process.env,npm_config_cache:join(work,'empty-consumer-cache')}});
+    const webPin=descriptor(pkg.version);
+    for (const [pin, makerPin, expected] of [
+      ['0'.repeat(64),hash(muk),/webroot.json does not match/],
+      [webPin,'0'.repeat(64),/muk.json does not match/],
+    ] as const) {
+      const result=execStage(pin,makerPin);
+      assert.equal(result.status,1,result.stderr);
+      assert.match(result.stderr,expected);
+      assert.ok(!existsSync(staged));
+    }
+    for (const [version, shellPath, expected] of [
+      ['9.9.9','/usr/bin/busybox',/does not match this Ricebox package/],
+      [pkg.version,'/usr/bin/not-the-shell',/executable .*busybox/],
+    ] as const) {
+      const result=execStage(descriptor(version,shellPath));
+      assert.equal(result.status,1,result.stderr);
+      assert.match(result.stderr,expected);
+      assert.ok(!existsSync(staged));
+    }
+    const exactWebPin=descriptor(pkg.version);
+    const stagedResult=execStage(exactWebPin);
+    assert.equal(stagedResult.status,0,stagedResult.stderr);
+    assert.equal(hash(readFileSync(join(staged,'ricebox/webroot.json'))),exactWebPin);
+    assert.equal(hash(readFileSync(join(staged,'ricebox/muk.json'))),hash(muk));
+    assert.ok(!existsSync(join(staged,'ricebox-js/everyday')));
+    const html=readFileSync(join(staged,'index.html'),'utf8'),siteURL=new URL('https://example.test/a/prefix/');
+    const moduleURL=new URL(html.match(/script type="module" src="([^"]+)"/)![1]!,siteURL);
+    const moduleRead=(url:URL)=>{
+      assert.ok(url.href.startsWith(siteURL.href),url.href);
+      return readFileSync(join(staged,url.href.slice(siteURL.href.length)),'utf8');
+    };
+    const js=moduleRead(moduleURL);
+    const rootURL=new URL(js.match(/import\('([^']+root\.js)'\)/)![1]!,moduleURL);
+    assert.ok(moduleRead(rootURL).includes('createRoot'));
+    assert.ok(moduleRead(new URL('worker.js',rootURL)));
+    // Evaluate the shipped page under a URL prefix with the actual npm runtime.
+    // A missing release and interrupted module load exercise the UI without a guest.
+    const boot=execFileSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',`
+      import assert from 'node:assert/strict';
+      import {readFileSync} from 'node:fs';
+      import {join} from 'node:path';
+      import {SourceTextModule,createContext} from 'node:vm';
+      const files=${JSON.stringify(staged)}, prefix=${JSON.stringify(siteURL.href)};
+      async function run(cancel) {
+        const fields=new Map(), events=new Map(), seen=[], workers=[];
+        const document={
+          getElementById(id) {
+            if (!fields.has(id)) fields.set(id,{disabled:true,textContent:'',value:'',dataset:{},addEventListener(){},
+              focus(){throw Error('starter must not take focus');}});
+            return fields.get(id);
+          },
+        };
+        const context=createContext({
+          document,window:{addEventListener(type,fn){events.set(type,fn);}},isSecureContext:true,location:{href:prefix},
+          URL,WebAssembly,TextEncoder,TextDecoder,AbortController,performance,setTimeout,clearTimeout,setInterval,clearInterval,
+          Worker:class {constructor(url){workers.push(url.href);throw Error('No Workers in this model');}},
+          fetch: async url=>{seen.push(url);return new Response(null,{status:404});},
+        });
+        const cache=new Map();
+        let resume;
+        const hold=new Promise(resolve=>{resume=resolve;});
+        let imported;
+        const importFinished=new Promise(resolve=>{imported=resolve;});
+        function add(url) {
+          assert.ok(url.startsWith(prefix),url);
+          if (cache.has(url)) return cache.get(url);
+          const m=new SourceTextModule(readFileSync(join(files,url.slice(prefix.length)),'utf8'),{
+            context,identifier:url,initializeImportMeta(meta){meta.url=url;},
+            async importModuleDynamically(specifier,parent) {
+              if(cancel) await hold;
+              const importedModule=add(new URL(specifier,parent.identifier).href);
+              await importedModule.link(link);
+              await importedModule.evaluate();
+              imported();
+              return importedModule;
+            },
+          });
+          cache.set(url,m);
+          return m;
+        }
+        const link=(specifier,parent)=>add(new URL(specifier,parent.identifier).href);
+        const page=add(${JSON.stringify(moduleURL.href)});
+        await page.link(link);
+        await page.evaluate();
+        assert.equal(document.getElementById('open').disabled,true);
+        const status=document.getElementById('status');
+        if(cancel) {
+          events.get('pagehide')();
+          resume();
+          await importFinished;
+          await new Promise(resolve=>setImmediate(resolve));
+          assert.equal(status.dataset.phase,'closed');
+          assert.deepEqual(seen,[]);
+          assert.deepEqual(workers,[]);
+        } else {
+          for(let i=0;status.dataset.phase!=='error'&&i<100;i++) await new Promise(resolve=>setTimeout(resolve,10));
+          assert.deepEqual(seen,[new URL('ricebox/webroot.json',prefix).href],status.textContent);
+          assert.deepEqual(workers,[new URL('ricebox-js/distribution/runtime/check.worker.js',prefix).href]);
+          assert.match(status.textContent,/Could not start the shell.*webroot[.]json: 404/);
+        }
+        assert.equal(document.getElementById('open').disabled,false);
+        assert.equal(document.getElementById('line').disabled,true);
+      }
+      await run(false);
+      await run(true);
+      console.log('starter-auto-error-ok');
+    `],{cwd:consumer,encoding:'utf8',timeout:15_000});
+    assert.match(boot,/starter-auto-error-ok/);
+    for (const file of files(staged).map(path=>path.slice(staged.length))) {
+      assert.doesNotMatch(file,/everyday|wayland|[.]tsx?$/);
+    }
+    assert.deepEqual(files(staged).filter(file=>file.endsWith('.css')), [join(staged,'shell.css')]);
+    assert.match(moduleRead(new URL('shell.css',siteURL)), /overflow: auto/);
+    const repeated=execStage(exactWebPin);
+    assert.equal(repeated.status,1,repeated.stderr);
+    assert.match(repeated.stderr,/Output already exists/);
+    assert.equal(readFileSync(join(staged,'index.html'),'utf8'),html);
+
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
 });

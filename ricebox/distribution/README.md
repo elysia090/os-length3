@@ -27,10 +27,13 @@ npm pack --ignore-scripts
 The output directory must not exist. This creates a private local package, not a
 registry publication. Install the generated tarball with `npm install --offline
 --ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes the optional Everyday
-presenter, not the terminal preview, demos, or Why site files. Its declared Node
+presenter, not the conformance fixtures or Why site files. Its declared Node
 requirement is `>=22.18`; use Node 24 to generate the package. A browser app can
 stage the package's native modules or use a bundler with module-Worker support.
 Serve the distribution layers separately from those modules.
+
+For a no-framework starting point, see [Use a staged browser shell](docs/installation.md#use-a-staged-browser-shell).
+The staging command takes an existing trusted prepared root; it does not publish or acquire one.
 
 The package exports `ricebox` (`createRoot` and its types), `ricebox/everyday`
 (the optional presenter), `ricebox/prepare` (composition), `ricebox/assets`

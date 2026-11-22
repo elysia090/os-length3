@@ -87,6 +87,83 @@ already prepared distribution. Do not pass both `build` and `distribution`.
 Serving these assets is distinct from running guest programs and from deploying
 a service.
 
+### Use a staged browser shell
+
+Put the complete staged shell directory at any URL prefix (such as
+`/tools/linux/`) on an HTTPS static host. Link directly to its `index.html`,
+or mount the same page in an existing site with ordinary HTML:
+
+```html
+<iframe src="./linux/index.html" title="Ricebox Linux shell" width="640" height="400" loading="lazy"></iframe>
+```
+
+No npm, app code, CSS, TypeScript, or framework is required to host or embed an
+already staged directory. The dedicated page starts one temporary Linux guest
+when it loads without moving focus; an outer site that wants opt-in startup
+can link to the page or insert the iframe only when requested. Run
+`printf 'hello from Ricebox\n'` when the guest is ready. The server only serves
+files. **End shell** closes guest admission; **Start a new shell** starts a fresh
+guest after a clean close. The page keeps recent output scrollable and leaves
+the input field focused between commands if you are using it. This is a
+bounded line console, not a full terminal emulator or persistent home. No drawing or relay is staged by the template.
+
+Copy the complete staged directory together; no base URL configuration or
+rewrites are needed. Serve modules as JavaScript and do not rewrite missing
+assets to the HTML page. Use a shell-only prepared root for the smallest
+transfer and do not include secrets or host files in it: the selected
+root is staged as verified layers. The starter does not warm other guest
+programs. Layer transport and browser caching affect guest bytes; use the
+[pack transport check](#verify-the-static-hosts-pack-transport) for efficient range reads.
+
+### Stage a browser shell from a prepared root
+
+The staging command is for the kit producer, not the person embedding an
+already staged kit. There is no public kit download or npm release yet.
+
+Use a trusted, prepared **Ricebox** distribution of the same version as the
+local npm tarball, with executable `/usr/bin/busybox`. Obtain the SHA-256 of
+that release's `webroot.json` and `muk.json` from your trusted release build
+or its publisher. Matching checksums establish byte integrity against those
+pins, not who supplied the pins or an unsigned kit. Do not treat hashes of
+unverified downloads as release pins. See [local artifacts](#local-artifacts)
+to prepare your own.
+
+From a new directory, with Node 22.18 or newer and the tarball already built
+([use Node 24 to build it](../README.md#setup)):
+
+```sh
+npm init -y
+npm install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
+mkdir preview
+npm exec --offline -- ricebox-stage-shell /path/to/prepared-root ./preview/site \
+  "$WEBROOT_JSON_SHA256" "$MUK_JSON_SHA256"
+python3 -m http.server 8000 --bind 127.0.0.1 --directory ./preview
+```
+
+Preview at `http://127.0.0.1:8000/site/index.html` (loopback HTTP is supported).
+
+The staging command verifies and copies an existing release into a new
+directory; it does not acquire tools, build a root, or publish. Never mix
+files from different stages. Use a new URL prefix for each staged generation
+so cached modules and guest assets do not mix. Stage verifies the selected
+bytes and the shell entry; it does not prove that a given root boots in a browser.
+If a disk-write error leaves an incomplete directory, discard that partial output
+or choose a different destination.
+
+To qualify the starter with real guest execution, use the repository's locked
+JavaScript dependencies, an installed sandboxed Google Chrome on Linux and the
+same trusted prepared root/pins. The test packs and installs a clean consumer,
+serves loopback only, then checks a real prompt and two computed command outputs
+in one nested iframe:
+
+```sh
+RICEBOX_STARTER_PREPARED_ROOT=/path/to/prepared-root \
+RICEBOX_STARTER_WEBROOT_PIN="$WEBROOT_JSON_SHA256" \
+RICEBOX_STARTER_MUK_PIN="$MUK_JSON_SHA256" \
+RICEBOX_STARTER_CHROME=/path/to/installed/google-chrome \
+  node --test ricebox/distribution/verification/test/starter-browser.integration.ts
+```
+
 ### Stage a static site without the Vite adapter
 
 If you already have a prepared distribution, use `ricebox/assets` from Node.

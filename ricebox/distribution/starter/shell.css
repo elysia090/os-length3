@@ -1,0 +1,25 @@
+html, body { min-block-size: 100%; margin: 0; }
+body { font: 0.94rem/1.4 system-ui, sans-serif; }
+main {
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-rows: auto auto minmax(3rem, 1fr) auto;
+  block-size: 100vh;
+  block-size: 100dvh;
+  min-block-size: 15rem;
+  padding: 0.75rem;
+}
+h1 { font-size: 1.1rem; margin: 0; }
+p { margin: 0.25rem 0 0; }
+#output {
+  border: 1px solid GrayText;
+  margin: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 0.5rem;
+  white-space: pre-wrap;
+}
+#command { display: flex; align-items: end; gap: 0.5rem; }
+#command label { flex: 1; min-inline-size: 0; }
+#line { box-sizing: border-box; display: block; inline-size: 100%; }

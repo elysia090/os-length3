@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ricebox guest shell</title>
+<link rel="stylesheet" href="./shell.css">
+<main>
+  <header>
+    <h1>Ricebox guest shell</h1>
+    <p>Commands run inside a temporary Linux guest in this browser, not on the web server.</p>
+    <p id="status" role="status">Loading the shell page. If this stays here, check that shell.js is served as JavaScript.</p>
+    <noscript>This shell requires JavaScript.</noscript>
+  </header>
+  <div>
+    <button id="open" type="button" disabled>Start a new shell</button>
+    <button id="end" type="button" disabled>End shell</button>
+  </div>
+  <pre id="output" aria-label="Guest shell output" tabindex="0"></pre>
+  <form id="command">
+    <label>Shell command <input id="line" maxlength="1024" autocomplete="off" spellcheck="false" disabled></label>
+    <button id="send" disabled>Run command</button>
+  </form>
+</main>
+<script type="module" src="./ricebox-js/distribution/starter/shell.js"></script>
+</html>
