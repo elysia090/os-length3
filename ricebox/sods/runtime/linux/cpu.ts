@@ -17,7 +17,8 @@ import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, PARK, PARK_MS, PARK_WATCH_MS, R
 import {began, isNode, nodeThreads, said, steady} from '../host.ts';
 import {namesIn, x87Of, type X87} from '../translation/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
-import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
+import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt} from './thread-abi.ts';
+import type {Translation} from './process.ts';
 
 const parent = (await nodeThreads())?.parentPort ?? null;
 /** Where this Worker hears from the kernel and says what went wrong. */
@@ -219,7 +220,7 @@ class Thread {
       Atomics.sub(this.gil, 1, 1);
     }
   }
-  /** The interrupt word of this process's memory (process.ts INTERRUPT): its threads look in. */
+  /** The interrupt word of this process's memory (thread-abi.ts INTERRUPT): its threads look in. */
   raise(): void { Atomics.store(new Int32Array(this.memory.buffer), INTERRUPT >> 2, 1); }
   unlock(): void {
     Atomics.store(this.gil, 0, 0);
@@ -412,7 +413,7 @@ class Thread {
     for (;;) {
       try {
         this.catchUp();
-        // A full time slice, and no frames yet (process.ts Preempted).
+        // A full time slice, and no frames yet (thread-abi.ts Preempted).
         const x = this.exports;
         if (x.budget) x.budget.value = this.slice;
         if (x.depth) x.depth.value = 0;

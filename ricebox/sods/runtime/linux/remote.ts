@@ -14,7 +14,8 @@
 // one at a time.
 
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
-import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {CALL_SAMPLE, Kernel, PROFILE, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {INTERRUPT, KEEP_INSTANCES} from './thread-abi.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../host.ts';
 import type {Saved} from '../translation/x87.ts';

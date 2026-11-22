@@ -205,7 +205,7 @@ test('built npm package contains builder dependencies and imports public JS with
           return add(new URL(specifier,parent.identifier).href);
         });
         await module.evaluate();
-        return {module,context};
+        return {module,context,modules};
       }
       const runtime='ricebox-js/distribution/runtime/';
       const {module:root}=await load(runtime+'root.js');
@@ -216,12 +216,14 @@ test('built npm package contains builder dependencies and imports public JS with
       assert.deepEqual(stages,['prepare']);
       for(const path of [runtime+'worker.js', runtime+'check.worker.js', runtime+'translate.worker.js', 'ricebox-js/sods/runtime/linux/cpu.js']){
         const messages=[], listeners=[];
-        const {context}=await load(path,{
+        const {context,modules}=await load(path,{
           postMessage(message){messages.push(message.type);},
           addEventListener(event,listener){assert.equal(event,'message');listeners.push(listener);},
         });
         assert.equal(typeof (context.onmessage ?? listeners[0]),'function',path);
         assert.deepEqual(messages,path.endsWith('/cpu.js')?['up']:[],path);
+        if(path.endsWith('/cpu.js'))assert.ok(!modules.has(new URL('ricebox-js/sods/runtime/linux/process.js',origin).href),
+          'guest CPU starts without loading the process kernel');
       }
       assert.deepEqual([...reached].sort(),[...browser.keys()].sort(),'core is exactly the root and module Worker closure');
       for(const [path,bytes] of withDisplay){
