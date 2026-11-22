@@ -5,7 +5,7 @@ import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} f
 import {blockExecTree, checkExecTree, execMayRun, replaceExec, type ExecOwners, type ExecPhase} from './exec/commit.ts';
 import {reserveInitialImage, type DetachedDynamicImage, type InitialImageLease} from './exec/dynamic-image.ts';
 import {MappedCodeChanged} from './exec/mapped-code-space.ts';
-import {MappedTaskCpu} from './exec/mapped-task.ts';
+import {MAPPED_ARCH_PRCTL, MappedTaskCpu} from './exec/mapped-task.ts';
 import {execScope, sourceRevision, ExecPreparationChangedError} from './exec/source.ts';
 import {STACK_BYTES, WASM_PAGE} from './exec/stack.ts';
 export {ImageSourceChangedError} from './exec/source.ts';
@@ -172,6 +172,13 @@ interface PendingMappedTask {
   readonly image: InitialImageLease;
   readonly cpu: MappedTaskCpu;
   check(): void;
+}
+interface MappedFsAttempt {
+  readonly task: Task;
+  readonly call: Call;
+  readonly cpu: MappedTaskCpu;
+  attempted?: boolean;
+  base?: bigint;
 }
 function checkMappedAdmission(t: Task): void {
   if (t.kernel?.[HELD_TASKS]?.has(t))
@@ -428,6 +435,7 @@ export class Kernel implements Kern {
   #executionEpoch: object = {};
   #starting = false;
   #mappedTurn?: Task;
+  #mappedFs?: MappedFsAttempt;
   #failedMapped?: MappedTaskOwnershipError;
   get executionEpoch(): object { return this.#executionEpoch; }
   protected invalidateExecPreparation(): void { this.#executionEpoch = {}; }
@@ -1171,6 +1179,7 @@ export class Kernel implements Kern {
     // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
     // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
     const at = ++this.calls % CALL_SAMPLE === 0 ? steady() : 0;
+    let fs: MappedFsAttempt | undefined;
     let runsOn = false;
     try {
       t.resumeAt = next;
@@ -1182,11 +1191,19 @@ export class Kernel implements Kern {
         this.ready(t);
         throw new Wait();
       }
+      if (mapped && call.nr === MAPPED_ARCH_PRCTL) {
+        if (this.#mappedFs) throw new Error('Mapped FS syscall cannot reenter');
+        fs = this.#mappedFs = {task: t, call, cpu: mapped};
+      }
       const v = this.attempt(t, call);
       if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
       if (!t.dead && !t.proc.stopped && !deliverable(t)) {
         if (mapped) this.#checkMappedTask(t, mapped);
         runsOn = true;
+        if (fs?.base !== undefined) {
+          if (v !== 0n) throw new Error('A failed mapped syscall cannot commit FS');
+          return fs.cpu.completeFsSyscall(next, fs.base);
+        }
         return v;
       }
       if (mapped) this.#mappedFailed(t, new Error('Mapped in-flight signal or stop is not supported'));
@@ -1197,6 +1214,7 @@ export class Kernel implements Kern {
       runsOn = true;
       return v;
     } finally {
+      if (fs) this.#mappedFs = undefined;
       if (at || !runsOn) {
         const now = steady();
         if (at) t.owed += (now - at) * CALL_SAMPLE;
@@ -1284,7 +1302,8 @@ export class Kernel implements Kern {
       call.state.screened = true;
     }
     const mapped = !!p.memory?.mappedVm, handler = (mapped ? MAPPED_CALLS : CALLS)[call.nr];
-    if (!handler) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
+    const fs = mapped && this.#mappedFs?.task === t && this.#mappedFs.call === call ? this.#mappedFs : undefined;
+    if (!handler && !fs) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
     const shares = p.maps.length > 0;
     if (shares) p.syncShared();
     // Whose call this is, while it is made: what /proc's "self" leads to. (A thread run here is `current` as it runs;
@@ -1292,7 +1311,12 @@ export class Kernel implements Kern {
     const was = this.current;
     if (t instanceof Task) this.current = t;
     try {
-      const r = handler.apply(p, call.args);
+      let r: bigint | number = 0n;
+      if (fs) {
+        if (fs.attempted) throw new Error('Mapped FS syscall was already attempted');
+        fs.attempted = true;
+        fs.base = fs.cpu.fsSyscall(p, call.args[0], call.args[1]);
+      } else r = handler!.apply(p, call.args);
       if (!QUIET[call.nr]) this.dirty = true;
       const v = typeof r === 'bigint' ? r : BigInt(r);
       if (TRACE_SYSCALLS) console.error(`[${t.tid}]   = ${BigInt.asIntN(64, v)}`);

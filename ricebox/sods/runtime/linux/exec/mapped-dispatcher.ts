@@ -16,9 +16,10 @@ type Core = WebAssembly.Exports & {
 
 /** Only a syscall import that already returned may create this continuation. */
 class SyscallReturn {
-  constructor(pc: bigint, value: bigint) { this.pc = pc; this.value = value; }
+  constructor(pc: bigint, value: bigint, fs?: bigint) { this.pc = pc; this.value = value; this.fs = fs; }
   readonly pc: bigint;
   readonly value: bigint;
+  readonly fs?: bigint;
 }
 
 function words(module: WebAssembly.Module, name: string, stride: number): BigUint64Array {
@@ -36,6 +37,7 @@ export class MappedDispatcher {
   #env: WebAssembly.ModuleImports;
   #epoch?: object;
   #active?: object;
+  #syscallPc?: bigint;
   #closed = false;
   #revoked?: object;
   #uncertain?: {error: Error; handles: readonly Set<bigint>[]};
@@ -58,13 +60,19 @@ export class MappedDispatcher {
       if (typeof fn !== 'function') throw new TypeError('Mapped code host imports must be callbacks');
       env[name] = (...args: unknown[]) => {
         const generation = this.#requireLive();
-        const value: unknown = Reflect.apply(fn, undefined, args);
+        const next = name === 'syscall' && typeof args[7] === 'bigint' ? args[7] : undefined;
+        if (next !== undefined) {
+          if (this.#syscallPc !== undefined) throw new Error('Mapped syscall cannot nest');
+          this.#syscallPc = next;
+        }
+        let value: unknown;
+        try { value = Reflect.apply(fn, undefined, args); }
+        finally { if (next !== undefined) this.#syscallPc = undefined; }
         if (this.#revoked) throw this.#revoked;
         // A host callback may have revoked a mapping even if the next guest
         // instruction is a direct edge inside the old Wasm function.
         if (generation !== this.#space.generation) {
-          const next = args[7];
-          if (name === 'syscall' && typeof next === 'bigint' && typeof value === 'bigint')
+          if (next !== undefined && typeof value === 'bigint')
             throw new SyscallReturn(next, value);
           throw new MappedCodeChanged();
         }
@@ -109,6 +117,14 @@ export class MappedDispatcher {
     this.#syscallResult(pc, value);
   }
 
+  /** A successful ARCH_SET_FS may only return through its own import. The
+   * old frame must unwind before its saved register context can change. */
+  completeFsSyscall(pc: bigint, base: bigint): never {
+    if (this.#revoked) throw this.#revoked;
+    if (!this.#active || this.#syscallPc !== pc) throw new Error('FS completion has no mapped syscall owner');
+    throw new SyscallReturn(pc, 0n, base);
+  }
+
   run(pc: bigint, budget?: number): void {
     this.#idle();
     if (budget !== undefined) {
@@ -130,7 +146,7 @@ export class MappedDispatcher {
         // The normal post-import Wasm cannot restore RAX/RCX in this case.
         // Use the same architectural result and resume after, not at, the
         // completed syscall. Keep the remaining budget and discard depth.
-        this.#syscallResult(error.pc, error.value);
+        this.#syscallResult(error.pc, error.value, error.fs);
         pc = error.pc;
       } finally { this.#active = undefined; }
     }
@@ -155,7 +171,8 @@ export class MappedDispatcher {
     if (this.#closed || this.#active) throw new Error('Mapped dispatcher is not idle');
   }
 
-  #syscallResult(pc: bigint, value: bigint): void {
+  #syscallResult(pc: bigint, value: bigint, fs?: bigint): void {
+    if (fs !== undefined) this.#core.fs!.value = fs;
     this.#core.r0!.value = BigInt.asIntN(64, value);
     this.#core.r1!.value = BigInt.asIntN(64, pc);
     this.#core.depth.value = 0;

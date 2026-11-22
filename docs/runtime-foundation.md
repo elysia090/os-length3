@@ -253,6 +253,14 @@ only after the frame has unwound and the backend releases its artifacts.
 Unconfirmed backend retirement retains the task and tree, not a wait
 status or permission to try cleanup again.
 
+On this backend, x86-64 `ARCH_SET_FS` and `ARCH_GET_FS` use only the exact
+active Task's screened syscall. SET accepts a base in the bounded guest
+address space and needs no dereference. Its result and FS update take
+effect together after the old Wasm frames unwind, before the next PC
+runs. That does not change the mapping generation. GET copies one
+little-endian 64-bit word using the checked whole-span VM policy. Other
+`arch_prctl` operations do not fall back to the static backend.
+
 The scheduler proof is a small interpreter-free guest assembly fixture.
 Separately, an authenticated initial image can be reserved by exactly
 the unpublished Task it was prepared for. A single-use grant checks
@@ -265,9 +273,9 @@ exit, descriptor changes, or an execution event.
 
 Held image Tasks cannot be queued, run or enter the syscall table, even
 when a mapped translator is present. No normal launch path uses this
-handoff. The checked loader ABI (including x86-64 FS-base startup
-operations), regular exec lifecycle, precise signals/faults and Worker
-execution still need proof. Normal PT_INTERP exec is still refused.
+handoff. Remaining loader ABI, authenticated dependency admission,
+regular exec lifecycle, precise signals/faults and Worker execution
+still need proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

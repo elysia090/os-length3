@@ -21,6 +21,11 @@ to a peer, waits for guest console backpressure to clear, checks the
 write result and resumed registers, and exits through the ordinary
 syscall. The test fixture supplies already-admitted non-interpreter
 code, not a new exec path.
+`tls.S` uses the same Task setup to set, read and clear FS in ordinary
+system calls. It checks the nested return after setting the base,
+checked FS-relative data, a whole-word GET across a permission
+boundary, and preservation across a console wait. The fixture is not
+a libc or interpreter launch.
 The VM tests also exercise checked copies through the ordinary file
 and console syscall paths, including protection changes and callback
 lifetime. `data.S` then uses the same VM regions for actual translated
