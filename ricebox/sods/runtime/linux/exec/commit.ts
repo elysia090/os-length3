@@ -1,5 +1,5 @@
-// One entry to a static exec transaction for both initial start and guest
-// execve. Recoverable input errors occur before the first irreversible step.
+// Exec preparation and install share one caller fence. The admitted static
+// transaction serves both initial start and ordinary guest execve.
 import {asProgram, idIn, type Cred} from '../cred.ts';
 import type {FdTable} from '../fd.ts';
 import {MNT, type Vfs} from '../fs.ts';
@@ -16,6 +16,13 @@ export type ExecOwners<T> = Readonly<{task?: T; oldMemory?: Mem; newMemory?: Mem
 
 interface ExecTransition { execTransition?: true | Error }
 
+interface ExecCaller<T extends Pick<Thread, 'dead'>> extends ExecTransition {
+  readonly kernel: {readonly vfs: Vfs};
+  readonly task: T;
+  readonly tasks: ReadonlySet<T>;
+  fds: FdTable;
+}
+
 interface ExecThread<I extends Program> extends Pick<Thread, 'dead' | 'altstack' | 'setContext' | 'setReg'> {
   load(image: I, memory: Mem): void;
   renew(): void;
@@ -25,8 +32,8 @@ interface ExecThread<I extends Program> extends Pick<Thread, 'dead' | 'altstack'
 /** The portion of process/task/kernel ownership used by the transaction.
  * The concrete owners keep backend and failure evidence; they need not be
  * imported back into their execution operation. */
-interface ExecProcess<P, I extends Program, T extends ExecThread<I>> extends StaticExecOwner<I>, ExecTransition,
-  Pick<Proc, 'fds' | 'memory' | 'stackLow' | 'stackTop' | 'mapBase' | 'mapEnd' | 'free' | 'fixed' | 'argv' |
+interface ExecProcess<P, I extends Program, T extends ExecThread<I>> extends StaticExecOwner<I>, ExecCaller<T>,
+  Pick<Proc, 'memory' | 'stackLow' | 'stackTop' | 'mapBase' | 'mapEnd' | 'free' | 'fixed' | 'argv' |
     'env' | 'comm' | 'dumpable' | 'exe' | 'exeAt' | 'actions' | 'bytes' | 'written'> {
   readonly kernel: StaticExecOwner<I>['kernel'] & {
     readonly vfs: Vfs;
@@ -39,14 +46,14 @@ interface ExecProcess<P, I extends Program, T extends ExecThread<I>> extends Sta
     noteRootConsoleExec(proc: P): void;
   };
   image: I;
-  task: T;
   readonly tasks: Set<T>;
   retireShared(): void;
   newMemory(pages: number, image: I, over: Range[], took: (memory: Mem) => void): Mem;
   retainExecFailure(phase: ExecPhase, cause: unknown, owners: ExecOwners<T>): never;
 }
 
-const preparing = new WeakSet<object>();
+type CommitPrepared = <R>(install: () => R) => R;
+const preparing = new WeakMap<object, CommitPrepared | null>();
 const unresolvedTrees = new WeakSet<Vfs>();
 
 /** A fatal executor still owns its original tree. A second kernel cannot
@@ -64,37 +71,58 @@ export function execMayRun(process: ExecTransition): void {
 /** An irreversible failure has left an owner of this tree. */
 export function blockExecTree(vfs: Vfs): void { unresolvedTrees.add(vfs); }
 
+/** One synchronous preparation per Process with one scoped commit.
+ * Source-tree admission is separate: rollback can retire a rejected stage. */
+export function withExecPreparation<R>(process: ExecTransition, prepare: (commit: CommitPrepared) => R): R {
+  execMayRun(process);
+  if (preparing.has(process)) throw new ExecPreparationChangedError();
+  const commit: CommitPrepared = install => {
+    if (preparing.get(process) !== commit) throw new ExecPreparationChangedError();
+    execMayRun(process);
+    preparing.set(process, null); // Consume the closure, keeping the reentry fence until preparation returns.
+    process.execTransition = true;
+    try { return install(); }
+    finally { if (process.execTransition === true) process.execTransition = undefined; }
+  };
+  preparing.set(process, commit);
+  try { return prepare(commit); } finally { preparing.delete(process); }
+}
+
+/** Fence the exact calling Task and descriptor authority until install. */
+export function captureExecCaller<T extends Pick<Thread, 'dead'>>(process: ExecCaller<T>, task: T) {
+  const table = process.fds, {holders, revision, limit} = table;
+  return {table, holders, check() {
+    execMayRun(process);
+    checkExecTree(process.kernel.vfs);
+    if (process.task !== task || !process.tasks.has(task) || task.dead || process.fds !== table ||
+        table.holders !== holders || table.revision !== revision || table.limit !== limit)
+      throw new ExecPreparationChangedError();
+  }};
+}
+
 export function replaceExec<P, I extends Program, T extends ExecThread<I>>(
   process: P & ExecProcess<P, I, T>, request: ExecRequest, firstTask?: () => T,
 ): void {
-  execMayRun(process);
-  checkExecTree(process.kernel.vfs);
-  if (preparing.has(process)) throw new ExecPreparationChangedError();
-  preparing.add(process);
-  try {
+  withExecPreparation(process, commit => {
+    checkExecTree(process.kernel.vfs);
     const plan = planStaticExec(process, request);
     const task = firstTask ? firstTask() : process.task;
-    const table = process.fds, holders = table.holders, revision = table.revision, limit = table.limit;
+    const caller = captureExecCaller(process, task), {table, holders} = caller;
     // A CLONE_FILES table must be copied before losing any old image or
     // thread. Nothing closes the shared table or any CLOEXEC slot yet.
     const own = holders > 1 ? table.fork() : null;
     let identity: ExecIdentity;
     try {
       plan.check();
-      checkExecTree(process.kernel.vfs);
-      if (process.task !== task || !process.tasks.has(task) || task.dead || process.fds !== table ||
-          table.holders !== holders || table.revision !== revision || table.limit !== limit)
-        throw new ExecPreparationChangedError();
+      caller.check();
       identity = execIdentity(process, plan);
     } catch (cause) {
       try { own?.letGo(); }
       catch (cleanup) { process.retainExecFailure('prepared-descriptors', new AggregateError([cause, cleanup]), {task, newFds: own!}); }
       throw cause;
     }
-    process.execTransition = true;
-    try { commit(process, task, plan, identity, table, own); }
-    finally { if (process.execTransition === true) process.execTransition = undefined; }
-  } finally { preparing.delete(process); }
+    commit(() => installStatic(process, task, plan, identity, table, own));
+  });
 }
 
 interface ExecIdentity { readonly cred: Cred; readonly dumpable: boolean; check(installed: boolean): void }
@@ -120,7 +148,7 @@ function execIdentity(p: StaticExecOwner<Program>, plan: StaticExecPlan<Program>
   }};
 }
 
-function commit<P, I extends Program, T extends ExecThread<I>>(
+function installStatic<P, I extends Program, T extends ExecThread<I>>(
   p: P & ExecProcess<P, I, T>, task: T, plan: StaticExecPlan<I>, identity: ExecIdentity, table: FdTable, own: FdTable | null,
 ): void {
   const k = p.kernel, {image, stack, laid} = plan, {mnt, node, parent: dir, name} = plan.source.at;

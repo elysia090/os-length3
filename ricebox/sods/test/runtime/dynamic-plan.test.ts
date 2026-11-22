@@ -6,6 +6,7 @@ import {join, resolve} from 'node:path';
 import {test} from 'node:test';
 import {prepareDynamicImage, type DetachedDynamicImage} from '../../runtime/linux/exec/dynamic-image.ts';
 import {planDynamicExec, type DynamicExecPlan} from '../../runtime/linux/exec/dynamic-plan.ts';
+import {ExecPreparationChangedError} from '../../runtime/linux/exec/source.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, MNT, Mount, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
 import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
@@ -364,6 +365,13 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
   p.pid = p.pgid = p.sid = task.tid;
   p.tasks.add(task); p.task = task;
   const fd = p.fds.install(new Description('file', {node: file}), {cloexec: true}), description = p.fds.get(fd)!;
+  const metadata = () => [p.fds, p.cred, p.argv, p.env, p.exe, p.exeAt, p.stackLow, p.stackTop, p.mapBase];
+  const before = metadata(), installed: (true | Error | undefined)[] = [];
+  let pc = task.resumeAt;
+  Object.defineProperty(task, 'resumeAt', {get: () => pc, set(next: bigint) {
+    pc = next;
+    if (next) installed.push(p.execTransition);
+  }});
   const stage = () => prepareDynamicImage(p, {path: mainPath, argv: ['ricebox-pie-fixture'], env: ['LC_ALL=C']}, sources, translate);
   const unpublished = () => {
     assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, k.blocked.size, p.cgroup.procs.size, k.images.size], [0, 0, 0, 0, 0, 0]);
@@ -373,6 +381,8 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
     assert.equal(p.fds.get(fd), description);
     assert.equal(p.fds.cloexec(fd), true);
     assert.equal(description.closed, false);
+    metadata().forEach((value, i) => assert.equal(value, before[i], 'held handoff does not publish ordinary exec metadata'));
+    assert.equal(p.execTransition, undefined, 'normal and rolled-back handoffs release the transaction fence');
   };
   const more = compiler.more;
   compiler.more = () => { assert.fail('no guest instruction is compiled by a held handoff'); };
@@ -388,7 +398,7 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
 
     const stale = stage(), staleGrant = task.prepareHeldMapped(stale);
     const changed = p.fds.install(new Description('console', {path: 'stdout'}));
-    assert.throws(() => task.commitHeldMapped(staleGrant), /fresh unpublished inline owner/);
+    assert.throws(() => task.commitHeldMapped(staleGrant), ExecPreparationChangedError);
     assert.throws(() => stale.pages.check(), /discarded/);
     assert.ok(p.fds.get(changed), 'rollback does not undo an independent descriptor change');
     p.fds.close(changed);
@@ -413,6 +423,7 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
       assert.equal(task.memory, memory, 'the ordinary Task and Process own the same prepared backing');
       assert.equal(memory.users, 1);
       assert.equal(task.context().rip, BigInt(image.firstPc));
+      assert.deepEqual(installed, [true], 'only the shared exec commit phase installs the initial context');
       assert.equal(task.reg(4), BigInt(image.stack.sp));
       assert.equal(task.context().regs.filter(r => r !== 0n).length, 1);
       assert.throws(() => image.pages.check(), /claimed/);

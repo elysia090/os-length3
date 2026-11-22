@@ -288,11 +288,12 @@ The scheduler proof is a small interpreter-free guest assembly fixture.
 Separately, an authenticated initial image can be reserved by exactly
 the unpublished Task it was prepared for. A single-use grant checks
 the captured caller, descriptor table, source revisions, mapped entries
-and stack again after CPU setup and at transfer. Rollback releases the
-candidate without changing the prior process. Transfer retires the
-old inspection and assigns the checked backing and initial context
-to that Task in a held state. The owner can discard it without guest
-exit, descriptor changes, or an execution event.
+and stack again after CPU setup and at transfer. Static exec and the
+held transfer use the same caller preflight and per-process commit
+fence. Rollback releases the candidate without changing the prior
+process. Transfer retires the old inspection and assigns the checked
+backing and initial context to that Task in a held state. The owner can
+discard it without guest exit, descriptor changes, or an execution event.
 
 Held image Tasks cannot be queued, run or enter the syscall table, even
 when a mapped translator is present. No normal launch path uses this
