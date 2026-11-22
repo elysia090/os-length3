@@ -12,7 +12,7 @@ import {Description} from '../../runtime/linux/fd.ts';
 import type {ExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Exit} from '../../runtime/linux/flow.ts';
 import {E, FsError, MNT, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
-import {MAPPED_COPY_LIMIT, newMappedMemory} from '../../runtime/linux/mapped-vm.ts';
+import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MappedStringLimit, newMappedMemory} from '../../runtime/linux/mapped-vm.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
@@ -395,7 +395,7 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
     const source = BASE + PAGE - 24, dest = 0x20000 + PAGE - 24, stack = 0x40000;
     const payload = Uint8Array.from({length: 32}, (_, i) => i + 1), results: bigint[] = [];
     let reads = 0, writes = 0;
-    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find,
+    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find, string: code.string,
       permits(a: bigint, n: bigint, access: 'read' | 'write') {
         if (access === 'read') reads++; else writes++;
         return code.permits(a, n, access);
@@ -411,11 +411,11 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
     const previous = (bytes: Uint8Array<ArrayBuffer>, marker: string): Uint8Array<ArrayBuffer> => {
       const output = bytes.slice(), at = Buffer.from(output).indexOf(marker);
       assert.ok(at >= 0);
-      output[at + marker.length - 1] = '2'.charCodeAt(0);
+      output[at + marker.length - 1] = '3'.charCodeAt(0);
       return output;
     };
     assert.throws(() => new MappedDispatcher(observed,
-      {...compiler, core: () => previous(compiler.core(), 'sods.mapped-core-v3')}, imports), /checked dispatcher/);
+      {...compiler, core: () => previous(compiler.core(), 'sods.mapped-core-v4')}, imports), /checked dispatcher/);
     const dispatcher = new MappedDispatcher(observed, compiler, imports);
     const normal = (mode: bigint, a = BigInt(source), d = BigInt(dest), rounds = 1n) => {
       dispatcher.setReg('r7', a); dispatcher.setReg('r6', d); dispatcher.setReg('r2', mode);
@@ -432,7 +432,7 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
       user().copyOut(source, payload);
       assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
       const stale = new MappedDispatcher(observed, {...compiler,
-        more: (...args) => previous(compiler.more(...args), 'sods.mapped-piece-v3')}, imports);
+        more: (...args) => previous(compiler.more(...args), 'sods.mapped-piece-v4')}, imports);
       try {
         assert.throws(() => stale.run(BigInt(pc)), /checked data ABI/);
         assert.deepEqual([reads, writes], [0, 0], 'an older fragment is not attached or run');
@@ -469,6 +469,124 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
       assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
       assert.throws(normal(1n), permission(BigInt(source + 16), 16, 'read'));
       assert.throws(normal(0n, BigInt(source) + (1n << 32n)), permission(BigInt(source) + (1n << 32n), 8, 'read'));
+    } finally { dispatcher.close(); clean(); }
+  } finally { rmSync(scratch, {recursive: true, force: true}); }
+});
+
+test('checked MOVS/STOS preserve normal string semantics and use one bounded VM transfer', {skip}, async (test) => {
+  const vfs = new Vfs(), t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!;
+  const scratch = mkdtempSync(join(tmpdir(), 'sods-checked-strings-'));
+  try {
+    const src = fileURLToPath(new URL('../fixtures/mapped-code/strings.S', import.meta.url)), dst = join(scratch, 'strings.so');
+    execFileSync(process.env.SODS_FIXTURE_CC ?? 'cc', ['-nostdlib', '-shared', '-fPIC', '-s',
+      '-Wl,-e,strings,--build-id=none', src, '-o', dst], {timeout: 6_000});
+    const binary = new Uint8Array(readFileSync(dst)), f = fixture(vfs, '/strings.so', binary);
+    const {p, code, user, open, clean} = processWithVm(vfs, {sources: [f.source], translate: t});
+    const {addr, length, offset, pc} = textMap(t.describeDynamic!(binary, 'library'), 0x30000);
+    const source = BASE + PAGE - 8, dest = 0x20000 + PAGE - 8, stack = 0x40000;
+    const payload = Uint8Array.from({length: 32}, (_, i) => i + 1);
+    const value = 0x1122_3344_5566_7788n, pattern = Uint8Array.of(0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11);
+    let operations = 0, result: [bigint, bigint, bigint, bigint] | undefined;
+    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find, permits: code.permits,
+      string(...args: Parameters<typeof code.string>) { operations++; return code.string(...args); }};
+    const done = new Error('Completed string fixture');
+    const imports = {
+      syscall(nr: bigint, d: bigint, s: bigint, count: bigint, flags: bigint) {
+        assert.equal(nr, 231n);
+        result = [d, s, count, flags & 0x401n]; // Only DF and the carried flag.
+        throw done;
+      },
+      trap() { assert.fail('the string fixture has no instruction trap'); },
+      div128() { assert.fail('unused div128'); }, fpu() { assert.fail('unused fpu'); },
+      clock: () => 0n, time: () => NaN, trace() {},
+    };
+    assert.throws(() => new MappedDispatcher(observed, compiler, {...imports, mapped_string() {}}), /own VM authority/);
+    const dispatcher = new MappedDispatcher(observed, compiler, imports);
+    const enter = (mode: number, d: number | bigint, s: number | bigint, count: number) => {
+      dispatcher.setReg('r8', BigInt(mode));
+      dispatcher.setReg('r7', BigInt(d)); dispatcher.setReg('r6', BigInt(s));
+      dispatcher.setReg('r1', BigInt(count)); dispatcher.setReg('r0', value);
+      dispatcher.setReg('r4', BigInt(stack + PAGE));
+      result = undefined;
+      return () => dispatcher.run(BigInt(pc));
+    };
+    const completed = (mode: number, d: number | bigint, s: number | bigint, count: number) => {
+      const was = operations;
+      assert.throws(enter(mode, d, s, count), e => e === done);
+      assert.equal(operations, was + 1, 'one checked transfer per string instruction');
+      return result;
+    };
+    const mapped = (start: number, size: number) => {
+      assert.equal(syscall(p, 9, start, size, 3, 0x32, -1, 0), BigInt(start));
+    };
+    const permission = (start: number, n: number, mode: 'read' | 'write') =>
+      (e: unknown) => e instanceof MappedDataFault && e.address === BigInt(start) && e.length === n && e.access === mode;
+    try {
+      assert.equal(syscall(p, 9, addr, length, 5, 0x12, open('/strings.so'), offset), BigInt(addr));
+      mapped(BASE, 2 * PAGE); mapped(0x20000, 2 * PAGE); mapped(stack, PAGE);
+      user().copyOut(source, payload);
+      // A readable, differently protected second region is still part
+      // of the source. The copies below all cross both page boundaries.
+      assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+      for (const [mode, width, back] of [[0, 1, 0], [1, 1, 1], [2, 2, 0], [3, 4, 1], [4, 8, 0]]) {
+        user().copyOut(dest, new Uint8Array(32));
+        const d = back ? dest + 16 - width : dest, s = back ? source + 16 - width : source;
+        assert.deepEqual(completed(mode, d, s, 16 / width),
+          [BigInt(d + (back ? -16 : 16)), BigInt(s + (back ? -16 : 16)), 0n, back ? 0x401n : 1n]);
+        assert.deepEqual(user().copyIn(dest, 16), payload.subarray(0, 16));
+      }
+      for (const [mode, width, back] of [[5, 1, 0], [6, 2, 1], [7, 4, 0], [8, 8, 1]]) {
+        user().copyOut(dest, new Uint8Array(32));
+        const d = back ? dest + 24 - width : dest;
+        assert.deepEqual(completed(mode, d, source, 24 / width),
+          [BigInt(d + (back ? -24 : 24)), BigInt(source), 0n, back ? 0x401n : 1n]);
+        assert.deepEqual(user().copyIn(dest, 24), Uint8Array.from({length: 24}, (_, i) => pattern[i % width]));
+      }
+      assert.deepEqual(completed(9, dest, source, 37), [BigInt(dest + 8), BigInt(source + 8), 37n, 1n]);
+      assert.deepEqual(user().copyIn(dest, 8), payload.subarray(0, 8));
+      assert.deepEqual(completed(10, dest, source, 37), [BigInt(dest - 1), BigInt(source), 37n, 0x401n]);
+      assert.equal(user().copyIn(dest, 1)[0], pattern[0]);
+      assert.deepEqual(completed(0, 0n, -1n, 0), [0n, -1n, 0n, 1n], 'zero repeat does not inspect either pointer');
+
+      // Copies that feed unread source use x86 traversal, not memmove.
+      user().copyOut(dest, encode.encode('ABCDEF'));
+      completed(0, dest + 1, dest, 5);
+      assert.equal(Buffer.from(user().copyIn(dest, 6)).toString(), 'AAAAAA');
+      user().copyOut(dest, encode.encode('ABCDEF'));
+      completed(1, dest + 4, dest + 5, 5);
+      assert.equal(Buffer.from(user().copyIn(dest, 6)).toString(), 'FFFFFF');
+      user().copyOut(dest, encode.encode('ABCDEF'));
+      completed(0, dest, dest + 1, 5);
+      assert.equal(Buffer.from(user().copyIn(dest, 6)).toString(), 'BCDEFF');
+      user().copyOut(dest, payload.subarray(0, 10));
+      completed(2, dest + 1, dest, 4);
+      assert.deepEqual(user().copyIn(dest, 10), Uint8Array.of(1, 1, 2, 2, 4, 4, 6, 6, 8, 10));
+
+      const kept = user().copyIn(dest, 32), epoch = code.generation;
+      assert.equal(syscall(p, 10, 0x20000 + PAGE, PAGE, 1), 0n);
+      assert.equal(code.generation, epoch, 'warm code observes current data rights');
+      assert.throws(enter(0, dest, source, 16), permission(dest, 16, 'write'));
+      assert.throws(enter(8, dest + 16, source, 3), permission(dest, 24, 'write'));
+      assert.deepEqual(user().copyIn(dest, 32), kept, 'neither refused transfer publishes even a prefix');
+      assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
+      assert.throws(enter(0, dest, source, 16), permission(source, 16, 'read'));
+      assert.throws(enter(4, dest, source, MAPPED_STRING_LIMIT / 8 + 1), MappedStringLimit);
+      assert.deepEqual(user().copyIn(dest, 32), kept);
+
+      // Large benign contiguous transfers still cross the host once
+      // apiece, rather than checking or allocating per element.
+      const a = 0x80000, b = 0x200000;
+      mapped(a, MAPPED_STRING_LIMIT); mapped(b, MAPPED_STRING_LIMIT);
+      user().copyOut(a, Uint8Array.of(23));
+      user().copyOut(a + MAPPED_STRING_LIMIT - 1, Uint8Array.of(79));
+      completed(0, b, a, MAPPED_STRING_LIMIT);
+      const starting = operations, now = performance.now();
+      for (let i = 0; i < 32; i++) completed(0, b, a, MAPPED_STRING_LIMIT);
+      const elapsed = performance.now() - now;
+      assert.equal(operations - starting, 32);
+      assert.equal(user().copyIn(b, 1)[0], 23);
+      assert.equal(user().copyIn(b + MAPPED_STRING_LIMIT - 1, 1)[0], 79);
+      if (process.env.SODS_MEASURE_MAPPED) test.diagnostic(`32 checked MiB in ${elapsed.toFixed(1)} ms (32 VM transfers)`);
     } finally { dispatcher.close(); clean(); }
   } finally { rmSync(scratch, {recursive: true, force: true}); }
 });

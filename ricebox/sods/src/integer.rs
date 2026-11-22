@@ -470,9 +470,6 @@ impl Fx<'_> {
     /// movs and stos, alone or repeated, each way. The way is the block's where its code says it (std or cld before,
     /// in this block); elsewhere it is the thread's as it runs (G_RF), and both ways are made for DF to choose.
     pub(crate) fn string(&mut self, i: &Instruction) -> bool {
-        // These implicit ranges have size, direction and restart semantics
-        // of their own. Do not emit the static bulk lowering in mapped code.
-        if self.checked_memory { return false; }
         use Mnemonic::*;
         let (size, store): (u8, bool) = match i.mnemonic() {
             Movsb => (1, false), Movsw => (2, false), Movsd => (4, false), Movsq => (8, false),
@@ -480,6 +477,9 @@ impl Fx<'_> {
             _ => return false,
         };
         let rep = i.has_rep_prefix();
+        if self.checked_memory {
+            return self.checked_string(i, size, store, rep);
+        }
         match self.backward {
             Some(back) => self.string_way(size, store, rep, back),
             None => {
@@ -491,6 +491,31 @@ impl Fx<'_> {
                 self.end();
             }
         }
+        true
+    }
+
+    /// Mapped string operations are one bounded VM authorization and
+    /// transfer, with no legacy Wasm bulk operation or per-element bypass.
+    fn checked_string(&mut self, i: &Instruction, size: u8, store: bool, rep: bool) -> bool {
+        if i.op0_kind() != OpKind::MemoryESRDI || (!store && i.op1_kind() != OpKind::MemorySegRSI)
+            || i.segment_prefix() != Register::None || i.has_repne_prefix() { return false; }
+        self.get(l_reg(RDI));
+        if store { self.c64(0); } else { self.get(l_reg(RSI)); }
+        if rep { self.get(l_reg(RCX)); } else { self.c64(1); }
+        if store { self.get(l_reg(RAX)); } else { self.c64(0); }
+        self.c32(size as i32);
+        if let Some(back) = self.backward { self.c32(back as i32); }
+        else {
+            self.gget(G_RF); self.c64(RF_DF); self.e(I64_AND); self.c64(0); self.e(I64_NE);
+        }
+        self.tee_raw(l_u(0)); self.c32(1); self.e(I32_SHL); self.c32(store as i32); self.e(I32_OR);
+        self.call(F_MAPPED_STRING); self.set(l_t(1));
+        // Only a completed instruction updates the x86 pointers or count.
+        self.c64(0); self.get(l_t(1)); self.e(I64_SUB);
+        self.get(l_t(1)); self.get_raw(l_u(0)); self.e(SELECT); self.set(l_t(1));
+        if !store { self.get(l_reg(RSI)); self.get(l_t(1)); self.e(I64_ADD); self.set(l_reg(RSI)); }
+        self.get(l_reg(RDI)); self.get(l_t(1)); self.e(I64_ADD); self.set(l_reg(RDI));
+        if rep { self.c64(0); self.set(l_reg(RCX)); }
         true
     }
 

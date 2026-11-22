@@ -14,6 +14,7 @@ import {ReadLifetimeError, retireMemoryView} from './read-lifetime.ts';
 const PAGE = 4096, WASM_PAGE = 65536, LIMIT = 256 << 20, MAX_REGIONS = 4096, MAX_SOURCES = 4096;
 const MIN = 65536, R = 1, W = 2, X = 4, RX = R | X;
 export const MAPPED_COPY_LIMIT = 1 << 20;
+export const MAPPED_STRING_LIMIT = 1 << 20;
 const PATH_LIMIT = 4096;
 const PRIVATE = 2, FIXED = 0x10, ANON = 0x20, NOREPLACE = 0x100000;
 // glibc may supply the historical DENYWRITE/EXECUTABLE hints. Neither grants permission.
@@ -55,7 +56,28 @@ export type DataAccess = 'read' | 'write';
 export type MappedRunView = MappedCodeView & {
   readonly memory: WebAssembly.Memory;
   permits(address: bigint, length: bigint, access: DataAccess): boolean;
+  string(dest: bigint, source: bigint, count: bigint, value: bigint, width: number, mode: number): bigint;
 };
+
+/** A closed data-access failure, not permission to retry old Wasm.
+ * Signal delivery belongs to a future mapped task backend. */
+export class MappedDataFault extends Error {
+  readonly address: bigint;
+  readonly length: number;
+  readonly access: DataAccess;
+  constructor(address: bigint, length: number, access: DataAccess) {
+    super('Mapped guest data access was not permitted');
+    this.name = 'MappedDataFault';
+    this.address = address;
+    this.length = length;
+    this.access = access;
+  }
+}
+
+/** A limit of this inline profile, not a claim that a Linux page faulted. */
+export class MappedStringLimit extends RangeError {
+  constructor() { super('Mapped string operation exceeds the inline transfer bound'); this.name = 'MappedStringLimit'; }
+}
 
 /** A scoped kernel copy capability, not a borrow of guest RAM. */
 export interface MappedUserMemory {
@@ -115,7 +137,7 @@ export class MappedVm {
     const code = this.#code = new MappedCodeSpace(vfs, memory);
     this.code = Object.freeze({
       memory, get generation() { return code.generation; },
-      find: code.find.bind(code), permits: this.permits.bind(this),
+      find: code.find.bind(code), permits: this.permits.bind(this), string: this.#string.bind(this),
     });
   }
 
@@ -171,7 +193,7 @@ export class MappedVm {
     });
   }
 
-  /** Whole-span data policy, also usable by a future checked CPU backend.
+  /** Whole-span data policy, used by checked CPU data access.
    * Takes the effective address before any narrowing. A zero-size data
    * operation accesses no memory; a retired or in-flight owner grants none. */
   permits(address: bigint, length: bigint, access: DataAccess): boolean {
@@ -180,6 +202,53 @@ export class MappedVm {
     if (!length) return true;
     if (address < 0n || address > BigInt(LIMIT)) return false;
     return this.#prefix(Number(address), Number(length), access) === Number(length);
+  }
+
+  /** A v4 checked string instruction. The VM preflights both complete
+   * spans before touching memory; nothing calls out during the transfer.
+   * Bits in mode: 1 for STOS (otherwise MOVS), 2 for backwards (DF). */
+  #string(dest: bigint, source: bigint, count: bigint, value: bigint, width: number, mode: number): bigint {
+    if ((width !== 1 && width !== 2 && width !== 4 && width !== 8) ||
+        (mode !== 0 && mode !== 1 && mode !== 2 && mode !== 3)) throw new TypeError('Invalid mapped string operation');
+    const store = !!(mode & 1), back = !!(mode & 2);
+    const size = BigInt(width), extent = BigInt.asUintN(64, count) * size;
+    if (extent > BigInt(MAPPED_STRING_LIMIT)) throw new MappedStringLimit();
+    const n = Number(extent);
+    if (!n) {
+      if (!this.permits(0n, 0n, 'write')) throw new MappedDataFault(0n, 0, 'write');
+      return 0n; // A zero count probes neither original pointer.
+    }
+    const low = back ? extent - size : 0n, d = BigInt.asUintN(64, dest) - low, s = BigInt.asUintN(64, source) - low;
+    if (!store && !this.permits(s, extent, 'read')) throw new MappedDataFault(s, n, 'read');
+    if (!this.permits(d, extent, 'write')) throw new MappedDataFault(d, n, 'write');
+    const bytes = new Uint8Array(this.memory.buffer), at = Number(d);
+    if (store) {
+      const word = BigInt.asUintN(64, value);
+      if (width === 1) bytes.fill(Number(word & 255n), at, at + n);
+      else {
+        // Write the little-endian element, then double the filled prefix.
+        const first = new DataView(bytes.buffer, at, width);
+        if (width === 2) first.setUint16(0, Number(word & 0xffffn), true);
+        if (width === 4) first.setUint32(0, Number(word & 0xffff_ffffn), true);
+        if (width === 8) first.setBigUint64(0, word, true);
+        for (let done = width; done < n; done *= 2)
+          bytes.copyWithin(at + done, at, at + Math.min(done, n - done));
+      }
+    } else {
+      const from = Number(s);
+      const feedsUnread = back ? at < from && at + n > from : from < at && at < from + n;
+      if (!feedsUnread) bytes.copyWithin(at, from, from + n);
+      else {
+        // x86 takes one element at a time. Where a write changes unread
+        // source, memmove of the full range is observably different.
+        const step = back ? -width : width;
+        for (let i = back ? n - width : 0; i >= 0 && i < n; i += step) {
+          if (width === 1) bytes[at + i] = bytes[from + i];
+          else bytes.copyWithin(at + i, from + i, from + i + width);
+        }
+      }
+    }
+    return extent;
   }
 
   mmap(owner: Caller, addr: bigint, len: bigint, prot: bigint, bits: bigint, fd: bigint, off: bigint): number {

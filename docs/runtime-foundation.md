@@ -169,7 +169,7 @@ static process and task backends are unchanged for ordinary memories.
 
 ### Checked mapped CPU data access
 
-The opt-in mapped v3 compiler and dispatcher use the same installed
+The opt-in mapped compiler and dispatcher use the same installed
 VM records as the kernel copies. An explicit scalar, stack or
 supported SIMD load/store is checked over its entire width before
 touching memory. An AMD64 address stays wide until checked; explicit
@@ -180,15 +180,33 @@ no partial effect. The compiler-authored interrupt poll is a separate
 fixed low-word read, not a guest memory grant.
 
 The checked dispatcher refuses older and static fragments instead of
-running them as mapped code. Unported string/bulk operations, locks
-and implicit atomic forms, memory bit strings, masked vector stores,
-x87 memory and GS forms do not use their static lowerings. The mapped
-compiler also omits the unchecked clock fast path. Ordinary static
-output is unchanged.
+running them as mapped code. Locks and implicit atomic forms, memory
+bit strings, masked vector stores, x87 memory and GS forms do not use
+their static lowerings. The mapped compiler also omits the unchecked
+clock fast path. Ordinary static output is unchanged.
 
-This still is not a mapped launch profile. Bulk and the other needed
-unported operations, precise task/signal handling, executable image
-and stack publication, and normal scheduling need separate proof.
+### Checked string transfers
+
+The mapped v4 ABI supports addr64 MOVS and STOS at element widths
+1, 2, 4 and 8, with their ordinary segments, with or without REP.
+The compiler makes one bounded VM call (up to 1 MiB). The VM checks
+the complete destination and, for MOVS, the complete source before
+writing. Zero count touches neither pointer. For non-overlapping
+transfers, MOVS does one range copy; when a write feeds unread
+source, it copies in architectural element order. STOS repeats the
+little-endian element. RSI/RDI, and RCX for REP, update only after
+the successful transfer; the instruction does not change flags.
+
+The bounded inline profile rejects out-of-policy operands before
+any partial string effect. It does not emulate Linux's partial
+execution and restart after a real page fault. Other string forms
+such as SCAS/CMPS, other address sizes and segment overrides remain
+unsupported. Neither old artifacts nor the static raw bulk path
+can supply a mapped transfer.
+
+This still is not a mapped launch profile. Other needed unported
+operations, precise task/signal handling, executable image and stack
+publication, and normal scheduling need separate proof.
 Worker execution requires its own synchronization. No test here
 starts the guest loader or proves an application's startup.
 

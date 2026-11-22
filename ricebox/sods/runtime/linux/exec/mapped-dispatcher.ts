@@ -1,7 +1,8 @@
 // The experimental one-thread dispatcher for authorized executable mappings.
 // It owns code slots, not memory mappings, Linux syscalls or task scheduling.
 import type {MappedTranslate} from '../../translation/mapped.ts';
-import type {DataAccess, MappedRunView} from '../mapped-vm.ts';
+import {MappedDataFault, type MappedRunView} from '../mapped-vm.ts';
+export {MappedDataFault} from '../mapped-vm.ts';
 import type {RegName} from '../parts.ts';
 import {MappedCodeChanged, type BoundText} from './mapped-code-space.ts';
 
@@ -17,21 +18,6 @@ class SyscallReturn {
   constructor(pc: bigint, value: bigint) { this.pc = pc; this.value = value; }
   readonly pc: bigint;
   readonly value: bigint;
-}
-
-/** A closed data-access failure, not permission to retry old Wasm.
- * Signal delivery belongs to a future mapped task backend. */
-export class MappedDataFault extends Error {
-  readonly address: bigint;
-  readonly length: number;
-  readonly access: DataAccess;
-  constructor(address: bigint, length: number, access: DataAccess) {
-    super('Mapped guest data access was not permitted');
-    this.name = 'MappedDataFault';
-    this.address = address;
-    this.length = length;
-    this.access = access;
-  }
 }
 
 function words(module: WebAssembly.Module, name: string, stride: number): BigUint64Array {
@@ -56,12 +42,13 @@ export class MappedDispatcher {
   #bytes = 0;
 
   constructor(space: MappedRunView, compiler: MappedTranslate, host: WebAssembly.ModuleImports) {
-    if (typeof space.permits !== 'function' || Object.hasOwn(host, 'mapped_access'))
+    if (typeof space.permits !== 'function' || typeof space.string !== 'function' ||
+        Object.hasOwn(host, 'mapped_access') || Object.hasOwn(host, 'mapped_string'))
       throw new TypeError('Mapped data checks require their own VM authority');
     this.#space = space;
     this.#compile = compiler;
     const module = new WebAssembly.Module(compiler.core());
-    if (WebAssembly.Module.customSections(module, 'sods.mapped-core-v3').length !== 1)
+    if (WebAssembly.Module.customSections(module, 'sods.mapped-core-v4').length !== 1)
       throw new Error('Mapped code requires its checked dispatcher');
     const env: WebAssembly.ModuleImports = {};
     for (const [name, fn] of Object.entries(host)) {
@@ -90,7 +77,14 @@ export class MappedDispatcher {
         if (address + count > 0x1_0000_0000n || !space.permits(address, count, mode))
           throw new MappedDataFault(address, length, mode);
         return Number(address); // The VM approved this whole span before address narrowing.
-      }};
+      },
+      mapped_string: (...args: Parameters<MappedRunView['string']>): bigint => {
+        this.#requireLive();
+        const transferred = space.string(...args);
+        this.#requireLive();
+        return transferred;
+      },
+    };
     this.#core = new WebAssembly.Instance(module, {env: this.#env}).exports as Core;
   }
 
@@ -162,8 +156,9 @@ export class MappedDispatcher {
       const code = source.compile(generation, this.#compile, pc, known, base);
       if (this.#bytes + code.length > MAX_BYTES) throw new RangeError('Mapped translation budget exhausted');
       const module = new WebAssembly.Module(code), starts = words(module, 'sods.starts', 8), rows = words(module, 'sods.entries', 16);
-      if (WebAssembly.Module.customSections(module, 'sods.mapped-piece-v3').length !== 1 ||
-          !WebAssembly.Module.imports(module).some(i => i.kind === 'function' && i.module === 'env' && i.name === 'mapped_access'))
+      const imports = WebAssembly.Module.imports(module);
+      if (WebAssembly.Module.customSections(module, 'sods.mapped-piece-v4').length !== 1 ||
+          !['mapped_access', 'mapped_string'].every(name => imports.some(i => i.kind === 'function' && i.module === 'env' && i.name === name)))
         throw new Error('Mapped code fragment lacks the checked data ABI');
       const count = starts.length, end = base + count;
       const within = (at: bigint): boolean => at >= BigInt(source.text.address) &&

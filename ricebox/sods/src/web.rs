@@ -193,7 +193,7 @@ pub unsafe extern "C" fn sods_open(ptr: *mut u8, len: usize, known: *const u8, n
 /// A thread core whose table is supplied only by its authorized code mappings.
 #[cfg(feature = "mapped-code")]
 #[no_mangle]
-pub extern "C" fn sods_mapped_core_v3() -> i32 {
+pub extern "C" fn sods_mapped_core_v4() -> i32 {
     OUTPUT.with(|o| *o.borrow_mut() = crate::image::mapped_core());
     0
 }

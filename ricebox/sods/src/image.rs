@@ -29,6 +29,7 @@ const T_FPU: u32 = 8; // (registers, op, size, st a, st b, operand, its top word
 const T_TRACE: u32 = 9; // (i64) -> ()
 const T_TIME: u32 = 10; // (clock id) -> ms, NaN when the kernel is to answer
 const T_MAPPED_ACCESS: u32 = 11; // (wide address, displacement, bytes, write) -> checked i32 address
+const T_MAPPED_STRING: u32 = 12; // (dst, src, count, value, width, mode) -> bytes moved
 
 /// The first module's own functions (mulhu to run), made before the guest's.
 const HELPERS: u32 = FIRST_GUEST - F_MULHU;
@@ -360,6 +361,8 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     if mapped {
         types.ty().function([ValType::I64, ValType::I64, ValType::I32, ValType::I32], [ValType::I32]);
         imports.import("env", "mapped_access", EntityType::Function(T_MAPPED_ACCESS));
+        types.ty().function([ValType::I64, ValType::I64, ValType::I64, ValType::I64, ValType::I32, ValType::I32], [ValType::I64]);
+        imports.import("env", "mapped_string", EntityType::Function(T_MAPPED_STRING));
     }
     for n in 0..GLOBALS {
         imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
@@ -390,7 +393,7 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
     let mut names = wasm_encoder::NameMap::new();
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() { names.append(k as u32, n); }
-    if mapped { names.append(F_MAPPED_ACCESS, "mapped_access"); }
+    if mapped { names.append(F_MAPPED_ACCESS, "mapped_access"); names.append(F_MAPPED_STRING, "mapped_string"); }
     let mut name = String::new();
     for (k, f) in program.functions.iter().enumerate() { names.append(guest_function(k as u32, mapped), f.shown(&mut name)); }
     let mut name_section = wasm_encoder::NameSection::new();
@@ -406,7 +409,7 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
     let starts = CustomSection { name: Cow::Borrowed("sods.starts"), data: Cow::Owned(starts) };
 
-    let mapped_abi = CustomSection { name: Cow::Borrowed("sods.mapped-piece-v3"), data: Cow::Borrowed(&[]) };
+    let mapped_abi = CustomSection { name: Cow::Borrowed("sods.mapped-piece-v4"), data: Cow::Borrowed(&[]) };
     let wasm = if mapped { code.finish(None, &[&name_section, &entries, &starts, &mapped_abi]) }
         else { code.finish(None, &[&name_section, &entries, &starts]) };
     Translation { wasm, report }
@@ -458,7 +461,7 @@ pub(crate) fn mapped_core() -> Vec<u8> {
     math_helpers(&mut code);
     mapped_lookup(&mut code);
     run_loop(&mut code);
-    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v3"), data: Cow::Borrowed(&[]) };
+    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v4"), data: Cow::Borrowed(&[]) };
     code.finish(None, &[&abi])
 }
 
@@ -558,7 +561,10 @@ mod mapped_tests {
     #[test]
     fn unaudited_data_instructions_emit_refusals_not_memory_effects() {
         let forms: &[(&str, &[u8])] = &[
-            ("Movsb", &[0xf3, 0xa4]),               // repeat move
+            ("Scasb", &[0xf3, 0xae]),               // repeat scan
+            ("Movsb", &[0xf3, 0x67, 0xa4]),         // addr32 move
+            ("Movsb", &[0x64, 0xf3, 0xa4]),         // segment-overridden move
+            ("Movsb", &[0xf2, 0xa4]),               // non-profile repeat prefix
             ("Add", &[0xf0, 0x48, 0x01, 0x07]),    // locked add
             ("Xchg", &[0x48, 0x87, 0x07]),          // implicit lock
             ("Fld", &[0xdb, 0x2f]),                 // extended x87 memory operand
