@@ -53,9 +53,12 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
       process.memory || process.state !== 'live' || held.reader !== reader || held.compiler !== compiler)
     throw new ExecPreparationChangedError();
   const {staged} = held, pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = image.stack.sp;
-  const check = (): void => {
+  const checkOwner = (): void => {
     if (heldImages.get(image) !== held || process.own !== task || process.memory || process.state !== 'live')
       throw new ExecPreparationChangedError();
+  };
+  const check = (): void => {
+    checkOwner();
     staged.checkEntry(pc, main, sp);
   };
   check();
@@ -64,7 +67,7 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
   return Object.freeze({
     memory, pc, sp: BigInt(sp), check,
     claim() {
-      check();
+      checkOwner();
       staged.claim(process, pc, main, sp);
       heldImages.delete(image);
     },
@@ -119,7 +122,7 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   const layout: InitialMappedRegion[] = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
     {kind: 'stack', start: stack.stackLow, end: stack.stackTop, prot: PROT_R | PROT_W, writes: stack.writes}];
   const staged = MappedVm.stage({vfs: process.kernel.vfs, base: stack.mapBase, pages: stack.mapBase / WASM_PAGE,
-    sources: [], reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
+    libraries: plan.libraries, reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
   const {pages} = staged;
   try {
     staged.checkEntry(BigInt(plan.firstPc), BigInt(plan.aux.entry), stack.sp);

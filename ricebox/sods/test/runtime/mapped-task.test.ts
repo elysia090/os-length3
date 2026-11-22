@@ -9,6 +9,7 @@ import {test} from 'node:test';
 import {captureExecutableSource} from '../../runtime/linux.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
+import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
 import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {RET} from '../../runtime/linux/seccomp.ts';
@@ -47,7 +48,8 @@ function mappedTask(kernel: Kernel, t: Translate, compiler: MappedTranslate, f: 
   p.stackLow = sp - PAGE; p.stackTop = sp;
   p.free = []; p.fixed = [];
   const reader = {describeDynamic: t.describeDynamic!, notProgram: t.notProgram};
-  const memory = p.memory = MappedVm.allocate({vfs: kernel.vfs, base: BASE, pages: 1, sources: [f.source], reader});
+  const libraries = captureMappedLibraries(kernel.vfs, [f.source]);
+  const memory = p.memory = MappedVm.allocate({vfs: kernel.vfs, base: BASE, pages: 1, libraries, reader});
   const vm = memory.mappedVm;
   assert.equal(syscall(p, 9, [data, 2 * PAGE, 3, 0x32, -1, 0]), BigInt(data));
   vm.userMemory(p).copyOut(data, new TextEncoder().encode('mapped\n'));

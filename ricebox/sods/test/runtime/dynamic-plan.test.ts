@@ -8,6 +8,7 @@ import {prepareDynamicImage, type DetachedDynamicImage} from '../../runtime/linu
 import {planDynamicExec, type DynamicExecPlan} from '../../runtime/linux/exec/dynamic-plan.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, MNT, Mount, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
+import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
 import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import type {Mem} from '../../runtime/linux/parts.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
@@ -41,6 +42,24 @@ function fixture() {
   const links = [['/lib', 'usr/lib'], ['/lib64', 'usr/lib64'], ['/usr/lib64/ld-linux-x86-64.so.2', '../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2']] as const;
   for (const [path, target] of links) assert.equal(readlinkSync(join(root, path)), target);
   return {main: bytes(mainPath), loader, libc, library: bytes(libraryPath), links};
+}
+
+function matchedSources(vfs: Vfs) {
+  const f = fixture(), target = mountTarget(vfs), reads = new Map<string, number>();
+  const mount = (path: string, bytes: Uint8Array, mode: number) => {
+    const origin = sha(bytes);
+    const file = target.file(path, mode, bytes.length, () => {
+      reads.set(path, (reads.get(path) ?? 0) + 1);
+      return bytes;
+    }, origin);
+    return {file, grant: captureExecutableSource(vfs, path, {origin, size: bytes.length})};
+  };
+  const app = mount(mainPath, f.main, 0o755), ld = mount(interpreterPath, f.loader, 0o755);
+  const library = mount(libraryPath, f.library, 0o644), libc = mount(libcPath, f.libc, 0o644);
+  for (const [path, to] of f.links) vfs.symlink(to, path);
+  const inputs = [library.grant, libc.grant], libraries = captureMappedLibraries(vfs, inputs);
+  inputs.length = 0; // No dependence on the caller's mutable array after admission.
+  return {f, app: app.file, library: library.file, reads, sources: {main: app.grant, interpreter: ld.grant, libraries}};
 }
 
 test('the actual PIE and pinned guest linker produce an ordinary, source-bound two-object plan', {skip}, async () => {
@@ -126,7 +145,7 @@ test('the actual PIE and pinned guest linker produce an ordinary, source-bound t
 
 test('detached VM seeds only owned nonoverlapping pages and lends no raw memory', () => {
   const vfs = new Vfs(), base = 0x20000, at = 0x10000;
-  const make = {vfs, base, pages: 2, sources: [], reader: {
+  const make = {vfs, base, pages: 2, reader: {
     describeDynamic() { assert.fail('this unit seeds plain data pages'); }, notProgram: () => false,
   }};
   const readOnly = {kind: 'load-data' as const, start: at, end: at + 4096, prot: 1,
@@ -334,16 +353,9 @@ test('ordinary native exec succeeds inside the exact matched Debian fixture root
 test('the authenticated initial image transfers once to its exact unpublished Task without admitting execution', {
   skip: !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false,
 }, async () => {
-  const f = fixture(), translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
   assert.ok(compiler);
-  const vfs = new Vfs(), target = mountTarget(vfs);
-  const file = target.file(mainPath, 0o755, f.main.length, () => f.main, sha(f.main));
-  target.file(interpreterPath, 0o755, f.loader.length, () => f.loader, sha(f.loader));
-  for (const [path, to] of f.links) vfs.symlink(to, path);
-  const sources = {
-    main: captureExecutableSource(vfs, mainPath, {origin: sha(f.main), size: f.main.length}),
-    interpreter: captureExecutableSource(vfs, interpreterPath, {origin: sha(f.loader), size: f.loader.length}),
-  };
+  const vfs = new Vfs(), mounted = matchedSources(vfs), {app: file, sources} = mounted;
   const k = new Kernel({vfs, translate, console: quiet});
   const p = new Process(k, null, false, false, null, null, false);
   p.noNewPrivs = true;
@@ -394,6 +406,7 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
     const image = stage(), grant = task.prepareHeldMapped(image);
     const receipt = task.commitHeldMapped(grant);
     try {
+      assert.equal(mounted.reads.has(libraryPath) || mounted.reads.has(libcPath), false, 'no dependency payloads read for the held handoff');
       const memory = p.memory as Mem | null;
       assert.ok(memory?.mappedVm);
       assert.equal(receipt.kind, 'held-initial');
@@ -426,10 +439,72 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
     assert.equal(p.memory, null);
     assert.equal(task.resumeAt, 0n);
     unpublished();
+
+    const outdated = stage(), outdatedGrant = task.prepareHeldMapped(outdated);
+    // Identical data at a new inode version still needs fresh authorization.
+    mounted.library.write(0, mounted.f.library.slice(0, 1));
+    assert.throws(() => task.commitHeldMapped(outdatedGrant), hasErrno(E.ACCES));
+    assert.throws(() => outdated.pages.check(), /discarded/);
+    assert.equal(p.memory, null);
+    unpublished();
   } finally {
     compiler.more = more;
     p.fds.letGo();
     p.fs0.drop();
     k.halt();
   }
+});
+
+test('the same planned dependency catalogue authorizes lazy ordinary guest mmap in the checked VM', {
+  skip: !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false,
+}, async () => {
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), describeDynamic = translate.describeDynamic;
+  assert.ok(describeDynamic && translate.mapped);
+  const vfs = new Vfs(), {f, sources, reads, library} = matchedSources(vfs);
+  const k = new Kernel({vfs, translate, console: quiet}), p = new Process(k, null);
+  p.noNewPrivs = true;
+  const call = (nr: number, ...args: number[]): bigint => p.syscall(BigInt(nr),
+    ...[...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]);
+  try {
+    const plan = planDynamicExec(p, mainPath, sources, translate);
+    assert.equal(plan.libraries, sources.libraries, 'no second catalogue or path-based adapter');
+    assert.equal(reads.has(libraryPath) || reads.has(libcPath), false);
+    assert.throws(() => captureMappedLibraries(vfs, Array(4097).fill(sources.main)), hasErrno(E.NOMEM));
+    assert.throws(() => captureMappedLibraries(vfs, [sources.main, sources.main]), /Duplicate mapped library inode/);
+    assert.throws(() => planDynamicExec(p, mainPath, {...sources, libraries: captureMappedLibraries(vfs, [sources.main])}, translate),
+      hasErrno(E.ACCES));
+    const {libraries} = plan, reader = {describeDynamic, notProgram: translate.notProgram};
+    assert.throws(() => MappedVm.allocate({vfs: new Vfs(), base: 0x10000, pages: 1, libraries, reader}), /another Vfs/);
+
+    // This is an ordinary checked arena, not a launch of the prepared image.
+    p.mapBase = p.mapEnd = p.stackTop = 0x10000;
+    p.stackLow = 4096; p.free = []; p.fixed = [];
+    const vm = (p.memory = MappedVm.allocate({vfs, base: p.mapBase, pages: 1, libraries, reader})).mappedVm;
+    const name = 0x10000;
+    assert.equal(call(9, name, 4096, 3, 0x32, -1, 0), BigInt(name));
+    const objects: readonly [string, Uint8Array, number][] = [[libraryPath, f.library, 0x20000], [libcPath, f.libc, 0x60000]];
+    for (const [path, bytes, bias] of objects) {
+      assert.equal(reads.get(path), undefined);
+      vm.userMemory(p).copyOut(name, new TextEncoder().encode(path + '\0'));
+      const fd = Number(call(257, -100, name, 0));
+      assert.ok(fd >= 0, 'normal virtual openat selects the holding inode');
+      const segment: ElfLoadSpec['loads'][number] | undefined = describeDynamic(bytes, 'library').loads.find(s => s.flags === 5);
+      assert.ok(segment);
+      const align = (n: number) => Math.floor(n / 4096) * 4096;
+      const start: number = align(segment.vaddr) + bias, offset = align(segment.offset), pc: number = segment.vaddr + bias;
+      const size: number = Math.ceil((pc + segment.fileSize) / 4096) * 4096 - start;
+      assert.equal(call(9, start, size, 5, 0x12, fd, offset), BigInt(start));
+      assert.equal(reads.get(path), 1, 'only ordinary mmap materializes this verified member');
+      assert.equal(vm.code.find(BigInt(pc), vm.code.generation)?.text.role, 'library');
+      assert.deepEqual(vm.userMemory(p).copyIn(pc, 16), bytes.slice(segment.offset, segment.offset + 16));
+      if (path === libraryPath) {
+        library.write(0, f.library.slice(0, 1));
+        assert.equal(call(9, start, size, 5, 0x12, fd, offset), BigInt(-E.ACCES), 'the held FD does not renew an old inode grant');
+        assert.equal(vm.code.find(BigInt(pc), vm.code.generation), undefined);
+      }
+      assert.equal(call(3, fd), 0n);
+    }
+    assert.equal(k.tasks.size, 0);
+    assert.equal(k.runq.length, 0);
+  } finally { k.exitProcess(p, 0); k.halt(); }
 });

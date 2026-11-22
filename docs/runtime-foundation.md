@@ -132,6 +132,16 @@ mappings, mutable source identity, anonymous executable memory and
 mprotect conversions to executable are not granted. Restoring a mount
 flag cannot resurrect an older executable mapping.
 
+The prepared tree can supply a bounded, realm-local catalogue of
+already authenticated dependency inodes. It is a snapshot of exact
+source tokens from that Vfs, not a path search or a list supplied by
+guest code. The dynamic plan and held handoff recheck the catalogue;
+the VM consumes that same catalogue without reading library payloads
+at preparation. An executable mmap looks up the descriptor's exact
+inode and checks that member again, together with its holding mount
+and the required RX extent. Initial main/interpreter objects do not
+automatically authorize library mappings.
+
 After a mapped address space has an owner, ordinary mprotect can reduce
 permissions on fully covered initial non-executable PT_LOAD pages.
 The guest linker selects its RELRO range from the ELF headers; the VM
@@ -232,9 +242,11 @@ and an AT_EXECFN copy of the named guest path. This adds no privilege
 transition.
 
 The returned image exposes only permission evidence and bounded copies,
-not memory or a way to start a task. A stale caller or revoked source
-discards the detached view. Tests cover the guest fixture's initial
-RELRO pages and live mprotect on the same VM policy separately.
+not memory or a way to start a task. A stale caller or revoked initial
+source discards the detached view. Dependencies are checked at the
+handoff boundary, not on each inspection or segment callback. Tests
+cover the guest fixture's initial RELRO pages and live mprotect on the
+same VM policy separately.
 
 ### Inline mapped Task lifecycle (not executable admission)
 
@@ -273,8 +285,8 @@ exit, descriptor changes, or an execution event.
 
 Held image Tasks cannot be queued, run or enter the syscall table, even
 when a mapped translator is present. No normal launch path uses this
-handoff. Remaining loader ABI, authenticated dependency admission,
-regular exec lifecycle, precise signals/faults and Worker execution
+handoff. Distribution-side catalogue provisioning, the remaining loader
+ABI, regular exec lifecycle, precise signals/faults and Worker execution
 still need proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement

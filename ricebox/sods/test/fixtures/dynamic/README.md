@@ -45,3 +45,10 @@ to the same Wasm path to also prove the one-use transfer to an
 unpublished Task and rollback on a stale descriptor table or holding
 mount. The resulting Task is held: no guest instructions are compiled
 or executed during this test.
+
+The explicit dependency catalogue covers the matched libc and the
+fixture DSO. The tests check it across the held-image boundary and use
+that same plan capability with ordinary in-guest openat/mmap in a
+separate checked arena. Planning and handoff make no Vfs payload
+requests for these dependencies; each is materialized once when its
+exact executable segment is mapped.

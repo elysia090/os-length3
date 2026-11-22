@@ -12,6 +12,7 @@ import {Description} from '../../runtime/linux/fd.ts';
 import type {ExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Exit} from '../../runtime/linux/flow.ts';
 import {E, FsError, MNT, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
+import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
 import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MappedStringLimit, MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
@@ -47,7 +48,8 @@ function processWithVm(vfs = new Vfs(), {base = BASE, sources = [], translate, i
   p.free = []; p.fixed = [];
   p.noNewPrivs = true;
   const reader = translate ? {describeDynamic: translate.describeDynamic!, notProgram: translate.notProgram} : neverDescribe;
-  const memory = p.memory = MappedVm.allocate({vfs, base, pages: Math.ceil(base / 65536), sources, reader}, initial), vm = memory.mappedVm;
+  const libraries = sources.length ? captureMappedLibraries(vfs, sources) : undefined;
+  const memory = p.memory = MappedVm.allocate({vfs, base, pages: Math.ceil(base / 65536), libraries, reader}, initial), vm = memory.mappedVm;
   assert.equal(syscall(p, 9, NAME, PAGE, 3, 0x32, -1, 0), BigInt(NAME));
   const user = () => vm.userMemory(p);
   const open = (path: string, flags = 0) => {

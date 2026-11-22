@@ -2,17 +2,17 @@
 // or reuse by the static runtime. Records and executable authority are
 // changed together. The same installed records authorize checked user
 // copies and translated data accesses. It is not an exec entry.
-import {DYNAMIC_FILE_LIMIT, type ElfLoadSpec} from '../translation/dynamic-load.ts';
+import type {ElfLoadSpec} from '../translation/dynamic-load.ts';
 import type {Translate} from '../translation/translator.ts';
 import type {Description} from './fd.ts';
 import {MappedCodeSpace, type ExecutableMapping, type MappedCodeView} from './exec/mapped-code-space.ts';
-import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 import {E, File, FsError, MNT, type Vfs} from './fs.ts';
 import {utf8} from './flow.ts';
+import {checkMappedLibrary, mappedLibrariesFor, type MappedLibraries, type MappedLibraryView} from './mapped-libraries.ts';
 import {ReadLifetimeError, retireMemoryView} from './read-lifetime.ts';
 
 export const MAPPED_VM_LIMIT = 256 << 20;
-const PAGE = 4096, WASM_PAGE = 65536, LIMIT = MAPPED_VM_LIMIT, MAX_REGIONS = 4096, MAX_SOURCES = 4096;
+const PAGE = 4096, WASM_PAGE = 65536, LIMIT = MAPPED_VM_LIMIT, MAX_REGIONS = 4096;
 const MIN = 65536, R = 1, W = 2, X = 4, RX = R | X;
 export const MAPPED_COPY_LIMIT = 1 << 20;
 export const MAPPED_STRING_LIMIT = 1 << 20;
@@ -53,7 +53,7 @@ interface MappedMemory extends WebAssembly.Memory {
   tainted: true;
 }
 interface MemorySpec {
-  vfs: Vfs; base: number; pages: number; sources: readonly ExecutableSource[]; reader: Reader;
+  vfs: Vfs; base: number; pages: number; libraries?: MappedLibraries; reader: Reader;
 }
 
 /** Initial PT_LOAD and stack rows stay distinct from the mmap arena. Writes
@@ -137,7 +137,7 @@ export class MappedVm {
   readonly memory: WebAssembly.Memory;
   #code: MappedCodeSpace;
   #regions: Region[] = [];
-  #sources = new Map<File, ExecutableSource>();
+  #libraries?: MappedLibraryView;
   #specs = new WeakMap<File, ElfLoadSpec>();
   #busy = false;
   #closed = false;
@@ -148,13 +148,15 @@ export class MappedVm {
   /** Internal allocation for a distinct, unclaimed backing. If there is an
    * initial layout, validate and initialize it before returning that backing.
    * No kernel/guest API opts into mapped memory as a side effect of mmap. */
-  static allocate({vfs, base, pages, sources, reader}: MemorySpec, initial?: InitialLayout): MappedMemory {
+  static allocate({vfs, base, pages, libraries, reader}: MemorySpec, initial?: InitialLayout): MappedMemory {
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > LIMIT / WASM_PAGE ||
         !Number.isSafeInteger(base) || base < MIN || base >= LIMIT || base % PAGE)
       throw new RangeError('Invalid mapped memory layout');
     initial?.verify();
+    const libraryView = libraries === undefined ? undefined : mappedLibrariesFor(libraries, vfs);
+    libraryView?.check();
     const memory = new WebAssembly.Memory({initial: pages, maximum: LIMIT / WASM_PAGE});
-    const vm = new MappedVm(vfs, memory, base, sources, reader);
+    const vm = new MappedVm(vfs, memory, base, libraryView, reader);
     if (initial) {
       const {regions, verify} = initial;
       try { vm.#seedDetached(regions, verify); verify(); }
@@ -172,15 +174,18 @@ export class MappedVm {
   }
 
   static stage(spec: MemorySpec, regions: readonly InitialMappedRegion[], verify: () => void): StagedMappedMemory {
-    let held: MappedMemory | null = MappedVm.allocate(spec, {regions, verify});
+    let held: {memory: MappedMemory; verify(): void} | null = {memory: MappedVm.allocate(spec, {regions, verify}), verify};
     const discard = (): void => {
       const retired = held; held = null;
-      if (retired) { retired.mappedVm.close(); retired.users = 0; }
+      if (retired) { retired.memory.mappedVm.close(); retired.memory.users = 0; }
     };
     const current = (): MappedMemory => {
-      if (!held) throw new Error('Detached mapped memory was discarded or claimed');
-      try { verify(); } catch (error) { discard(); throw error; }
-      return held;
+      const candidate = held;
+      if (candidate) {
+        try { candidate.verify(); } catch (error) { discard(); throw error; }
+        if (held === candidate) return candidate.memory;
+      }
+      throw new Error('Detached mapped memory was discarded or claimed');
     };
     const permits = (address: number, length: number, access: DataAccess): boolean => {
       const vm = current().mappedVm;
@@ -208,6 +213,8 @@ export class MappedVm {
           code.find(main, generation)?.text.role !== 'main' || !Number.isSafeInteger(sp) || sp % 16 ||
           !vm.#regions.some(r => r.initial === 'stack' && r.start <= sp - 128 && sp + 8 <= r.end) ||
           vm.#prefix(sp - 128, 136, 'write') !== 136) throw new FsError(E.NOEXEC);
+      try { vm.#libraries?.check(); }
+      catch (error) { discard(); throw error; }
       return vm;
     };
     return Object.freeze({
@@ -222,17 +229,13 @@ export class MappedVm {
     });
   }
 
-  private constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, sources: readonly ExecutableSource[], reader: Reader) {
+  private constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, libraries: MappedLibraryView | undefined,
+      reader: Reader) {
     this.#vfs = vfs;
     this.#base = base;
     this.#reader = reader;
     this.memory = memory;
-    if (sources.length > MAX_SOURCES) fail(E.NOMEM);
-    for (const source of sources) {
-      const {node} = executableSourceFor(source, vfs);
-      if (this.#sources.has(node)) throw new TypeError('Duplicate mapped code source');
-      this.#sources.set(node, source);
-    }
+    this.#libraries = libraries;
     const code = this.#code = new MappedCodeSpace(vfs, memory);
     this.code = Object.freeze({
       memory, get generation() { return code.generation; },
@@ -268,7 +271,7 @@ export class MappedVm {
     this.#owner = undefined;
     this.#code.invalidate(0, LIMIT);
     this.#regions = [];
-    this.#sources.clear();
+    this.#libraries = undefined;
     this.#specs = new WeakMap();
   }
 
@@ -423,15 +426,13 @@ export class MappedVm {
         };
         description();
         if (p & X) {
-          const source = this.#sources.get(node);
-          if (!source || !mnt || d.flags & 3 || !node.size || node.size > DYNAMIC_FILE_LIMIT || node.mode & 0o6000 || node.maps?.size)
-            throw new FsError(E.ACCES);
-          const captured = executableSourceFor(source, this.#vfs);
+          const member = this.#libraries?.member(node);
+          if (!member || !mnt || d.flags & 3) throw new FsError(E.ACCES);
           const verify = (): void => {
             description();
             if (mnt.execRevision !== mrev || mnt.flags & MNT.NOEXEC) fail(E.PERM);
-            if (mnt.space !== space || mnt.parent !== parent || mnt.point !== point || node.version !== rev ||
-                !unchangedExecutableSource(captured) || node.mode & 0o6000 || node.maps?.size) fail(E.ACCES);
+            if (mnt.space !== space || mnt.parent !== parent || mnt.point !== point || node.version !== rev) fail(E.ACCES);
+            checkMappedLibrary(member);
           };
           verify();
           let bytes: Uint8Array;
@@ -444,7 +445,7 @@ export class MappedVm {
           const bias = start - down(load.vaddr);
           if (bias < 0 || bias % Math.max(PAGE, ...spec.loads.map(s => s.align))) fail(E.ACCES);
           const text = {role: 'library' as const, bias, address: bias + load.vaddr, offset: load.offset, length: load.fileSize};
-          mapping = {file: node, mount: mnt, source, text, prot: p, private: true};
+          mapping = {file: node, mount: mnt, source: member.grant, text, prot: p, private: true};
           initial = bytes.subarray(offset, offset + size);
           unchanged = verify;
         } else {
