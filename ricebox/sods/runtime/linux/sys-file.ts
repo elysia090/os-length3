@@ -826,14 +826,21 @@ function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newadd
   return 0;
 }
 
-/** What a link holds; else its errno, given back (realpath asks it of each name on the way). */
-function readlink(p: Proc, dirfd: bigint, address: bigint, buf: bigint, size: bigint): number {
-  const r = look(p, dirfd, path(p, address), 0);
+/** Resolve the guest link itself, with the usual directory and procfs checks. */
+function readlinkTarget(p: Proc, dirfd: bigint, name: string): string | number {
+  const r = look(p, dirfd, name, 0);
   if (typeof r === 'number') return -r;
   const node = r.node;
   if (!node) return -E.NOENT;
   if (!(node instanceof Link)) return -E.INVAL;
-  const bytes = enc.encode(node.target).subarray(0, N(size));
+  return node.target;
+}
+
+/** What a link holds; else its errno, given back (realpath asks it of each name on the way). */
+function readlink(p: Proc, dirfd: bigint, address: bigint, buf: bigint, size: bigint): number {
+  const target = readlinkTarget(p, dirfd, path(p, address));
+  if (typeof target === 'number') return target;
+  const bytes = enc.encode(target).subarray(0, N(size));
   p.bytes.set(bytes, N(buf));
   return bytes.length;
 }
@@ -1880,5 +1887,19 @@ export const MAPPED_FILE_CALLS: Calls = {
     }
     if (!value) fail(E.NOENT);
     return statAt(this, dirfd, value, !(mode & AT.SYMLINK_NOFOLLOW), st);
+  },
+  267(dirfd, name, buf, size) {
+    const count = Number(BigInt.asIntN(32, size)); // Linux takes an int bufsiz.
+    if (count <= 0) return -E.INVAL;
+    const user = mappedUser(this), value = user.cstring(N(name));
+    if (!value) return -E.NOENT; // Only named links in this profile.
+    const target = readlinkTarget(this, dirfd, value);
+    if (typeof target === 'number') return target;
+    const limit = Math.min(count, MAPPED_COPY_LIMIT);
+    // Each UTF-16 unit needs at least one UTF-8 byte; keep one more unit
+    // so truncating the output bytes cannot split the input surrogate pair.
+    const bytes = enc.encode(target.slice(0, limit + 1)).subarray(0, limit);
+    user.copyOut(N(buf), bytes);
+    return bytes.length;
   },
 };

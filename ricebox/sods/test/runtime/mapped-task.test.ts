@@ -9,7 +9,7 @@ import {test} from 'node:test';
 import {captureExecutableSource} from '../../runtime/linux.ts';
 import {ExecPreparationChangedError} from '../../runtime/linux/exec/source.ts';
 import {Description} from '../../runtime/linux/fd.ts';
-import {E, FsError, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
+import {E, FsError, mountTarget, Vfs, walk} from '../../runtime/linux/fs.ts';
 import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
 import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
@@ -25,7 +25,7 @@ const consoleOut = {read: () => null, write(_fd: number, _data: Uint8Array) {}};
 const syscall = (p: Process, nr: number, args: number[]): bigint => p.syscall(BigInt(nr),
   ...[...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]);
 
-function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' = 'scheduler') {
+function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' | 'origin' = 'scheduler', path = `/${name}.so`) {
   const dir = mkdtempSync(join(tmpdir(), 'sods-task-'));
   let bytes: Uint8Array;
   try {
@@ -35,7 +35,6 @@ function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' = 'scheduler') {
     bytes = new Uint8Array(readFileSync(out));
   } finally { rmSync(dir, {recursive: true, force: true}); }
   const origin = createHash('sha256').update(bytes).digest('hex');
-  const path = `/${name}.so`;
   const file = mountTarget(vfs).file(path, 0o555, bytes.length, () => bytes, origin);
   const source = captureExecutableSource(vfs, path, {origin, size: bytes.length});
   return {file, source, bytes, path};
@@ -126,6 +125,37 @@ test('one checked interpreter-free initial Task uses ordinary publication, run a
     assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size], [0, 0, 0, 0]);
     assert.equal(k.spareMemories.includes(memory), false);
   } finally { compiler.more = more; k.halt(); }
+});
+
+test('an owned mapped Task reads its guest executable link with Linux byte counts', {skip}, async () => {
+  const t = await loadTranslator(readFileSync(wasm!)), vfs = new Vfs();
+  const f = fixture(vfs, 'origin', '/usr/bin/origin-📦.so'), encode = new TextEncoder();
+  const k = new Kernel({vfs, translate: t, console: consoleOut}), owner = mappedTask(k, t, t.mapped!, f, {initial: true});
+  const {p, task, vm, memory} = owner, at = walk(p, f.path, p.root);
+  assert.ok(typeof at !== 'number' && at.node === f.file);
+  p.exeAt = {mnt: at.mnt, node: f.file, dir: at.parent, name: at.name};
+
+  const user = vm.userMemory(p), target = encode.encode(f.path);
+  user.copyOut(data, encode.encode('/proc/self/exe\0'));
+  user.copyOut(data + 128 + target.length, Uint8Array.of(0x7f));
+  user.copyOut(data + 64 + 17, Uint8Array.of(0x7f));
+  const calls: number[] = [], attempt = k.attempt.bind(k);
+  k.attempt = (who, call) => {
+    if (call.nr !== 267) return attempt(who, call);
+    assert.equal(who, task);
+    const got = attempt(who, call), asked = Number(call.args[3]);
+    const expected = target.subarray(0, asked);
+    assert.equal(got, BigInt(expected.length));
+    assert.deepEqual(user.copyIn(Number(call.args[2]), expected.length + 1), Uint8Array.of(...expected, 0x7f));
+    calls.push(asked);
+    return got;
+  };
+  try {
+    owner.publishInitial();
+    assert.deepEqual(k.pump(), {status: 0});
+    assert.deepEqual(calls, [4096, 17]); // The short count ends within the UTF-8 name.
+    assert.equal(memory.users, 0);
+  } finally { k.halt(); }
 });
 
 test('the normal inline scheduler preempts, waits and resumes a mapped task, then retires after syscall unwind', {skip}, async () => {
