@@ -4,6 +4,9 @@ import {createHash} from 'node:crypto';
 import {lstatSync, readFileSync, readlinkSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
+import {openDistribution} from '../../../distribution/deployment/local.ts';
+import {canonicalPackedFileSet} from '../../../distribution/format/executable-source.ts';
+import {prepareTree} from '../../../distribution/runtime/prepared-tree.ts';
 import {prepareDynamicImage, type DetachedDynamicImage} from '../../runtime/linux/exec/dynamic-image.ts';
 import {planDynamicExec, type DynamicExecPlan} from '../../runtime/linux/exec/dynamic-plan.ts';
 import {ExecPreparationChangedError} from '../../runtime/linux/exec/source.ts';
@@ -21,6 +24,7 @@ import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 const root = process.env.SODS_TEST_DYNAMIC_ROOT;
 const translatorPath = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 const mappedWasm = process.env.SODS_TEST_MAPPED_WASM;
+const packedRoot = process.env.SODS_TEST_DYNAMIC_PACK_ROOT, packedPin = process.env.SODS_TEST_DYNAMIC_PACK_INDEX_SHA256;
 const skip = !root || !translatorPath ? 'requires the staged dynamic fixture and current Sods translator' : false;
 const mainPath = '/usr/bin/ricebox-pie-fixture', builtin = '/lib64/ld-linux-x86-64.so.2';
 const lib = '/usr/lib/x86_64-linux-gnu', interpreterPath = lib + '/ld-linux-x86-64.so.2';
@@ -553,16 +557,51 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
   }
 });
 
-test('a fresh held init can be discarded before PID 1 is reserved, then publish without running the linker', {skip: skipHeld}, async () => {
-  const translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
-  const vfs = new Vfs(), {sources, reads} = matchedSources(vfs);
-  const request = {path: mainPath, argv: [mainPath, 'queue'], env: ['LC_ALL=C']};
+test('the accepted packed fixture prepares, discards and publishes PID 1 without running the linker', {
+  skip: !packedRoot && !packedPin ? 'requires an offline fixture pack and its independently supplied index digest' : false,
+}, async t => {
+  assert.ok(packedRoot);
+  assert.match(packedPin ?? '', /^[0-9a-f]{64}$/);
+  const muk = process.env.RICEBOX_MUK_FILE;
+  assert.ok(muk, 'use the existing guest Muk artifact, never a stand-in');
+  const stage = openDistribution(packedRoot);
+  t.after(() => stage.close());
+  // The webroot descriptor names the index; it cannot approve its own digest.
+  assert.equal(stage.about.index.sha256, packedPin);
+  const paths = [mainPath, interpreterPath, libcPath, libraryPath], selected = canonicalPackedFileSet(stage.index, paths);
+  const reads: [string, number, number][] = [];
+  let hashes = 0, decodes = 0;
+  const measure = () => [reads.length, hashes, decodes];
+  const tree = prepareTree({muk: readFileSync(muk), captureSources: selected, root: {index: stage.index, reading: {
+    range(name, at, len) { reads.push([name, at, len]); return stage.readRange(name, at, len, new Uint8Array(len)); },
+    sha256(bytes) { hashes++; return new Uint8Array(createHash('sha256').update(bytes).digest()); },
+    decode(bytes, size) {
+      decodes++;
+      const decoded = stage.unzstd(bytes); assert.equal(decoded.length, size);
+      return new Uint8Array(decoded);
+    },
+  }}});
+  assert.deepEqual(measure(), [0, 0, 0], 'selecting the same root and capturing its sources is metadata only');
+  const {vfs} = tree;
+  assert.equal(vfs.lookup(builtin), vfs.lookup(interpreterPath), 'PT_INTERP resolves inside the accepted root');
+  const [main, interpreter, ...libraries] = selected.map(x => tree.sources.get(x.origin)!);
+  const sources = {main, interpreter, libraries: captureMappedLibraries(vfs, libraries)};
+  const translate = await loadTranslator(stage.blob(stage.index.translator)), compiler = translate.mapped;
+  assert.ok(compiler && translate.describeDynamic, 'the accepted index must carry a mapped translator');
+  const request = {path: mainPath, argv: [mainPath, 'check'], env: ['LC_ALL=C']};
   const k = new Kernel({vfs, translate, console: quiet}), more = compiler.more, refs = k.root.mnt.refs;
   let receipt: HeldMappedTask | undefined, stopped = 0;
   k.stopped = () => { stopped++; };
   compiler.more = () => { assert.fail('this proof must not compile any guest instructions'); };
   try {
     const abandoned = receipt = prepareMappedInitial(k, request, sources, '/usr/bin');
+    const fields = paths.slice(0, 2).map(path => stage.index.files.find(file => file.path === path)!);
+    const expected = fields.map(f => [stage.index.packs[f.pack].name, f.at, f.len]);
+    const tables = new Set(expected.map(([name]) => name));
+    assert.deepEqual(reads.filter(([, at]) => at !== 0), expected, 'only the main and interpreter ranges were fetched');
+    assert.deepEqual(reads.filter(([, at]) => at === 0).map(([name]) => name), [...tables], 'each checked pack table is fetched once');
+    const cold = [expected.length + tables.size, expected.length + tables.size, fields.filter(f => !f.raw).length];
+    assert.deepEqual(measure(), cold);
     abandoned.checkStart();
     assert.equal(k.nextPid, 1, 'a prepared image does not advance the PID namespace');
     assert.deepEqual(k.runq, []);
@@ -574,7 +613,6 @@ test('a fresh held init can be discarded before PID 1 is reserved, then publish 
     assert.equal(stopped, 0);
 
     const ready = receipt = prepareMappedInitial(k, request, sources, '/usr/bin');
-    const readsBefore = [...reads];
     ready.checkStart();
     assert.equal(k.nextPid, 1);
     assert.deepEqual(k.runq, []);
@@ -589,6 +627,8 @@ test('a fresh held init can be discarded before PID 1 is reserved, then publish 
     assert.equal(fs.pwd.node, vfs.lookup('/usr/bin'));
     assert.equal(p.noNewPrivs, true);
     assert.equal(p.exe, mainPath);
+    assert.equal(p.exeAt?.node, vfs.lookup(mainPath));
+    assert.equal(p.image, undefined, 'no prebuilt static image or fallback');
     assert.deepEqual([p.argv, p.env], [request.argv, request.env]);
     const stdio = [0, 1, 2].map(fd => table.get(fd)!);
     assert.deepEqual(stdio.map(d => [d.kind, d.path, d.flags]),
@@ -601,7 +641,7 @@ test('a fresh held init can be discarded before PID 1 is reserved, then publish 
     assert.deepEqual(k.runq, [task]);
     assert.equal(task.state, 'ready');
     assert.equal(code.find(context.rip, generation)?.text.role, 'interpreter');
-    assert.deepEqual([...reads], readsBefore, 'the transfer reads no executable payload');
+    assert.deepEqual(measure(), cold, 'discard, another preparation and publication neither reload nor rehash the resident bytes');
     assert.throws(() => p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), /Mapped syscall requires a confirmed first entry/);
     assert.throws(() => task.setReg(4, context.regs[4]), /Initial mapped Task registers/);
     assert.equal(p.call, null);

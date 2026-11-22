@@ -53,3 +53,53 @@ that same plan capability with ordinary in-guest openat/mmap in a
 separate checked arena. Planning and handoff make no Vfs payload
 requests for these dependencies; each is materialized once when its
 exact executable segment is mapped.
+
+### Optional packed-root publication proof
+
+The no-run publication case takes a separately accepted index digest for
+the same four members in one ordinary packed root. Build the tiny root
+offline from the staged fixture above, recording the archive pin and
+local fixture member hashes separately. The app and fixture DSO are not
+signed Debian programs; only the interpreter and libc come from the
+pinned archive. Do not enroll local files as overlays on a Debian root.
+
+For example, from the repository root with `FIXTURE` pointing at the
+staged fixture and `MAPPED_WASM` at an existing mapped-code translator:
+
+```sh
+work=$(mktemp -d)
+lib=usr/lib/x86_64-linux-gnu
+mkdir -p "$work/native/root/etc"
+for member in usr/bin/ricebox-pie-fixture "$lib/ld-linux-x86-64.so.2" \
+              "$lib/libc.so.6" "$lib/libricebox-pie-fixture.so.1" \
+              lib lib64 usr/lib64/ld-linux-x86-64.so.2; do
+  mkdir -p "$work/native/root/$(dirname "$member")"
+  cp -a "$FIXTURE/$member" "$work/native/root/$member"
+done
+printf 'NAME="Ricebox local dynamic fixture"\nVERSION_ID="0.0.0"\n' >"$work/native/root/etc/os-release"
+printf 'base.profile=local-dynamic-fixture\n' >"$work/native/manifest"
+cat ricebox/sods/test/fixtures/dynamic/libc6.sha256 >>"$work/native/manifest"
+(cd "$work/native/root" && sha256sum usr/bin/ricebox-pie-fixture "$lib/libricebox-pie-fixture.so.1") >>"$work/native/manifest"
+tar -C "$work/native" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf "$work/root.tar" manifest root
+zstd -q -19 -T1 "$work/root.tar" -o "$work/root.tar.zst"
+sha=$(sha256sum "$work/root.tar.zst" | cut -d' ' -f1)
+archive="$work/ricebox-local-dynamic-0.0.0-x86_64-$sha.tar.zst"
+mv "$work/root.tar.zst" "$archive"
+node ricebox/distribution/build/distribution.ts "$archive" "$work/web" \
+  --translator "$MAPPED_WASM" --hot ',' --cache ''
+```
+
+Review both extracted Debian member hashes against the staged fixture
+pins, then record the reviewed root's index digest outside the pack.
+The test does not take its expected digest from the pack's `webroot.json`.
+With that digest and the existing real Muk artifact:
+
+```sh
+SODS_TEST_DYNAMIC_PACK_ROOT="$work/web" SODS_TEST_DYNAMIC_PACK_INDEX_SHA256="$ACCEPTED_INDEX_SHA256" \
+  RICEBOX_MUK_FILE="$MUK_ARTIFACT" node --test --test-name-pattern='accepted packed fixture' \
+  ricebox/sods/test/runtime/dynamic-plan.test.ts
+```
+
+This case checks exactly which stored ranges and hashes the normal pack
+reader needs, then discards and republishes through the ordinary held
+receipt. It never pumps the scheduler, invokes Muk, or executes the linker.
