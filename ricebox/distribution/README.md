@@ -122,10 +122,14 @@ browser cold-start measurements.
 - `verification/programs.ts`, `verification/commands.ts` and `workloads/` compare
   native and sods execution. These tools are not production package exports.
 
-The compression pool owns its build Workers, rejects pending work on failure and
-awaits termination. Failed termination remains unconfirmed; it is not a browser
-Worker guarantee. Archive reads, input cloning and retained queued bytes still
-have costs. No constant-memory or syscall-count guarantee is implied.
+The web layer builder admits at most three compressions and 224 MiB of input
+bodies at once. A larger member runs alone. The archive can hold one more
+member while waiting, not a queue of bodies. Workers take ownership of complete
+disposable buffers and return them when compression saves no bytes; inputs shared
+with the allocator or kept for AOT are not moved. Archive reads, compression
+scratch and the selected stored bytes for pack assembly still have separate
+costs. This is not a process-memory limit. The pool stops admission on failure
+and awaits all build Worker terminations; failed termination remains unconfirmed.
 
 ## Tests
 

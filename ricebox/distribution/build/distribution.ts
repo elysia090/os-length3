@@ -74,25 +74,25 @@ const release: Record<string, string> = Object.fromEntries(osRelease.split('\n')
 }));
 if (release.VERSION_ID !== version) throw new Error(`${basename(rootFile)}: its /etc/os-release says ${release.VERSION_ID}, its name ${version}`);
 
-// Second pass: every file's bytes to its package's pack, compressed in threads (below), placed in path order.
-// Three compressions at a time, each in a thread of its own and done synchronously there, so what one
-// holds while it runs (tens of megabytes at level 19) goes back as it ends, not when a collector gets to it.
+// Second pass: the archive waits when all compression slots or their byte
+// budget are occupied. Only stored representations (and hot ELF inputs)
+// survive until their packs are laid out in path order.
 /** A file's bytes as its pack keeps them: compressed when that is smaller, else raw. */
-type Stored = {z: Buffer; raw?: undefined} | {raw: Buffer; z?: undefined};
+type Stored = {bytes: Buffer; raw: boolean};
 const hotBytes = new Map<string, Buffer>();
 const {entries,manifest,packed}=await withCompression(async compress=>{
-  const stored: {path:string;bytes:Promise<Stored>}[]=[];
+  const packed = new Map<string, Stored>();
   const {entries,manifest}=await readTarball(rootFile,(e,bytes)=>{
-    if(!bytes)return;
-    if(hot.includes(e.path))hotBytes.set(e.path,bytes);
-    const pending:Promise<Stored>=bytes.length?compress(bytes).then(z=>z.length<bytes.length?{z}:{raw:bytes}):Promise.resolve({raw:bytes});
-    // Observe the derived promise too, before the stream can fail or suspend.
-    void pending.catch(()=>{});
-    stored.push({path:e.path,bytes:pending});
+    if (!bytes) return;
+    const {path} = e;
+    const hotInput = hot.includes(path);
+    if (hotInput) hotBytes.set(path, bytes);
+    const stored: Stored = {bytes, raw: true};
+    packed.set(path, stored); // Archive order, not compression completion order.
+    if (bytes.length) return compress(bytes, (bytes, raw) => { stored.bytes = bytes; stored.raw = raw; }, !hotInput);
   });
   if(!chosenHot)for(let i=hot.length-1;i>=0;i--)if(!hotBytes.has(hot[i]))hot.splice(i,1);
   for(const p of hot)if(!hotBytes.has(p))throw new Error(`${p} is not a file of this root`);
-  const packed=new Map(await Promise.all(stored.map(async s=>[s.path,await s.bytes] as const)));
   return {entries,manifest,packed};
 });
 /** Where a file is: its package's pack, its line in the pack's table (-1: empty, stored nowhere), its stored length. */
@@ -105,11 +105,11 @@ for (const e of entries.filter((x) => x.type === 'file')) {
     const who = owner.get(e.path) ?? LOCAL;
     const s = packed.get(e.path);
     if (!s) throw new Error(`${e.path}: read once, not twice`);
-    const bytes = s.z ?? s.raw;
+    const {bytes, raw} = s;
     let pack = packs.get(who);
     if (!pack) { pack = []; packs.set(who, pack); }
     // An empty file stores nothing, and has no line of its pack's table.
-    const pl: Place = {who, entry: bytes.length ? pack.push(bytes) - 1 : -1, len: bytes.length, raw: !s.z};
+    const pl: Place = {who, entry: bytes.length ? pack.push(bytes) - 1 : -1, len: bytes.length, raw};
     places.set(e.path, pl);
     return pl;
   })();
