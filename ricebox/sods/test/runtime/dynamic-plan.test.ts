@@ -14,7 +14,7 @@ import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import type {Mem} from '../../runtime/linux/parts.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
-import {ImageSourceChangedError, Kernel, Process} from '../../runtime/linux/process.ts';
+import {ExecCommitError, ImageSourceChangedError, Kernel, Process} from '../../runtime/linux/process.ts';
 import {loadTranslator} from '../../runtime/translate.ts';
 import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 
@@ -351,50 +351,75 @@ test('ordinary native exec succeeds inside the exact matched Debian fixture root
   assert.equal(result.stdout, 'dynamic-pie:42\n');
 });
 
-test('the authenticated initial image transfers once to its exact unpublished Task without admitting execution', {
-  skip: !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false,
-}, async () => {
+function freshHeld(k: Kernel) {
+  const p = new Process(k, null, false, false, null, null, false);
+  p.noNewPrivs = true;
+  p.cred = p.cred.with({uid: 1001, euid: 1001, fsuid: 1001, gid: 1002, egid: 1002, fsgid: 1002,
+    suid: 1003, sgid: 1004, effective: 0n, permitted: 0n, keep: true});
+  p.comm = 'preparation'; p.dumpable = false;
+  const task = k.newTask(p);
+  p.pid = p.pgid = p.sid = task.tid;
+  p.tasks.add(task); p.task = task;
+  return {p, task};
+}
+
+const skipHeld = !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false;
+
+test('ordinary exec metadata and descriptors commit only to the authenticated fresh Task, which remains held', {skip: skipHeld}, async () => {
   const translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
   assert.ok(compiler);
   const vfs = new Vfs(), mounted = matchedSources(vfs), {app: file, sources} = mounted;
   const k = new Kernel({vfs, translate, console: quiet});
-  const p = new Process(k, null, false, false, null, null, false);
-  p.noNewPrivs = true;
-  p.cred = p.cred.with({uid: 1001, euid: 1001, fsuid: 1001, gid: 1002, egid: 1002, fsgid: 1002, effective: 0n, permitted: 0n});
-  const task = k.newTask(p);
-  p.pid = p.pgid = p.sid = task.tid;
-  p.tasks.add(task); p.task = task;
+  const rootRefs = k.root.mnt.refs, {p, task} = freshHeld(k), {fds: table, fs} = p;
   const fd = p.fds.install(new Description('file', {node: file}), {cloexec: true}), description = p.fds.get(fd)!;
+  const survivor = new Description('console', {path: 'stdout'}), keptFd = table.install(survivor);
   const metadata = () => [p.fds, p.cred, p.argv, p.env, p.exe, p.exeAt, p.stackLow, p.stackTop, p.mapBase];
   const before = metadata(), installed: (true | Error | undefined)[] = [];
+  let closed = 0;
+  description.gone = () => {
+    assert.equal(p.execTransition, true);
+    assert.equal(p.memory, null, 'original scope remains intact while the descriptor closes');
+    assert.equal(table.get(fd), null);
+    metadata().forEach((value, i) => assert.equal(value, before[i]));
+    closed++;
+  };
   let pc = task.resumeAt;
   Object.defineProperty(task, 'resumeAt', {get: () => pc, set(next: bigint) {
     pc = next;
     if (next) installed.push(p.execTransition);
   }});
-  const stage = () => prepareDynamicImage(p, {path: mainPath, argv: ['ricebox-pie-fixture'], env: ['LC_ALL=C']}, sources, translate);
+  const request = {path: mainPath, argv: ['ricebox-pie-fixture', '日本語'], env: ['LC_ALL=C']};
+  const stage = () => prepareDynamicImage(p, request, sources, translate);
   const unpublished = () => {
     assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, k.blocked.size, p.cgroup.procs.size, k.images.size], [0, 0, 0, 0, 0, 0]);
     assert.equal(k.status, null);
+    assert.equal(p.exitStatus, undefined);
+    assert.equal(p.execTransition, undefined);
+  };
+  const uncommitted = () => {
+    unpublished();
+    assert.equal(p.memory, null);
     assert.equal(task.state, 'new');
     assert.equal(task.dead, false);
     assert.equal(p.fds.get(fd), description);
     assert.equal(p.fds.cloexec(fd), true);
     assert.equal(description.closed, false);
-    metadata().forEach((value, i) => assert.equal(value, before[i], 'held handoff does not publish ordinary exec metadata'));
-    assert.equal(p.execTransition, undefined, 'normal and rolled-back handoffs release the transaction fence');
+    metadata().forEach((value, i) => assert.equal(value, before[i], 'preparation does not publish ordinary exec metadata'));
+    assert.equal(closed, 0);
   };
   const more = compiler.more;
   compiler.more = () => { assert.fail('no guest instruction is compiled by a held handoff'); };
   try {
     const rolled = stage(), canceled = task.prepareHeldMapped(rolled);
-    unpublished();
-    assert.equal(p.memory, null);
+    uncommitted();
     assert.throws(() => k.ready(task), /held initial Task is disabled/);
+    assert.throws(() => p.forkProcess(0n), /held initial Task is disabled/);
+    assert.throws(() => p.newThread(0n, 0n, null), /held initial Task is disabled/);
+    uncommitted();
     task.rollbackHeldMapped(canceled);
     assert.throws(() => rolled.pages.check(), /discarded/);
     assert.throws(() => task.commitHeldMapped(canceled), /lost its calling process or authority/);
-    unpublished();
+    uncommitted();
 
     const stale = stage(), staleGrant = task.prepareHeldMapped(stale);
     const changed = p.fds.install(new Description('console', {path: 'stdout'}));
@@ -402,21 +427,32 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
     assert.throws(() => stale.pages.check(), /discarded/);
     assert.ok(p.fds.get(changed), 'rollback does not undo an independent descriptor change');
     p.fds.close(changed);
-    assert.equal(p.memory, null);
-    unpublished();
+    uncommitted();
 
     const revoked = stage(), revokedGrant = task.prepareHeldMapped(revoked);
     k.root.mnt.flags |= MNT.NOEXEC;
     try { assert.throws(() => task.commitHeldMapped(revokedGrant), hasErrno(E.ACCES)); }
     finally { k.root.mnt.flags &= ~MNT.NOEXEC; }
     assert.throws(() => revoked.pages.check(), /discarded/);
-    assert.equal(p.memory, null);
-    unpublished();
+    uncommitted();
 
     const image = stage(), grant = task.prepareHeldMapped(image);
     const receipt = task.commitHeldMapped(grant);
     try {
       assert.equal(mounted.reads.has(libraryPath) || mounted.reads.has(libcPath), false, 'no dependency payloads read for the held handoff');
+      assert.equal(p.fds, table);
+      assert.equal(table.get(keptFd), survivor);
+      assert.equal(table.get(fd), null);
+      assert.equal(description.closed, true);
+      assert.equal(closed, 1);
+      assert.equal(p.exe, mainPath);
+      assert.equal(p.exeAt?.node, file);
+      assert.equal(p.image, undefined, 'no substitute static Program');
+      assert.deepEqual([p.argv, p.env], [request.argv, request.env]);
+      assert.deepEqual([p.comm, p.dumpable, p.noNewPrivs], [null, true, true]);
+      assert.deepEqual([p.cred.suid, p.cred.sgid, p.cred.permitted, p.cred.effective, p.cred.keep], [1001, 1002, 0n, 0n, false]);
+      assert.deepEqual([p.stackLow, p.stackTop, p.mapBase, p.mapEnd, p.free, p.fixed],
+        [image.stack.stackLow, image.stack.stackTop, image.stack.mapBase, image.stack.mapBase, [], []]);
       const memory = p.memory as Mem | null;
       assert.ok(memory?.mappedVm);
       assert.equal(receipt.kind, 'held-initial');
@@ -429,7 +465,10 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
       assert.throws(() => image.pages.check(), /claimed/);
       image.pages.discard(); // Old inspection cannot close the claimed backing.
       const user = memory.mappedVm.userMemory(p);
-      assert.equal(new DataView(user.copyIn(image.stack.sp, 8).buffer).getBigUint64(0, true), 1n);
+      const word = (index: number) => Number(new DataView(user.copyIn(image.stack.sp + index * 8, 8).buffer).getBigUint64(0, true));
+      assert.equal(word(0), p.argv.length);
+      assert.deepEqual([user.cstring(word(1)), user.cstring(word(2)), word(3), user.cstring(word(4)), word(5)],
+        [...p.argv, 0, ...p.env, 0]);
       const code = memory.mappedVm.code, generation = code.generation;
       assert.equal(code.find(BigInt(image.firstPc), generation)?.text.role, 'interpreter');
       assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
@@ -448,26 +487,75 @@ test('the authenticated initial image transfers once to its exact unpublished Ta
       assert.throws(() => user.check(), ReadLifetimeError);
     } finally { receipt.discard(); }
     assert.equal(p.memory, null);
-    assert.equal(task.resumeAt, 0n);
+    assert.equal(p.state, 'zombie', 'retired, but absent from the waitable process table');
+    assert.equal(p.own, undefined);
+    assert.equal(p.tasks.size, 0);
+    assert.equal(task.dead, true);
+    assert.equal(task.state, 'dead');
+    assert.equal(survivor.closed, true);
+    assert.equal(table.holders, 0);
+    assert.equal(table.slots.size, 0);
+    assert.equal(fs.users, 0);
+    assert.equal(k.root.mnt.refs, rootRefs);
+    assert.equal(closed, 1);
     unpublished();
 
-    const outdated = stage(), outdatedGrant = task.prepareHeldMapped(outdated);
-    // Identical data at a new inode version still needs fresh authorization.
-    mounted.library.write(0, mounted.f.library.slice(0, 1));
-    assert.throws(() => task.commitHeldMapped(outdatedGrant), hasErrno(E.ACCES));
-    assert.throws(() => outdated.pages.check(), /discarded/);
-    assert.equal(p.memory, null);
+    assert.equal(p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), BigInt(-E.SRCH));
+    assert.throws(() => p.execve(request.path, request.argv, request.env), hasErrno(E.SRCH));
+    assert.throws(() => p.forkProcess(0n), hasErrno(E.SRCH));
+    assert.throws(() => p.newThread(0n, 0n, null), hasErrno(E.SRCH));
+    k.ready(task);
+    k.exitProcess(p, 0);
+    receipt.discard();
+    assert.deepEqual([p.own, table.holders, table.slots.size, fs.users, k.root.mnt.refs, closed],
+      [undefined, 0, 0, 0, rootRefs, 1], 'ordinary calls and repeated disposal have no further ownership effects');
     unpublished();
+
+    const newer = freshHeld(k);
+    try {
+      const outdated = prepareDynamicImage(newer.p, request, sources, translate), outdatedGrant = newer.task.prepareHeldMapped(outdated);
+      // Identical data at a new inode version still needs fresh authorization.
+      mounted.library.write(0, mounted.f.library.slice(0, 1));
+      assert.throws(() => newer.task.commitHeldMapped(outdatedGrant), hasErrno(E.ACCES));
+      assert.throws(() => outdated.pages.check(), /discarded/);
+      assert.equal(newer.p.memory, null);
+      unpublished();
+    } finally { newer.p.fds.letGo(); newer.p.fs0.drop(); }
   } finally {
     compiler.more = more;
-    p.fds.letGo();
-    p.fs0.drop();
+    if (p.fds.holders) p.fds.letGo();
+    if (p.fs0.users) p.fs0.drop();
     k.halt();
   }
 });
 
+test('a held exec keeps unconfirmed descriptor ownership without retrying or publishing', {skip: skipHeld}, async () => {
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), vfs = new Vfs(), {sources} = matchedSources(vfs);
+  const k = new Kernel({vfs, translate, console: quiet}), {p, task} = freshHeld(k), table = p.fds;
+  const description = new Description('file'), unavailable = new Error('Descriptor cleanup not confirmed');
+  let closes = 0;
+  description.gone = () => { closes++; throw unavailable; };
+  const fd = table.install(description, {cloexec: true});
+  const image = prepareDynamicImage(p, {path: mainPath, argv: [], env: []}, sources, translate), grant = task.prepareHeldMapped(image);
+  assert.throws(() => task.commitHeldMapped(grant), error => error instanceof ExecCommitError && error.phase === 'descriptors' &&
+    error.cause === unavailable && error.owners.task === task && error.owners.newFds === table && !error.owners.newMemory);
+  const failed = p.execFailure;
+  assert.ok(failed && k.failedExecs?.has(failed));
+  assert.throws(() => image.pages.check(), /discarded/, 'the independently retired detached VM is no longer owned');
+  assert.equal(table.get(fd), null);
+  assert.equal(p.memory, null);
+  assert.equal(p.exe, '');
+  assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size, k.status], [0, 0, 0, 0, null]);
+  assert.throws(() => p.forkProcess(0n), error => error === failed);
+  assert.throws(() => p.newThread(0n, 0n, null), error => error === failed);
+  assert.throws(() => task.rollbackHeldMapped(grant), error => error === failed);
+  assert.throws(() => k.halt(), error => error === failed);
+  assert.equal(k.retireInitialMounts(), false);
+  assert.equal(closes, 1);
+});
+
 test('the same planned dependency catalogue authorizes lazy ordinary guest mmap in the checked VM', {
-  skip: !root || !mappedWasm ? 'requires the staged dynamic fixture and mapped-code translator' : false,
+  skip: skipHeld,
 }, async () => {
   const translate = await loadTranslator(readFileSync(mappedWasm!)), describeDynamic = translate.describeDynamic;
   assert.ok(describeDynamic && translate.mapped);

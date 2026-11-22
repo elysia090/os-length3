@@ -4,7 +4,7 @@ import {utf8} from '../flow.ts';
 import {E, FsError, type File} from '../fs.ts';
 import type {Program, Range} from '../parts.ts';
 import {execScope, execSource, type ExecSource, type ExecSourceOwner} from './source.ts';
-import {staticStack, type StaticStack} from './stack.ts';
+import {staticStack, type StackLayout, type StaticStack} from './stack.ts';
 
 export interface ExecRequest {
   readonly path: string;
@@ -20,13 +20,18 @@ export interface StaticExecOwner<I extends Program> extends ExecSourceOwner {
   };
 }
 
-export interface StaticExecPlan<I extends Program> {
+/** Initial Linux state, independent of the dispatch backend. */
+export interface ExecMetadata {
   readonly source: ExecSource;
   readonly exe: string;
-  readonly image: I;
-  readonly entry: bigint;
   readonly argv: string[];
   readonly env: string[];
+  readonly stack: StackLayout;
+}
+
+export interface StaticExecPlan<I extends Program> extends ExecMetadata {
+  readonly image: I;
+  readonly entry: bigint;
   readonly stack: StaticStack;
   readonly laid: Range[];
   check(): void;

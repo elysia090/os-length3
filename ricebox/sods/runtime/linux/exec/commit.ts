@@ -5,9 +5,9 @@ import type {FdTable} from '../fd.ts';
 import {MNT, type Vfs} from '../fs.ts';
 import {REG, keptImageRanges, type Mem, type Proc, type Program, type Range, type Thread} from '../parts.ts';
 import {lay} from '../../translation/share.ts';
-import {planStaticExec, type ExecRequest, type StaticExecOwner, type StaticExecPlan} from './plan.ts';
-import {WASM_PAGE} from './stack.ts';
-import {ExecPreparationChangedError} from './source.ts';
+import {planStaticExec, type ExecMetadata, type ExecRequest, type StaticExecOwner, type StaticExecPlan} from './plan.ts';
+import {WASM_PAGE, type StackLayout} from './stack.ts';
+import {ExecPreparationChangedError, type ExecSource, type ExecSourceOwner} from './source.ts';
 
 export type ExecPhase = 'prepared-descriptors' | 'initial-preparation' | 'initial-publication' | 'threads' |
   'address-space' | 'descriptors' | 'backend' | 'memory-retirement' | 'resume' | 'held-mapped-handoff';
@@ -91,12 +91,21 @@ export function withExecPreparation<R>(process: ExecTransition, prepare: (commit
 /** Fence the exact calling Task and descriptor authority until install. */
 export function captureExecCaller<T extends Pick<Thread, 'dead'>>(process: ExecCaller<T>, task: T) {
   const table = process.fds, {holders, revision, limit} = table;
-  return {table, holders, check() {
-    execMayRun(process);
+  const ownership = (): void => {
     checkExecTree(process.kernel.vfs);
     if (process.task !== task || !process.tasks.has(task) || task.dead || process.fds !== table ||
-        table.holders !== holders || table.revision !== revision || table.limit !== limit)
+        table.holders !== holders || table.limit !== limit)
       throw new ExecPreparationChangedError();
+  };
+  return {table, holders, check() {
+    execMayRun(process);
+    ownership();
+    if (table.revision !== revision) throw new ExecPreparationChangedError();
+  }, afterDescriptors() {
+    // Only the committing owner may observe the table after CLOEXEC has
+    // consumed its original revision. The ownership and limit stay exact.
+    if (process.execTransition !== true) throw new ExecPreparationChangedError();
+    ownership();
   }};
 }
 
@@ -115,7 +124,7 @@ export function replaceExec<P, I extends Program, T extends ExecThread<I>>(
     try {
       plan.check();
       caller.check();
-      identity = execIdentity(process, plan);
+      identity = execIdentity(process, plan.source);
     } catch (cause) {
       try { own?.letGo(); }
       catch (cleanup) { process.retainExecFailure('prepared-descriptors', new AggregateError([cause, cleanup]), {task, newFds: own!}); }
@@ -125,10 +134,10 @@ export function replaceExec<P, I extends Program, T extends ExecThread<I>>(
   });
 }
 
-interface ExecIdentity { readonly cred: Cred; readonly dumpable: boolean; check(installed: boolean): void }
+export interface ExecIdentity { readonly cred: Cred; readonly dumpable: boolean; check(installed: boolean): void }
 
-function execIdentity(p: StaticExecOwner<Program>, plan: StaticExecPlan<Program>): ExecIdentity {
-  const {mnt, node} = plan.source.at, c = p.cred;
+export function execIdentity(p: ExecSourceOwner, source: ExecSource): ExecIdentity {
+  const {mnt, node} = source.at, c = p.cred;
   const suid = !(mnt.flags & MNT.NOSUID) && !p.noNewPrivs;
   const setuid = suid && node.mode & 0o4000 && idIn(c.ns, node.uid) >= 0 ? node.uid : -1;
   const setgid = suid && (node.mode & 0o2010) === 0o2010 && idIn(c.ns, node.gid, true) >= 0 ? node.gid : -1;
@@ -148,10 +157,41 @@ function execIdentity(p: StaticExecOwner<Program>, plan: StaticExecPlan<Program>
   }};
 }
 
+export function installExecLayout(p: Pick<Proc, 'stackLow' | 'stackTop' | 'mapBase' | 'mapEnd' | 'free' | 'fixed'>,
+    stack: StackLayout): void {
+  p.stackLow = stack.stackLow;
+  p.stackTop = stack.stackTop;
+  p.mapEnd = p.mapBase = stack.mapBase;
+  p.free = [];
+  p.fixed = [];
+}
+
+export function installExecMetadata(p: Pick<Proc, 'argv' | 'env' | 'comm' | 'cred' | 'dumpable' | 'exe' | 'exeAt'>,
+    plan: ExecMetadata, identity: ExecIdentity): void {
+  const {mnt, node, parent: dir, name} = plan.source.at;
+  identity.check(false);
+  p.argv = plan.argv;
+  p.env = plan.env;
+  p.comm = null;
+  p.cred = identity.cred;
+  p.dumpable = identity.dumpable;
+  p.exe = plan.exe;
+  p.exeAt = {mnt, node, dir, name};
+}
+
+export function finishExecDescriptors(
+    p: Pick<Proc, 'fds' | 'memory' | 'actions'> & {readonly task: Pick<Thread, 'altstack'>},
+    task: Pick<Thread, 'altstack'>, memory: Mem | null, table: FdTable): void {
+  p.fds.exec();
+  if (p.memory !== memory || p.fds !== table || p.task !== task) throw new ExecPreparationChangedError();
+  for (const [sig, h] of p.actions) if (h.handler > 1n) p.actions.delete(sig);
+  task.altstack = {sp: 0n, size: 0n, flags: 2};
+}
+
 function installStatic<P, I extends Program, T extends ExecThread<I>>(
   p: P & ExecProcess<P, I, T>, task: T, plan: StaticExecPlan<I>, identity: ExecIdentity, table: FdTable, own: FdTable | null,
 ): void {
-  const k = p.kernel, {image, stack, laid} = plan, {mnt, node, parent: dir, name} = plan.source.at;
+  const k = p.kernel, {image, stack, laid} = plan;
   const memory = p.memory;
   let phase: ExecPhase = 'threads', fresh: Mem | undefined;
   let returnedMemory = false, returnedFds = false;
@@ -164,11 +204,7 @@ function installStatic<P, I extends Program, T extends ExecThread<I>>(
     const again = !!(image === p.image && image.segments && memory?.users === 1 && !memory.tainted && p.tasks.size === 1);
     phase = 'address-space';
     p.image = image;
-    p.stackLow = stack.stackLow;
-    p.stackTop = stack.stackTop;
-    p.mapEnd = p.mapBase = stack.mapBase;
-    p.free = [];
-    p.fixed = [];
+    installExecLayout(p, stack);
     p.retireShared();
     if (p.memory !== memory || p.fds !== table || p.task !== task) throw new ExecPreparationChangedError();
     if (again && memory) {
@@ -181,14 +217,7 @@ function installStatic<P, I extends Program, T extends ExecThread<I>>(
       fresh = p.newMemory(stack.mapBase / WASM_PAGE, image, laid, (taken) => { fresh = taken; });
       p.memory = fresh;
     }
-    identity.check(false);
-    p.argv = plan.argv;
-    p.env = plan.env;
-    p.comm = null;
-    p.cred = identity.cred;
-    p.dumpable = identity.dumpable;
-    p.exe = plan.exe;
-    p.exeAt = {mnt, node, dir, name};
+    installExecMetadata(p, plan, identity);
 
     phase = 'descriptors';
     if (own) {
@@ -197,10 +226,7 @@ function installStatic<P, I extends Program, T extends ExecThread<I>>(
       table.letGo();
       returnedFds = true;
     }
-    p.fds.exec();
-    if (p.memory !== fresh || p.fds !== (own ?? table) || p.task !== task) throw new ExecPreparationChangedError();
-    for (const [sig, h] of p.actions) if (h.handler > 1n) p.actions.delete(sig);
-    task.altstack = {sp: 0n, size: 0n, flags: 2};
+    finishExecDescriptors(p, task, fresh, own ?? table);
 
     phase = 'backend';
     if (image.segments) {

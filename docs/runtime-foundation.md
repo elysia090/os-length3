@@ -289,11 +289,17 @@ Separately, an authenticated initial image can be reserved by exactly
 the unpublished Task it was prepared for. A single-use grant checks
 the captured caller, descriptor table, source revisions, mapped entries
 and stack again after CPU setup and at transfer. Static exec and the
-held transfer use the same caller preflight and per-process commit
-fence. Rollback releases the candidate without changing the prior
-process. Transfer retires the old inspection and assigns the checked
-backing and initial context to that Task in a held state. The owner can
-discard it without guest exit, descriptor changes, or an execution event.
+held transfer share caller preflight, credentials, metadata, and
+close-on-exec operations. Before any descriptor is closed, rollback
+releases only the candidate image. On held commit, close-on-exec acts
+on the fresh process's private table, then the same source/stack
+authority rechecks the image before the backing and initial context
+are assigned. An unconfirmed close retains the exact owner; it is not
+rolled back or retried. A committed held Process has its main executable
+identity, arguments, credentials and initial layout, but no published
+PID or queue entry. Discard retires the whole unpublished owner,
+including an empty, fully returned descriptor table. The retired Process
+cannot run a syscall or publish a guest exit or startup event.
 
 Held image Tasks cannot be queued, run or enter the syscall table, even
 when a mapped translator is present. No normal launch path uses this

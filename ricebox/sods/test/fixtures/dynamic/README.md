@@ -43,8 +43,9 @@ with an internal process owner. Default Sods exec still refuses the PIE.
 With a translator built with `mapped-code`, set `SODS_TEST_MAPPED_WASM`
 to the same Wasm path to also prove the one-use transfer to an
 unpublished Task and rollback on a stale descriptor table or holding
-mount. The resulting Task is held: no guest instructions are compiled
-or executed during this test.
+mount. The commit checks the normal executable metadata, credentials,
+and the close-on-exec boundary without publishing the Process. The
+resulting Task is held: no guest instructions are compiled or executed.
 
 The explicit dependency catalogue covers the matched libc and the
 fixture DSO. The tests check it across the held-image boundary and use

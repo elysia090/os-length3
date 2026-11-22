@@ -5,8 +5,9 @@ import type {Translate} from '../../translation/translator.ts';
 import type {MappedTranslate} from '../../translation/mapped.ts';
 import {E, FsError} from '../fs.ts';
 import {MAPPED_VM_LIMIT, MappedVm, type DetachedMappedMemory, type InitialMappedRegion, type StagedMappedMemory} from '../mapped-vm.ts';
+import {execIdentity, type ExecIdentity} from './commit.ts';
 import {planDynamicExec, type DynamicExecOwner, type DynamicExecPlan, type DynamicSources, type PlacedObject} from './dynamic-plan.ts';
-import type {ExecRequest} from './plan.ts';
+import type {ExecMetadata, ExecRequest} from './plan.ts';
 import {ExecPreparationChangedError, execScope} from './source.ts';
 import {mappedStack, WASM_PAGE, type StackLayout} from './stack.ts';
 
@@ -32,6 +33,8 @@ interface DetachedOwner {
   readonly staged: StagedMappedMemory;
   readonly reader: object;
   readonly compiler: MappedTranslate;
+  readonly metadata: ExecMetadata;
+  readonly identity: ExecIdentity;
   reserved: boolean;
 }
 const heldImages = new WeakMap<DetachedDynamicImage, DetachedOwner>();
@@ -41,6 +44,8 @@ export interface InitialImageLease {
   readonly memory: StagedMappedMemory['memory'];
   readonly pc: bigint;
   readonly sp: bigint;
+  readonly metadata: ExecMetadata;
+  readonly identity: ExecIdentity;
   check(): void;
   claim(): void;
   discard(): void;
@@ -52,7 +57,7 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
   if (!held || held.reserved || held.process !== process || held.task !== task || process.own !== task ||
       process.memory || process.state !== 'live' || held.reader !== reader || held.compiler !== compiler)
     throw new ExecPreparationChangedError();
-  const {staged} = held, pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = image.stack.sp;
+  const {staged, metadata, identity} = held, pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = metadata.stack.sp;
   const checkOwner = (): void => {
     if (heldImages.get(image) !== held || process.own !== task || process.memory || process.state !== 'live')
       throw new ExecPreparationChangedError();
@@ -65,7 +70,7 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
   const memory = staged.memory;
   held.reserved = true;
   return Object.freeze({
-    memory, pc, sp: BigInt(sp), check,
+    memory, pc, sp: BigInt(sp), metadata, identity, check,
     claim() {
       checkOwner();
       staged.claim(process, pc, main, sp);
@@ -113,10 +118,12 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   const task = process.own, scope = execScope(process), {path} = request;
   if (typeof path !== 'string' || path.includes('\0')) throw new FsError(E.INVAL);
   const argv = [...request.argv], env = [...request.env];
+  if (!argv.length) argv.push('');
   scope();
   const plan = planDynamicExec(process, path, sources, reader);
-  const verify = (): void => { scope(); plan.check(); };
-  const stack = mappedStack({imageEnd: plan.interpreter.end, ...plan.aux}, argv, env, path, process.cred);
+  const source = plan.main.source, identity = execIdentity(process, source);
+  const verify = (): void => { scope(); plan.check(); identity.check(false); };
+  const stack = mappedStack({imageEnd: plan.interpreter.end, ...plan.aux}, argv, env, path, identity.cred);
   verify();
   if (stack.mapBase >= MAPPED_VM_LIMIT) throw new FsError(E.NOMEM);
   const layout: InitialMappedRegion[] = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
@@ -131,7 +138,10 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
     const view = Object.freeze({main: placed(plan.main), interpreter: placed(plan.interpreter), firstPc: plan.firstPc,
       aux: Object.freeze({...plan.aux}),
       stack: Object.freeze({stackLow: stack.stackLow, stackTop: stack.stackTop, mapBase: stack.mapBase, sp: stack.sp}), pages});
-    if (task && compiler) heldImages.set(view, {process, task, staged, reader, compiler, reserved: false});
+    if (task && compiler) {
+      const metadata = {source, exe: plan.main.path, argv, env, stack: view.stack};
+      heldImages.set(view, {process, task, staged, reader, compiler, metadata, identity, reserved: false});
+    }
     return view;
   } catch (error) { pages.discard(); throw error; }
 }

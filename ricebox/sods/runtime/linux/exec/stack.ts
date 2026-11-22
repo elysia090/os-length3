@@ -39,8 +39,7 @@ export function mappedStack(facts: StartFacts & {readonly base: number}, argv: r
     execfn: string, cred: Cred): StackLayout & {readonly writes: readonly StackWrite[]} {
   // In this bounded loader profile, take ordinary UTF-8 strings only.
   // Check a cheap minimum before joining or allocating a large host string.
-  const args = argv.length ? argv : [''];
-  let bytes = (args.length + env.length + 31) * 8 + 16;
+  let bytes = (argv.length + env.length + 31) * 8 + 16;
   const length = (arg: string): number => {
     if (typeof arg !== 'string' || arg.includes('\0')) throw new FsError(E.INVAL);
     if (arg.length >= ARG_STRLEN) throw new FsError(E.TOOBIG);
@@ -49,13 +48,13 @@ export function mappedStack(facts: StartFacts & {readonly base: number}, argv: r
     return n;
   };
   bytes += length(execfn);
-  for (const list of [args, env]) for (const arg of list) {
+  for (const list of [argv, env]) for (const arg of list) {
     if ((bytes += length(arg)) > ARG_BYTES) throw new FsError(E.TOOBIG);
   }
   const ids: AuxIdentity = {uid: shownIn(cred.ns, cred.uid), euid: shownIn(cred.ns, cred.euid),
     gid: shownIn(cred.ns, cred.gid, true), egid: shownIn(cred.ns, cred.egid, true),
     secure: cred.uid !== cred.euid || cred.gid !== cred.egid ? 1 : 0};
-  return initialStack(facts, args, env, execfn, facts.base, ids);
+  return initialStack(facts, argv, env, execfn, facts.base, ids);
 }
 
 function initialStack(facts: StartFacts, argv: readonly string[], env: readonly string[], execfn: string,

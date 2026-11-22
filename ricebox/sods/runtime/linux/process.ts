@@ -2,8 +2,8 @@ import {forkFailure, forkIdentity} from './fork-preparation.ts';
 export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
-import {blockExecTree, captureExecCaller, checkExecTree, execMayRun, replaceExec, withExecPreparation,
-  type ExecOwners, type ExecPhase} from './exec/commit.ts';
+import {blockExecTree, captureExecCaller, checkExecTree, execMayRun, finishExecDescriptors, installExecLayout,
+  installExecMetadata, replaceExec, withExecPreparation, type ExecOwners, type ExecPhase} from './exec/commit.ts';
 import {reserveInitialImage, type DetachedDynamicImage, type InitialImageLease} from './exec/dynamic-image.ts';
 import {MappedCodeChanged} from './exec/mapped-code-space.ts';
 import {MAPPED_ARCH_PRCTL, MappedTaskCpu} from './exec/mapped-task.ts';
@@ -172,6 +172,7 @@ interface PendingMappedTask {
   readonly grant: InitialMappedGrant;
   readonly image: InitialImageLease;
   readonly cpu: MappedTaskCpu;
+  readonly caller: ReturnType<typeof captureExecCaller>;
   check(): void;
 }
 interface MappedTaskCall {
@@ -1295,6 +1296,7 @@ export class Kernel implements Kern {
       throw new Error('Another task cannot enter during an active mapped turn');
     if (this.current?.[MAPPED_CPU] && this.current.proc.call) throw new Error('A mapped syscall cannot reenter');
     if (p.execTransition) execMayRun(p);
+    if (p.state !== 'live') return BigInt(-E.SRCH);
     if (t instanceof Task) {
       checkMappedAdmission(t);
       if (t[MAPPED_CPU]) this.#checkMappedTask(t, t[MAPPED_CPU]);
@@ -2261,10 +2263,17 @@ export class Process implements Proc {
     throw failure;
   }
 
+  #requireStaticOwner(): void {
+    execMayRun(this);
+    if (this.state !== 'live') throw new FsError(E.SRCH);
+    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
+    const owner = this.own;
+    if (owner) checkMappedAdmission(owner);
+  }
+
   /** Replace the calling process's image through the same transaction as start(). */
   execve(path: string, argv: string[], env: string[]): void {
-    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
-    if (this.task) checkMappedAdmission(this.task);
+    this.#requireStaticOwner();
     replaceExec<Process, Image, Task>(this, {path, argv, env});
   }
 
@@ -2329,7 +2338,7 @@ export class Process implements Proc {
    * memory is a copy, or this very memory with CLONE_VM. It is ready to run.
    */
   forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, fs = false, ns = null, cred = null, cgroup = null, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false, prepareNamespaces}: ForkOptions = {}): Process {
-    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
+    this.#requireStaticOwner();
     const k = this.kernel, t = this.task;
     const unchanged = forkIdentity(this);
     try { this.syncShared(true); }
@@ -2468,7 +2477,7 @@ export class Process implements Proc {
 
   /** A new thread of this process (clone with CLONE_THREAD): the caller's registers, rax 0, on `stack`. */
   newThread(resume: bigint, stack: bigint, tls: bigint | null): Task {
-    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
+    this.#requireStaticOwner();
     const k = this.kernel, t = this.task;
     const nt = k.newTask(this);
     nt.mask = t.mask;
@@ -2582,22 +2591,27 @@ export class Task implements Thread {
   }
 
   #unpublishedMapped(memory: Mem | null): () => void {
-    const p = this.proc, k = this.kernel, scope = execScope(p), caller = captureExecCaller(p, this);
-    const {pid, pgid, sid} = p, pc = this.resumeAt;
+    const p = this.proc, k = this.kernel, scope = execScope(p);
+    const {pid, pgid, sid, cgroup} = p, pc = this.resumeAt;
     const {filters, strict, mask} = this;
     return () => {
       scope();
-      caller.check();
       if (k.shared || p.state !== 'live' || !p.noNewPrivs || p.memory !== memory || this[MAPPED_CPU] ||
           this.instance || p.pid !== pid || p.pgid !== pgid || p.sid !== sid ||
           (memory === null && (p.image || this.memory !== undefined || this.resumeAt !== pc || this.call ||
             this.filters !== filters || this.strict !== strict || this.mask !== mask || this.pending.mask ||
-            p.pending.mask || k.tasks.size || k.procs.size || k.runq.length || k.blocked.size)) ||
+            p.pending.mask || k.tasks.size || k.procs.size || k.runq.length || k.blocked.size ||
+            p.ppid || p.children.size || p.pidns !== k.spaces.children || p.cgroup !== cgroup || cgroup.procs.has(p) ||
+            this.fs !== p.fs0 || this.fs.users !== 1)) ||
           this.state !== 'new' || this.x87 || this.robust || this.clearTid || p.tasks.size !== 1 || p.maps.length || p.vfork ||
-          p.actions.size || p.stopped || k.tasks.has(this.tid) || k.procs.has(p.pid) ||
-          k.runq.includes(this) || k.blocked.has(this) || k.current)
+          p.actions.size || p.stopped || this.#mappedScheduled() || k.current)
         throw new Error('Mapped Task preparation requires a fresh unpublished inline owner');
     };
+  }
+
+  #mappedScheduled(): boolean {
+    const k = this.kernel;
+    return k.tasks.has(this.tid) || k.procs.has(this.proc.pid) || k.runq.includes(this) || k.blocked.has(this);
   }
 
   #newMappedCpu(memory: Mem, compiler: MappedTranslate, kind: 'arena' | 'held-initial'): MappedTaskCpu {
@@ -2621,10 +2635,10 @@ export class Task implements Thread {
     withExecPreparation(p, () => {
       const memory = p.memory, vm = memory?.mappedVm;
       if (!memory || !vm) throw new Error('Mapped Task needs an owned VM');
-      const check = this.#unpublishedMapped(memory), checkVm = vm.taskEntry(p, pc, sp);
-      check();
+      const caller = captureExecCaller(p, this), check = this.#unpublishedMapped(memory), checkVm = vm.taskEntry(p, pc, sp);
+      caller.check(); check();
       const cpu = this.#newMappedCpu(memory, compiler, 'arena');
-      try { check(); checkVm(); cpu.setReg('r4', sp); }
+      try { caller.check(); check(); checkVm(); cpu.setReg('r4', sp); }
       catch (error) { cpu.discardPreparation(); throw error; }
       this.memory = memory;
       this.resumeAt = pc;
@@ -2640,21 +2654,21 @@ export class Task implements Thread {
       if (this[MAPPED_HANDOFF] || k[HELD_TASKS]?.size || p.pid !== this.tid || p.fds.holders !== 1)
         throw new ExecPreparationChangedError();
       if (!reader || !compiler) throw new Error('Held image requires the owning Kernel translator');
-      const lifecycle = this.#unpublishedMapped(null);
+      const lifecycle = this.#unpublishedMapped(null), caller = captureExecCaller(p, this);
       const check = (): void => {
         lifecycle();
         if (k.translate !== reader || reader.mapped !== compiler) throw new ExecPreparationChangedError();
       };
-      check();
+      caller.check(); check();
       const image = reserveInitialImage(view, p, this, reader, compiler);
       (k[HELD_TASKS] ??= new Set()).add(this);
       let cpu: MappedTaskCpu | undefined;
       try {
         cpu = this.#newMappedCpu(image.memory, compiler, 'held-initial');
-        check(); image.check();
+        caller.check(); check(); image.check();
         cpu.setReg('r4', image.sp);
         const grant = Object.freeze(Object.create(null)) as InitialMappedGrant;
-        this[MAPPED_HANDOFF] = {grant, image, cpu, check};
+        this[MAPPED_HANDOFF] = {grant, image, cpu, caller, check};
         return grant;
       } catch (cause) {
         this.#discardHeldCandidate(image, cpu, cause);
@@ -2669,47 +2683,93 @@ export class Task implements Thread {
   }
 
   commitHeldMapped(grant: InitialMappedGrant): HeldMappedTask {
-    const p = this.proc, k = this.kernel;
+    const p = this.proc;
     return withExecPreparation(p, commit => {
-      const held = this.#handoff(grant), {image, cpu} = held, memory = image.memory;
-      const priorPc = this.resumeAt;
-      let owner: {memory: Mem; cpu: MappedTaskCpu} | undefined = {memory, cpu};
+      const held = this.#handoff(grant), {image, cpu, caller} = held, memory = image.memory;
+      const {table} = caller, fs = p.fs;
+      let retire: (() => void) | undefined = () => this.#retireCommittedHeld(memory, cpu, fs, table);
       const result: HeldMappedTask = Object.freeze({
         kind: 'held-initial',
-        discard: () => {
-          if (!owner) return;
-          const {memory, cpu} = owner;
-          execMayRun(p);
-          if (p.memory !== memory || this[MAPPED_CPU] !== cpu || p.own !== this || k.tasks.has(this.tid) ||
-              k.procs.has(p.pid) || k.runq.includes(this) || k.blocked.has(this) || k.current === this)
-            throw new ExecPreparationChangedError();
-          try {
-            cpu.retire();
-            p[HELD_MEMORY](memory, null);
-            k.letGo(memory, null);
-            this[MAPPED_CPU] = undefined;
-            delete (this as Partial<Pick<Task, 'memory'>>).memory;
-            this.resumeAt = priorPc;
-            k[HELD_TASKS]!.delete(this);
-            owner = undefined;
-          } catch (cause) { p.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory: memory}); }
+        discard() {
+          retire?.();
+          retire = undefined;
         },
       });
-      try { held.check(); }
+      try { caller.check(); held.check(); image.check(); }
       catch (cause) { this.#cancelHeld(held, cause); throw cause; }
       return commit(() => {
-        try { image.claim(); }
-        catch (cause) { this.#cancelHeld(held, cause); throw cause; }
-        // No callback, queue, descriptor retirement or guest exec effect
-        // follows this exact ownership transfer while the Task is held.
+        let phase: ExecPhase = 'descriptors';
+        let claimed = false;
         try {
+          // Keep the old scope intact until any close callbacks return.
+          // No failure from this point may masquerade as a rolled-back exec.
+          finishExecDescriptors(p, this, null, table);
+          caller.afterDescriptors(); held.check();
+          phase = 'held-mapped-handoff';
+          image.claim(); // Rechecks both initial objects, stack and dependency catalogue.
+          claimed = true;
           p[HELD_MEMORY](null, memory);
+          installExecLayout(p, image.metadata.stack);
+          installExecMetadata(p, image.metadata, image.identity);
           this.memory = memory;
           this.resumeAt = image.pc;
           this[MAPPED_CPU] = cpu;
           this[MAPPED_HANDOFF] = undefined;
-        } catch (cause) { p.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory: memory}); }
+        } catch (cause) {
+          // An unclaimed image can still be retired independently. That
+          // confirmation does not undo or permit retrying descriptor effects.
+          if (!claimed) this.#cancelHeld(held, cause, table);
+          p.retainExecFailure(phase, cause, {task: this, newMemory: claimed ? memory : undefined, newFds: table});
+        }
         return result;
+      });
+    });
+  }
+
+  #retireCommittedHeld(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
+    const p = this.proc, k = this.kernel;
+    withExecPreparation(p, retire => {
+      const unpublished = (): void => {
+        if (!k[HELD_TASKS]?.has(this) || p.cgroup.procs.has(p) || this.#mappedScheduled() || k.current ||
+            p.state !== 'live' || p.children.size || p.own !== this || p.tasks.size !== 1 || !p.tasks.has(this) || this.dead)
+          throw new ExecPreparationChangedError();
+      };
+      unpublished();
+      if (p.memory !== memory || this.memory !== memory || this[MAPPED_CPU] !== cpu || memory.users !== 1 ||
+          p.fs !== fs || fs.users !== 1 || p.fds !== table || table.holders !== 1)
+        throw new ExecPreparationChangedError();
+      retire(() => {
+        let newMemory: Mem | undefined = memory, newFds: FdTable | undefined = table;
+        try {
+          cpu.retire();
+          p[HELD_MEMORY](memory, null);
+          k.letGo(memory, null);
+          if (memory.users !== 0) throw new ExecPreparationChangedError();
+          newMemory = undefined;
+          const retiring = new Retirement();
+          retiring.attempt(() => this.end());
+          retiring.attempt(() => fs.drop());
+          retiring.attempt(() => {
+            table.letGo();
+            // A finalizer can leave a slot that was not in the close snapshot.
+            if (table.holders !== 0 || table.slots.size !== 0) throw new ExecPreparationChangedError();
+            newFds = undefined;
+          });
+          retiring.finish();
+          unpublished();
+          if (p.memory || p.fs !== fs || fs.users !== 0 || p.fds !== table)
+            throw new ExecPreparationChangedError();
+          this[MAPPED_CPU] = undefined;
+          delete (this as Partial<Pick<Task, 'memory'>>).memory;
+          // Like an unpublished failed fork, this owner is non-live but
+          // never becomes a waitable process or emits a guest exit.
+          p.state = 'zombie';
+          p.tasks.delete(this);
+          delete (p as Partial<Pick<Process, 'task'>>).task;
+          this.dead = true;
+          this.state = 'dead';
+          k[HELD_TASKS]!.delete(this);
+        } catch (cause) { p.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory, newFds}); }
       });
     });
   }
@@ -2720,13 +2780,13 @@ export class Task implements Thread {
     return held;
   }
 
-  #cancelHeld(held: PendingMappedTask, reason?: unknown): void {
-    this.#discardHeldCandidate(held.image, held.cpu, reason);
+  #cancelHeld(held: PendingMappedTask, reason?: unknown, newFds?: FdTable): void {
+    this.#discardHeldCandidate(held.image, held.cpu, reason, newFds);
     this[MAPPED_HANDOFF] = undefined;
     this.kernel[HELD_TASKS]!.delete(this);
   }
 
-  #discardHeldCandidate(image: InitialImageLease, cpu: MappedTaskCpu | undefined, reason?: unknown): void {
+  #discardHeldCandidate(image: InitialImageLease, cpu: MappedTaskCpu | undefined, reason?: unknown, newFds?: FdTable): void {
     const retiring = new Retirement();
     retiring.attempt(() => cpu?.discardPreparation());
     retiring.attempt(() => image.discard());
@@ -2734,7 +2794,7 @@ export class Task implements Thread {
       try { retiring.finish(); }
       catch (cleanup) {
         const cause = reason === undefined ? cleanup : new AggregateError([reason, cleanup], 'Held image rollback was unconfirmed');
-        this.proc.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory: image.memory});
+        this.proc.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory: image.memory, newFds});
       }
     }
   }
