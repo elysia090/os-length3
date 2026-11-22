@@ -217,6 +217,22 @@ export class MappedVm {
     this.#owner = owner;
   }
 
+  checkTaskOwner(owner: Caller): void { this.#pin(owner)(); }
+
+  /** Only already-installed library text and an arena stack may start the
+   * internal inline Task backend. Initial exec images remain detached. */
+  taskEntry(owner: Caller, pc: bigint, sp: bigint): () => void {
+    const identity = this.#pin(owner), generation = this.#code.generation;
+    const check = (): void => {
+      identity();
+      if (this.#busy || this.#regions.some(r => r.initial !== undefined)) fail(E.OPNOTSUPP);
+      if (this.#code.find(pc, generation)?.text.role !== 'library') fail(E.ACCES);
+      if (sp % 16n || !this.permits(sp - 128n, 128n, 'write')) fail(E.FAULT);
+    };
+    check();
+    return check;
+  }
+
   close(): void {
     this.#closed = true;
     this.#owner = undefined;

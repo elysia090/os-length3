@@ -3,6 +3,8 @@ export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 import {blockExecTree, checkExecTree, execMayRun, replaceExec, type ExecOwners, type ExecPhase} from './exec/commit.ts';
+import {MappedCodeChanged} from './exec/mapped-code-space.ts';
+import {MappedTaskCpu} from './exec/mapped-task.ts';
 import {sourceRevision} from './exec/source.ts';
 import {STACK_BYTES, WASM_PAGE} from './exec/stack.ts';
 export {ImageSourceChangedError} from './exec/source.ts';
@@ -48,6 +50,7 @@ import {FILE_CALLS, MAPPED_FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
 import {prepare, type Segment} from '../translation/share.ts';
+import type {MappedTranslate} from '../translation/mapped.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
@@ -124,6 +127,16 @@ interface Kept extends ImageEntry { image: Image }
 /** What a pump says: init's wait status once it ended, else that everything waits (until a time, or input). */
 export interface Pumped { status?: number; waiting?: true; until?: number }
 
+/** The failed Kernel must retain this task, its backing and compiler state. */
+class MappedTaskOwnershipError extends Error {
+  readonly task: Task;
+  constructor(task: Task, cause: unknown) {
+    super('Mapped Task lifecycle did not complete; its owners were retained', {cause});
+    this.name = 'MappedTaskOwnershipError';
+    this.task = task;
+  }
+}
+
 const PAGE = 4096;
 /**
  * Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them (systemd's descriptors: 1024,
@@ -140,6 +153,9 @@ const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALL
 // take no guest pointers. An unported syscall is not a static fallback.
 const MAPPED_CALLS: Calls = {...MAPPED_FILE_CALLS, 9: PROC_CALLS[9], 10: PROC_CALLS[10],
   11: PROC_CALLS[11], 12: PROC_CALLS[12], 39: PROC_CALLS[39], 231: PROC_CALLS[231]};
+// Only the owning kernel and task may enter or retire this backend.
+const MAPPED_CPU = Symbol('mapped Task CPU');
+const preparingMapped = new WeakSet<Task>();
 const enc = new TextEncoder();
 
 /** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS that are timed). */
@@ -389,6 +405,8 @@ export class Kernel implements Kern {
   declare failedExecs?: Set<ExecCommitError>;
   #executionEpoch: object = {};
   #starting = false;
+  #mappedTurn?: Task;
+  #failedMapped?: MappedTaskOwnershipError;
   get executionEpoch(): object { return this.#executionEpoch; }
   protected invalidateExecPreparation(): void { this.#executionEpoch = {}; }
   declare readonly vfs: Vfs;
@@ -806,6 +824,7 @@ export class Kernel implements Kern {
    * held before and after.
    */
   free(budget = 0): {before: Held; after: Held} {
+    this.#schedulerEntry();
     const before = this.held();
     if (before.spare <= budget) return {before, after: before};
     const using = new Set<Program>(this.live().map((p) => p.image));
@@ -850,6 +869,8 @@ export class Kernel implements Kern {
   }
   /** Its run is over: it keeps nothing of its tree from going any longer (and the tree does not keep it). */
   ended(): void {
+    if (this.#failedMapped) throw this.#failedMapped;
+    for (const task of this.tasks.values()) if (task[MAPPED_CPU]) throw new Error('Mapped Task retirement has not completed');
     this.invalidateExecPreparation();
     this.vfs.loaded.keepers.delete(this);
   }
@@ -863,6 +884,7 @@ export class Kernel implements Kern {
     // disappeared. Do not infer namespace ownership from mount refs alone.
     if (namespaceWasExposed(this.spaces.mnt)) return false;
     if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size || this.failedPreparations?.size || this.failedExecs?.size
+      || this.#failedMapped
       || this.vfs.loaded.keepers.has(this)) return false;
     const restore = this.vfs.who.root === this.root;
     const base = this.vfs.mount;
@@ -978,7 +1000,30 @@ export class Kernel implements Kern {
   /** `bytes` written to the console (fd 1 or 2), after what was written there before. */
   say(fd: number, bytes: Uint8Array): void { this.console.write(fd, bytes); }
 
+  #schedulerEntry(): void {
+    if (this.#failedMapped) throw this.#failedMapped;
+    if (this.#mappedTurn || this.current?.[MAPPED_CPU]) throw new Error('The mapped scheduler cannot reenter its task');
+  }
+
+  #checkMappedTask(t: Task, cpu: MappedTaskCpu): void {
+    const p = t.proc;
+    if (this.shared || p.kernel !== this || p.memory !== cpu.memory || cpu.memory.users !== 1 ||
+        p.tasks.size !== 1 || !p.tasks.has(t) || p.own !== t || this.tasks.get(t.tid) !== t || this.procs.get(p.pid) !== p)
+      throw new Error('Mapped Task has no current scheduler owner');
+    cpu.memory.mappedVm!.checkTaskOwner(p);
+  }
+
+  #mappedFailed(t: Task, cause: unknown): never {
+    if (!this.#failedMapped) {
+      const failure = this.#failedMapped = new MappedTaskOwnershipError(t, cause);
+      blockExecTree(this.vfs);
+      t[MAPPED_CPU]!.revoke(failure);
+    }
+    throw this.#failedMapped;
+  }
+
   pump(): Pumped {
+    this.#schedulerEntry();
     // The host runs it again because something may have changed (input came, a time passed).
     this.dirty = true;
     for (;;) {
@@ -996,8 +1041,16 @@ export class Kernel implements Kern {
 
   /** Run `t` here until it waits, yields, or ends. */
   run(t: Task): void {
+    this.#schedulerEntry();
     if (t.proc.execTransition) execMayRun(t.proc);
     if (t.dead || t.proc.stopped) { t.state = t.dead ? 'dead' : 'stopped'; return; }
+    const mapped = t[MAPPED_CPU];
+    if (mapped) {
+      this.#checkMappedTask(t, mapped);
+      this.#mappedTurn = t;
+    } else if (t.proc.memory?.mappedVm) {
+      throw new Error('Mapped memory cannot run on the static task backend');
+    }
     this.current = t;
     t.state = 'running';
     t.sliceStart = steady();
@@ -1010,19 +1063,35 @@ export class Kernel implements Kern {
         this.resumeWith(t, call, v, false);
         if (t.dead || t.state !== 'running') return;
       } else if (deliverable(t)) {
+        if (mapped) this.#mappedFailed(t, new Error('Mapped signal delivery is not supported'));
         take(this, t, t.context());
         if (t.dead || t.proc.stopped) { if (!t.dead) t.state = 'stopped'; return; }
       }
       for (;;) {
         try {
-          t.attach();
-          const x = t.exports;
-          // A full time slice, and no frames yet.
-          if (x.budget) x.budget.value = t.slice;
-          if (x.depth) x.depth.value = 0;
-          t.ranAt = t.since = steady();
-          x.run(t.resumeAt);
+          if (mapped) {
+            this.#checkMappedTask(t, mapped);
+            t.ranAt = t.since = steady();
+            mapped.run(t.resumeAt, t.slice);
+            throw new Error('Mapped Task returned without a scheduler outcome');
+          } else {
+            t.attach();
+            const x = t.exports;
+            // A full time slice, and no frames yet.
+            if (x.budget) x.budget.value = t.slice;
+            if (x.depth) x.depth.value = 0;
+            t.ranAt = t.since = steady();
+            x.run(t.resumeAt);
+          }
         } catch (e) {
+          const exit = mapped?.pendingExit;
+          if (exit) {
+            if (e !== exit && !(e instanceof MappedCodeChanged)) this.#mappedFailed(t, e);
+            // The dispatcher has unwound. Exit status cannot be published
+            // until its remaining compiler/table ownership is retired.
+            this.exitProcess(t.proc, exit.status);
+            return;
+          }
           if (e instanceof Preempted) {
             const now = steady();
             this.lap(t, now);
@@ -1031,9 +1100,14 @@ export class Kernel implements Kern {
             this.console.flush?.(false);
             if (e.code === TRAP_YIELD) t.slice = nextSlice(t.slice, now - t.ranAt);
             if (t.proc.maps.length) t.proc.syncShared();
+            if (mapped && (t.dead || t.proc.stopped)) { if (!t.dead) t.state = 'stopped'; return; }
             // Its time is up: due timers, a signal for it and other threads first; else it goes on at once.
             if (e.code === TRAP_YIELD && (this.runq.length || deliverable(t) || [...this.timers].some((x) => x.at <= now))) { this.ready(t); return; }
             continue;
+          }
+          if (mapped) {
+            if (e instanceof Wait && (t.call || t.dead || t.proc.stopped)) return;
+            this.#mappedFailed(t, e);
           }
           if (e instanceof Exec || e instanceof Redirect) continue;
           if (e instanceof Wait || e instanceof Exit) return;
@@ -1051,6 +1125,7 @@ export class Kernel implements Kern {
         }
       }
     } finally {
+      if (mapped) this.#mappedTurn = undefined;
       this.current = null;
     }
   }
@@ -1062,6 +1137,8 @@ export class Kernel implements Kern {
    * the call once it is done.
    */
   enter(t: Task, nr: bigint, args: bigint[], next: bigint): bigint {
+    const mapped = t[MAPPED_CPU];
+    if (mapped && (this.#mappedTurn !== t || !mapped.active)) throw new Error('Mapped syscall has no active scheduler turn');
     // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
     // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
     const at = ++this.calls % CALL_SAMPLE === 0 ? steady() : 0;
@@ -1078,7 +1155,12 @@ export class Kernel implements Kern {
       }
       const v = this.attempt(t, call);
       if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
-      if (!t.dead && !t.proc.stopped && !deliverable(t)) { runsOn = true; return v; }
+      if (!t.dead && !t.proc.stopped && !deliverable(t)) {
+        if (mapped) this.#checkMappedTask(t, mapped);
+        runsOn = true;
+        return v;
+      }
+      if (mapped) this.#mappedFailed(t, new Error('Mapped in-flight signal or stop is not supported'));
       this.resumeWith(t, call, v, true);
       if (t.dead) throw new Exit(0);
       if (t.state !== 'running') throw new Wait();
@@ -1156,12 +1238,19 @@ export class Kernel implements Kern {
   /** Make `call` for `t`: its value, or WAITS. Exit, Exec and Redirect go through. */
   attempt(t: {proc: Process; tid: number}, call: Call): bigint | typeof WAITS {
     const p = t.proc;
+    if (this.#failedMapped) throw this.#failedMapped;
+    if (this.#mappedTurn?.[MAPPED_CPU]?.active && this.#mappedTurn !== t)
+      throw new Error('Another task cannot enter during an active mapped turn');
+    if (this.current?.[MAPPED_CPU] && this.current.proc.call) throw new Error('A mapped syscall cannot reenter');
     if (p.execTransition) execMayRun(p);
-    if (t instanceof Task) p.task = t;
+    if (t instanceof Task) {
+      if (t[MAPPED_CPU]) this.#checkMappedTask(t, t[MAPPED_CPU]);
+      p.task = t;
+    }
     p.call = call;
     if (t instanceof Task && (t.filters || t.strict) && !call.state.screened) {
       const held = this.screened(t, call);
-      if (held !== null) return held;
+      if (held !== null) { if (p.memory?.mappedVm) p.call = null; return held; }
       call.state.screened = true;
     }
     const mapped = !!p.memory?.mappedVm, handler = (mapped ? MAPPED_CALLS : CALLS)[call.nr];
@@ -1180,6 +1269,11 @@ export class Kernel implements Kern {
       return v;
     } catch (error) {
       if (error instanceof ReadLifetimeError || error instanceof MappedVmCommitError) {
+        if (p.own?.[MAPPED_CPU]) {
+          const exit = p.own[MAPPED_CPU].pendingExit;
+          if (exit && error instanceof ReadLifetimeError) throw exit;
+          this.#mappedFailed(p.own, error);
+        }
         try {
           // A callback or failed installation may have left different bytes.
           // Ordinary unmap must not settle these into old canonical data.
@@ -1214,9 +1308,13 @@ export class Kernel implements Kern {
     t.call = null;
     this.blocked.delete(t);
     t.redirected = false;
-    t.setReg(0, v);
+    if (t[MAPPED_CPU]) t[MAPPED_CPU].completeSyscall(call.next, v);
+    else t.setReg(0, v);
     t.resumeAt = call.next;
-    if (deliverable(t)) take(this, t, t.context());
+    if (deliverable(t)) {
+      if (t[MAPPED_CPU]) this.#mappedFailed(t, new Error('Mapped signal delivery is not supported'));
+      take(this, t, t.context());
+    }
     if (t.dead) return;
     if (t.proc.stopped) { t.state = 'stopped'; return; }
     if (!now) this.go(t);
@@ -1232,6 +1330,7 @@ export class Kernel implements Kern {
 
   /** Make the waiting calls again while something changed; the ones done go on. */
   retry(): void {
+    this.#schedulerEntry();
     if (this.timers.size) {
       const now = steady();
       for (const timer of [...this.timers]) if (timer.at <= now) { this.timers.delete(timer); timer.fire(); }
@@ -1290,6 +1389,7 @@ export class Kernel implements Kern {
     if (!sig) return;
     const a = actionOf(t.proc, sig);
     if (a.handler <= 1n) return; // ignored, or its default (which send() did already if it ends or stops)
+    if (t[MAPPED_CPU]) this.#mappedFailed(t, new Error('Mapped signal delivery is not supported'));
     const s = call.state;
     s.cancel?.();
     t.call = null;
@@ -1340,6 +1440,11 @@ export class Kernel implements Kern {
 
   endTask(t: Task): void {
     if (t.dead) return;
+    if (t[MAPPED_CPU]) {
+      if (t.kernel !== this) throw new TypeError('Mapped Task belongs to another Kernel');
+      if (t[MAPPED_CPU].active) throw new Error('Mapped Task must leave its active frame before retirement');
+      this.#retireMapped(t);
+    }
     t.dead = true;
     t.state = 'dead';
     // Its time on the processor is its process's now (getrusage, times, wait4 count it there).
@@ -1379,12 +1484,27 @@ export class Kernel implements Kern {
     m.pooled = [kept, ...(m.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
   }
 
+  #retireMapped(t: Task): void {
+    try { t[MAPPED_CPU]!.retire(); } catch (error) { this.#mappedFailed(t, error); }
+    if (this.#failedMapped) throw this.#failedMapped;
+  }
+
   /** A process ends with wait status `status`: its threads, its files; its parent is told, and its children go to init. */
   exitProcess(p: Process, status: number): void {
+    if (this.#failedMapped) throw this.#failedMapped;
+    if (this.#mappedTurn?.[MAPPED_CPU]?.active && this.#mappedTurn.proc !== p)
+      throw new Error('Another process cannot retire during an active mapped turn');
     // A failed irreversible exec is not an ordinary second retirement.
     // Backends may separately request worker stop; this still owns evidence.
     execMayRun(p);
     if (p.state !== 'live') return;
+    const task = p.own, mapped = task?.[MAPPED_CPU];
+    if (mapped) {
+      if (p.kernel !== this) throw new TypeError('Mapped Task belongs to another Kernel');
+      if (mapped.active) mapped.requestExit(status);
+      this.#retireMapped(task!);
+      p.call = null;
+    }
     // Ended by a signal in front of the terminal: the shell gets it back as it had it (sys-file.ts handed).
     if (status & 0x7f && p.pgid === this.tty.fg) this.tty.cut = p.pgid;
     p.state = 'zombie';
@@ -1638,6 +1758,7 @@ export class Kernel implements Kern {
 
   /** Everything ends now, as when init is killed (a PID namespace's end). */
   halt(): void {
+    if (this.#failedMapped) throw this.#failedMapped;
     const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
     if (init) this.exitProcess(init, SIG.KILL);
     // An unpublished initial candidate may still own a partial exec.
@@ -2082,6 +2203,7 @@ export class Process implements Proc {
    */
   written(): Range[] {
     const f: Partial<Facts> = this.image?.facts ?? {}, m = this.memory;
+    if (m?.mappedVm) return []; // This private backing never enters the static pool.
     let deepest = m?.deepest ?? -Infinity;
     for (const t of this.tasks) {
       const low = t.low?.();
@@ -2283,6 +2405,7 @@ export class Process implements Proc {
 
 /** A thread: its registers (a wasm instance's globals here), its signal mask and pending signals, its x87. */
 export class Task implements Thread {
+  declare [MAPPED_CPU]?: MappedTaskCpu;
   declare slice: number;
   declare readonly proc: Process;
   declare readonly kernel: Kernel;
@@ -2374,9 +2497,46 @@ export class Task implements Thread {
     this.strict = strict;
   }
 
+  /** Prepare only an unpublished inline Task over already admitted arena
+   * code. Neither start nor execve can reach this experimental backend. */
+  prepareMapped(compiler: MappedTranslate, pc: bigint, sp: bigint): void {
+    const p = this.proc, k = this.kernel, epoch = k.executionEpoch, memory = p.memory, vm = memory?.mappedVm;
+    if (!memory || !vm) throw new Error('Mapped Task needs an owned VM');
+    const checkVm = vm.taskEntry(p, pc, sp);
+    const check = (): void => {
+      checkExecTree(k.vfs);
+      if (k.shared || k.executionEpoch !== epoch || this[MAPPED_CPU] || this.instance || this.dead ||
+          this.state !== 'new' || this.x87 || this.robust || this.clearTid || p.own !== this ||
+          p.task !== this || p.tasks.size !== 1 || !p.tasks.has(this) || p.maps.length || p.vfork ||
+          p.actions.size || p.stopped || k.tasks.has(this.tid) || k.procs.has(p.pid) || k.current)
+        throw new Error('Mapped Task preparation requires a fresh unpublished inline owner');
+      checkVm();
+    };
+    check();
+    if (preparingMapped.has(this)) throw new Error('Mapped Task preparation cannot reenter');
+    preparingMapped.add(this);
+    try {
+      const cpu = new MappedTaskCpu(memory, vm, compiler, {
+        syscall: (nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint) =>
+          k.enter(this, nr, [a, b, c, d, e, f], next),
+        trap: trapOrPreempt,
+        div128: (hi: bigint, lo: bigint, d: bigint, signed: number) => div128(hi, lo, d, signed),
+        clock: () => BigInt(Math.round(steady() * 1e6)),
+        fpu: () => { throw new Error('Mapped x87 state is not supported'); },
+        trace: () => {},
+        time: () => NaN,
+      });
+      try { check(); cpu.setReg('r4', sp); }
+      catch (error) { cpu.discardPreparation(); throw error; }
+      this.memory = memory;
+      this.resumeAt = pc;
+      this[MAPPED_CPU] = cpu;
+    } finally { preparingMapped.delete(this); }
+  }
+
   /** Run `image` over `memory` from here on (exec, or a new thread or process copying `from`). */
   load(image: Image, memory: Mem, from: Task | null = null): void {
-    if (memory.mappedVm) throw new Error('Mapped memory cannot run on the static task backend');
+    if (this[MAPPED_CPU] || memory.mappedVm) throw new Error('Mapped memory cannot run on the static task backend');
     this.image = image;
     // Its x87: a copy of the one it is made from (a new thread or process), or as they start (an exec, the first).
     const x87 = this.kernel.x87;
@@ -2423,6 +2583,7 @@ export class Task implements Thread {
 
   /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
   get bytes(): Uint8Array {
+    if (this.memory?.mappedVm) throw new Error('Mapped memory requires a checked kernel copy');
     const b = this.memory.buffer;
     if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); }
     return this.bytesOf;
@@ -2491,10 +2652,13 @@ export class Task implements Thread {
 
   // ---- registers: 0..15 as x86 numbers them (rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8..r15), 16 fs, 17 the flags, 18 the rest of rflags and MXCSR ----
 
-  reg(n: number): bigint { return this.exports[REG[n]]?.value ?? 0n; }
+  reg(n: number): bigint { return this[MAPPED_CPU] ? this[MAPPED_CPU].reg(REG[n]) : this.exports[REG[n]]?.value ?? 0n; }
   /** How deep its stack has gone (sods' abi.rs G_LOW: all ones before it moved); null for a translation without it. */
   low(): bigint | null { return this.instance ? this.exports.low?.value ?? null : null; }
-  setReg(n: number, v: bigint | number): void { const g = this.exports[REG[n]]; if (g) g.value = BigInt.asIntN(64, BigInt(v)); }
+  setReg(n: number, v: bigint | number): void {
+    if (this[MAPPED_CPU]) { this[MAPPED_CPU].setReg(REG[n], BigInt(v)); return; }
+    const g = this.exports[REG[n]]; if (g) g.value = BigInt.asIntN(64, BigInt(v));
+  }
   /** Its registers and where it goes on. */
   context(): {regs: bigint[]; rip: bigint} { return {regs: REG.map((_, n) => this.reg(n)), rip: this.resumeAt}; }
   /** Go on at `rip` with `regs`. */

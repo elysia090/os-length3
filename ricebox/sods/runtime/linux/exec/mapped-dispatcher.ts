@@ -10,6 +10,7 @@ const MAX_SLOTS = 65536, MAX_BYTES = 64 << 20;
 type Core = WebAssembly.Exports & {
   run(pc: bigint): void;
   table: WebAssembly.Table;
+  budget: WebAssembly.Global;
   depth: WebAssembly.Global;
 } & Partial<Record<RegName, WebAssembly.Global>>;
 
@@ -36,6 +37,8 @@ export class MappedDispatcher {
   #epoch?: object;
   #active?: object;
   #closed = false;
+  #revoked?: object;
+  #uncertain?: {error: Error; handles: readonly Set<bigint>[]};
   #known = new Map<BoundText, Set<bigint>>();
   #entries = new Map<bigint, bigint>();
   #slots = 0;
@@ -56,6 +59,7 @@ export class MappedDispatcher {
       env[name] = (...args: unknown[]) => {
         const generation = this.#requireLive();
         const value: unknown = Reflect.apply(fn, undefined, args);
+        if (this.#revoked) throw this.#revoked;
         // A host callback may have revoked a mapping even if the next guest
         // instruction is a direct edge inside the old Wasm function.
         if (generation !== this.#space.generation) {
@@ -90,14 +94,28 @@ export class MappedDispatcher {
 
   reg(name: RegName): bigint { return this.#core[name]?.value ?? 0n; }
   setReg(name: RegName, value: bigint): void {
-    if (this.#closed || this.#active) throw new Error('A running or closed mapped dispatcher cannot take a context');
+    this.#idle();
     const register = this.#core[name];
     if (!register) throw new RangeError('Unknown mapped register');
     register.value = BigInt.asIntN(64, value);
   }
 
-  run(pc: bigint): void {
-    if (this.#closed || this.#active) throw new Error('Mapped dispatcher cannot reenter');
+  /** Revoke now without clearing a table that still has a Wasm frame. */
+  revoke(reason: object): void { this.#revoked ??= reason; }
+
+  /** The kernel completed a waiting call with no Wasm frames left. */
+  completeSyscall(pc: bigint, value: bigint): void {
+    this.#idle();
+    this.#syscallResult(pc, value);
+  }
+
+  run(pc: bigint, budget?: number): void {
+    this.#idle();
+    if (budget !== undefined) {
+      if (!Number.isInteger(budget) || budget < 1 || budget > 0x7fff_ffff) throw new RangeError('Invalid mapped slice');
+      this.#core.budget.value = budget;
+      this.#core.depth.value = 0;
+    }
     for (;;) {
       const generation = this.#space.generation;
       this.#active = generation; // Includes reentry during retirement or attachment.
@@ -112,9 +130,7 @@ export class MappedDispatcher {
         // The normal post-import Wasm cannot restore RAX/RCX in this case.
         // Use the same architectural result and resume after, not at, the
         // completed syscall. Keep the remaining budget and discard depth.
-        this.#core.r0!.value = BigInt.asIntN(64, error.value);
-        this.#core.r1!.value = BigInt.asIntN(64, error.pc);
-        this.#core.depth.value = 0;
+        this.#syscallResult(error.pc, error.value);
         pc = error.pc;
       } finally { this.#active = undefined; }
     }
@@ -122,14 +138,27 @@ export class MappedDispatcher {
 
   close(): void {
     if (this.#active) throw new Error('Mapped code still has an active frame');
+    if (this.#uncertain) throw this.#uncertain.error;
     if (this.#closed) return;
     this.#closed = true;
     this.#forget();
   }
 
   #requireLive(): object {
+    if (this.#revoked) throw this.#revoked;
     if (!this.#active || this.#space.generation !== this.#active) throw new MappedCodeChanged();
     return this.#active;
+  }
+
+  #idle(): void {
+    if (this.#revoked) throw this.#revoked;
+    if (this.#closed || this.#active) throw new Error('Mapped dispatcher is not idle');
+  }
+
+  #syscallResult(pc: bigint, value: bigint): void {
+    this.#core.r0!.value = BigInt.asIntN(64, value);
+    this.#core.r1!.value = BigInt.asIntN(64, pc);
+    this.#core.depth.value = 0;
   }
 
   #forget(): void {
@@ -138,9 +167,15 @@ export class MappedDispatcher {
     this.#known.clear();
     this.#entries.clear();
     this.#slots = this.#bytes = 0;
-    const failures: unknown[] = [];
-    for (const known of previous) try { this.#compile.close(known); } catch (error) { failures.push(error); }
-    if (failures.length) { this.#closed = true; throw new AggregateError(failures, 'Mapped artifact retirement failed'); }
+    const failures: unknown[] = [], handles: Set<bigint>[] = [];
+    for (const known of previous) try { this.#compile.close(known); } catch (error) { failures.push(error); handles.push(known); }
+    if (failures.length) this.#retain(new AggregateError(failures, 'Mapped artifact retirement failed'), handles);
+  }
+
+  #retain(error: Error, handles: readonly Set<bigint>[]): never {
+    this.#closed = true;
+    this.#uncertain = {error, handles};
+    throw error;
   }
 
   #resolve(pc: bigint): bigint {
@@ -189,7 +224,8 @@ export class MappedDispatcher {
       // The translator may already have updated its unseen starts. Detach
       // its parsed handle so it cannot label an incomplete attachment known.
       try { this.#compile.close(known); }
-      catch (cleanup) { this.#closed = true; throw new AggregateError([cause, cleanup], 'Mapped attachment failed'); }
+      catch (cleanup) { this.#retain(new AggregateError([cause, cleanup], 'Mapped attachment failed'), [known]); }
+      this.#known.delete(source);
       throw cause;
     }
   }

@@ -237,10 +237,28 @@ the exec transaction; this does not replace the old address space,
 close descriptors or enqueue a task. A stale caller or revoked
 source discards the detached view. Tests cover the guest fixture's
 initial RELRO pages and live mprotect on the same VM policy separately.
-An actual initial-image handoff, the remaining ABI operations, precise
-tasks/signals and normal scheduling still need proof before guest
-loader entry. Worker execution additionally needs its own synchronization
-proof. Normal PT_INTERP exec is still refused.
+
+### Inline mapped Task lifecycle (not executable admission)
+
+An internal, unpublished Task can prepare its CPU over a single owned
+mapped VM with already authenticated library text and a writable arena
+stack. It cannot take a detached initial image. The normal Kernel run
+queue, slice handling, syscall screening and wait/retry logic own both
+task kinds. Mapped execution uses its own checked dispatcher; it never
+uses the static byte views, clock fast path or instance pool.
+
+On a wait, Wasm frames unwind. The same dispatcher restores the completed
+call's result and next PC as it does for a completed mapping-changing
+syscall. An in-flight exit request revokes the VM and prevents any
+translated code from resuming. The kernel publishes normal process exit
+only after the frame has unwound and the backend releases its artifacts.
+Unconfirmed backend retirement retains the task and tree, not a wait
+status or permission to try cleanup again.
+
+The scheduler proof is a small interpreter-free guest assembly fixture,
+not a loader handoff. Initial-image handoff, the remaining loader ABI,
+precise signals/faults and Worker execution still need proof. Normal
+PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 
