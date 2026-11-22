@@ -52,6 +52,7 @@ import {FILE_CALLS, MAPPED_FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
 import {prepare, type Segment} from '../translation/share.ts';
+import {initialPreparationFor, type InitialPreparationResult} from '../translation/translator.ts';
 import type {MappedTranslate} from '../translation/mapped.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
@@ -623,8 +624,16 @@ export class Kernel implements Kern {
     // What the translator says is no program it takes (an ELF cut short, of another machine, not an executable) is
     // the file's fault and the exec's failure, as a file with no ELF header's is: ENOEXEC. What else it throws is
     // its own fault, and stays the host's error.
-    let translated: Uint8Array;
-    try { translated = this.translate(bytes); }
+    const configured = Object.getOwnPropertyDescriptor(this, 'translate')?.value;
+    // Reading a native input's length inside the translator cannot call back into the host.
+    const initial = typeof configured === 'function' && ArrayBuffer.isView(bytes) &&
+      Object.getPrototypeOf(bytes) === Uint8Array.prototype && !Object.hasOwn(bytes, 'length')
+      ? initialPreparationFor(configured) : undefined;
+    // Only pure preparation and an ordinary source revision can move work across this fence.
+    const shared = initial && Object.getOwnPropertyDescriptor(node, 'version')?.value === revision
+      ? this.#defaultImageSharing() : undefined;
+    let translated: InitialPreparationResult | {raw: Uint8Array};
+    try { translated = initial && shared !== undefined ? initial(bytes, shared) : {raw: this.translate(bytes)}; }
     catch (error) {
       sourceRevision(node, revision); // Do not run an error classifier on an already-invalid source.
       let rejected: boolean | undefined;
@@ -633,7 +642,8 @@ export class Kernel implements Kern {
       if (rejected) throw new FsError(E.NOEXEC);
       throw error;
     } finally { sourceRevision(node, revision); }
-    const {wasm, segments} = this.prepare(translated);
+    if ('preparationError' in translated) throw translated.preparationError;
+    const {wasm, segments} = 'raw' in translated ? this.prepare(translated.raw) : translated;
     PROFILE.translate += steady() - t; t = steady();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
@@ -703,6 +713,17 @@ export class Kernel implements Kern {
 
   /** A translation as it is run here: {wasm, segments} (share.ts; shared memory when threads run apart). */
   prepare(wasm: Uint8Array): {wasm: Uint8Array<ArrayBuffer>; segments: Segment[] | null} { return prepare(wasm, {shared: this.shared}); }
+  static readonly #standardPrepare = this.prototype.prepare;
+
+  /** Custom preparers and accessors keep their own invocation after the translation fence. */
+  #defaultImageSharing(): boolean | undefined {
+    const shared = Object.getOwnPropertyDescriptor(this, 'shared')?.value;
+    if (typeof shared !== 'boolean') return;
+    for (let owner: object | null = this; owner; owner = Object.getPrototypeOf(owner)) {
+      const method = Object.getOwnPropertyDescriptor(owner, 'prepare');
+      if (method) return method.value === Kernel.#standardPrepare ? shared : undefined;
+    }
+  }
 
   /**
    * A file whose translation was made ahead of time (by the same translator,

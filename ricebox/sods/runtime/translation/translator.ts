@@ -8,6 +8,7 @@
 import {said} from '../host.ts';
 import type {MappedText, MappedTranslate} from './mapped.ts';
 import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES, dynamicLoadSpec, type DynamicRole, type ElfLoadSpec} from './dynamic-load.ts';
+import {prepare} from './share.ts';
 
 /** The translator's own exports. */
 interface Exports {
@@ -63,6 +64,15 @@ export interface Translate {
   readonly module: WebAssembly.Module;
 }
 
+export type InitialPreparationResult = ReturnType<typeof prepare> | {preparationError: unknown};
+type InitialPreparation = (elf: Uint8Array, shared: boolean) => InitialPreparationResult;
+const initialPreparations = new WeakMap<(elf: Uint8Array) => Uint8Array, InitialPreparation>();
+
+/** Internal static entry path for exact instances of this loader. No raw Wasm view escapes. */
+export function initialPreparationFor(translate: (elf: Uint8Array) => Uint8Array): InitialPreparation | undefined {
+  return initialPreparations.get(translate);
+}
+
 export async function loadTranslator(source: WebAssembly.Module | BufferSource): Promise<Translate> {
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
   const instance = (m: WebAssembly.Module): Exports => new WebAssembly.Instance(m, {}).exports as unknown as Exports;
@@ -77,16 +87,24 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   let base = x.memory.buffer.byteLength;
   const put = (bytes: Uint8Array): number => { const p = x.sods_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p; };
   // (`read`: the call's only failure is the ELF's reading, as sods_translate and its kin fail: NotAProgram.)
-  const output = (status: number, read = false): Uint8Array<ArrayBuffer> => {
-    const out = new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len()).slice();
-    if (status !== 0) { const why = new TextDecoder().decode(out); throw read ? new NotAProgram(why) : new Error(why); }
-    return out;
+  const outputView = (status: number, read = false): Uint8Array<ArrayBuffer> => {
+    const view = new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len());
+    if (status !== 0) {
+      const why = new TextDecoder().decode(view.slice());
+      throw read ? new NotAProgram(why) : new Error(why);
+    }
+    return view;
   };
+  const output = (status: number, read = false): Uint8Array<ArrayBuffer> => outputView(status, read).slice();
   // The ELF is the translator's once given (parsed where it lies), so it is not freed here.
-  function translate(elf: Uint8Array): Uint8Array<ArrayBuffer> {
-    return output(x.sods_translate(put(elf), elf.length), true);
-  }
+  const initialView = (elf: Uint8Array): Uint8Array<ArrayBuffer> => outputView(x.sods_translate(put(elf), elf.length), true);
+  function translate(elf: Uint8Array): Uint8Array<ArrayBuffer> { return initialView(elf).slice(); }
   translate.notProgram = (error: unknown): boolean => error instanceof NotAProgram;
+  initialPreparations.set(translate, (elf, shared) => {
+    const view = initialView(elf); // Translation errors stay separate from preparation errors.
+    try { return prepare(view, {shared}); }
+    catch (preparationError) { return {preparationError}; }
+  });
   if (x.sods_describe_dynamic_v1) translate.describeDynamic = (elf: Uint8Array, role: DynamicRole): ElfLoadSpec => {
     if (!Object.hasOwn(DYNAMIC_ROLES, role) || !elf.length || elf.length > DYNAMIC_FILE_LIMIT)
       throw new NotAProgram('Invalid dynamic object size or role');
