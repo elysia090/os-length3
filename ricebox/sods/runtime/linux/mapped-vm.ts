@@ -34,7 +34,7 @@ function permissions(x: bigint): number {
 }
 
 type Reader = Required<Pick<Translate, 'describeDynamic' | 'notProgram'>>;
-interface Region { start: number; end: number; prot: number; entry?: number }
+interface Region { start: number; end: number; prot: number; entry?: number; initial?: InitialMappedRegion['kind'] }
 const overlaps = (r: Region, a: number, b: number): boolean => a < r.end && r.start < b;
 interface Caller {
   readonly kernel: {readonly vfs: Vfs};
@@ -56,14 +56,19 @@ interface MemorySpec {
   vfs: Vfs; base: number; pages: number; sources: readonly ExecutableSource[]; reader: Reader;
 }
 
-/** Internal description of an initial installed page range. Writes are
- * initialized bytes; unwritten bytes begin zero in a fresh allocation. */
-export interface InitialMappedRegion {
+/** Initial PT_LOAD and stack rows stay distinct from the mmap arena. Writes
+ * are initialized bytes; unwritten bytes begin zero in a fresh allocation. */
+export type InitialMappedRegion = {
   readonly start: number;
   readonly end: number;
   readonly prot: number;
   readonly writes: readonly { readonly at: number; readonly bytes: Uint8Array }[];
-  readonly text?: ExecutableMapping;
+} & ({readonly kind: 'load-text'; readonly text: ExecutableMapping} |
+     {readonly kind: 'load-data' | 'stack'; readonly text?: never});
+
+interface InitialLayout {
+  readonly regions: readonly InitialMappedRegion[];
+  readonly verify: () => void;
 }
 
 /** Inspection of a staged image, not an executable address-space
@@ -117,19 +122,6 @@ export class MappedVmCommitError extends Error {
   constructor(cause: unknown) { super('Mapped memory installation did not complete', {cause}); this.name = 'MappedVmCommitError'; }
 }
 
-/** Created only for a candidate that will own a distinct memory. No
- * kernel/guest API opts into this profile as a side effect of mmap. */
-export function newMappedMemory({vfs, base, pages, sources, reader}: MemorySpec): MappedMemory {
-  if (!Number.isSafeInteger(pages) || pages < 1 || pages > LIMIT / WASM_PAGE ||
-      !Number.isSafeInteger(base) || base < MIN || base >= LIMIT || base % PAGE)
-    throw new RangeError('Invalid mapped memory layout');
-  const memory = new WebAssembly.Memory({initial: pages, maximum: LIMIT / WASM_PAGE});
-  const vm = new MappedVm(vfs, memory, base, sources, reader);
-  const made: MappedMemory = Object.assign(memory, {mappedVm: vm, users: 1, keeps: false as const, written: [], imageOf: null, tainted: true as const});
-  Object.defineProperty(made, 'mappedVm', {writable: false, configurable: false});
-  return made;
-}
-
 export class MappedVm {
   #vfs: Vfs;
   #base: number;
@@ -145,15 +137,30 @@ export class MappedVm {
   /** The dispatcher observes this owner's code and data authority. */
   readonly code: MappedRunView;
 
+  /** Internal allocation for a distinct, unclaimed backing. If there is an
+   * initial layout, validate and initialize it before returning that backing.
+   * No kernel/guest API opts into mapped memory as a side effect of mmap. */
+  static allocate({vfs, base, pages, sources, reader}: MemorySpec, initial?: InitialLayout): MappedMemory {
+    if (!Number.isSafeInteger(pages) || pages < 1 || pages > LIMIT / WASM_PAGE ||
+        !Number.isSafeInteger(base) || base < MIN || base >= LIMIT || base % PAGE)
+      throw new RangeError('Invalid mapped memory layout');
+    initial?.verify();
+    const memory = new WebAssembly.Memory({initial: pages, maximum: LIMIT / WASM_PAGE});
+    const vm = new MappedVm(vfs, memory, base, sources, reader);
+    if (initial) {
+      const {regions, verify} = initial;
+      try { vm.#seedDetached(regions, verify); verify(); }
+      catch (error) { vm.close(); throw error; }
+    }
+    const made: MappedMemory = Object.assign(memory, {mappedVm: vm, users: 1, keeps: false as const, written: [], imageOf: null, tainted: true as const});
+    Object.defineProperty(made, 'mappedVm', {writable: false, configurable: false});
+    return made;
+  }
+
   /** Commit to an inaccessible, private candidate first. If initialization
    * or a late source fence fails, no result or live memory is published. */
   static detached(spec: MemorySpec, regions: readonly InitialMappedRegion[], verify: () => void): DetachedMappedMemory {
-    verify();
-    const vm = newMappedMemory(spec).mappedVm;
-    try { vm.#seedDetached(regions, verify); verify(); }
-    catch (error) { vm.close(); throw error; }
-
-    let held: MappedVm | null = vm;
+    let held: MappedVm | null = MappedVm.allocate(spec, {regions, verify}).mappedVm;
     const discard = (): void => {
       const retired = held; held = null;
       retired?.close();
@@ -185,7 +192,7 @@ export class MappedVm {
     });
   }
 
-  constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, sources: readonly ExecutableSource[], reader: Reader) {
+  private constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, sources: readonly ExecutableSource[], reader: Reader) {
     this.#vfs = vfs;
     this.#base = base;
     this.#reader = reader;
@@ -224,12 +231,13 @@ export class MappedVm {
     if (!initial.length || initial.length > MAX_REGIONS) fail(E.NOMEM);
     const regions = [...initial].sort((a, b) => a.start - b.start);
     const memory = new Uint8Array(this.memory.buffer);
+    const records: Region[] = [], bindings: ExecutableMapping[] = [];
     let after = MIN;
-    for (const {start, end, prot, writes, text} of regions) {
+    for (const {start, end, prot, writes, kind, text} of regions) {
       if (!Number.isInteger(start) || !Number.isInteger(end) || start % PAGE || end % PAGE ||
           start < after || end <= start || end > this.#base || end > memory.length ||
-          !Number.isInteger(prot) || prot < 0 || prot > 7 ||
-          (prot & X ? prot !== RX || !text : !!text)) fail(E.INVAL);
+          !Number.isInteger(prot) || (kind === 'load-text' ? prot !== RX || !text
+            : !!text || (kind === 'load-data' ? prot < 0 || prot > (R | W) : kind !== 'stack' || prot !== (R | W)))) fail(E.INVAL);
       after = end;
       if (text && (text.prot !== prot || text.text.role === 'library' || text.text.address < start ||
           text.text.address + text.text.length > end)) fail(E.INVAL);
@@ -238,12 +246,16 @@ export class MappedVm {
         if (!Number.isInteger(part.at) || part.at < wrote || part.at + part.bytes.length > end) fail(E.INVAL);
         wrote = part.at + part.bytes.length;
       }
+      // Binding can call a source reader. The published row classification
+      // and exact extents are the already-validated values, not live inputs.
+      records.push({start, end, prot, initial: kind, entry: text?.text.address});
+      if (text) bindings.push({...text, text: {...text.text}});
     }
     for (const region of regions) for (const {at, bytes} of region.writes) memory.set(bytes, at);
-    for (const {text} of regions) if (text) {
+    for (const text of bindings) {
       try { this.#code.bind(text); } finally { verify(); }
     }
-    this.#regions = regions.map(({start, end, prot, text}) => ({start, end, prot, entry: text?.text.address}));
+    this.#regions = records;
   }
 
   /** The installed VM records are the only source of data permissions.
@@ -411,12 +423,20 @@ export class MappedVm {
 
   mprotect(owner: Caller, addr: bigint, len: bigint, prot: bigint): number {
     return this.#call(owner, check => {
-      const size = up(word(len, LIMIT)), start = this.#range(word(addr, LIMIT), size), end = start + size, p = permissions(prot);
+      const size = up(word(len, LIMIT)), start = this.#range(word(addr, LIMIT), size, MIN), end = start + size;
+      const initial = start < this.#base;
+      if (initial && (!size || end > this.#base)) fail(E.INVAL);
+      const p = permissions(prot);
       if (!size) return 0;
       const touched = this.#regions.filter(r => overlaps(r, start, end));
       let at = start;
       for (const r of touched) { if (r.start > at) fail(E.NOMEM); at = r.end; }
       if (at < end) fail(E.NOMEM);
+      // glibc requests read-only RELRO through ordinary mprotect. The guest
+      // reads its ELF headers; only this VM decides which installed pages
+      // can change. Initial stack/text and re-granting permissions stay out.
+      if (initial && ((p !== R && p !== 0) || touched.some(r => r.initial !== 'load-data' ||
+          (p === R && !(r.prot & (R | W)))))) fail(E.ACCES);
       if (p & X) {
         const generation = this.#code.generation;
         if (!touched.every(r => r.prot === p && r.entry !== undefined && this.#code.find(BigInt(r.entry), generation))) fail(E.ACCES);
@@ -424,7 +444,7 @@ export class MappedVm {
       }
       if (touched.every(r => r.prot === p)) return 0;
       const regions = this.#cut(start, end);
-      regions.push({start, end, prot: p});
+      regions.push({start, end, prot: p, initial: initial ? 'load-data' : undefined});
       this.#change(regions, start, end, null, check, () => {});
       return 0;
     });
@@ -495,8 +515,8 @@ export class MappedVm {
     return spec;
   }
 
-  #range(start: number, length: number): number {
-    if (start < this.#base || start % PAGE || start >= LIMIT || start + length > LIMIT) fail(E.INVAL);
+  #range(start: number, length: number, floor = this.#base): number {
+    if (start < floor || start % PAGE || start >= LIMIT || start + length > LIMIT) fail(E.INVAL);
     return start;
   }
 
@@ -505,6 +525,7 @@ export class MappedVm {
         !this.#regions.some(r => overlaps(r, hint, hint + length))) return hint;
     let start = this.#base;
     for (const r of this.#regions) {
+      if (r.end <= start) continue; // Bootstrap rows cannot lower the mmap floor.
       if (start + length <= r.start) return start;
       start = r.end;
     }
@@ -518,8 +539,8 @@ export class MappedVm {
       if (!overlaps(r, start, end)) { out.push(r); continue; }
       // Losing any part retires the whole executable binding. Do not
       // silently describe a remaining fragment as an executable object.
-      if (r.start < start) out.push({start: r.start, end: start, prot: r.prot & ~X});
-      if (end < r.end) out.push({start: end, end: r.end, prot: r.prot & ~X});
+      if (r.start < start) out.push({start: r.start, end: start, prot: r.prot & ~X, initial: r.initial});
+      if (end < r.end) out.push({start: end, end: r.end, prot: r.prot & ~X, initial: r.initial});
     }
     return out;
   }

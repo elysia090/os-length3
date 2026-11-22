@@ -127,10 +127,12 @@ test('detached VM seeds only owned nonoverlapping pages and lends no raw memory'
   const make = {vfs, base, pages: 2, sources: [], reader: {
     describeDynamic() { assert.fail('this unit seeds plain data pages'); }, notProgram: () => false,
   }};
-  const readOnly = {start: at, end: at + 4096, prot: 1, writes: [{at: at + 12, bytes: Uint8Array.of(20, 42)}]};
+  const readOnly = {kind: 'load-data' as const, start: at, end: at + 4096, prot: 1,
+    writes: [{at: at + 12, bytes: Uint8Array.of(20, 42)}]};
   assert.throws(() => MappedVm.detached(make, [readOnly, {...readOnly}], () => {}), hasErrno(E.INVAL));
   assert.throws(() => MappedVm.detached(make, [{...readOnly, prot: 7}], () => {}), hasErrno(E.INVAL));
   assert.throws(() => MappedVm.detached(make, [{...readOnly, prot: 5}], () => {}), hasErrno(E.INVAL));
+  assert.throws(() => MappedVm.detached(make, [{...readOnly, kind: 'stack'}], () => {}), hasErrno(E.INVAL));
   assert.throws(() => MappedVm.detached(make, [{...readOnly, writes: [{at: readOnly.end, bytes: Uint8Array.of(1)}]}], () => {}),
     hasErrno(E.INVAL));
   const pages = MappedVm.detached(make, [readOnly], () => {});
@@ -223,6 +225,23 @@ test('the authenticated PIE and real interpreter lay detached Linux PT_LOAD and 
           assert.equal(pages.hasText(BigInt(at)), false);
         }
       }
+      // The loader, not the VM, derives RELRO's full pages from the ELF
+      // headers. Read the real headers in guest memory, not new metadata.
+      const phdr = new DataView(pages.read(object.bias + spec.phdr, spec.phent * spec.phnum).buffer);
+      let relro = 0;
+      for (let at = 0; at < phdr.byteLength; at += spec.phent) {
+        if (phdr.getUint32(at, true) !== 0x6474e552) continue; // PT_GNU_RELRO
+        const addr = object.bias + Number(phdr.getBigUint64(at + 16, true));
+        const page = (n: number) => Math.floor(n / 4096) * 4096;
+        const start = page(addr), end = page(addr + Number(phdr.getBigUint64(at + 40, true)));
+        assert.ok(end > start, role + ' has full RELRO pages');
+        assert.ok(spec.loads.some(load => (load.flags & 7) === 6 &&
+          page(object.bias + load.vaddr) <= start && object.bias + load.vaddr + load.memSize >= end));
+        assert.ok(pages.permits(start, end - start, 'write'), 'initial RELRO is writable before relocation');
+        assert.equal(pages.hasText(BigInt(start)), false);
+        relro++;
+      }
+      assert.equal(relro, 1, role + ' has a GNU RELRO header');
     }
     assert.ok(liveBss > 0 && w >= 2 && rx >= 2, 'both genuine objects include mapped code and data');
     assert.equal(pages.hasText(BigInt(firstPc)), true);

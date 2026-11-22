@@ -30,7 +30,7 @@ function regions(object: PlacedObject, verify: () => void): InitialMappedRegion[
   try { payload = file.share(); } finally { verify(); }
   if (payload.length !== file.size) throw new FsError(E.ACCES);
 
-  return object.mappings.map(m => {
+  return object.mappings.map((m): InitialMappedRegion => {
     const start = floor(m.at), end = ceil(m.at + m.memSize), offset = floor(m.offset);
     if (offset < 0 || m.offset + m.fileSize > payload.length || m.memSize < m.fileSize ||
         m.at - start !== m.offset - offset || start < object.start || end > object.end || end <= start)
@@ -42,9 +42,10 @@ function regions(object: PlacedObject, verify: () => void): InitialMappedRegion[
     // p_filesz; its partial tail and remaining full pages begin zero.
     const fileEnd = m.memSize > m.fileSize ? m.at + m.fileSize : ceil(m.at + m.fileSize);
     const writes = m.fileSize ? [{at: start, bytes: payload.subarray(offset, offset + fileEnd - start)}] : [];
-    const text = prot & PROT_X ? {file, mount, source: object.grant, prot, private: true,
-      text: {role: object.spec.role, bias: object.bias, address: m.at, offset: m.offset, length: m.fileSize}} : undefined;
-    return {start, end, prot, writes, text};
+    const row = {start, end, prot, writes};
+    if (!(prot & PROT_X)) return {...row, kind: 'load-data'};
+    return {...row, kind: 'load-text', text: {file, mount, source: object.grant, prot, private: true,
+      text: {role: object.spec.role, bias: object.bias, address: m.at, offset: m.offset, length: m.fileSize}}};
   });
 }
 
@@ -63,8 +64,8 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   const stack = mappedStack({imageEnd: plan.interpreter.end, ...plan.aux}, argv, env, path, process.cred);
   verify();
   if (stack.mapBase >= MAPPED_VM_LIMIT) throw new FsError(E.NOMEM);
-  const layout = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
-    {start: stack.stackLow, end: stack.stackTop, prot: PROT_R | PROT_W, writes: stack.writes}];
+  const layout: InitialMappedRegion[] = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
+    {kind: 'stack', start: stack.stackLow, end: stack.stackTop, prot: PROT_R | PROT_W, writes: stack.writes}];
   const pages = MappedVm.detached({vfs: process.kernel.vfs, base: stack.mapBase, pages: stack.mapBase / WASM_PAGE,
     sources: [], reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
   try {

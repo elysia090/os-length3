@@ -34,5 +34,8 @@ native reference, and does not establish Sods execution.
 The guest tests authenticate the fixture identity, describe its ELF load
 headers, and build the program and interpreter's detached initial
 memory and Linux stack from the actual Vfs. They verify the two
-entries, file bytes and BSS, page rights and stack without publishing
-a task or running an interpreter. Default Sods exec still refuses it.
+entries, file bytes and BSS, page rights (including the full GNU RELRO
+pages named by each object's mapped headers) and stack without
+publishing a task or running an interpreter. The mapped-VM tests check
+the ordinary mprotect permission reduction on initialized data pages
+with an internal process owner. Default Sods exec still refuses the PIE.

@@ -132,6 +132,15 @@ mappings, mutable source identity, anonymous executable memory and
 mprotect conversions to executable are not granted. Restoring a mount
 flag cannot resurrect an older executable mapping.
 
+After a mapped address space has an owner, ordinary mprotect can reduce
+permissions on fully covered initial non-executable PT_LOAD pages.
+The guest linker selects its RELRO range from the ELF headers; the VM
+accepts only read-only or no-access transitions that add no permission.
+Initial text, stack and unmapped gaps cannot take this path. Bootstrap
+pages also stay outside fixed replacement, unmap and automatic mmap.
+The checked CPU and kernel-copy paths see the same published data
+permissions, without retiring unrelated executable bindings.
+
 Source callbacks and validation precede commitment. Fixed replacement,
 unmapping and protection changes withdraw overlapping code before touching
 the memory or making another grant. New text is published only after the
@@ -226,11 +235,12 @@ The returned handle exposes only permission evidence and bounded
 copies, not memory or a way to start a task. A later handoff must use
 the exec transaction; this does not replace the old address space,
 close descriptors or enqueue a task. A stale caller or revoked
-source discards the detached view. Mapping operations for live
-initial pages (including RELRO), the remaining ABI operations,
-precise tasks/signals and normal scheduling still need proof before
-guest loader entry. Worker execution additionally needs its own
-synchronization proof. Normal PT_INTERP exec is still refused.
+source discards the detached view. Tests cover the guest fixture's
+initial RELRO pages and live mprotect on the same VM policy separately.
+An actual initial-image handoff, the remaining ABI operations, precise
+tasks/signals and normal scheduling still need proof before guest
+loader entry. Worker execution additionally needs its own synchronization
+proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

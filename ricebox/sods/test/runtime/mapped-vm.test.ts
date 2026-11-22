@@ -12,7 +12,7 @@ import {Description} from '../../runtime/linux/fd.ts';
 import type {ExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Exit} from '../../runtime/linux/flow.ts';
 import {E, FsError, MNT, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
-import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MappedStringLimit, newMappedMemory} from '../../runtime/linux/mapped-vm.ts';
+import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MappedStringLimit, MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
@@ -37,16 +37,17 @@ function fixture(vfs: Vfs, path: string, bytes: Uint8Array, loader = () => bytes
   return {file, source: captureExecutableSource(vfs, path, {origin, size: bytes.length})};
 }
 
-function processWithVm(vfs = new Vfs(), {sources = [], translate, write = consoleOut.write}: {
-  sources?: ExecutableSource[]; translate?: Translate; write?(fd: number, bytes: Uint8Array): void;
+function processWithVm(vfs = new Vfs(), {base = BASE, sources = [], translate, initial, write = consoleOut.write}: {
+  base?: number; sources?: ExecutableSource[]; translate?: Translate;
+  initial?: Parameters<typeof MappedVm.allocate>[1]; write?(fd: number, bytes: Uint8Array): void;
 } = {}) {
   const kernel = new Kernel({vfs, translate, console: {...consoleOut, write}}), p = new Process(kernel, null);
-  p.mapBase = p.mapEnd = p.stackTop = BASE;
+  p.mapBase = p.mapEnd = p.stackTop = base;
   p.stackLow = 4096;
   p.free = []; p.fixed = [];
   p.noNewPrivs = true;
   const reader = translate ? {describeDynamic: translate.describeDynamic!, notProgram: translate.notProgram} : neverDescribe;
-  const memory = p.memory = newMappedMemory({vfs, base: BASE, pages: 1, sources, reader}), vm = memory.mappedVm;
+  const memory = p.memory = MappedVm.allocate({vfs, base, pages: Math.ceil(base / 65536), sources, reader}, initial), vm = memory.mappedVm;
   assert.equal(syscall(p, 9, NAME, PAGE, 3, 0x32, -1, 0), BigInt(NAME));
   const user = () => vm.userMemory(p);
   const open = (path: string, flags = 0) => {
@@ -95,6 +96,62 @@ test('mapped VM is one inline owner, with bounded private mmap/mprotect/munmap a
   } finally { clean(); }
   assert.equal(memory.users, 0);
   assert.ok(!kernel.spareMemories.includes(memory));
+});
+
+test('ordinary mprotect can only reduce initial load data and never move the mmap floor', () => {
+  const base = BASE + 12 * PAGE, early = BASE + PAGE, middle = early + PAGE, tail = BASE + 4 * PAGE;
+  const besideStack = BASE + 7 * PAGE, stack = besideStack + PAGE;
+  const initial: NonNullable<Parameters<typeof MappedVm.allocate>[1]> = {verify() {}, regions: [
+    {kind: 'load-data', start: BASE, end: early, prot: 1, writes: []},
+    {kind: 'load-data', start: early, end: tail, prot: 3, writes: [{at: middle + 8, bytes: Uint8Array.of(42)}]},
+    {kind: 'load-data', start: tail, end: tail + PAGE, prot: 3, writes: []},
+    {kind: 'load-data', start: besideStack, end: stack, prot: 3, writes: []},
+    {kind: 'stack', start: stack, end: stack + PAGE, prot: 3, writes: []},
+  ]};
+  const {kernel, p, vm, user, clean} = processWithVm(new Vfs(), {base, initial});
+  const access = (at: number, what: 'read' | 'write') => vm.code.permits(BigInt(at), 1n, what);
+  try {
+    assert.deepEqual([kernel.tasks.size, kernel.runq.length], [0, 0]);
+    const before = user(), generation = vm.code.generation;
+    assert.equal(syscall(p, 10, tail, 2 * PAGE, 1), err(E.NOMEM), 'mprotect does not bridge a bootstrap hole');
+    assert.equal(syscall(p, 10, besideStack, 2 * PAGE, 1), err(E.ACCES), 'a stack cannot be included');
+    assert.equal(syscall(p, 10, early + 1, PAGE, 1), err(E.INVAL));
+    before.check(); // none of the rejections touched the live address space
+    assert.equal(access(tail, 'write'), true);
+    assert.equal(access(besideStack, 'write'), true);
+    assert.equal(access(stack, 'write'), true);
+
+    assert.equal(syscall(p, 10, middle, 1, 1), 0n, 'round the length to one page');
+    assert.throws(() => before.check(), ReadLifetimeError);
+    assert.deepEqual(user().copyIn(middle + 8, 1), Uint8Array.of(42));
+    assert.equal(access(middle + PAGE - 1, 'write'), false);
+    assert.equal(access(early, 'write'), true);
+    assert.equal(access(middle + PAGE, 'write'), true);
+    assert.throws(() => user().copyOut(middle + 8, Uint8Array.of(7)),
+      (error: unknown) => error instanceof FsError && error.errno === E.FAULT);
+    assert.equal(syscall(p, 10, early, 4 * PAGE, 1), 0n, 'split and adjacent data rows remain protectable');
+    assert.equal(access(tail, 'write'), false);
+    const readOnly = user();
+    assert.equal(syscall(p, 10, early, 4 * PAGE, 1), 0n);
+    readOnly.check();
+    assert.equal(syscall(p, 10, early, 1, 0), 0n);
+    assert.equal(access(early, 'read'), false);
+    assert.equal(syscall(p, 10, early, 4 * PAGE, 1), err(E.ACCES), 'no restoring even read permission');
+    assert.equal(syscall(p, 10, middle, PAGE, 3), err(E.ACCES));
+    assert.equal(syscall(p, 10, middle, PAGE, 5), err(E.ACCES));
+    assert.equal(syscall(p, 10, BASE, PAGE, 3), err(E.ACCES), 'original rodata stays read-only');
+    assert.equal(vm.code.generation, generation);
+    assert.deepEqual(user().copyIn(middle + 8, 1), Uint8Array.of(42));
+
+    assert.equal(syscall(p, 9, middle, PAGE, 3, 0x32, -1, 0), err(E.INVAL));
+    assert.equal(syscall(p, 9, middle, PAGE, 3, 0x100022, -1, 0), err(E.INVAL));
+    assert.equal(syscall(p, 11, middle, PAGE), err(E.INVAL));
+    assert.equal(syscall(p, 10, stack, base + PAGE - stack, 1), err(E.INVAL), 'no bootstrap/arena crossing');
+    assert.equal(syscall(p, 9, 0, PAGE, 3, 0x22, -1, 0), BigInt(base));
+    assert.equal(syscall(p, 9, stack, PAGE, 3, 0x22, -1, 0), BigInt(base + PAGE));
+    assert.equal(access(stack + PAGE, 'read'), false, 'a low hint cannot allocate a bootstrap guard');
+    assert.deepEqual(user().copyIn(middle + 8, 1), Uint8Array.of(42));
+  } finally { clean(); }
 });
 
 test('ordinary mmap source failure, descriptor replacement and destination retirement do not publish candidate bytes', () => {
@@ -286,7 +343,10 @@ test('actual mmap syscalls authorize the pinned Debian fixture DSO and revoke be
   const a = fixture(vfs, lib, bytes), b = fixture(vfs, glibc, libc);
   fixture(vfs, '/untrusted.so', bytes);
   const invalid = fixture(vfs, '/invalid.so', encode.encode('not an ELF'));
-  const {kernel, p, user, open, code, clean} = processWithVm(vfs, {sources: [a.source, b.source, invalid.source], translate: t});
+  const {kernel, p, user, open, code, clean} = processWithVm(vfs, {
+    base: 0x20000, sources: [a.source, b.source, invalid.source], translate: t,
+    initial: {verify() {}, regions: [{kind: 'load-data', start: BASE, end: BASE + PAGE, prot: 3, writes: []}]},
+  });
   try {
     const m = textMap(t.describeDynamic!(bytes, 'library'), 0x20000);
     const load = (fd: number) => syscall(p, 9, m.addr, m.length, 5, 0x812, fd, m.offset);
@@ -294,6 +354,9 @@ test('actual mmap syscalls authorize the pinned Debian fixture DSO and revoke be
     assert.equal(load(fd), BigInt(m.addr));
     const epoch = code.generation, bound = code.find(BigInt(m.pc), epoch);
     assert.ok(bound);
+    assert.equal(syscall(p, 10, BASE, PAGE, 1), 0n);
+    assert.equal(code.generation, epoch, 'initial data-only mprotect does not discard authenticated DSO code');
+    assert.equal(code.find(BigInt(m.pc), epoch), bound);
     const length = bound.text.length;
     assert.equal(Buffer.compare(Buffer.from(user().copyIn(m.pc, length)), Buffer.from(bytes.subarray(m.offset, m.offset + length))), 0);
     assert.equal(syscall(p, 0, fd, m.pc, 1), err(E.FAULT), 'ordinary copy-out cannot modify an authorized RX page');
