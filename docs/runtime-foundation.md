@@ -204,11 +204,33 @@ such as SCAS/CMPS, other address sizes and segment overrides remain
 unsupported. Neither old artifacts nor the static raw bulk path
 can supply a mapped transfer.
 
-This still is not a mapped launch profile. Other needed unported
-operations, precise task/signal handling, executable image and stack
-publication, and normal scheduling need separate proof.
-Worker execution requires its own synchronization. No test here
-starts the guest loader or proves an application's startup.
+### Detached initial Linux image
+
+`exec/dynamic-image.ts` can seed a fresh, unclaimed mapped memory from
+the authenticated main and guest-interpreter plan. It installs the
+page-aligned file bytes and zero-initialized BSS, records R/W access
+for each page, and binds executable text only to the exact unchanged
+RX file extents. The non-executable stack and gaps have distinct
+permissions; available linear memory does not make a gap accessible.
+Any failed validation or source callback discards the private candidate.
+
+The two start addresses have different meanings: the first PC is
+the guest interpreter's, while AT_ENTRY and AT_PHDR describe the main
+executable and AT_BASE is the interpreter's load bias. The shared
+stack formatter keeps the static auxv and lays a bounded, aligned
+Linux stack for the mapped profile with argv, env, IDs, random bytes
+and an AT_EXECFN copy of the named guest path. This adds no privilege
+transition.
+
+The returned handle exposes only permission evidence and bounded
+copies, not memory or a way to start a task. A later handoff must use
+the exec transaction; this does not replace the old address space,
+close descriptors or enqueue a task. A stale caller or revoked
+source discards the detached view. Mapping operations for live
+initial pages (including RELRO), the remaining ABI operations,
+precise tasks/signals and normal scheduling still need proof before
+guest loader entry. Worker execution additionally needs its own
+synchronization proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

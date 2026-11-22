@@ -31,6 +31,8 @@ a reason to change privileges or call the loader directly. A regular
 native run against a different host glibc is a control, not the matched
 native reference, and does not establish Sods execution.
 
-The guest test authenticates the fixture identity, describes its ELF load
-headers, and plans the program and interpreter in the actual Vfs. It does
-not run the dynamic program. Default Sods exec continues to refuse it.
+The guest tests authenticate the fixture identity, describe its ELF load
+headers, and build the program and interpreter's detached initial
+memory and Linux stack from the actual Vfs. They verify the two
+entries, file bytes and BSS, page rights and stack without publishing
+a task or running an interpreter. Default Sods exec still refuses it.

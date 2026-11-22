@@ -11,7 +11,8 @@ import {E, File, FsError, MNT, type Vfs} from './fs.ts';
 import {utf8} from './flow.ts';
 import {ReadLifetimeError, retireMemoryView} from './read-lifetime.ts';
 
-const PAGE = 4096, WASM_PAGE = 65536, LIMIT = 256 << 20, MAX_REGIONS = 4096, MAX_SOURCES = 4096;
+export const MAPPED_VM_LIMIT = 256 << 20;
+const PAGE = 4096, WASM_PAGE = 65536, LIMIT = MAPPED_VM_LIMIT, MAX_REGIONS = 4096, MAX_SOURCES = 4096;
 const MIN = 65536, R = 1, W = 2, X = 4, RX = R | X;
 export const MAPPED_COPY_LIMIT = 1 << 20;
 export const MAPPED_STRING_LIMIT = 1 << 20;
@@ -50,6 +51,29 @@ interface MappedMemory extends WebAssembly.Memory {
   keeps: false;
   written: [number, number][];
   tainted: true;
+}
+interface MemorySpec {
+  vfs: Vfs; base: number; pages: number; sources: readonly ExecutableSource[]; reader: Reader;
+}
+
+/** Internal description of an initial installed page range. Writes are
+ * initialized bytes; unwritten bytes begin zero in a fresh allocation. */
+export interface InitialMappedRegion {
+  readonly start: number;
+  readonly end: number;
+  readonly prot: number;
+  readonly writes: readonly { readonly at: number; readonly bytes: Uint8Array }[];
+  readonly text?: ExecutableMapping;
+}
+
+/** Inspection of a staged image, not an executable address-space
+ * capability. Do not expose its memory, compiler handle or dispatcher. */
+export interface DetachedMappedMemory {
+  readonly permits: (address: number, length: number, access: DataAccess) => boolean;
+  readonly read: (address: number, length: number) => Uint8Array<ArrayBuffer>;
+  readonly hasText: (address: bigint) => boolean;
+  check(): void;
+  discard(): void;
 }
 
 export type DataAccess = 'read' | 'write';
@@ -95,9 +119,7 @@ export class MappedVmCommitError extends Error {
 
 /** Created only for a candidate that will own a distinct memory. No
  * kernel/guest API opts into this profile as a side effect of mmap. */
-export function newMappedMemory({vfs, base, pages, sources, reader}: {
-  vfs: Vfs; base: number; pages: number; sources: readonly ExecutableSource[]; reader: Reader;
-}): MappedMemory {
+export function newMappedMemory({vfs, base, pages, sources, reader}: MemorySpec): MappedMemory {
   if (!Number.isSafeInteger(pages) || pages < 1 || pages > LIMIT / WASM_PAGE ||
       !Number.isSafeInteger(base) || base < MIN || base >= LIMIT || base % PAGE)
     throw new RangeError('Invalid mapped memory layout');
@@ -122,6 +144,46 @@ export class MappedVm {
   #owner?: Caller;
   /** The dispatcher observes this owner's code and data authority. */
   readonly code: MappedRunView;
+
+  /** Commit to an inaccessible, private candidate first. If initialization
+   * or a late source fence fails, no result or live memory is published. */
+  static detached(spec: MemorySpec, regions: readonly InitialMappedRegion[], verify: () => void): DetachedMappedMemory {
+    verify();
+    const vm = newMappedMemory(spec).mappedVm;
+    try { vm.#seedDetached(regions, verify); verify(); }
+    catch (error) { vm.close(); throw error; }
+
+    let held: MappedVm | null = vm;
+    const discard = (): void => {
+      const retired = held; held = null;
+      retired?.close();
+    };
+    const current = (): MappedVm => {
+      if (!held) throw new Error('Detached mapped memory was discarded');
+      try { verify(); } catch (error) { discard(); throw error; }
+      return held;
+    };
+    const permits = (address: number, length: number, access: DataAccess): boolean => {
+      const vm = current();
+      vm.#copyLength(length);
+      return vm.#prefix(address, length, access) === length;
+    };
+    return Object.freeze({
+      permits,
+      read(address: number, length: number) {
+        const vm = current();
+        vm.#copyLength(length);
+        if (vm.#prefix(address, length, 'read') !== length) fail(E.FAULT);
+        return length ? new Uint8Array(vm.memory.buffer, address, length).slice() : new Uint8Array(0);
+      },
+      hasText(address: bigint) {
+        const code = current().#code;
+        return !!code.find(address, code.generation);
+      },
+      check: () => { current(); },
+      discard,
+    });
+  }
 
   constructor(vfs: Vfs, memory: WebAssembly.Memory, base: number, sources: readonly ExecutableSource[], reader: Reader) {
     this.#vfs = vfs;
@@ -155,6 +217,33 @@ export class MappedVm {
     this.#regions = [];
     this.#sources.clear();
     this.#specs = new WeakMap();
+  }
+
+  #seedDetached(initial: readonly InitialMappedRegion[], verify: () => void): void {
+    if (this.#owner || this.#closed || this.#regions.length) throw new Error('Initial pages need a fresh detached memory');
+    if (!initial.length || initial.length > MAX_REGIONS) fail(E.NOMEM);
+    const regions = [...initial].sort((a, b) => a.start - b.start);
+    const memory = new Uint8Array(this.memory.buffer);
+    let after = MIN;
+    for (const {start, end, prot, writes, text} of regions) {
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start % PAGE || end % PAGE ||
+          start < after || end <= start || end > this.#base || end > memory.length ||
+          !Number.isInteger(prot) || prot < 0 || prot > 7 ||
+          (prot & X ? prot !== RX || !text : !!text)) fail(E.INVAL);
+      after = end;
+      if (text && (text.prot !== prot || text.text.role === 'library' || text.text.address < start ||
+          text.text.address + text.text.length > end)) fail(E.INVAL);
+      let wrote = start;
+      for (const part of [...writes].sort((a, b) => a.at - b.at)) {
+        if (!Number.isInteger(part.at) || part.at < wrote || part.at + part.bytes.length > end) fail(E.INVAL);
+        wrote = part.at + part.bytes.length;
+      }
+    }
+    for (const region of regions) for (const {at, bytes} of region.writes) memory.set(bytes, at);
+    for (const {text} of regions) if (text) {
+      try { this.#code.bind(text); } finally { verify(); }
+    }
+    this.#regions = regions.map(({start, end, prot, text}) => ({start, end, prot, entry: text?.text.address}));
   }
 
   /** The installed VM records are the only source of data permissions.

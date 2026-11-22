@@ -1,6 +1,6 @@
 // The preparation side of ordinary dynamic exec. No image is installed and
 // no interpreter or DSO is executed by this module. The static transaction
-// remains the only admitted execution path until mapped code is supported.
+// remains the only admitted start/exec path.
 import {DYNAMIC_FILE_LIMIT, type ElfLoadSpec, type ElfLoadSegment} from '../../translation/dynamic-load.ts';
 import type {Translate} from '../../translation/translator.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from '../executable-source.ts';
@@ -12,7 +12,7 @@ const PAGE = 4096, FIRST = 0x40_0000, END = 2 ** 32;
 const up = (value: number, alignment: number): number => Math.ceil(value / alignment) * alignment;
 const down = (value: number, alignment: number): number => Math.floor(value / alignment) * alignment;
 
-interface PlacedObject {
+export interface PlacedObject {
   readonly path: string;
   readonly spec: ElfLoadSpec;
   readonly bias: number;
@@ -20,6 +20,7 @@ interface PlacedObject {
   readonly end: number;
   readonly mappings: readonly (ElfLoadSegment & {at: number})[];
   readonly source: ExecSource;
+  readonly grant: ExecutableSource;
 }
 
 export interface DynamicExecPlan {
@@ -30,13 +31,13 @@ export interface DynamicExecPlan {
   check(): void;
 }
 
-type CodeSources = {readonly main: ExecutableSource; readonly interpreter: ExecutableSource};
+export type DynamicSources = {readonly main: ExecutableSource; readonly interpreter: ExecutableSource};
 type Reader = Pick<Translate, 'describeDynamic' | 'notProgram'>;
-interface DynamicExecOwner extends ExecSourceOwner {
+export interface DynamicExecOwner extends ExecSourceOwner {
   readonly kernel: ExecSourceOwner['kernel'] & {readonly vfs: Vfs};
 }
 
-function place(spec: ElfLoadSpec, source: ExecSource, after: number): PlacedObject {
+function place(spec: ElfLoadSpec, source: ExecSource, grant: ExecutableSource, after: number): PlacedObject {
   const first = spec.loads[0], last = spec.loads.at(-1);
   if (!first || !last) throw new Error('Dynamic load spec has no segments');
   const alignment = Math.max(PAGE, ...spec.loads.map(x => x.align));
@@ -45,23 +46,25 @@ function place(spec: ElfLoadSpec, source: ExecSource, after: number): PlacedObje
   // Leave room for the same stack and guard layout the static transaction
   // uses in a wasm32 address space. A spec is not a reservation.
   if (start < after || end + STACK_BYTES + 2 * WASM_PAGE > END || end <= start) throw new FsError(E.NOMEM);
-  return {path: source.describe(), spec, source, bias, start, end,
+  return {path: source.describe(), spec, source, grant, bias, start, end,
     mappings: spec.loads.map(segment => ({...segment, at: bias + segment.vaddr}))};
 }
 
-export function planDynamicExec(process: DynamicExecOwner, path: string, input: CodeSources, reader: Reader): DynamicExecPlan {
+export function planDynamicExec(process: DynamicExecOwner, path: string, input: DynamicSources, reader: Reader): DynamicExecPlan {
   const describe = reader.describeDynamic;
   if (!describe) throw new Error('This Sods translator has no dynamic load-spec support');
   if (!process.noNewPrivs) throw new FsError(E.PERM);
   const scope = execScope(process), vfs = process.kernel.vfs;
   const read = (where: string, role: 'main' | 'interpreter') => {
     const resolved = execSource(process, where, scope, role === 'interpreter');
-    const canonical = executableSourceFor(input[role], vfs), node = resolved.at.node;
+    const grant = input[role], {node, mnt} = resolved.at, mountRevision = mnt.execRevision;
+    const canonical = executableSourceFor(grant, vfs);
     const check = (): void => {
       resolved.check();
       // The caller authenticates the mounted root that issued these
       // capabilities, and may not substitute a path, overlay, or new revision.
-      if (node !== canonical.node || !unchangedExecutableSource(canonical) || node.mode & 0o6000)
+      if (node !== canonical.node || !unchangedExecutableSource(canonical) || node.mode & 0o6000 ||
+          node.maps?.size || mnt.execRevision !== mountRevision)
         throw new FsError(E.ACCES);
     };
     check();
@@ -73,15 +76,16 @@ export function planDynamicExec(process: DynamicExecOwner, path: string, input: 
     try { spec = describe(bytes, role); }
     catch (cause) { if (reader.notProgram(cause)) throw new FsError(error); throw cause; }
     finally { check(); }
-    return {spec, resolved, check};
+    if (spec.role !== role) throw new Error('Translator returned the wrong dynamic load role');
+    return {spec, resolved, grant, check};
   };
 
   const mainInput = read(path, 'main');
   const name = mainInput.spec.interpreter;
   if (name === null || !name.startsWith('/')) throw new Error('Dynamic PIE spec has no absolute interpreter');
   const loaderInput = read(name, 'interpreter');
-  const main = place(mainInput.spec, mainInput.resolved, FIRST);
-  const interpreter = place(loaderInput.spec, loaderInput.resolved, main.end + PAGE);
+  const main = place(mainInput.spec, mainInput.resolved, mainInput.grant, FIRST);
+  const interpreter = place(loaderInput.spec, loaderInput.resolved, loaderInput.grant, main.end + PAGE);
   const check = (): void => { mainInput.check(); loaderInput.check(); };
   check();
   return {main, interpreter, firstPc: interpreter.bias + interpreter.spec.entry, check,
