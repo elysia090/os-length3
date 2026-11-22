@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -8,8 +8,14 @@ import {spawnSync} from 'node:child_process';
 import {packageCache, readArchive} from '../../test/fixtures/package-cache.ts';
 import {openDistribution} from '../../deployment/local.ts';
 
-function assemble(pkgs: string, out: string) {
-  const result = spawnSync('sh', [fileURLToPath(new URL('../assemble.sh', import.meta.url)), pkgs, out], {encoding: 'utf8'});
+function runAssembly(pkgs: string, out: string, topology?: string) {
+  const args = [fileURLToPath(new URL('../assemble.sh', import.meta.url)), pkgs, out];
+  if (topology !== undefined) args.push('0.0.1', 'ricebox', topology);
+  return spawnSync('sh', args, {encoding: 'utf8'});
+}
+
+function assemble(pkgs: string, out: string, topology?: string) {
+  const result = runAssembly(pkgs, out, topology);
   assert.equal(result.status, 0, result.stderr);
   const archive = readdirSync(out).find((p) => p.endsWith('.tar.zst'))!;
   assert.match(archive, /^ricebox-0\.0\.1-x86_64-[0-9a-f]{64}\.tar\.zst$/);
@@ -43,6 +49,66 @@ test('deployment composition adds and removes packages and preserves explicitly 
     const two = assemble(pkgs, join(at, 'two'));
     assert.doesNotMatch(two.manifest, /package.site=/);
     assert.doesNotMatch(readArchive(two.archive, 'root/etc/apk/world'), /site/);
+  } finally { rmSync(at, {recursive: true, force: true}); }
+});
+
+const amd64Topology = 'amd64-glibc-lib64-v1';
+function glibcLayout() {
+  const {at, pkgs, add} = packageCache();
+  const loader = 'usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2';
+  add('glibc', {[loader]: ''});
+  const tree = join(pkgs, 'glibc', 'tree');
+  mkdirSync(join(tree, 'usr/lib64'));
+  symlinkSync('../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2', join(tree, 'usr/lib64/ld-linux-x86-64.so.2'));
+  for (const d of ['usr', 'usr/lib', 'usr/lib64', 'usr/lib/x86_64-linux-gnu', loader]) chmodSync(join(tree, d), 0o755);
+  chmodSync(join(pkgs, 'base/tree/usr'), 0o755);
+  // Header metadata only: this fixture is never an executable or interpreter.
+  const header = Buffer.alloc(64);
+  header.set([0x7f, 69, 76, 70, 2, 1, 1]);
+  header.writeUInt16LE(3, 16);
+  header.writeUInt16LE(62, 18);
+  header.writeUInt32LE(1, 20);
+  header.writeUInt16LE(header.length, 52);
+  writeFileSync(join(tree, loader), header);
+  writeFileSync(join(pkgs, 'record'), 'base 1.0 base-source\nglibc 1.0 glibc-source\n');
+  return {at, pkgs, tree, loader, header};
+}
+
+test('only the fixed producer opt-in adds the amd64 interpreter alias', async () => {
+  const {at, pkgs} = glibcLayout();
+  try {
+    const ordinary = assemble(pkgs, join(at, 'ordinary'));
+    writeFileSync(join(pkgs, 'manifest'), 'fixture.source=headers'); // No trailing newline.
+    const opted = assemble(pkgs, join(at, 'opted'), amd64Topology);
+    const {nativeTree} = await import('../../verification/inventory.ts');
+    const normal = await nativeTree(ordinary.archive), withAlias = await nativeTree(opted.archive);
+    assert.equal(normal.entries.some(e => e.path === '/lib64'), false);
+    assert.deepEqual(withAlias.entries.find(e => e.path === '/lib64'),
+      {path: '/lib64', type: 'link', mode: 0o777, target: 'usr/lib64'});
+    assert.deepEqual(withAlias.entries.filter(e => e.path !== '/lib64'), normal.entries);
+    assert.doesNotMatch(ordinary.manifest, /^root\.topology=/m);
+    assert.match(opted.manifest, /^fixture\.source=headers\nroot\.topology=amd64-glibc-lib64-v1$/m);
+    writeFileSync(join(pkgs, 'manifest'), 'root.topology=amd64-glibc-lib64-v1\n');
+    const labelOnly = join(at, 'label-only');
+    assert.match(runAssembly(pkgs, labelOnly).stderr, /root\.topology is reserved for the assembler/);
+    assert.equal(existsSync(labelOnly), false);
+  } finally { rmSync(at, {recursive: true, force: true}); }
+});
+
+test('the generated alias does not accept another architecture or package ownership', () => {
+  const {at, pkgs, tree, loader, header} = glibcLayout();
+  try {
+    const wrong = join(at, 'wrong-architecture');
+    header.writeUInt16LE(183, 18); // AArch64 metadata, not executed.
+    writeFileSync(join(tree, loader), header);
+    assert.match(runAssembly(pkgs, wrong, amd64Topology).stderr, /needs an ELF64 little-endian x86-64 loader/);
+    assert.equal(existsSync(wrong), false);
+
+    symlinkSync('usr/lib64', join(tree, 'lib64'));
+    const owned = join(at, 'package-alias'), ordinary = join(at, 'ordinary-package-alias');
+    assert.match(runAssembly(pkgs, owned, amd64Topology).stderr, /glibc claims the generated \/lib64 path/);
+    assert.match(runAssembly(pkgs, ordinary).stderr, /root-db: glibc puts lib64 at the root's top/);
+    assert.equal(existsSync(owned) || existsSync(ordinary), false);
   } finally { rmSync(at, {recursive: true, force: true}); }
 });
 

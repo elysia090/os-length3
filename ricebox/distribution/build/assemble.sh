@@ -1,13 +1,16 @@
 #!/bin/sh
 # Assemble the selected package record into one distribution, independent of any product.
-# sh ricebox/distribution/build/assemble.sh PACKAGES OUT [VERSION [NAME]]
+# sh ricebox/distribution/build/assemble.sh PACKAGES OUT [VERSION [NAME [amd64-glibc-lib64-v1]]]
 # Each package has tree/, version, source, key and optionally url. Product composition
 # supplies packages too; it may supply os-release and extra provenance in PACKAGES/manifest.
 # The same root is used directly or served as layers. No persistence is implied.
+# The optional producer topology does not change default root contents. The
+# archive records the assembler's source hash on rebuild, not in existing releases.
 set -eu
-[ "$#" -ge 2 ] && [ "$#" -le 4 ] || { echo "usage: assemble.sh PACKAGES OUT [VERSION [NAME]]" >&2; exit 2; }
+[ "$#" -ge 2 ] && [ "$#" -le 5 ] || { echo "usage: assemble.sh PACKAGES OUT [VERSION [NAME [amd64-glibc-lib64-v1]]]" >&2; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)
-pkgs=$1; out=$2; version=${3:-$(cat "$here/RELEASE")}; name=${4:-ricebox}
+pkgs=$1; out=$2; version=${3:-$(cat "$here/RELEASE")}; name=${4:-ricebox}; topology=${5-}
+[ "$#" -ne 5 ] || [ "$topology" = amd64-glibc-lib64-v1 ] || { echo 'assemble: unknown root topology' >&2; exit 2; }
 case $name in ''|*[!a-zA-Z0-9._-]*) echo 'assemble: invalid distribution name' >&2; exit 2 ;; esac
 bad_version() { echo 'assemble: invalid version' >&2; exit 2; }
 case $version in *[!a-zA-Z0-9.-]*) bad_version ;; esac
@@ -20,6 +23,13 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/ricebox-root.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT
 mkdir -p "$work/tree/root"
 root="$work/tree/root"
+composition="$work/composition-manifest"
+if [ -f "$pkgs/manifest" ]; then
+  cp "$pkgs/manifest" "$composition"
+  if grep -q '^root\.topology=' "$composition"; then
+    say 'root.topology is reserved for the assembler'; exit 1
+  fi
+fi
 
 # NAME VERSION URL TREE, a line per selected package.
 . "$here/pins/sources.env"
@@ -44,7 +54,52 @@ if [ -n "$twice" ]; then
   for p in $twice; do say "$p is given by $(awk -v p="$p" '$2 == p {print $1}' "$work/owners" | tr '\n' ' ')"; done
   exit 1
 fi
+
+# One declared assembly-owned alias. Do not let a selected package write
+# into it, or treat a package manifest as an instruction to generate it.
+if [ -n "$topology" ]; then
+  linker=usr/lib64/ld-linux-x86-64.so.2
+  loader=usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+  ancestors='usr usr/lib usr/lib64 usr/lib/x86_64-linux-gnu'
+  check_amd64_dirs() {
+    for dir in $ancestors; do
+      path=$1/$dir
+      if [ "$2" = optional ] && [ ! -e "$path" ] && [ ! -L "$path" ]; then continue; fi
+      [ -d "$path" ] && [ ! -L "$path" ] && [ "$(stat -c %a "$path")" = 755 ] || {
+        say "amd64 topology needs a real 0755 directory at /$dir"; exit 1
+      }
+    done
+  }
+  while read -r n _ _ t; do
+    if [ -e "$t/lib64" ] || [ -L "$t/lib64" ]; then say "$n claims the generated /lib64 path"; exit 1; fi
+    check_amd64_dirs "$t" optional
+  done < "$work/list"
+  awk -v link="$linker" -v elf="$loader" '$2 == link { a = $1 } $2 == elf { b = $1 } END { exit !(a && a == b) }' \
+    "$work/owners" || { say 'amd64 topology needs one package to own the interpreter link and loader'; exit 1; }
+  ln -s usr/lib64 "$root/lib64"
+fi
 while read -r n _ _ t; do cp -a "$t/." "$root/"; done < "$work/list"
+
+if [ -n "$topology" ]; then
+  check_amd64_dirs "$root" required
+  # This is header metadata, not an interpreter invocation or package-authentication check.
+  node --input-type=module - "$root/lib64" "$root/$linker" "$root/$loader" <<'NODE'
+import {closeSync, constants, lstatSync, openSync, readlinkSync, readSync} from 'node:fs';
+const [alias, linker, loader] = process.argv.slice(2);
+const link = (name, target) => lstatSync(name).isSymbolicLink() && readlinkSync(name) === target;
+const fail = message => { console.error(`root-assemble: ${message}`); process.exit(1); };
+const st = lstatSync(loader);
+if (!link(alias, 'usr/lib64') || !link(linker, '../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2') ||
+    !st.isFile() || (st.mode & 0o7777) !== 0o755)
+  fail('amd64 topology needs the canonical interpreter link and a regular 0755 loader');
+const file = openSync(loader, constants.O_RDONLY | constants.O_NOFOLLOW), h = Buffer.alloc(64);
+let n;
+try { n = readSync(file, h, 0, h.length, 0); } finally { closeSync(file); }
+if (n !== h.length || !h.subarray(0, 7).equals(Buffer.from([0x7f, 69, 76, 70, 2, 1, 1])) ||
+    h.readUInt16LE(16) !== 3 || h.readUInt16LE(18) !== 62 || h.readUInt32LE(20) !== 1 ||
+    h.readUInt16LE(52) !== h.length) fail('amd64 topology needs an ELF64 little-endian x86-64 loader');
+NODE
+fi
 
 # The places every root has.
 for d in bin sbin lib; do
@@ -77,7 +132,12 @@ node "$here/build/package-database.$ext" "$root" "$work/list"
   echo "format=length3-root-v3"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
-  [ ! -f "$pkgs/manifest" ] || cat "$pkgs/manifest"
+  [ ! -f "$composition" ] || cat "$composition"
+  if [ -n "$topology" ]; then
+    # An input without a trailing newline cannot absorb the producer marker.
+    [ ! -s "$composition" ] || printf '\n'
+    printf 'root.topology=%s\n' "$topology"
+  fi
   echo "assembler.sha256=$(cat "$here/build/assemble.sh" "$here/build/package-database.ts" "$here/build/script-interpreters.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 
