@@ -60,7 +60,7 @@ function matchedSources(vfs: Vfs) {
   for (const [path, to] of f.links) vfs.symlink(to, path);
   const inputs = [library.grant, libc.grant], libraries = captureMappedLibraries(vfs, inputs);
   inputs.length = 0; // No dependence on the caller's mutable array after admission.
-  return {f, app: app.file, library: library.file, reads, sources: {main: app.grant, interpreter: ld.grant, libraries}};
+  return {f, app: app.file, loader: ld.file, library: library.file, reads, sources: {main: app.grant, interpreter: ld.grant, libraries}};
 }
 
 test('the actual PIE and pinned guest linker produce an ordinary, source-bound two-object plan', {skip}, async () => {
@@ -383,10 +383,10 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
     metadata().forEach((value, i) => assert.equal(value, before[i]));
     closed++;
   };
-  let pc = task.resumeAt;
-  Object.defineProperty(task, 'resumeAt', {get: () => pc, set(next: bigint) {
-    pc = next;
+  const priorPc = task.resumeAt;
+  Object.defineProperty(task, 'resumeAt', {configurable: true, get: () => priorPc, set(next: bigint) {
     if (next) installed.push(p.execTransition);
+    Object.defineProperty(task, 'resumeAt', {value: next, writable: true, configurable: true, enumerable: true});
   }});
   const request = {path: mainPath, argv: ['ricebox-pie-fixture', '日本語'], env: ['LC_ALL=C']};
   const stage = () => prepareDynamicImage(p, request, sources, translate);
@@ -470,6 +470,12 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
       assert.deepEqual([user.cstring(word(1)), user.cstring(word(2)), word(3), user.cstring(word(4)), word(5)],
         [...p.argv, 0, ...p.env, 0]);
       const code = memory.mappedVm.code, generation = code.generation;
+      const revision = table.revision, reads = [...mounted.reads];
+      receipt.checkStart(); receipt.checkStart();
+      assert.equal(p.fds, table);
+      assert.equal(table.revision, revision);
+      assert.equal(code.generation, generation);
+      assert.deepEqual([...mounted.reads], reads, 'readiness scans metadata only');
       assert.equal(code.find(BigInt(image.firstPc), generation)?.text.role, 'interpreter');
       assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
       assert.throws(() => task.commitHeldMapped(grant), /lost its calling process or authority/);
@@ -480,12 +486,26 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
       assert.throws(() => k.halt(), /held initial handoff still owns/);
       assert.throws(() => { p.memory = null; }, /Only the held handoff owner/);
       unpublished();
+      assert.deepEqual(k.pump(), {waiting: true}, 'a checked held entry is not a runnable process');
+      for (const executable of [file, mounted.loader]) {
+        const {mode, version} = executable;
+        executable.mode &= ~0o111;
+        try {
+          assert.equal(executable.version, version, 'permission change is not a write to the file');
+          assert.throws(() => receipt.checkStart(), ExecPreparationChangedError);
+        } finally { executable.mode = mode; }
+      }
+      k.root.mnt.flags |= MNT.NOEXEC;
+      try { assert.throws(() => receipt.checkStart(), hasErrno(E.ACCES)); }
+      finally { k.root.mnt.flags &= ~MNT.NOEXEC; }
+      assert.throws(() => receipt.checkStart(), hasErrno(E.ACCES), 'the original checked generation cannot revive');
       receipt.discard();
       assert.equal(memory.users, 0);
       assert.equal(k.spareMemories.includes(memory), false);
       assert.equal(code.find(BigInt(image.firstPc), code.generation), undefined);
       assert.throws(() => user.check(), ReadLifetimeError);
     } finally { receipt.discard(); }
+    assert.throws(() => receipt.checkStart(), ExecPreparationChangedError);
     assert.equal(p.memory, null);
     assert.equal(p.state, 'zombie', 'retired, but absent from the waitable process table');
     assert.equal(p.own, undefined);

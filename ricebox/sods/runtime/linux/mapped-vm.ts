@@ -92,7 +92,7 @@ export interface StagedMappedMemory {
   readonly memory: MappedMemory;
   readonly pages: DetachedMappedMemory;
   checkEntry(pc: bigint, main: bigint, sp: number): void;
-  claim(owner: Caller, pc: bigint, main: bigint, sp: number): void;
+  claim(owner: Caller, pc: bigint, main: bigint, sp: number): (checkSources: () => void) => void;
 }
 
 export type DataAccess = 'read' | 'write';
@@ -213,24 +213,33 @@ export class MappedVm {
       check: () => { current(); },
       discard,
     });
-    const starting = (pc: bigint, main: bigint, sp: number): MappedVm => {
-      const vm = current().mappedVm, code = vm.#code, generation = code.generation;
-      if (vm.#closed || vm.#owner || code.find(pc, generation)?.text.role !== 'interpreter' ||
-          code.find(main, generation)?.text.role !== 'main' || !Number.isSafeInteger(sp) || sp % 16 ||
-          !vm.#regions.some(r => r.initial === 'stack' && r.start <= sp - 128 && sp + 8 <= r.end) ||
-          vm.#prefix(sp - 128, 136, 'write') !== 136) throw new FsError(E.NOEXEC);
+    const starting = (pc: bigint, main: bigint, sp: number) => {
+      const vm = current().mappedVm;
+      if (vm.#closed || vm.#owner) fail(E.NOEXEC);
+      const generation = vm.#checkInitialEntry(pc, main, sp);
       try { vm.#libraries?.check(); }
       catch (error) { discard(); throw error; }
-      return vm;
+      return {vm, generation};
     };
     return Object.freeze({
       get memory() { return current(); },
       pages,
       checkEntry(pc: bigint, main: bigint, sp: number) { starting(pc, main, sp); },
       claim(owner: Caller, pc: bigint, main: bigint, sp: number) {
-        const vm = starting(pc, main, sp);
+        const {vm, generation} = starting(pc, main, sp);
+        if (vm.#code.generation !== generation) fail(E.ACCES);
         vm.claim(owner);
         held = null; // Inspection cannot read or close the claimed address space.
+        // Only the installed owner can recheck this original entry. This
+        // does not carry the detached caller scope or grant execution.
+        return (checkSources: () => void) => {
+          const current = vm.#pin(owner);
+          vm.#checkInitialEntry(pc, main, sp, generation);
+          vm.#libraries?.check();
+          checkSources();
+          if (vm.#code.generation !== generation) fail(E.ACCES);
+          current();
+        };
       },
     });
   }
@@ -257,6 +266,16 @@ export class MappedVm {
   }
 
   checkTaskOwner(owner: Caller): void { this.#pin(owner)(); }
+
+  #checkInitialEntry(pc: bigint, main: bigint, sp: number, expected?: object): object {
+    const code = this.#code, generation = code.generation;
+    if (expected !== undefined && generation !== expected) fail(E.ACCES);
+    if (code.find(pc, generation)?.text.role !== 'interpreter' || code.find(main, generation)?.text.role !== 'main' ||
+        !Number.isSafeInteger(sp) || sp % 16 ||
+        !this.#regions.some(r => r.initial === 'stack' && r.start <= sp - 128 && sp + 8 <= r.end) ||
+        this.#prefix(sp - 128, 136, 'write') !== 136) fail(E.NOEXEC);
+    return generation;
+  }
 
   /** Check the single clear-tid word before sealing this address space.
    * The resulting one-use action is not a guest copy lease. It can only

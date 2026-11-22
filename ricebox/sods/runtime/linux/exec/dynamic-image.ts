@@ -5,7 +5,7 @@ import type {Translate} from '../../translation/translator.ts';
 import type {MappedTranslate} from '../../translation/mapped.ts';
 import {E, FsError} from '../fs.ts';
 import {MAPPED_VM_LIMIT, MappedVm, type DetachedMappedMemory, type InitialMappedRegion, type StagedMappedMemory} from '../mapped-vm.ts';
-import {execIdentity, type ExecIdentity} from './commit.ts';
+import {captureExecPermissions, execIdentity, type ExecIdentity} from './commit.ts';
 import {planDynamicExec, type DynamicExecOwner, type DynamicExecPlan, type DynamicSources, type PlacedObject} from './dynamic-plan.ts';
 import type {ExecMetadata, ExecRequest} from './plan.ts';
 import {ExecPreparationChangedError, execScope} from './source.ts';
@@ -35,6 +35,7 @@ interface DetachedOwner {
   readonly compiler: MappedTranslate;
   readonly metadata: ExecMetadata;
   readonly identity: ExecIdentity;
+  readonly interpreterPermissions: () => void;
   reserved: boolean;
 }
 const heldImages = new WeakMap<DetachedDynamicImage, DetachedOwner>();
@@ -47,7 +48,7 @@ export interface InitialImageLease {
   readonly metadata: ExecMetadata;
   readonly identity: ExecIdentity;
   check(): void;
-  claim(): void;
+  claim(): () => void;
   discard(): void;
 }
 
@@ -57,7 +58,8 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
   if (!held || held.reserved || held.process !== process || held.task !== task || process.own !== task ||
       process.memory || process.state !== 'live' || held.reader !== reader || held.compiler !== compiler)
     throw new ExecPreparationChangedError();
-  const {staged, metadata, identity} = held, pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = metadata.stack.sp;
+  const {staged, metadata, identity, interpreterPermissions} = held;
+  const pc = BigInt(image.firstPc), main = BigInt(image.aux.entry), sp = metadata.stack.sp;
   const checkOwner = (): void => {
     if (heldImages.get(image) !== held || process.own !== task || process.memory || process.state !== 'live')
       throw new ExecPreparationChangedError();
@@ -66,6 +68,7 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
     checkOwner();
     staged.checkEntry(pc, main, sp);
   };
+  const checkInstalled = (): void => { identity.check(true); interpreterPermissions(); };
   check();
   const memory = staged.memory;
   held.reserved = true;
@@ -73,8 +76,9 @@ export function reserveInitialImage(image: DetachedDynamicImage, process: ClaimO
     memory, pc, sp: BigInt(sp), metadata, identity, check,
     claim() {
       checkOwner();
-      staged.claim(process, pc, main, sp);
+      const ready = staged.claim(process, pc, main, sp);
       heldImages.delete(image);
+      return () => ready(checkInstalled);
     },
     discard() {
       if (heldImages.get(image) !== held) return;
@@ -122,7 +126,8 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   scope();
   const plan = planDynamicExec(process, path, sources, reader);
   const source = plan.main.source, identity = execIdentity(process, source);
-  const verify = (): void => { scope(); plan.check(); identity.check(false); };
+  const interpreterPermissions = captureExecPermissions(plan.interpreter.source);
+  const verify = (): void => { scope(); plan.check(); identity.check(false); interpreterPermissions(); };
   const stack = mappedStack({imageEnd: plan.interpreter.end, ...plan.aux}, argv, env, path, identity.cred);
   verify();
   if (stack.mapBase >= MAPPED_VM_LIMIT) throw new FsError(E.NOMEM);
@@ -140,7 +145,7 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
       stack: Object.freeze({stackLow: stack.stackLow, stackTop: stack.stackTop, mapBase: stack.mapBase, sp: stack.sp}), pages});
     if (task && compiler) {
       const metadata = {source, exe: plan.main.path, argv, env, stack: view.stack};
-      heldImages.set(view, {process, task, staged, reader, compiler, metadata, identity, reserved: false});
+      heldImages.set(view, {process, task, staged, reader, compiler, metadata, identity, interpreterPermissions, reserved: false});
     }
     return view;
   } catch (error) { pages.discard(); throw error; }

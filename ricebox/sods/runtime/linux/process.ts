@@ -167,6 +167,7 @@ declare const initialMappedGrant: unique symbol;
 export interface InitialMappedGrant { readonly [initialMappedGrant]: true }
 export interface HeldMappedTask {
   readonly kind: 'held-initial';
+  checkStart(): void;
   discard(): void;
 }
 interface PendingMappedTask {
@@ -175,6 +176,7 @@ interface PendingMappedTask {
   readonly cpu: MappedTaskCpu;
   readonly caller: ReturnType<typeof captureExecCaller>;
   check(): void;
+  checkReader(): void;
 }
 interface MappedTaskCall {
   readonly task: Task;
@@ -1021,12 +1023,7 @@ export class Kernel implements Kern {
         return p.task = t;
       });
       committed = true;
-      const t = task!;
-      enter(p, p.cgroup);
-      this.procs.set(p.pid, p);
-      this.tasks.set(t.tid, t);
-      this.tty = {sid: p.sid, fg: p.pgid};
-      this.ready(t);
+      this.#publishInitial(p, task!);
     } catch (cause) {
       if (p.execFailure) throw cause; // Preparation/commit already retained its owner.
       if (committed) p.retainExecFailure('initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
@@ -1040,6 +1037,14 @@ export class Kernel implements Kern {
       if (failures.length > 1) p.retainExecFailure('initial-preparation', new AggregateError(failures), {task, newFds: p.fds});
       throw cause;
     }
+  }
+
+  #publishInitial(p: Process, t: Task): void {
+    enter(p, p.cgroup);
+    this.procs.set(p.pid, p);
+    this.tasks.set(t.tid, t);
+    this.tty = {sid: p.sid, fg: p.pgid};
+    this.ready(t);
   }
 
   // ---- threads in turn (the backend here) ----
@@ -2676,10 +2681,14 @@ export class Task implements Thread {
         throw new ExecPreparationChangedError();
       if (!reader || !compiler) throw new Error('Held image requires the owning Kernel translator');
       const lifecycle = this.#unpublishedMapped(null), caller = captureExecCaller(p, this);
-      const check = (): void => {
-        lifecycle();
-        if (k.translate !== reader || reader.mapped !== compiler) throw new ExecPreparationChangedError();
+      const checkReader = (): void => {
+        // These are the normal Kernel/translator's own data slots. Do
+        // not invoke a reader accessor at the final ownership boundary.
+        if (Object.getOwnPropertyDescriptor(k, 'translate')?.value !== reader ||
+            Object.getOwnPropertyDescriptor(reader, 'mapped')?.value !== compiler)
+          throw new ExecPreparationChangedError();
       };
+      const check = (): void => { lifecycle(); checkReader(); };
       caller.check(); check();
       const image = reserveInitialImage(view, p, this, reader, compiler);
       (k[HELD_TASKS] ??= new Set()).add(this);
@@ -2689,7 +2698,7 @@ export class Task implements Thread {
         caller.check(); check(); image.check();
         cpu.setReg('r4', image.sp);
         const grant = Object.freeze(Object.create(null)) as InitialMappedGrant;
-        this[MAPPED_HANDOFF] = {grant, image, cpu, caller, check};
+        this[MAPPED_HANDOFF] = {grant, image, cpu, caller, check, checkReader};
         return grant;
       } catch (cause) {
         this.#discardHeldCandidate(image, cpu, cause);
@@ -2704,16 +2713,20 @@ export class Task implements Thread {
   }
 
   commitHeldMapped(grant: InitialMappedGrant): HeldMappedTask {
-    const p = this.proc;
+    const p = this.proc, k = this.kernel;
     return withExecPreparation(p, commit => {
-      const held = this.#handoff(grant), {image, cpu, caller} = held, memory = image.memory;
+      const held = this.#handoff(grant), {image, cpu, caller, checkReader} = held, memory = image.memory;
       const {table} = caller, fs = p.fs;
-      let retire: (() => void) | undefined = () => this.#retireCommittedHeld(memory, cpu, fs, table);
+      let owner: Pick<HeldMappedTask, 'checkStart' | 'discard'> | undefined;
       const result: HeldMappedTask = Object.freeze({
         kind: 'held-initial',
+        checkStart() {
+          if (!owner) throw new ExecPreparationChangedError();
+          owner.checkStart();
+        },
         discard() {
-          retire?.();
-          retire = undefined;
+          owner?.discard();
+          owner = undefined;
         },
       });
       try { caller.check(); held.check(); image.check(); }
@@ -2725,16 +2738,48 @@ export class Task implements Thread {
           // Keep the old scope intact until any close callbacks return.
           // No failure from this point may masquerade as a rolled-back exec.
           finishExecDescriptors(p, this, null, table);
-          caller.afterDescriptors(); held.check();
+          const checkDescriptors = caller.afterDescriptors();
+          held.check();
           phase = 'held-mapped-handoff';
-          image.claim(); // Rechecks both initial objects, stack and dependency catalogue.
+          const checkEntry = image.claim(); // Rechecks both initial objects, stack and dependency catalogue.
           claimed = true;
+          held.check(); checkDescriptors();
+          const {pc, sp, metadata: {stack}} = image;
           p[HELD_MEMORY](null, memory);
-          installExecLayout(p, image.metadata.stack);
+          installExecLayout(p, stack);
           installExecMetadata(p, image.metadata, image.identity);
           this.memory = memory;
-          this.resumeAt = image.pc;
           this[MAPPED_CPU] = cpu;
+          const startScope = execScope(p);
+          const {cgroup, argv, env, exe, exeAt} = p;
+          const {filters, strict, mask} = this;
+          const checkOwner = (): void => {
+            startScope(); checkReader();
+            this.#checkHeldOwner(memory, cpu, fs, table);
+            if (Object.getOwnPropertyDescriptor(this, 'resumeAt')?.value !== pc)
+              throw new ExecPreparationChangedError();
+            checkDescriptors();
+          };
+          this.resumeAt = pc;
+          checkOwner();
+          owner = {
+            checkStart: () => {
+              execMayRun(p);
+              checkEntry();
+              execMayRun(p);
+              if (!cpu.heldInitial || cpu.reg('r4') !== sp || this.state !== 'new' ||
+                  p.ppid || p.pidns !== k.spaces.children || p.pid !== this.tid || p.pgid !== p.pid || p.sid !== p.pid ||
+                  this.call || p.stopped ||
+                  p.cgroup !== cgroup || p.argv !== argv || p.env !== env || p.exe !== exe || p.exeAt !== exeAt ||
+                  this.filters !== filters || this.strict !== strict || this.mask !== mask || p.actions.size || p.alarm ||
+                  p.pending.mask || this.pending.mask || p.vfork || p.stackLow !== stack.stackLow || p.stackTop !== stack.stackTop ||
+                  p.mapBase !== stack.mapBase || p.mapEnd !== p.mapBase || p.free.length || p.fixed.length ||
+                  k.shared || k.status !== null || k.procs.size || k.tasks.size || k.runq.length || k.blocked.size)
+                throw new ExecPreparationChangedError();
+              checkOwner();
+            },
+            discard: () => this.#retireCommittedHeld(memory, cpu, fs, table),
+          };
           this[MAPPED_HANDOFF] = undefined;
         } catch (cause) {
           // An unclaimed image can still be retired independently. That
@@ -2747,18 +2792,25 @@ export class Task implements Thread {
     });
   }
 
+  #checkUnpublishedHeld(): void {
+    const p = this.proc, k = this.kernel;
+    if (!k[HELD_TASKS]?.has(this) || p.cgroup.procs.has(p) || this.#mappedScheduled() || k.current ||
+        p.state !== 'live' || p.children.size || p.own !== this || p.tasks.size !== 1 || !p.tasks.has(this) || this.dead)
+      throw new ExecPreparationChangedError();
+  }
+
+  #checkHeldOwner(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
+    const p = this.proc;
+    this.#checkUnpublishedHeld();
+    if (p.memory !== memory || this.memory !== memory || this[MAPPED_CPU] !== cpu || memory.users !== 1 ||
+        p.fs !== fs || fs.users !== 1 || p.fds !== table || table.holders !== 1)
+      throw new ExecPreparationChangedError();
+  }
+
   #retireCommittedHeld(memory: Mem, cpu: MappedTaskCpu, fs: Fs, table: FdTable): void {
     const p = this.proc, k = this.kernel;
     withExecPreparation(p, retire => {
-      const unpublished = (): void => {
-        if (!k[HELD_TASKS]?.has(this) || p.cgroup.procs.has(p) || this.#mappedScheduled() || k.current ||
-            p.state !== 'live' || p.children.size || p.own !== this || p.tasks.size !== 1 || !p.tasks.has(this) || this.dead)
-          throw new ExecPreparationChangedError();
-      };
-      unpublished();
-      if (p.memory !== memory || this.memory !== memory || this[MAPPED_CPU] !== cpu || memory.users !== 1 ||
-          p.fs !== fs || fs.users !== 1 || p.fds !== table || table.holders !== 1)
-        throw new ExecPreparationChangedError();
+      this.#checkHeldOwner(memory, cpu, fs, table);
       retire(() => {
         let newMemory: Mem | undefined = memory, newFds: FdTable | undefined = table;
         try {
@@ -2777,7 +2829,7 @@ export class Task implements Thread {
             newFds = undefined;
           });
           retiring.finish();
-          unpublished();
+          this.#checkUnpublishedHeld();
           if (p.memory || p.fs !== fs || fs.users !== 0 || p.fds !== table)
             throw new ExecPreparationChangedError();
           this[MAPPED_CPU] = undefined;

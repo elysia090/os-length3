@@ -102,10 +102,15 @@ export function captureExecCaller<T extends Pick<Thread, 'dead'>>(process: ExecC
     ownership();
     if (table.revision !== revision) throw new ExecPreparationChangedError();
   }, afterDescriptors() {
-    // Only the committing owner may observe the table after CLOEXEC has
-    // consumed its original revision. The ownership and limit stay exact.
+    // Close-on-exec has advanced the revision. Capture it at this boundary,
+    // not after source checks or writes to the new task context.
     if (process.execTransition !== true) throw new ExecPreparationChangedError();
     ownership();
+    const closedRevision = table.revision;
+    return () => {
+      ownership();
+      if (table.revision !== closedRevision) throw new ExecPreparationChangedError();
+    };
   }};
 }
 
@@ -136,6 +141,15 @@ export function replaceExec<P, I extends Program, T extends ExecThread<I>>(
 
 export interface ExecIdentity { readonly cred: Cred; readonly dumpable: boolean; check(installed: boolean): void }
 
+/** File policy can outlive the caller's original memory and credentials. */
+export function captureExecPermissions({at: {mnt, node}}: ExecSource): () => void {
+  const {mode, uid, gid} = node, mask = MNT.NOEXEC | MNT.NOSUID, flags = mnt.flags & mask;
+  return () => {
+    if (node.mode !== mode || node.uid !== uid || node.gid !== gid || (mnt.flags & mask) !== flags)
+      throw new ExecPreparationChangedError();
+  };
+}
+
 export function execIdentity(p: ExecSourceOwner, source: ExecSource): ExecIdentity {
   const {mnt, node} = source.at, c = p.cred;
   const suid = !(mnt.flags & MNT.NOSUID) && !p.noNewPrivs;
@@ -144,14 +158,13 @@ export function execIdentity(p: ExecSourceOwner, source: ExecSource): ExecIdenti
   const next = asProgram(c, setuid, setgid);
   const cred = p.noNewPrivs ? next.with({permitted: next.permitted & (c.permitted | next.ambient),
     effective: next.effective & (c.permitted | next.ambient)}) : next;
-  const {mode, uid, gid} = node, {fs, noNewPrivs} = p;
+  const file = captureExecPermissions(source), {fs, noNewPrivs} = p;
   const {root, pwd} = fs, epoch = p.kernel.executionEpoch;
-  const mask = MNT.NOEXEC | MNT.NOSUID, flags = mnt.flags & mask;
   return {cred, dumpable: setuid < 0 && setgid < 0, check(installed) {
     // Old mapping/descriptor retirement may call back into the host. Do not
     // install previously computed credentials if their grant was revoked.
-    if (node.mode !== mode || node.uid !== uid || node.gid !== gid || (mnt.flags & mask) !== flags ||
-        p.noNewPrivs !== noNewPrivs || p.cred !== (installed ? cred : c) || p.fs !== fs ||
+    file();
+    if (p.noNewPrivs !== noNewPrivs || p.cred !== (installed ? cred : c) || p.fs !== fs ||
         fs.root !== root || fs.pwd !== pwd || p.kernel.executionEpoch !== epoch)
       throw new ExecPreparationChangedError();
   }};
