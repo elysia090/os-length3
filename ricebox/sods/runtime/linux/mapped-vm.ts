@@ -33,6 +33,12 @@ function permissions(x: bigint): number {
   return p;
 }
 
+/** Unrepresentable pointers cannot become aliases in this inline VM.
+ * Registration itself does not test whether the address is mapped. */
+export function mappedTidAddress(address: bigint): number {
+  return address >= BigInt(MIN) && address + 4n <= BigInt(LIMIT) ? Number(address) : 0;
+}
+
 type Reader = Required<Pick<Translate, 'describeDynamic' | 'notProgram'>>;
 interface Region { start: number; end: number; prot: number; entry?: number; initial?: InitialMappedRegion['kind'] }
 const overlaps = (r: Region, a: number, b: number): boolean => a < r.end && r.start < b;
@@ -251,6 +257,26 @@ export class MappedVm {
   }
 
   checkTaskOwner(owner: Caller): void { this.#pin(owner)(); }
+
+  /** Check the single clear-tid word before sealing this address space.
+   * The resulting one-use action is not a guest copy lease. It can only
+   * clear that word on the original backing after ordinary access ends. */
+  prepareTidClear(owner: Caller, address: number): (() => void) | undefined {
+    if (!address) return undefined;
+    this.checkTaskOwner(owner);
+    if (this.#prefix(address, 4, 'write') !== 4) return undefined;
+    const memory = this.memory, buffer = memory.buffer, identity = owner.readIdentity();
+    let pending = true;
+    return () => {
+      if (!pending) throw new ReadLifetimeError();
+      pending = false;
+      identity();
+      if (!this.#closed || this.#owner || owner.state !== 'live' || owner.memory !== memory ||
+          memory.buffer !== buffer || !owner.noNewPrivs)
+        throw new ReadLifetimeError();
+      new DataView(buffer, address, 4).setUint32(0, 0, true);
+    };
+  }
 
   /** Only already-installed library text and an arena stack may start the
    * internal inline Task backend. Initial exec images remain detached. */

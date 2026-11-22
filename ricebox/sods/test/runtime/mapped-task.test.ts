@@ -24,7 +24,7 @@ const consoleOut = {read: () => null, write(_fd: number, _data: Uint8Array) {}};
 const syscall = (p: Process, nr: number, args: number[]): bigint => p.syscall(BigInt(nr),
   ...[...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]);
 
-function fixture(vfs: Vfs, name: 'scheduler' | 'tls' = 'scheduler') {
+function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' = 'scheduler') {
   const dir = mkdtempSync(join(tmpdir(), 'sods-task-'));
   let bytes: Uint8Array;
   try {
@@ -225,12 +225,83 @@ test('seccomp refusal never completes a mapped FS-base change', {skip}, async ()
   } finally { k.halt(); }
 });
 
+for (const mode of ['clear', 'cancel', 'read-only'] as const) {
+  test(`mapped clear-tid at normal exit respects its last registration: ${mode}`, {skip}, async () => {
+    const t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!, vfs = new Vfs(), f = fixture(vfs, 'tid');
+    const first = data + 16, last = data + 20, words = Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8);
+    const output: string[] = [], calls: [bigint, bigint][] = [];
+    let full = true, inExitImport = false, retired = 0, reported = 0, afterRelease = () => {};
+    const k = new Kernel({vfs, translate: t, console: {...consoleOut,
+      full: () => full, write(_fd, text) { output.push(Buffer.from(text).toString()); },
+    }});
+    const owner = mappedTask(k, t, {...compiler, close(known) {
+      assert.equal(inExitImport, false);
+      assert.equal(k.status, null);
+      compiler.close(known);
+      afterRelease();
+      retired++;
+    }}, f);
+    owner.vm.userMemory(owner.p).copyOut(first, words);
+    owner.task.setReg(13, mode === 'cancel' ? 0 : last);
+    const snapshot = () => new Uint8Array(owner.memory.buffer, first, 8).slice(); // Host-side retirement evidence only.
+    afterRelease = () => {
+      assert.equal(k.tasks.get(owner.task.tid), owner.task, 'the scheduler still owns this Task during backend release');
+      assert.deepEqual(snapshot(), words, 'clear still pending during compiler release');
+    };
+    k.stopped = () => {
+      reported++;
+      assert.equal(retired, 1);
+      assert.deepEqual(snapshot(), mode === 'clear' ? Uint8Array.of(1, 2, 3, 4, 0, 0, 0, 0) : words,
+        'exit observers see only the permitted clear after backend retirement');
+    };
+    let rawViews = 0;
+    Object.defineProperty(owner.p, 'view', {get() { rawViews++; throw new Error('mapped exits must not use the static view'); }});
+    const attempt = k.attempt.bind(k);
+    k.attempt = (who, call) => {
+      if (call.nr === 218) {
+        const result = attempt(who, call);
+        assert.equal(typeof result, 'bigint');
+        calls.push([call.args[0], result as bigint]);
+        return result;
+      }
+      if (call.nr !== 231) return attempt(who, call);
+      inExitImport = true;
+      try { return attempt(who, call); }
+      finally {
+        assert.equal(owner.vm.code.permits(BigInt(last), 4n, 'write'), false, 'exit request revokes guest access immediately');
+        assert.deepEqual(snapshot(), words, 'no clear while the syscall import still owns a frame');
+        inExitImport = false;
+      }
+    };
+    try {
+      assert.equal(syscall(owner.p, 218, [last]), BigInt(-E.NOSYS), 'registration requires the original syscall context');
+      calls.length = 0;
+      k.ready(owner.task);
+      assert.deepEqual(k.pump(), {waiting: true});
+      const tid = BigInt(owner.task.tid);
+      assert.deepEqual(calls.slice(), [[BigInt(first), tid], [BigInt(mode === 'cancel' ? 0 : last), tid]]);
+      assert.deepEqual(owner.vm.userMemory(owner.p).copyIn(first, 8), words, 'registration does not dereference the address');
+      if (mode === 'read-only') assert.equal(syscall(owner.p, 10, [data, PAGE, 1]), 0n);
+      full = false;
+      assert.deepEqual(k.pump(), {status: 42 << 8});
+      assert.deepEqual(output, ['mapped\n']);
+      assert.equal(owner.task.clearTid, 0);
+      assert.equal(rawViews, 0);
+      assert.equal(reported, 1);
+      assert.equal(owner.memory.users, 0);
+    } finally { k.halt(); }
+  });
+}
+
 test('an unconfirmed mapped compiler retirement retains its owners and never publishes exit', {skip}, async () => {
   const t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!, vfs = new Vfs();
-  const f = fixture(vfs), k = new Kernel({vfs, translate: t, console: consoleOut});
+  const f = fixture(vfs, 'tid'), k = new Kernel({vfs, translate: t, console: consoleOut});
   const unavailable = new Error('Compiler cleanup unavailable');
   let requested = 0, stopped = 0;
-  const owner = mappedTask(k, t, {...compiler, close() { requested++; throw unavailable; }}, f, true);
+  const owner = mappedTask(k, t, {...compiler, close() { requested++; throw unavailable; }}, f);
+  const address = data + 20;
+  owner.task.setReg(13, address);
+  owner.vm.userMemory(owner.p).copyOut(address, Uint8Array.of(1, 2, 3, 4));
   k.stopped = () => { stopped++; };
   k.ready(owner.task);
   let failure: unknown;
@@ -245,6 +316,8 @@ test('an unconfirmed mapped compiler retirement retains its owners and never pub
   assert.equal(k.tasks.get(owner.task.tid), owner.task);
   assert.equal(owner.p.memory, owner.memory);
   assert.equal(owner.memory.users, 1);
+  assert.deepEqual(new Uint8Array(owner.memory.buffer, address, 4), Uint8Array.of(1, 2, 3, 4),
+    'uncertain backend retirement does not publish clear-tid');
   assert.equal(owner.stdout.closed, false);
   assert.equal(owner.vm.code.find(owner.pc, owner.vm.code.generation), undefined);
   assert.equal(owner.vm.code.permits(BigInt(data), 1n, 'read'), false);

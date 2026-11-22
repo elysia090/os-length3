@@ -273,6 +273,17 @@ runs. That does not change the mapping generation. GET copies one
 little-endian 64-bit word using the checked whole-span VM policy. Other
 `arch_prctl` operations do not fall back to the static backend.
 
+The same screened Task can use `set_tid_address` to register its current
+clear-tid pointer and get its namespace TID. Registration never reads or
+writes that address. A null pointer cancels it; addresses outside the
+inline address profile cannot alias valid ones. On ordinary exit, the
+VM checks the last word against current write permissions and revokes
+ordinary access. Only after unwind and confirmed backend retirement can
+the kernel recheck the scheduler owner and clear the original backing's
+one authorized word before publishing exit. This private
+one-owner profile does not admit mapped futex, clone or robust-list
+operations.
+
 The scheduler proof is a small interpreter-free guest assembly fixture.
 Separately, an authenticated initial image can be reserved by exactly
 the unpublished Task it was prepared for. A single-use grant checks

@@ -46,7 +46,7 @@ import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
 import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, publishInitialPid, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
-import {MappedVmCommitError} from './mapped-vm.ts';
+import {mappedTidAddress, MappedVmCommitError} from './mapped-vm.ts';
 import {FILE_CALLS, MAPPED_FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -155,6 +155,7 @@ const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALL
 // take no guest pointers. An unported syscall is not a static fallback.
 const MAPPED_CALLS: Calls = {...MAPPED_FILE_CALLS, 9: PROC_CALLS[9], 10: PROC_CALLS[10],
   11: PROC_CALLS[11], 12: PROC_CALLS[12], 39: PROC_CALLS[39], 231: PROC_CALLS[231]};
+const SET_TID_ADDRESS = 218;
 // Only the owning kernel and task may enter or retire this backend.
 const MAPPED_CPU = Symbol('mapped Task CPU');
 const MAPPED_HANDOFF = Symbol('pending initial mapped Task');
@@ -173,12 +174,12 @@ interface PendingMappedTask {
   readonly cpu: MappedTaskCpu;
   check(): void;
 }
-interface MappedFsAttempt {
+interface MappedTaskCall {
   readonly task: Task;
   readonly call: Call;
   readonly cpu: MappedTaskCpu;
   attempted?: boolean;
-  base?: bigint;
+  fsBase?: bigint;
 }
 function checkMappedAdmission(t: Task): void {
   if (t.kernel?.[HELD_TASKS]?.has(t))
@@ -435,7 +436,7 @@ export class Kernel implements Kern {
   #executionEpoch: object = {};
   #starting = false;
   #mappedTurn?: Task;
-  #mappedFs?: MappedFsAttempt;
+  #mappedTaskCall?: MappedTaskCall;
   #failedMapped?: MappedTaskOwnershipError;
   get executionEpoch(): object { return this.#executionEpoch; }
   protected invalidateExecPreparation(): void { this.#executionEpoch = {}; }
@@ -1041,12 +1042,16 @@ export class Kernel implements Kern {
     if (this.#mappedTurn || this.current?.[MAPPED_CPU]) throw new Error('The mapped scheduler cannot reenter its task');
   }
 
-  #checkMappedTask(t: Task, cpu: MappedTaskCpu): void {
+  #checkMappedSchedulerOwner(t: Task, cpu: MappedTaskCpu): void {
     const p = t.proc;
     if (this.shared || p.kernel !== this || p.memory !== cpu.memory || cpu.memory.users !== 1 ||
         p.tasks.size !== 1 || !p.tasks.has(t) || p.own !== t || this.tasks.get(t.tid) !== t || this.procs.get(p.pid) !== p)
       throw new Error('Mapped Task has no current scheduler owner');
-    cpu.memory.mappedVm!.checkTaskOwner(p);
+  }
+
+  #checkMappedTask(t: Task, cpu: MappedTaskCpu): void {
+    this.#checkMappedSchedulerOwner(t, cpu);
+    cpu.memory.mappedVm!.checkTaskOwner(t.proc);
   }
 
   #mappedFailed(t: Task, cause: unknown): never {
@@ -1179,7 +1184,7 @@ export class Kernel implements Kern {
     // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
     // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
     const at = ++this.calls % CALL_SAMPLE === 0 ? steady() : 0;
-    let fs: MappedFsAttempt | undefined;
+    let owned: MappedTaskCall | undefined;
     let runsOn = false;
     try {
       t.resumeAt = next;
@@ -1191,18 +1196,18 @@ export class Kernel implements Kern {
         this.ready(t);
         throw new Wait();
       }
-      if (mapped && call.nr === MAPPED_ARCH_PRCTL) {
-        if (this.#mappedFs) throw new Error('Mapped FS syscall cannot reenter');
-        fs = this.#mappedFs = {task: t, call, cpu: mapped};
+      if (mapped && (call.nr === MAPPED_ARCH_PRCTL || call.nr === SET_TID_ADDRESS)) {
+        if (this.#mappedTaskCall) throw new Error('Mapped Task syscall cannot reenter');
+        owned = this.#mappedTaskCall = {task: t, call, cpu: mapped};
       }
       const v = this.attempt(t, call);
       if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
       if (!t.dead && !t.proc.stopped && !deliverable(t)) {
         if (mapped) this.#checkMappedTask(t, mapped);
         runsOn = true;
-        if (fs?.base !== undefined) {
+        if (owned?.fsBase !== undefined) {
           if (v !== 0n) throw new Error('A failed mapped syscall cannot commit FS');
-          return fs.cpu.completeFsSyscall(next, fs.base);
+          return owned.cpu.completeFsSyscall(next, owned.fsBase);
         }
         return v;
       }
@@ -1214,7 +1219,7 @@ export class Kernel implements Kern {
       runsOn = true;
       return v;
     } finally {
-      if (fs) this.#mappedFs = undefined;
+      if (owned) this.#mappedTaskCall = undefined;
       if (at || !runsOn) {
         const now = steady();
         if (at) t.owed += (now - at) * CALL_SAMPLE;
@@ -1302,8 +1307,8 @@ export class Kernel implements Kern {
       call.state.screened = true;
     }
     const mapped = !!p.memory?.mappedVm, handler = (mapped ? MAPPED_CALLS : CALLS)[call.nr];
-    const fs = mapped && this.#mappedFs?.task === t && this.#mappedFs.call === call ? this.#mappedFs : undefined;
-    if (!handler && !fs) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
+    const owned = mapped && this.#mappedTaskCall?.task === t && this.#mappedTaskCall.call === call ? this.#mappedTaskCall : undefined;
+    if (!handler && !owned) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
     const shares = p.maps.length > 0;
     if (shares) p.syncShared();
     // Whose call this is, while it is made: what /proc's "self" leads to. (A thread run here is `current` as it runs;
@@ -1312,10 +1317,14 @@ export class Kernel implements Kern {
     if (t instanceof Task) this.current = t;
     try {
       let r: bigint | number = 0n;
-      if (fs) {
-        if (fs.attempted) throw new Error('Mapped FS syscall was already attempted');
-        fs.attempted = true;
-        fs.base = fs.cpu.fsSyscall(p, call.args[0], call.args[1]);
+      if (owned) {
+        if (owned.attempted) throw new Error('Mapped Task syscall was already attempted');
+        owned.attempted = true;
+        if (call.nr === MAPPED_ARCH_PRCTL) owned.fsBase = owned.cpu.fsSyscall(p, call.args[0], call.args[1]);
+        else if (call.nr === SET_TID_ADDRESS) {
+          r = nrIn(this.numbers, p.pidns, owned.task.tid);
+          owned.task.clearTid = mappedTidAddress(call.args[0]);
+        } else throw new Error('Unexpected mapped Task syscall');
       } else r = handler!.apply(p, call.args);
       if (!QUIET[call.nr]) this.dirty = true;
       const v = typeof r === 'bigint' ? r : BigInt(r);
@@ -1515,7 +1524,7 @@ export class Kernel implements Kern {
     t.fs.drop();
     if (t.x87) { this.x87.free(t.x87); t.x87 = 0; }
     const p = t.proc;
-    if (p.memory) {
+    if (p.memory && !p.memory.mappedVm) {
       try { robustExit(this, t); } catch { /* a list it broke is its own */ }
       if (t.clearTid) {
         try { p.view.setInt32(t.clearTid, 0, true); } catch { /* gone */ }
@@ -1539,9 +1548,16 @@ export class Kernel implements Kern {
     m.pooled = [kept, ...(m.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
   }
 
-  #retireMapped(t: Task): void {
-    try { t[MAPPED_CPU]!.retire(); } catch (error) { this.#mappedFailed(t, error); }
-    if (this.#failedMapped) throw this.#failedMapped;
+  #retireMapped(t: Task, address = 0): void {
+    const cpu = t[MAPPED_CPU]!;
+    try {
+      const clear = cpu.retire(t.proc, address);
+      // Compiler cleanup may call out. No exit effect before the kernel
+      // has checked its health and the surviving scheduler owner again.
+      if (this.#failedMapped) throw this.#failedMapped;
+      if (clear) { this.#checkMappedSchedulerOwner(t, cpu); clear(); }
+    } catch (error) { this.#mappedFailed(t, error); }
+    t.clearTid = 0;
   }
 
   /** A process ends with wait status `status`: its threads, its files; its parent is told, and its children go to init. */
@@ -1557,8 +1573,9 @@ export class Kernel implements Kern {
     if (task) checkMappedAdmission(task);
     if (mapped) {
       if (p.kernel !== this) throw new TypeError('Mapped Task belongs to another Kernel');
-      if (mapped.active) mapped.requestExit(status);
-      this.#retireMapped(task!);
+      const address = status & 0x7f ? 0 : task!.clearTid;
+      if (mapped.active) mapped.requestExit(status, p, address);
+      this.#retireMapped(task!, address);
       p.call = null;
     }
     // Ended by a signal in front of the terminal: the shell gets it back as it had it (sys-file.ts handed).

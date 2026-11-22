@@ -26,6 +26,10 @@ system calls. It checks the nested return after setting the base,
 checked FS-relative data, a whole-word GET across a permission
 boundary, and preservation across a console wait. The fixture is not
 a libc or interpreter launch.
+`tid.S` registers a clear-tid address twice, waits, and exits normally.
+The test observes the namespace TID and checked retirement of only the
+last writable word, not a canceled registration, a page made read-only,
+or an exit whose backend retirement failed.
 The VM tests also exercise checked copies through the ordinary file
 and console syscall paths, including protection changes and callback
 lifetime. `data.S` then uses the same VM regions for actual translated

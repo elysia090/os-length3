@@ -214,6 +214,22 @@ test('checked copies use installed spans, independent snapshots, and the live ma
   assert.throws(user, ReadLifetimeError);
 });
 
+test('a clear-tid receipt cannot follow an owner epoch even on the same backing', () => {
+  const {p, vm, memory, user, clean} = processWithVm();
+  try {
+    assert.equal(syscall(p, 9, BASE, PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    const prior = Uint8Array.of(1, 2, 3, 4);
+    user().copyOut(BASE, prior);
+    const clear = vm.prepareTidClear(p, BASE);
+    assert.ok(clear);
+    p.memory = memory; // Same identity of the backing, different process lifetime.
+    vm.close();
+    assert.throws(clear, ReadLifetimeError);
+    assert.throws(clear, ReadLifetimeError, 'failure still consumes the receipt');
+    assert.deepEqual(new Uint8Array(memory.buffer, BASE, 4), prior);
+  } finally { clean(); }
+});
+
 test('ordinary mapped read, pread, write, stat and console use bounded checked kernel copies', () => {
   const vfs = new Vfs(), printed: [number, string][] = [];
   const data = encode.encode('ricebox');

@@ -12,6 +12,7 @@ export class MappedExitRequest extends Exit {}
 
 export const MAPPED_ARCH_PRCTL = 158;
 const SET_FS = 0x1002n, GET_FS = 0x1003n, ADDRESS_LIMIT = BigInt(MAPPED_VM_LIMIT);
+type Owner = Parameters<MappedVm['userMemory']>[0];
 
 export class MappedTaskCpu {
   readonly memory: Mem;
@@ -22,6 +23,7 @@ export class MappedTaskCpu {
   #retiring = false;
   #retired = false;
   #pending?: MappedExitRequest;
+  #finishTidClear?: () => void;
 
   constructor(memory: Mem, vm: MappedVm, compiler: MappedTranslate, imports: WebAssembly.ModuleImports,
       kind: 'arena' | 'held-initial') {
@@ -41,7 +43,7 @@ export class MappedTaskCpu {
 
   /** ARCH_GET_FS completes here. ARCH_SET_FS returns a checked candidate
    * to the owning syscall, without changing any active Wasm register. */
-  fsSyscall(owner: Parameters<MappedVm['userMemory']>[0], op: bigint, address: bigint): bigint | undefined {
+  fsSyscall(owner: Owner, op: bigint, address: bigint): bigint | undefined {
     if (!this.#active || this.heldInitial || this.#pending) throw new Error('No active mapped FS syscall owner');
     this.#vm.checkTaskOwner(owner);
     if (op === SET_FS) {
@@ -74,25 +76,37 @@ export class MappedTaskCpu {
   }
 
   revoke(reason: object): void {
+    this.#finishTidClear = undefined; // Failed ownership/retirement cannot publish an exit effect.
+    this.#revokeAccess(reason);
+  }
+
+  #revokeAccess(reason: object): void {
     this.#dispatcher.revoke(reason);
     this.#vm.close();
   }
 
-  requestExit(status: number): never {
+  requestExit(status: number, owner: Owner, address: number): never {
     if (!this.#active) throw new Error('No mapped frame to unwind');
-    const request = this.#pending ??= new MappedExitRequest(status);
-    this.revoke(request);
+    if (this.#pending) throw this.#pending;
+    this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
+    const request = this.#pending = new MappedExitRequest(status);
+    this.#revokeAccess(request);
     throw request;
   }
 
-  retire(): void {
+  /** Retire CPU/VM ownership. Only the kernel may publish the returned exit effect. */
+  retire(owner?: Owner, address = 0): (() => void) | undefined {
     if (this.#active || this.#retiring) throw new Error('Mapped Task has not unwound');
     if (this.#retired) return;
     this.#retiring = true;
     try {
-      this.revoke(this.#pending ?? new Error('Mapped Task retired'));
+      if (!this.#pending && owner) this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
+      this.#revokeAccess(this.#pending ?? new Error('Mapped Task retired'));
+      const clear = this.#finishTidClear;
+      this.#finishTidClear = undefined;
       this.#dispatcher.close();
       this.#retired = true;
+      return clear;
     } finally { this.#retiring = false; }
   }
 }
