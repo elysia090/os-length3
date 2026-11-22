@@ -87,79 +87,83 @@ already prepared distribution. Do not pass both `build` and `distribution`.
 Serving these assets is distinct from running guest programs and from deploying
 a service.
 
-### Use a staged browser shell
+### Embed a staged guest terminal
 
-Put the complete staged shell directory at any URL prefix (such as
-`/tools/linux/`) on an HTTPS static host. Link directly to its `index.html`,
-or mount the same page in an existing site with ordinary HTML:
+Put the complete staged directory at any HTTPS path, such as `/tools/linux/`.
+Link to its `index.html` or use ordinary HTML in the same site:
 
 ```html
-<iframe src="./linux/index.html" title="Ricebox Linux shell" width="640" height="400" loading="lazy"></iframe>
+<iframe src="./linux/index.html" title="Ricebox guest terminal" width="640" height="400" loading="lazy"></iframe>
 ```
 
-No npm, app code, CSS, TypeScript, or framework is required to host or embed an
-already staged directory. The dedicated page starts one temporary Linux guest
-when it loads without moving focus; an outer site that wants opt-in startup
-can link to the page or insert the iframe only when requested. Run
-`printf 'hello from Ricebox\n'` when the guest is ready. The server only serves
-files. **End shell** closes guest admission; **Start a new shell** starts a fresh
-guest after a clean close. The page keeps recent output scrollable and leaves
-the input field focused between commands if you are using it. This is a
-bounded line console, not a full terminal emulator or persistent home. No drawing or relay is staged by the template.
+The iframe size is the browser viewport. The guest terminal has its own fixed
+cell geometry, set when you stage it. The page starts one temporary Linux
+guest without moving focus. To opt in at a later time, link to the page or
+mount the iframe only when requested. **End guest** closes admission;
+**Start a new guest** can start a fresh guest after that acknowledgment.
+It is not proof the old host Worker stopped. A restart uses the same
+verified environment. Reload the page after changing the declaration or
+returning to a page the browser kept after navigation. The package provides the interface, so no framework, site JavaScript, or custom
+CSS is required. It is a bounded VT screen, not an exhaustive xterm
+implementation or scrollback. The guest has scratch space in `/tmp`, not a
+persistent home. This starter exposes no display, camera, or host command API.
 
-Copy the complete staged directory together; no base URL configuration or
-rewrites are needed. Serve modules as JavaScript and do not rewrite missing
-assets to the HTML page. Use a shell-only prepared root for the smallest
-transfer and do not include secrets or host files in it: the selected
-root is staged as verified layers. The starter does not warm other guest
-programs. Layer transport and browser caching affect guest bytes; use the
-[pack transport check](#verify-the-static-hosts-pack-transport) for efficient range reads.
+Copy the whole output together, serve modules as JavaScript, and use a new
+URL prefix when replacing a generation. Do not include secrets or host files
+in a prepared environment: any browser that can use it can retrieve its
+staged bytes. See [pack transport](#verify-the-static-hosts-pack-transport).
 
-### Stage a browser shell from a prepared root
+### Declare and stage the guest
 
-The staging command is for the kit producer, not the person embedding an
-already staged kit. There is no public kit download or npm release yet.
+Start from an already prepared, compatible environment. Get the SHA-256 pins
+for its exact `webroot.json` and `muk.json` from the trusted build or publisher;
+hashing an unknown download yourself does not establish provenance. These
+instructions do not provide a registry, kit download, or new public release.
+Your declaration is a build input, never taken from a visitor's URL.
 
-Use a trusted, prepared **Ricebox** distribution of the same version as the
-local npm tarball, with executable `/usr/bin/busybox`. Obtain the SHA-256 of
-that release's `webroot.json` and `muk.json` from your trusted release build
-or its publisher. Matching checksums establish byte integrity against those
-pins, not who supplied the pins or an unsigned kit. Do not treat hashes of
-unverified downloads as release pins. See [local artifacts](#local-artifacts)
-to prepare your own.
+Save `ricebox.json` beside your prepared directory, replacing the two pins:
 
-From a new directory, with Node 22.18 or newer and the tarball already built
+```json
+{
+  "guest": {
+    "directory": "./prepared",
+    "webrootSha256": "<trusted 64-character lowercase SHA-256>",
+    "mukSha256": "<trusted 64-character lowercase SHA-256>"
+  },
+  "terminal": { "argv": ["/bin/sh", "-i"], "cols": 96, "rows": 27 }
+}
+```
+
+`argv` names an executable inside that guest, not on the site builder. This
+example chooses the environment's `/bin/sh`; substitute the actual entry and
+arguments your environment provides. Omit `cols` and `rows` for 80×24 cells.
+The grid is bounded to 240×100 and does not automatically resize the guest
+when the containing web page is resized.
+
+With Node 22.18 or newer and the tarball already built
 ([use Node 24 to build it](../README.md#setup)):
 
 ```sh
 npm init -y
 npm install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
 mkdir preview
-npm exec --offline -- ricebox-stage-shell /path/to/prepared-root ./preview/site \
-  "$WEBROOT_JSON_SHA256" "$MUK_JSON_SHA256"
+npm exec --offline -- ricebox-stage-shell ./ricebox.json ./preview/linux
 python3 -m http.server 8000 --bind 127.0.0.1 --directory ./preview
 ```
 
-Preview at `http://127.0.0.1:8000/site/index.html` (loopback HTTP is supported).
+Preview `http://127.0.0.1:8000/linux/index.html`. Staging checks the selected
+environment and copies it into a new directory. It does not build, relabel,
+execute, or deploy the root. Static checks do not prove that the entry boots
+in a browser. If a disk-write error leaves a partial directory, discard it
+or use a different output path.
 
-The staging command verifies and copies an existing release into a new
-directory; it does not acquire tools, build a root, or publish. Never mix
-files from different stages. Use a new URL prefix for each staged generation
-so cached modules and guest assets do not mix. Stage verifies the selected
-bytes and the shell entry; it does not prove that a given root boots in a browser.
-If a disk-write error leaves an incomplete directory, discard that partial output
-or choose a different destination.
-
-To qualify the starter with real guest execution, use the repository's locked
-JavaScript dependencies, an installed sandboxed Google Chrome on Linux and the
-same trusted prepared root/pins. The test packs and installs a clean consumer,
-serves loopback only, then checks a real prompt and two computed command outputs
-in one nested iframe:
+To qualify the starter with a real sandboxed Google Chrome, use an authored
+declaration for an interactive Linux shell with `stty` on its path. The test
+uses the installed npm package and confirms guest cell dimensions and retained
+state across commands inside one nested iframe:
 
 ```sh
-RICEBOX_STARTER_PREPARED_ROOT=/path/to/prepared-root \
-RICEBOX_STARTER_WEBROOT_PIN="$WEBROOT_JSON_SHA256" \
-RICEBOX_STARTER_MUK_PIN="$MUK_JSON_SHA256" \
+RICEBOX_STARTER_DECLARATION=/path/to/ricebox.json \
 RICEBOX_STARTER_CHROME=/path/to/installed/google-chrome \
   node --test ricebox/distribution/verification/test/starter-browser.integration.ts
 ```

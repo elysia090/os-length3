@@ -32,8 +32,9 @@ requirement is `>=22.18`; use Node 24 to generate the package. A browser app can
 stage the package's native modules or use a bundler with module-Worker support.
 Serve the distribution layers separately from those modules.
 
-For a no-framework starting point, see [Use a staged browser shell](docs/installation.md#use-a-staged-browser-shell).
-The staging command takes an existing trusted prepared root; it does not publish or acquire one.
+For a no-framework starting point, see [Embed a staged guest terminal](docs/installation.md#embed-a-staged-guest-terminal).
+A build-time declaration selects a trusted prepared environment, its terminal entry, and the cell geometry.
+Staging does not acquire or publish an environment.
 
 The package exports `ricebox` (`createRoot` and its types), `ricebox/everyday`
 (the optional presenter), `ricebox/prepare` (composition), `ricebox/assets`

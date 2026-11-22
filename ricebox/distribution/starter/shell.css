@@ -14,12 +14,19 @@ h1 { font-size: 1.1rem; margin: 0; }
 p { margin: 0.25rem 0 0; }
 #output {
   border: 1px solid GrayText;
-  margin: 0;
+  min-inline-size: 0;
   overflow: auto;
-  overflow-wrap: anywhere;
   padding: 0.5rem;
-  white-space: pre-wrap;
+  --vt-bg: Canvas;
+  --vt-fg: CanvasText;
+  --ansi-0: CanvasText; --ansi-1: light-dark(#ad2433, #ff8b91);
+  --ansi-2: light-dark(#236b43, #83d79e); --ansi-3: light-dark(#715513, #edd180);
+  --ansi-4: light-dark(#234f9b, #88b9ff); --ansi-5: light-dark(#872a72, #eca3de);
+  --ansi-6: light-dark(#24636a, #91dbe0); --ansi-7: CanvasText;
+  --ansi-8: GrayText; --ansi-9: var(--ansi-1); --ansi-10: var(--ansi-2); --ansi-11: var(--ansi-3);
+  --ansi-12: var(--ansi-4); --ansi-13: var(--ansi-5); --ansi-14: var(--ansi-6); --ansi-15: CanvasText;
 }
-#command { display: flex; align-items: end; gap: 0.5rem; }
-#command label { flex: 1; min-inline-size: 0; }
+.vt-screen { font: 13px/1.35 ui-monospace, monospace; white-space: pre; font-variant-ligatures: none; }
+.vt-row { min-block-size: 1lh; }
+.vt-cursor { color: var(--vt-bg); background: var(--vt-fg); }
 #line { box-sizing: border-box; display: block; inline-size: 100%; }

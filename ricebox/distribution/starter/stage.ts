@@ -1,58 +1,78 @@
 #!/usr/bin/env node
-// Consume a trusted prepared release. No acquisition, execution or publishing.
+// Only stage an explicitly trusted prepared environment. No acquisition, execution or publishing.
 import {createHash} from 'node:crypto';
 import {existsSync, lstatSync, readFileSync, mkdirSync, writeFileSync} from 'node:fs';
-import {dirname, join, resolve} from 'node:path';
+import {dirname, join, posix, resolve} from 'node:path';
 import {browserModules, distributionAssets} from '../deployment/assets.ts';
-import {releaseVersion} from '../build/version.ts';
-import type {About, Index} from '../format/manifest.ts';
+import {blobAsset, releaseIndexAsset, readReleaseIndex, type About, type Index} from '../format/manifest.ts';
+import {authoredPlan} from './plan.ts';
 
-const usage = 'Usage: ricebox-stage-shell PREPARED_ROOT NEW_SITE WEBROOT_JSON_SHA256 MUK_JSON_SHA256';
-const digest = /^[0-9a-f]{64}$/;
+const usage = 'Usage: ricebox-stage-shell DECLARATION_JSON NEW_SITE';
 function checkPin(name: string, bytes: Buffer, expected: string) {
   if (createHash('sha256').update(bytes).digest('hex') !== expected) {
     throw new Error(`${name} does not match the trusted release pin.`);
   }
 }
 
-try {
-  const [input, destination, webPin = '', mukPin = '', ...extra] = process.argv.slice(2);
-  if (!input || !destination || !digest.test(webPin) || !digest.test(mukPin) || extra.length) {
-    throw new Error(usage);
+/** Follow guest aliases in the authenticated index, never as host filesystem paths. */
+function executable(index: Index, entry: string): string {
+  const links = new Map(index.links.map(({path, target}) => [path, target]));
+  let path = entry;
+  for (let depth = 0; depth <= 40; depth++) {
+    const parts = path.slice(1).split('/');
+    let replaced = false;
+    for (let i = 1; i <= parts.length; i++) {
+      const alias = '/' + parts.slice(0, i).join('/');
+      const link = links.get(alias);
+      if (link === undefined) continue;
+      if (typeof link !== 'string' || !link || link.includes('\0')) break;
+      path = posix.resolve(posix.dirname(alias), link, ...parts.slice(i));
+      replaced = true;
+      break;
+    }
+    if (replaced) continue;
+    if (index.files.some(file => file.path === path && file.size > 0 && (file.mode & 0o111))) return path;
+    break;
   }
-  const out = resolve(destination), root = resolve(input);
+  throw new Error(`Guest terminal executable ${entry} is not present or executable in this prepared root.`);
+}
+
+try {
+  const [config, destination, ...extra] = process.argv.slice(2);
+  if (!config || !destination || extra.length) throw new Error(usage);
+  const source = resolve(config), plan = authoredPlan(JSON.parse(readFileSync(source, 'utf8')));
+  const out = resolve(destination), root = resolve(dirname(source), plan.guest.directory);
   if (existsSync(out)) throw new Error(`Output already exists: ${out}`);
-  const pins = [['webroot.json', webPin], ['muk.json', mukPin]] as const;
-  // Check the trusted metadata before following its references into the root.
+  const pins = [['webroot.json', plan.guest.webrootSha256], ['muk.json', plan.guest.mukSha256]] as const;
   for (const [name, expected] of pins) {
     const path = join(root, name);
     if (!lstatSync(path).isFile()) throw new Error(`${name} is not a regular file.`);
     checkPin(name, readFileSync(path), expected);
   }
   const files = distributionAssets(root);
-  // Check the exact copies that will be written, not merely earlier reads.
   for (const [name, expected] of pins) checkPin(name, files.get('ricebox/' + name)!, expected);
   const release = JSON.parse(files.get('ricebox/webroot.json')!.toString('utf8')) as About;
-  const version = releaseVersion();
-  if (release.version !== version) {
-    throw new Error(`Prepared root version ${release.version} does not match this Ricebox package (${version}).`);
-  }
-  const index = JSON.parse(files.get('ricebox/' + release.index.path)!.toString('utf8')) as Index;
-  if (!index.files.some(file => file.path === '/usr/bin/busybox' && file.size > 0 && (file.mode & 0o111))) {
-    throw new Error('Prepare a shell root with executable /usr/bin/busybox before staging.');
-  }
+  const descriptor = releaseIndexAsset(release);
+  const index = readReleaseIndex(files.get('ricebox/' + descriptor.path)!, release);
+  const maker = blobAsset(JSON.parse(files.get('ricebox/muk.json')!.toString('utf8')));
+  const program = executable(index, plan.terminal.argv[0]!);
+  files.set('ricebox-starter.json', Buffer.from(JSON.stringify({
+    v: 1, generation: descriptor.sha256, makerSha256: maker.sha256, program, terminal: plan.terminal,
+  }) + '\n'));
   for (const [name, bytes] of browserModules()) files.set(name, bytes);
   for (const name of ['index.html', 'shell.css']) files.set(name, readFileSync(new URL(name, import.meta.url)));
-  // Preserve the browser shell's literal relative import of the runtime.
-  files.set('ricebox-js/distribution/starter/shell.js', readFileSync(new URL('shell.js', import.meta.url)));
-  // A missing or invalid dependency leaves no output. Never replace an existing site.
+  for (const name of ['distribution/starter/shell.js', 'distribution/starter/plan.js',
+    'everyday/terminal/vt.js', 'everyday/terminal/vt-view.js']) {
+    files.set('ricebox-js/' + name, readFileSync(new URL('../../' + name, import.meta.url)));
+  }
+  // Missing or invalid inputs leave no output. Never overwrite an existing site.
   mkdirSync(out);
   for (const [name, bytes] of files) {
     const path = join(out, name);
     mkdirSync(dirname(path), {recursive: true});
     writeFileSync(path, bytes, {flag: 'wx'});
   }
-  console.log(`Ricebox shell staged: ${out}`);
+  console.log(`Ricebox terminal staged: ${out}`);
 } catch (error) {
   console.error(`ricebox-stage-shell: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

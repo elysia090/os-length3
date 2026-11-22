@@ -3,11 +3,12 @@
 import type {Segment} from '../../sods/runtime/translate.ts';
 import {checkAsset, storedParts, type AssetReply, type AssetRequest} from './check-assets.ts';
 
-export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: {
+export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], checkSignal}: {
   base: string;
   usedKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
+  checkSignal?: AbortSignal;
 }) {
   /** Resolve the cache name lazily so importing the package does not require a browser. */
   let cacheName: string | undefined;
@@ -61,7 +62,18 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
   let checker: Worker | null | undefined;
   let asking = 0;
   const answers = new Map<number, (reply: AssetReply) => void>();
+  function stopChecker(w: Worker, error: string) {
+    if (checker !== w) return;
+    checker = null;
+    for (const answer of answers.values()) answer({error});
+    answers.clear();
+    try { w.terminate(); } catch { /* termination was not confirmed */ }
+  }
+  checkSignal?.addEventListener('abort', () => {
+    if (checker) stopChecker(checker, 'Asset check admission closed');
+  }, {once: true});
   const worker = (): Worker | null => {
+    checkSignal?.throwIfAborted();
     if (checker !== undefined) return checker;
     try {
       const w = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
@@ -72,13 +84,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
         answers.delete(reply.id);
         answer?.(reply);
       });
-      const lost = () => {
-        if (checker !== w) return;
-        checker = null;
-        for (const answer of answers.values()) answer({error: 'Worker response lost'});
-        answers.clear();
-        try { w.terminate(); } catch { /* termination was not confirmed */ }
-      };
+      const lost = () => stopChecker(w, 'Asset checker response lost');
       w.addEventListener('error', lost);
       w.addEventListener('messageerror', lost);
     } catch { checker = null; }
@@ -112,6 +118,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
       const own = lend && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
       const buffer = own ? bytes.buffer as ArrayBuffer : new Uint8Array(bytes).buffer;
       const reply = await send(w, {bytes: buffer, unpack, ...(as ? {prepare: as} : {})}, [buffer]);
+      checkSignal?.throwIfAborted();
       if (reply?.bytes && reply.sha256) {
         return {bytes: new Uint8Array(reply.bytes), sha256: reply.sha256, ...(as ? {size: reply.size, segments: reply.segments ?? null} : {})};
       }

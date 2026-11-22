@@ -22,6 +22,8 @@ export interface RootConfig {
   planKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
+  /** Close this loader’s asset-check admission with its host, not its guest Workers. */
+  checkSignal?: AbortSignal;
   message: NonNullable<import('./download.ts').Options['message']>;
   missing(): string;
   errorText(error: unknown): string;

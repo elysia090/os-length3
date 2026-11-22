@@ -248,6 +248,27 @@ test('a lost Worker reply fails the lent check without reusing detached bytes', 
   assert.deepEqual(await storage.checked(usable, false, false), {bytes: usable, sha256: hash(usable)});
 });
 
+test('the page owner aborts pending asset checks and cannot replace its checker', async t => {
+  const base = '/layers/', f = fixture(t, base), owner = new AbortController();
+  let created = 0, stopped = 0;
+  class WaitingChecker extends EventTarget {
+    constructor() { super(); created++; }
+    postMessage(message: unknown, transfer: ArrayBuffer[]) { structuredClone(message, {transfer}); }
+    terminate() { stopped++; }
+  }
+  f.install('Worker', WaitingChecker);
+  const storage = createAssetCache({base, usedKey: 'used', checkSignal: owner.signal});
+  const lent = Uint8Array.of(1, 2);
+  const pending = storage.checked(lent, false, true);
+  assert.equal(lent.byteLength, 0);
+  assert.equal(created, 1);
+  owner.abort();
+  await assert.rejects(pending, {name: 'AbortError'});
+  await assert.rejects(storage.checked(Uint8Array.of(3), false, false), {name: 'AbortError'});
+  assert.throws(() => storage.worker(), {name: 'AbortError'});
+  assert.deepEqual({created, stopped}, {created: 1, stopped: 1});
+});
+
 function addStartup(f: ReturnType<typeof fixture>, path: string, source: Uint8Array, wasm: Uint8Array) {
   const elf = f.blob(source), translated = f.blob(wasm);
   f.index.files.push({path, pack: 0, mode: 0o755, size: source.length, at: 32, len: source.length, raw: true});
