@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {canonicalExecutableSource} from '../executable-source.ts';
+import {canonicalExecutableSource, canonicalPackedFileSet} from '../executable-source.ts';
 import type {Index, Translation} from '../manifest.ts';
 
 const name = 'a'.repeat(64), sourceSha256 = 'b'.repeat(64), origin = `${name}_64_16`;
@@ -66,6 +66,30 @@ test('hardlink records can share an origin while preserving each exact canonical
   assert.equal(alias.origin, first.origin);
   assert.equal(alias.path, '/usr/bin/p.same');
   assert.notEqual(alias.path, first.path);
+});
+
+test('an explicit set selects canonical packed files in request order without AOT or digest claims', () => {
+  const {index} = fixture(), paths = ['/usr/bin/other', '/usr/bin/p'];
+  const picked = canonicalPackedFileSet(index, paths);
+  assert.deepEqual(picked, [
+    {path: paths[0], origin: `${name}_80_8`, size: 32},
+    {path: paths[1], origin, size: 64},
+  ]);
+  assert.ok(Object.isFrozen(picked) && picked.every(Object.isFrozen));
+  index.files.reverse(); paths.reverse();
+  assert.equal(picked[0].path, '/usr/bin/other', 'receipt is an independent metadata snapshot');
+});
+
+test('a packed file set refuses paths or identities without one exact nonempty member', () => {
+  const {index} = fixture(), path = index.files[0].path, alias = '/usr/bin/link';
+  for (const paths of [[], [path, path], [alias], ['/usr/../usr/bin/p']])
+    assert.throws(() => canonicalPackedFileSet(index, paths), /invalid executable file set/);
+  index.files.push({...index.files[0], path: alias});
+  assert.throws(() => canonicalPackedFileSet(index, [path, alias]), /distinct nonempty source/);
+  index.files.push({...index.files[0]});
+  assert.throws(() => canonicalPackedFileSet(index, [path]), /exactly one canonical file/);
+  Object.assign(index.files[1], {size: 0, at: 0, len: 0});
+  assert.throws(() => canonicalPackedFileSet(index, [index.files[1].path]), /distinct nonempty source/);
 });
 
 test('present source metadata never falls back when malformed, unsupported or contradictory', () => {
