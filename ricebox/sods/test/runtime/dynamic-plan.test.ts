@@ -33,6 +33,17 @@ const libcPath = lib + '/libc.so.6';
 const quiet = {write() {}, read: () => null};
 const hasErrno = (n: number) => (error: unknown) => error instanceof FsError && error.errno === n;
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const PAGE = 4096, pageDown = (n: number) => Math.floor(n / PAGE) * PAGE, pageUp = (n: number) => Math.ceil(n / PAGE) * PAGE;
+
+function relroPages(phdr: DataView, phent: number, bias: number): {start: number; end: number}[] {
+  const ranges = [];
+  for (let at = 0; at < phdr.byteLength; at += phent) {
+    if (phdr.getUint32(at, true) !== 0x6474e552) continue; // PT_GNU_RELRO
+    const addr = bias + Number(phdr.getBigUint64(at + 16, true));
+    ranges.push({start: pageDown(addr), end: pageDown(addr + Number(phdr.getBigUint64(at + 40, true)))});
+  }
+  return ranges;
+}
 
 function fixture() {
   assert.ok(root);
@@ -254,20 +265,15 @@ test('the authenticated PIE and real interpreter lay detached Linux PT_LOAD and 
       // The loader, not the VM, derives RELRO's full pages from the ELF
       // headers. Read the real headers in guest memory, not new metadata.
       const phdr = new DataView(pages.read(object.bias + spec.phdr, spec.phent * spec.phnum).buffer);
-      let relro = 0;
-      for (let at = 0; at < phdr.byteLength; at += spec.phent) {
-        if (phdr.getUint32(at, true) !== 0x6474e552) continue; // PT_GNU_RELRO
-        const addr = object.bias + Number(phdr.getBigUint64(at + 16, true));
-        const page = (n: number) => Math.floor(n / 4096) * 4096;
-        const start = page(addr), end = page(addr + Number(phdr.getBigUint64(at + 40, true)));
+      const relro = relroPages(phdr, spec.phent, object.bias);
+      for (const {start, end} of relro) {
         assert.ok(end > start, role + ' has full RELRO pages');
         assert.ok(spec.loads.some(load => (load.flags & 7) === 6 &&
-          page(object.bias + load.vaddr) <= start && object.bias + load.vaddr + load.memSize >= end));
+          pageDown(object.bias + load.vaddr) <= start && object.bias + load.vaddr + load.memSize >= end));
         assert.ok(pages.permits(start, end - start, 'write'), 'initial RELRO is writable before relocation');
         assert.equal(pages.hasText(BigInt(start)), false);
-        relro++;
       }
-      assert.equal(relro, 1, role + ' has a GNU RELRO header');
+      assert.equal(relro.length, 1, role + ' has a GNU RELRO header');
     }
     assert.ok(liveBss > 0 && w >= 2 && rx >= 2, 'both genuine objects include mapped code and data');
     assert.equal(pages.hasText(BigInt(firstPc)), true);
@@ -687,9 +693,9 @@ test('a held exec keeps unconfirmed descriptor ownership without retrying or pub
   assert.equal(closes, 1);
 });
 
-test('the same planned dependency catalogue authorizes lazy ordinary guest mmap in the checked VM', {
+test('the planned catalogue lazily maps the real guest DSO envelopes, BSS and RELRO', {
   skip: skipHeld,
-}, async () => {
+}, async t => {
   const translate = await loadTranslator(readFileSync(mappedWasm!)), describeDynamic = translate.describeDynamic;
   assert.ok(describeDynamic && translate.mapped);
   const vfs = new Vfs(), {f, sources, reads, library} = matchedSources(vfs);
@@ -713,29 +719,82 @@ test('the same planned dependency catalogue authorizes lazy ordinary guest mmap 
     p.stackLow = 4096; p.free = []; p.fixed = [];
     const vm = (p.memory = MappedVm.allocate({vfs, base: p.mapBase, pages: 1, libraries, reader})).mappedVm;
     const name = 0x10000;
-    assert.equal(call(9, name, 4096, 3, 0x32, -1, 0), BigInt(name));
-    const objects: readonly [string, Uint8Array, number][] = [[libraryPath, f.library, 0x20000], [libcPath, f.libc, 0x60000]];
-    for (const [path, bytes, bias] of objects) {
-      assert.equal(reads.get(path), undefined);
+    assert.equal(call(9, name, PAGE, 3, 0x32, -1, 0), BigInt(name));
+    const pcs: number[] = [];
+    let local: {fd: number; start: number; size: number; offset: number; pc: number} | undefined;
+    for (const [path, bytes] of [[libraryPath, f.library], [libcPath, f.libc]] as const) {
+      assert.equal(reads.has(path), false);
       vm.userMemory(p).copyOut(name, new TextEncoder().encode(path + '\0'));
       const fd = Number(call(257, -100, name, 0));
       assert.ok(fd >= 0, 'normal virtual openat selects the holding inode');
-      const segment: ElfLoadSpec['loads'][number] | undefined = describeDynamic(bytes, 'library').loads.find(s => s.flags === 5);
-      assert.ok(segment);
-      const align = (n: number) => Math.floor(n / 4096) * 4096;
-      const start: number = align(segment.vaddr) + bias, offset = align(segment.offset), pc: number = segment.vaddr + bias;
-      const size: number = Math.ceil((pc + segment.fileSize) / 4096) * 4096 - start;
-      assert.equal(call(9, start, size, 5, 0x12, fd, offset), BigInt(start));
-      assert.equal(reads.get(path), 1, 'only ordinary mmap materializes this verified member');
-      assert.equal(vm.code.find(BigInt(pc), vm.code.generation)?.text.role, 'library');
-      assert.deepEqual(vm.userMemory(p).copyIn(pc, 16), bytes.slice(segment.offset, segment.offset + 16));
-      if (path === libraryPath) {
-        library.write(0, f.library.slice(0, 1));
-        assert.equal(call(9, start, size, 5, 0x12, fd, offset), BigInt(-E.ACCES), 'the held FD does not renew an old inode grant');
-        assert.equal(vm.code.find(BigInt(pc), vm.code.generation), undefined);
+      assert.equal(reads.has(path), false, 'opening is still metadata-only');
+
+      // Ordinary contiguous ET_DYN mapping order, not a running interpreter:
+      // first reserve through the last LOAD, then overlay the exact file rows.
+      const spec: ElfLoadSpec = describeDynamic(bytes, 'library');
+      const [first, ...rest] = spec.loads, last = rest.at(-1);
+      assert.equal(first.flags, 4);
+      assert.ok(last?.flags === 6 && spec.loads.every(s => s.align === PAGE));
+      const fileEnd = last.vaddr + last.fileSize, memEnd = last.vaddr + last.memSize;
+      const fileStart = pageDown(first.vaddr), firstOffset = pageDown(first.offset), envelope = memEnd - fileStart;
+      const generation = vm.code.generation;
+      const reserve = Number(call(9, 0, envelope, 1, 2, fd, firstOffset));
+      assert.ok(reserve >= p.mapBase && reserve % PAGE === 0);
+      assert.equal(vm.code.generation, generation, 'read-only reservation publishes no text');
+      assert.equal(reads.get(path), 1, 'first mmap materializes this verified member');
+      assert.deepEqual(vm.userMemory(p).copyIn(reserve, 16), bytes.slice(firstOffset, firstOffset + 16));
+      const bias = reserve - fileStart;
+      let next = pageUp(first.vaddr + first.fileSize), snapshotEstimate = Math.min(pageUp(envelope), bytes.length - firstOffset);
+      for (const segment of rest) {
+        const at = pageDown(segment.vaddr), offset = pageDown(segment.offset), start = bias + at, pc = bias + segment.vaddr;
+        assert.equal(at, next, 'these exact files have contiguous file rows');
+        next = pageUp(segment.vaddr + segment.fileSize);
+        const size = next - at, prior = vm.code.generation;
+        const prot = ((segment.flags & 4) >> 2) | (segment.flags & 2) | ((segment.flags & 1) << 2);
+        assert.equal(call(9, start, size, prot, 0x12, fd, offset), BigInt(start));
+        assert.deepEqual(vm.userMemory(p).copyIn(pc, 16), bytes.slice(segment.offset, segment.offset + 16));
+        if (prot === 5) {
+          assert.notEqual(vm.code.generation, prior);
+          pcs.push(pc);
+          if (path === libraryPath) local = {fd, start, size, offset, pc};
+        } else {
+          assert.equal(vm.code.generation, prior, 'private data does not retire text');
+          snapshotEstimate += Math.min(size, bytes.length - offset);
+        }
       }
-      assert.equal(call(3, fd), 0n);
+
+      const textGeneration = vm.code.generation, anonStart = pageUp(fileEnd);
+      const partial = Math.min(memEnd, anonStart) - fileEnd, anon = Math.max(0, memEnd - anonStart);
+      if (partial) vm.userMemory(p).copyOut(bias + fileEnd, new Uint8Array(partial));
+      if (anon) assert.equal(call(9, bias + anonStart, anon, 3, 0x32, -1, 0), BigInt(bias + anonStart));
+      assert.deepEqual(vm.userMemory(p).copyIn(bias + fileEnd, memEnd - fileEnd), new Uint8Array(memEnd - fileEnd));
+      assert.ok(partial > 0 && (path !== libcPath || anon > 0), 'the pinned libc includes a real anonymous BSS tail');
+
+      const phdr = new DataView(vm.userMemory(p).copyIn(bias + spec.phdr, spec.phent * spec.phnum).buffer);
+      const relro = relroPages(phdr, spec.phent, bias);
+      assert.equal(relro.length, 1);
+      const [{start, end}] = relro, size = end - start;
+      assert.ok(size > 0 && vm.permits(BigInt(start), BigInt(size), 'write'));
+      assert.equal(call(10, start, size, 1), 0n);
+      assert.equal(vm.permits(BigInt(start), BigInt(size), 'write'), false);
+      assert.equal(vm.permits(BigInt(start), BigInt(size), 'read'), true);
+      assert.equal(vm.code.generation, textGeneration, 'BSS and RELRO change data only');
+      assert.equal(reads.get(path), 1, 'fixed rows and RELRO use the same resident source');
+      t.diagnostic(`${path}: 1 payload materialization (${bytes.length} B), ${spec.loads.length + Number(anon > 0)} mmap calls, ` +
+        `${pageUp(envelope)} B envelope, ${pageUp(anon)} B anonymous tail; estimated temporary file snapshots ${snapshotEstimate} B`);
+      if (path !== libraryPath) assert.equal(call(3, fd), 0n);
     }
+    assert.equal(pcs.length, 2);
+    for (const pc of pcs) assert.equal(vm.code.find(BigInt(pc), vm.code.generation)?.text.role, 'library');
+
+    // Keep the exact FD that was authorized to map RX for the existing
+    // withdrawal check, after both positive layouts coexist.
+    assert.ok(local);
+    const {fd, start, size, offset, pc} = local;
+    library.write(0, f.library.slice(0, 1));
+    assert.equal(call(9, start, size, 5, 0x12, fd, offset), BigInt(-E.ACCES), 'the held FD does not renew an old inode grant');
+    assert.equal(vm.code.find(BigInt(pc), vm.code.generation), undefined);
+    assert.equal(call(3, fd), 0n);
     assert.equal(k.tasks.size, 0);
     assert.equal(k.runq.length, 0);
   } finally { k.exitProcess(p, 0); k.halt(); }
