@@ -1,17 +1,20 @@
 // Linux's bounded inline mapped-memory profile. One fresh memory, no sharing
 // or reuse by the static runtime. Records and executable authority are
-// changed together. This is not yet an active guest instruction/data
-// permission backend or an exec entry point.
+// changed together. The same installed records authorize checked user
+// copies. This is not yet a translated data-access backend or exec entry.
 import {DYNAMIC_FILE_LIMIT, type ElfLoadSpec} from '../translation/dynamic-load.ts';
 import type {Translate} from '../translation/translator.ts';
 import type {Description} from './fd.ts';
 import {MappedCodeSpace, type ExecutableMapping, type MappedCodeView} from './exec/mapped-code-space.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 import {E, File, FsError, MNT, type Vfs} from './fs.ts';
+import {utf8} from './flow.ts';
 import {ReadLifetimeError, retireMemoryView} from './read-lifetime.ts';
 
 const PAGE = 4096, WASM_PAGE = 65536, LIMIT = 256 << 20, MAX_REGIONS = 4096, MAX_SOURCES = 4096;
-const MIN = 65536, R = 1, X = 4, RX = R | X;
+const MIN = 65536, R = 1, W = 2, X = 4, RX = R | X;
+export const MAPPED_COPY_LIMIT = 1 << 20;
+const PATH_LIMIT = 4096;
 const PRIVATE = 2, FIXED = 0x10, ANON = 0x20, NOREPLACE = 0x100000;
 // glibc may supply the historical DENYWRITE/EXECUTABLE hints. Neither grants permission.
 const FLAGS = PRIVATE | FIXED | ANON | NOREPLACE | 0x800 | 0x1000;
@@ -35,6 +38,7 @@ interface Caller {
   readonly kernel: {readonly vfs: Vfs};
   readonly memory: WebAssembly.Memory | null;
   readonly noNewPrivs: boolean;
+  readonly state: 'live' | 'zombie';
   readonly fds: {get(fd: number): Description | null};
   readIdentity(): () => void;
 }
@@ -45,6 +49,17 @@ interface MappedMemory extends WebAssembly.Memory {
   keeps: false;
   written: [number, number][];
   tainted: true;
+}
+
+export type DataAccess = 'read' | 'write';
+
+/** A scoped kernel copy capability, not a borrow of guest RAM. */
+export interface MappedUserMemory {
+  check(): void;
+  prefix(address: number, length: number, access: DataAccess): number;
+  copyIn(address: number, length: number): Uint8Array<ArrayBuffer>;
+  copyOut(address: number, from: Uint8Array): void;
+  cstring(address: number): string;
 }
 
 export class MappedVmCommitError extends Error {
@@ -111,6 +126,53 @@ export class MappedVm {
     this.#regions = [];
     this.#sources.clear();
     this.#specs = new WeakMap();
+  }
+
+  /** The installed VM records are the only source of data permissions.
+   * Copy calls can be short at a permission boundary, but never skip one. */
+  userMemory(owner: Caller): MappedUserMemory {
+    const identity = this.#pin(owner), buffer = this.memory.buffer;
+    const check = (): void => {
+      identity();
+      if (this.#busy) throw new ReadLifetimeError();
+    };
+    const prefix = (address: number, length: number, access: DataAccess): number => {
+      check();
+      this.#copyLength(length);
+      return this.#prefix(address, length, access);
+    };
+    const whole = (address: number, length: number, access: DataAccess): void => {
+      if (prefix(address, length, access) !== length) fail(E.FAULT);
+    };
+    return Object.freeze({
+      check, prefix,
+      copyIn: (address: number, length: number) => {
+        whole(address, length, 'read');
+        return length ? new Uint8Array(buffer, address, length).slice() : new Uint8Array(0);
+      },
+      copyOut: (address: number, from: Uint8Array) => {
+        whole(address, from.length, 'write');
+        if (from.length) new Uint8Array(buffer, address, from.length).set(from);
+      },
+      cstring: (address: number) => {
+        const length = prefix(address, PATH_LIMIT, 'read');
+        if (!length) throw new FsError(E.FAULT);
+        const bytes = new Uint8Array(buffer, address, length), n = bytes.indexOf(0);
+        if (n < 0) throw new FsError(length === PATH_LIMIT ? E.NAMETOOLONG : E.FAULT);
+        return utf8(bytes.subarray(0, n));
+      },
+    });
+  }
+
+  /** Whole-span data policy, also usable by a future checked CPU backend.
+   * Takes the effective address before any narrowing. A zero-size data
+   * operation accesses no memory; a retired or in-flight owner grants none. */
+  permits(address: bigint, length: bigint, access: DataAccess): boolean {
+    if (this.#closed || this.#busy || !this.#owner?.noNewPrivs || this.#owner.state !== 'live' || this.#owner.memory !== this.memory ||
+        length < 0n || length > BigInt(LIMIT)) return false;
+    if (!length) return true;
+    if (address < 0n || address > BigInt(LIMIT)) return false;
+    return this.#prefix(Number(address), Number(length), access) === Number(length);
   }
 
   mmap(owner: Caller, addr: bigint, len: bigint, prot: bigint, bits: bigint, fd: bigint, off: bigint): number {
@@ -216,12 +278,45 @@ export class MappedVm {
   }
 
   #call<T>(owner: Caller, operation: (check: () => void) => T): T {
-    if (this.#closed || this.#busy || owner !== this.#owner || owner.memory !== this.memory) throw new ReadLifetimeError();
+    const identity = this.#pin(owner);
+    this.#busy = true;
+    try { return operation(identity); }
+    finally { this.#busy = false; }
+  }
+
+  #pin(owner: Caller): () => void {
+    if (this.#closed || this.#busy || owner !== this.#owner || owner.state !== 'live' || owner.memory !== this.memory) throw new ReadLifetimeError();
     if (!owner.noNewPrivs) fail(E.PERM);
     const identity = owner.readIdentity();
-    this.#busy = true;
-    try { return operation(() => { identity(); if (this.#closed || !owner.noNewPrivs) throw new ReadLifetimeError(); }); }
-    finally { this.#busy = false; }
+    return () => {
+      identity();
+      if (this.#closed || this.#owner !== owner || !owner.noNewPrivs) throw new ReadLifetimeError();
+    };
+  }
+
+  #copyLength(length: number): void {
+    if (!Number.isSafeInteger(length) || length < 0 || length > MAPPED_COPY_LIMIT) fail(E.INVAL);
+  }
+
+  #prefix(start: number, length: number, access: DataAccess): number {
+    if (!length || !Number.isSafeInteger(start) || start < MIN || start >= LIMIT) return 0;
+    // A writable AMD64 page can also be read.
+    const flag = access === 'read' ? R | W : access === 'write' ? W : 0;
+    if (!flag) return 0;
+    // Clip without wrapping. A whole-span access still requires the
+    // entire length; a kernel transfer may use a strictly shorter prefix.
+    const end = Math.min(start + length, LIMIT, this.memory.buffer.byteLength);
+    let at = start, lo = 0, hi = this.#regions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.#regions[mid].end <= at) lo = mid + 1; else hi = mid;
+    }
+    for (let i = lo; at < end && i < this.#regions.length; i++) {
+      const pageRange = this.#regions[i];
+      if (pageRange.start > at || !(pageRange.prot & flag)) break;
+      at = Math.min(end, pageRange.end);
+    }
+    return at - start;
   }
 
   #library(node: File, bytes: Uint8Array, check: () => void): ElfLoadSpec {

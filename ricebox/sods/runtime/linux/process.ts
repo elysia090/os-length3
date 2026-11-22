@@ -44,7 +44,7 @@ import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firs
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {MappedVmCommitError} from './mapped-vm.ts';
-import {FILE_CALLS} from './sys-file.ts';
+import {FILE_CALLS, MAPPED_FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
 import {prepare, type Segment} from '../translation/share.ts';
@@ -136,6 +136,10 @@ const RLIMITS: [bigint, bigint][] = [[INF, INF], [INF, INF], [INF, INF], [BigInt
 const CLOCK = clocks();
 
 const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS, ...MOUNT_CALLS};
+// Only these handlers have a checked, bounded mapped-memory path, or
+// take no guest pointers. An unported syscall is not a static fallback.
+const MAPPED_CALLS: Calls = {...MAPPED_FILE_CALLS, 9: PROC_CALLS[9], 10: PROC_CALLS[10],
+  11: PROC_CALLS[11], 12: PROC_CALLS[12], 39: PROC_CALLS[39], 231: PROC_CALLS[231]};
 const enc = new TextEncoder();
 
 /** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS that are timed). */
@@ -1160,8 +1164,8 @@ export class Kernel implements Kern {
       if (held !== null) return held;
       call.state.screened = true;
     }
-    const handler = CALLS[call.nr];
-    if (!handler) return BigInt(-E.NOSYS);
+    const mapped = !!p.memory?.mappedVm, handler = (mapped ? MAPPED_CALLS : CALLS)[call.nr];
+    if (!handler) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
     const shares = p.maps.length > 0;
     if (shares) p.syncShared();
     // Whose call this is, while it is made: what /proc's "self" leads to. (A thread run here is `current` as it runs;
@@ -1787,6 +1791,7 @@ export class Process implements Proc {
   set memory(value: Mem | null) {
     if (value?.mappedVm) {
       if (this.kernel.shared || value.users !== 1 || value.mappedVm.memory !== value) throw new Error('Mapped memory requires one inline owner');
+      if (this.tasks.size || this.maps.length) throw new Error('Mapped memory cannot replace a live static owner');
       value.mappedVm.claim(this);
     }
     if (this.memory0 !== value) this.memory0?.mappedVm?.close();
@@ -1902,7 +1907,9 @@ export class Process implements Proc {
    * for outside it is the call's EFAULT (guest.ts).
    */
   get bytes(): Uint8Array {
-    const b = this.memory?.buffer ?? EMPTY;
+    const memory = this.memory;
+    if (memory?.mappedVm) throw new Error('Mapped memory requires a checked kernel copy');
+    const b = memory?.buffer ?? EMPTY;
     if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new GuestBytes(b); this.viewOf = new GuestView(b); }
     return this.bytesOf;
   }
@@ -1911,6 +1918,8 @@ export class Process implements Proc {
 
   /** The string at `address`, as far as its NUL: one that begins outside the memory, or runs off its end with none, is EFAULT. */
   cstring(address: number): string {
+    const vm = this.memory?.mappedVm;
+    if (vm) return vm.userMemory(this).cstring(address);
     const b = this.bytes, end = address >= 0 && address < b.length ? b.indexOf(0, address) : -1;
     if (end < 0) throw new FsError(E.FAULT);
     return utf8(b.subarray(address, end));
@@ -2018,7 +2027,9 @@ export class Process implements Proc {
       retiring.attempt(() => m.node.abandon(m));
       retiring.attempt(() => markShares(m.node));
     }
-    retiring.attempt(() => { if (!this.maps.length && this.memory && this.memory.users === 1) this.view.setInt32(SHARES, 0, true); });
+    retiring.attempt(() => {
+      if (!this.maps.length && this.memory && !this.memory.mappedVm && this.memory.users === 1) this.view.setInt32(SHARES, 0, true);
+    });
     retiring.finish();
   }
 
@@ -2365,6 +2376,7 @@ export class Task implements Thread {
 
   /** Run `image` over `memory` from here on (exec, or a new thread or process copying `from`). */
   load(image: Image, memory: Mem, from: Task | null = null): void {
+    if (memory.mappedVm) throw new Error('Mapped memory cannot run on the static task backend');
     this.image = image;
     // Its x87: a copy of the one it is made from (a new thread or process), or as they start (an exec, the first).
     const x87 = this.kernel.x87;

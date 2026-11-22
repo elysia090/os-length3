@@ -10,6 +10,7 @@ import {ReadLifetimeError} from './read-lifetime.ts';
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
 import {Listing, Made, madeOf} from './made.ts';
+import {MAPPED_COPY_LIMIT} from './mapped-vm.ts';
 import {Dir, Device, E, ending, Fifo, File, FILE_MOST, FsError, Link, Memfd, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
 import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.ts';
 import {take} from './mount.ts';
@@ -166,7 +167,9 @@ function writeStat(p: Proc, address: bigint, node: Statted, mnt: Mount | null = 
   times(72, node.atime ?? node.mtime, node.atimeNs);
   times(88, node.mtime, node.mtimeNs);
   times(104, node.ctime ?? node.mtime, undefined);
-  p.bytes.set(STAT, N(address));
+  const vm = p.memory?.mappedVm;
+  if (vm) vm.userMemory(p).copyOut(N(address), STAT);
+  else p.bytes.set(STAT, N(address));
   return 0;
 }
 
@@ -296,6 +299,8 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   const held = r.held as Description | undefined;
   const memory = !r.node && held?.node instanceof Memfd ? held.node : null;
   if (memory && resolve & (WALK.NO_XDEV | WALK.BENEATH | WALK.IN_ROOT)) fail(E.XDEV);
+  if (p.memory?.mappedVm && ((held && held.kind !== 'file' && held.kind !== 'dir') ||
+      (r.node && !(r.node instanceof File || r.node instanceof Dir)))) fail(E.OPNOTSUPP);
   if (held && !bare && (!r.node && !memory || held.kind === 'console' || held.kind.startsWith('pipe'))) return install(held);
   let node = r.node ?? memory, made = false;
   if (!node) {
@@ -1769,4 +1774,111 @@ export const FILE_CALLS: Calls = {
   316(od, oa, nd, na, flags) { return rename(this, od, oa, nd, na, flags); },
   332() { return fail(E.NOSYS); },
   439(dirfd, name, mode, flags) { return access(this, dirfd, name, mode, flags); },
+};
+
+function mappedUser(p: Proc) {
+  const vm = p.memory?.mappedVm;
+  if (!vm) throw new Error('No mapped memory owner');
+  return vm.userMemory(p);
+}
+
+/** This first profile copies at most one bounded transfer. No pipe, socket,
+ * device, pseudo-file callback, or shared file writeback is made into guest
+ * memory by borrowing its bytes. Port those paths separately before use. */
+function regularMappedFile(d: Description): File {
+  const file = d.kind === 'file' && d.node instanceof File && d.node.isFile ? d.node : fail(E.OPNOTSUPP);
+  if (file.maps?.size || madeOf(file)) fail(E.OPNOTSUPP);
+  return file;
+}
+
+function mappedOffset(offset: bigint | null, fallback: number): number {
+  const at = offset === null ? fallback : N(offset);
+  return Number.isSafeInteger(at) && at >= 0 ? at : fail(E.INVAL);
+}
+
+function mapCopyCount(count: bigint): number {
+  const n = BigInt.asIntN(64, count);
+  if (n < 0n) fail(E.FAULT);
+  return Number(n > BigInt(MAPPED_COPY_LIMIT) ? BigInt(MAPPED_COPY_LIMIT) : n);
+}
+
+function currentMappedFile(p: Proc, fd: bigint, d: Description, file: File, check: () => void): () => void {
+  const revision = d.offsetRevision, {flags, mnt} = d, table = p.fds;
+  return () => {
+    check();
+    if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.node !== file || d.offsetRevision !== revision ||
+        d.flags !== flags || d.mnt !== mnt || file.maps?.size) throw new ReadLifetimeError();
+  };
+}
+
+function mappedRead(p: Proc, fd: bigint, address: bigint, count: bigint, offset: bigint | null = null): number {
+  const d = descriptor(p, fd), access = d.flags & 3;
+  if (d.flags & O_PATH || access === O.WRONLY || access === 3) fail(E.BADF);
+  const file = regularMappedFile(d), asked = mapCopyCount(count);
+  if (!asked) return 0;
+  const user = mappedUser(p), at = N(address), length = user.prefix(at, asked, 'write');
+  if (!length) fail(E.FAULT);
+  const source = mappedOffset(offset, d.offset), ready = currentMappedFile(p, fd, d, file, user.check);
+  const bytes = new Uint8Array(length), got = file.readInto(source, bytes, 0, length, ready);
+  // No offset or guest bytes are published until the source callback has
+  // returned under the same descriptor and memory/mapping lifetime.
+  ready();
+  user.copyOut(at, bytes.subarray(0, got));
+  if (offset === null) d.offset = source + got;
+  return got;
+}
+
+function mappedWrite(p: Proc, fd: bigint, address: bigint, count: bigint, offset: bigint | null = null): number {
+  const d = descriptor(p, fd), access = d.flags & 3;
+  if (d.flags & O_PATH || !access || access === 3) fail(E.BADF);
+  const terminal = d.kind === 'console', file = terminal ? null : regularMappedFile(d), asked = mapCopyCount(count);
+  if (terminal && offset !== null) fail(E.SPIPE);
+  if (!asked) return 0;
+  const user = mappedUser(p), at = N(address), length = user.prefix(at, asked, 'read');
+  if (!length || (terminal && length !== asked)) fail(E.FAULT);
+  const bytes = user.copyIn(at, length);
+  if (!file) {
+    const table = p.fds, flags = d.flags;
+    const check = (): void => {
+      user.check();
+      if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.flags !== flags) throw new ReadLifetimeError();
+    };
+    const full = p.kernel.console.full?.();
+    check();
+    if (full) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+    p.kernel.say(d.path === 'stderr' ? 2 : 1, bytes);
+    check(); // A delivered write is not rolled back on an embedding failure.
+    return length;
+  }
+  const ready = currentMappedFile(p, fd, d, file, user.check);
+  try { file.materialize(); } finally { ready(); }
+  const dest = mappedOffset(offset, d.flags & O.APPEND ? file.size : d.offset);
+  if (dest + length > FILE_MOST) fail(E.FBIG);
+  const n = file.write(dest, bytes);
+  ready();
+  if (offset === null) d.offset = dest + n;
+  return n;
+}
+
+/** Opt-in, typed kernel-copy entry points; do not inherit FILE_CALLS. */
+export const MAPPED_FILE_CALLS: Calls = {
+  0(fd, buf, len) { return mappedRead(this, fd, buf, len); },
+  1(fd, buf, len) { return mappedWrite(this, fd, buf, len); },
+  2: FILE_CALLS[2],
+  3: FILE_CALLS[3],
+  5: FILE_CALLS[5],
+  8: FILE_CALLS[8],
+  17(fd, buf, len, off) { return mappedRead(this, fd, buf, len, off); },
+  18(fd, buf, len, off) { return mappedWrite(this, fd, buf, len, off); },
+  257: FILE_CALLS[257],
+  262(dirfd, name, st, flags) {
+    const value = this.cstring(N(name)), mode = N(flags);
+    if (mode & ~(AT.EMPTY_PATH | AT.SYMLINK_NOFOLLOW)) fail(E.INVAL);
+    if (!value && mode & AT.EMPTY_PATH) {
+      if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return writeStat(this, st, this.fs.pwd.node, this.fs.pwd.mnt);
+      return statOpen(this, descriptor(this, dirfd), st);
+    }
+    if (!value) fail(E.NOENT);
+    return statAt(this, dirfd, value, !(mode & AT.SYMLINK_NOFOLLOW), st);
+  },
 };

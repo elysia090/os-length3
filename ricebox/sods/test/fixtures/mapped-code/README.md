@@ -16,6 +16,9 @@ warm lookup reuse, and refusal of old or foreign executable extents.
 `resume.S` directly exercises the existing Linux `mprotect` and
 `exit_group` syscall handlers from translated code, including resumption
 after a nested Wasm frame is retired. It is not a guest exec test.
+The VM tests also exercise checked copies through the ordinary file
+and console syscall paths, including protection changes and callback
+lifetime. These tests do not establish compiler-side data protection.
 
 Set `SODS_TEST_DYNAMIC_ROOT` to the separate [authenticated PIE and
 DSO fixture](../dynamic/) to additionally validate biased code generated

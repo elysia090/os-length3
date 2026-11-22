@@ -148,14 +148,33 @@ without retrying the syscall. Throws used for wait, signal redirection,
 exec or exit still go to their owners. Mapped-only flag liveness does not
 change the code generated for static programs.
 
-This proves executable-mapping authority and backend resumption, not
-arbitrary guest load/store protection. Before any dynamic process can
-start, the runtime still needs mapped data protections for translated
-memory accesses and kernel copy-in/out, initial executable and stack
-publication, and a normal scheduler/task integration. Worker execution
-requires a separate synchronization proof. Tests exercise the syscall
-handlers and a small CPU fixture; they do not launch the guest loader
-or establish an app startup.
+### Bounded mapped kernel copies
+
+The installed region table is also the data permission authority. A
+checked kernel copy pins the process, current memory and mapping lifetime.
+It never lends out a guest array or DataView. Whole copies require every
+covered byte to permit the access. A regular file transfer can stop at
+the first inaccessible page, with at most 1 MiB in one copy. Path strings
+must terminate in readable pages. A file callback cannot publish a copy
+or advance its descriptor after the memory or descriptor identity changed.
+Data-only changes fence pending copies even when code generation stays
+the same.
+
+The internal mapped syscall table admits private mapping operations, a
+small set of pointer-free calls and the ported regular file/path/stat
+and console-write operations. Unported handlers return ENOSYS and
+cannot reach the static raw-memory path. Vector I/O, devices, sockets,
+signal frames, clocks and shared mappings are not enabled here. The
+static process and task backends are unchanged for ordinary memories.
+
+This proves executable-mapping authority, backend resumption and
+checked kernel copies, not arbitrary translated guest load/store
+protection. Before dynamic startup the runtime still needs checked
+compiler memory accesses (including scalar, vector, stack and bulk
+operations), initial executable and stack publication, and normal
+scheduler integration. Worker execution requires a separate
+synchronization proof. Tests do not launch the guest loader or
+establish an app startup.
 
 ## Lifetime, failure and retirement
 
