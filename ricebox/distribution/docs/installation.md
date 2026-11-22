@@ -148,11 +148,30 @@ npm init -y
 npm install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
 mkdir preview
 npm exec --offline -- ricebox-stage-shell ./ricebox.json ./preview/linux
+```
+
+If Vite is already installed in the staging project, run its local CLI from
+the same directory for a range-capable preview:
+
+```sh
+./node_modules/.bin/vite preview --outDir ./preview --base / --host 127.0.0.1 --port 8000 --strictPort
+```
+
+Confirm a real `206` response with the [pack transport check](#verify-the-static-hosts-pack-transport).
+This command does not itself configure cross-origin isolation headers. Vite is
+not required to stage the site.
+
+For a quick functional check without Vite, serve the same directory with Python:
+
+```sh
 python3 -m http.server 8000 --bind 127.0.0.1 --directory ./preview
 ```
 
-Preview `http://127.0.0.1:8000/linux/index.html`. Staging checks the selected
-environment and copies it into a new directory. It does not build, relabel,
+Python's standard server can ignore `Range` and send whole packs (`200`). Treat
+this as a smoke check, not a measure of startup time or transfer size.
+
+For either server, open `http://127.0.0.1:8000/linux/index.html`. Staging checks
+the selected environment and copies it into a new directory. It does not build, relabel,
 execute, or deploy the root. Static checks do not prove that the entry boots
 in a browser. If a disk-write error leaves a partial directory, discard it
 or use a different output path.
