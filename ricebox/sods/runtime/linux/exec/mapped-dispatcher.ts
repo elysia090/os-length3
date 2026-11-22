@@ -2,13 +2,21 @@
 // It owns code slots, not memory mappings, Linux syscalls or task scheduling.
 import type {MappedTranslate} from '../../translation/mapped.ts';
 import type {RegName} from '../parts.ts';
-import {MappedCodeChanged, type BoundText, type MappedCodeSpace} from './mapped-code-space.ts';
+import {MappedCodeChanged, type BoundText, type MappedCodeView} from './mapped-code-space.ts';
 
 const MAX_SLOTS = 65536, MAX_BYTES = 64 << 20;
 type Core = WebAssembly.Exports & {
   run(pc: bigint): void;
   table: WebAssembly.Table;
+  depth: WebAssembly.Global;
 } & Partial<Record<RegName, WebAssembly.Global>>;
+
+/** Only a syscall import that already returned may create this continuation. */
+class SyscallReturn {
+  constructor(pc: bigint, value: bigint) { this.pc = pc; this.value = value; }
+  readonly pc: bigint;
+  readonly value: bigint;
+}
 
 function words(module: WebAssembly.Module, name: string, stride: number): BigUint64Array {
   const sections = WebAssembly.Module.customSections(module, name);
@@ -19,7 +27,7 @@ function words(module: WebAssembly.Module, name: string, stride: number): BigUin
 /** One register context/table for all objects in a generation. It does not
  * share active Wasm frames across workers or return after a revoked frame. */
 export class MappedDispatcher {
-  #space: MappedCodeSpace;
+  #space: MappedCodeView;
   #compile: MappedTranslate;
   #core: Core;
   #env: WebAssembly.ModuleImports;
@@ -31,21 +39,26 @@ export class MappedDispatcher {
   #slots = 0;
   #bytes = 0;
 
-  constructor(space: MappedCodeSpace, compiler: MappedTranslate, host: WebAssembly.ModuleImports) {
+  constructor(space: MappedCodeView & {readonly memory: WebAssembly.Memory}, compiler: MappedTranslate, host: WebAssembly.ModuleImports) {
     this.#space = space;
     this.#compile = compiler;
     const module = new WebAssembly.Module(compiler.core());
-    if (WebAssembly.Module.customSections(module, 'sods.mapped-core-v1').length !== 1)
+    if (WebAssembly.Module.customSections(module, 'sods.mapped-core-v2').length !== 1)
       throw new Error('Mapped code requires its generation-aware dispatcher');
     const env: WebAssembly.ModuleImports = {};
     for (const [name, fn] of Object.entries(host)) {
       if (typeof fn !== 'function') throw new TypeError('Mapped code host imports must be callbacks');
       env[name] = (...args: unknown[]) => {
-        this.#requireLive();
+        const generation = this.#requireLive();
         const value: unknown = Reflect.apply(fn, undefined, args);
         // A host callback may have revoked a mapping even if the next guest
         // instruction is a direct edge inside the old Wasm function.
-        this.#requireLive();
+        if (generation !== this.#space.generation) {
+          const next = args[7];
+          if (name === 'syscall' && typeof next === 'bigint' && typeof value === 'bigint')
+            throw new SyscallReturn(next, value);
+          throw new MappedCodeChanged();
+        }
         return value;
       };
     }
@@ -63,13 +76,26 @@ export class MappedDispatcher {
 
   run(pc: bigint): void {
     if (this.#closed || this.#active) throw new Error('Mapped dispatcher cannot reenter');
-    const generation = this.#space.generation;
-    this.#active = generation; // Includes reentry during retirement or attachment.
-    try {
-      if (this.#epoch !== generation) { this.#forget(); this.#epoch = generation; }
-      this.#requireLive();
-      this.#core.run(BigInt.asUintN(64, pc));
-    } finally { this.#active = undefined; }
+    for (;;) {
+      const generation = this.#space.generation;
+      this.#active = generation; // Includes reentry during retirement or attachment.
+      try {
+        if (this.#epoch !== generation) { this.#forget(); this.#epoch = generation; }
+        this.#requireLive();
+        this.#core.run(BigInt.asUintN(64, pc));
+        return;
+      } catch (error) {
+        if (!(error instanceof SyscallReturn)) throw error;
+        // SYSCALL saved general, vector and flag state before calling out.
+        // The normal post-import Wasm cannot restore RAX/RCX in this case.
+        // Use the same architectural result and resume after, not at, the
+        // completed syscall. Keep the remaining budget and discard depth.
+        this.#core.r0!.value = BigInt.asIntN(64, error.value);
+        this.#core.r1!.value = BigInt.asIntN(64, error.pc);
+        this.#core.depth.value = 0;
+        pc = error.pc;
+      } finally { this.#active = undefined; }
+    }
   }
 
   close(): void {

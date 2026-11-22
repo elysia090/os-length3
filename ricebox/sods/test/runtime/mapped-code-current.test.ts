@@ -127,13 +127,13 @@ test('two compiled objects share registers, with private table entries scoped to
       assert.ok(retired >= 3, 'old code handles are retired before new dispatch');
 
       mode = 'invalidate';
-      assert.throws(enter, MappedCodeChanged);
+      assert.throws(enter, e => e instanceof UnmappedPc && e.pc > pc && e.pc < pc + BigInt(aText.text.length));
       assert.equal(exits, 3, 'the old Wasm frame may not continue after a host mapping update');
       assert.throws(enter, e => e instanceof UnmappedPc && e.pc === pc);
 
       space.bind(aText);
       mode = 'noexec';
-      assert.throws(enter, MappedCodeChanged);
+      assert.throws(enter, e => e instanceof UnmappedPc && e.pc > pc && e.pc < pc + BigInt(aText.text.length));
       vfs.mount.flags &= ~MNT.NOEXEC;
       assert.throws(enter, e => e instanceof UnmappedPc && e.pc === pc, 'resetting a mount flag does not revive an old generation');
       assert.equal(exits, 3);
@@ -144,6 +144,15 @@ test('two compiled objects share registers, with private table entries scoped to
       aText.file.write(0, a.subarray(0, 1));
       assert.throws(() => space.find(pc, revision), MappedCodeChanged);
       assert.throws(() => space.bind(aText), hasErrno(E.ACCES), 'the old inode capability is not reissued after a write');
+
+      space.bind(replaced);
+      const installing = space.generation, failure = new Error('VM installation failed');
+      assert.throws(() => space.replace(replaced.text.address, replaced.text.length, replaced, () => {
+        assert.throws(() => space.find(target, installing), MappedCodeChanged);
+        assert.equal(space.find(target, space.generation), undefined, 'revoke before the first write');
+        throw failure;
+      }), error => error === failure);
+      assert.equal(space.find(target, space.generation), undefined, 'a failed installation publishes no replacement code');
     } finally { dispatcher.close(); }
   } finally { rmSync(scratch, {recursive: true, force: true}); }
 });

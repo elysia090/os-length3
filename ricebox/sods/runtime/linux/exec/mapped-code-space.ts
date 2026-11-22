@@ -1,6 +1,5 @@
-// Code view of one address space. Its VM owner supplies already-established
-// private RX mappings and withdraws them before changing guest memory.
-// This is not the Linux mmap implementation or a guest permission API.
+// Code view of one address space. Its VM owner authorizes and installs
+// private RX mappings. This is not itself a Linux permission API.
 import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES} from '../../translation/dynamic-load.ts';
 import type {MappedText, MappedTranslate} from '../../translation/mapped.ts';
 import {isShared} from '../../host.ts';
@@ -31,6 +30,8 @@ interface ActiveText {
   readonly size: number;
   live(): boolean;
 }
+
+export type MappedCodeView = Pick<MappedCodeSpace, 'generation' | 'find'>;
 
 export class MappedCodeChanged extends Error {
   constructor() { super('Mapped executable code no longer belongs to the running generation'); this.name = 'MappedCodeChanged'; }
@@ -63,33 +64,55 @@ export class MappedCodeSpace {
 
   /** Bind the exact file-backed bytes already installed by the VM owner.
    * Code is compiled from the captured inode snapshot, not mutable guest RAM. */
-  bind({file, mount, source, text, prot, private: privateMapping}: ExecutableMapping): void {
-    const generation = this.generation;
+  bind(mapping: ExecutableMapping): void {
+    this.replace(mapping.text.address, mapping.text.length, mapping, () => {}, {replace: false});
+  }
+
+  /** Check every fallible source operation first, fence any old code before
+   * the VM installs its bytes, and publish only after checking those bytes.
+   * Installation itself must not call an embedding source or run guest code. */
+  replace(address: number, length: number, mapping: ExecutableMapping | null, install: () => void,
+      {replace = true, ready}: {replace?: boolean; ready?: () => void} = {}): void {
+    this.#extent(address, length);
+    const generation = this.generation, before = this.#text;
+    const retained = replace ? before.filter(t => !overlap(t.bound.text, address, length)) : before;
+    if (mapping && (mapping.text.address < address || mapping.text.address + mapping.text.length > address + length))
+      throw new FsError(E.INVAL);
+    const staged = mapping && this.#stage(mapping, retained, generation);
+    ready?.(); // Grow if needed, without overwriting any already mapped bytes.
+    if (generation !== this.generation) throw new MappedCodeChanged();
+    if (retained.length !== before.length) this.#publish(retained);
+    const installing = this.#epoch;
+    install();
+    if (installing !== this.generation) throw new MappedCodeChanged();
+    if (!staged) return;
+    staged.checkInstalled();
+    this.#publish([...retained, staged.active]);
+  }
+
+  #stage({file, mount, source, text, prot, private: privateMapping}: ExecutableMapping, retained: ActiveText[], generation: object) {
     if (prot !== PROT_RX || privateMapping !== true || mount.flags & MNT.NOEXEC) throw new FsError(E.ACCES);
     const captured = executableSourceFor(source, this.#vfs);
-    const {space, parent, point} = mount;
-    const live = (): boolean => file === captured.node && unchangedExecutableSource(captured) &&
-      !file.maps?.size && (mount.flags & MNT.NOEXEC) === 0 && mount.space === space && mount.parent === parent && mount.point === point;
+    const {space, parent, point, execRevision} = mount;
+    const live = (): boolean => file === captured.node && unchangedExecutableSource(captured) && !(file.mode & 0o6000) &&
+      !file.maps?.size && (mount.flags & MNT.NOEXEC) === 0 && mount.execRevision === execRevision &&
+      mount.space === space && mount.parent === parent && mount.point === point;
     if (!live()) throw new FsError(E.ACCES);
     const extent = Object.freeze({...text});
     const {address, offset, length, bias, role} = extent;
     if (!Object.hasOwn(DYNAMIC_ROLES, role) || !Number.isInteger(bias) || bias < 0 || bias >= LIMIT ||
         !Number.isInteger(address) || !Number.isInteger(offset) || !Number.isInteger(length) ||
-        address < 4096 || offset < 0 || length <= 0 || address + length > Math.min(LIMIT, this.memory.buffer.byteLength) ||
+        address < 4096 || offset < 0 || length <= 0 || address + length > LIMIT ||
         offset + length > captured.size || captured.size > DYNAMIC_FILE_LIMIT) throw new FsError(E.INVAL);
-    if (this.#text.length >= MAX_RANGES ||
-        this.#text.some(({bound: {text: other}}) => address < other.address + other.length && other.address < address + length))
+    if (retained.length >= MAX_RANGES || retained.some(t => overlap(t.bound.text, address, length)))
       throw new FsError(E.INVAL);
-    const sources = new Map(this.#text.map(t => [t.file, t.size]));
+    const sources = new Map(retained.map(t => [t.file, t.size]));
     sources.set(file, captured.size);
     if ([...sources.values()].reduce((a, b) => a + b, 0) > MAX_SOURCE_BYTES) throw new FsError(E.NOMEM);
 
     let bytes: Uint8Array;
     try { bytes = file.share(); }
     finally { if (!live() || generation !== this.generation) throw new MappedCodeChanged(); }
-    const mapped = new Uint8Array(this.memory.buffer, address, length);
-    for (let i = 0; i < length; i++) if (mapped[i] !== bytes[offset + i]) throw new FsError(E.ACCES);
-    if (generation !== this.generation || !live()) throw new MappedCodeChanged();
     const bound: BoundText = Object.freeze({
       text: extent,
       compile: (epoch: object, compiler: MappedTranslate, pc: bigint, known: Set<bigint>, base: number) => {
@@ -104,20 +127,34 @@ export class MappedCodeSpace {
       },
     });
     const active: ActiveText = {bound, file, size: captured.size, live};
-    this.#publish([...this.#text, active]);
+    const checkInstalled = (): void => {
+      if (!live()) throw new MappedCodeChanged();
+      if (address + length > this.memory.buffer.byteLength) throw new FsError(E.INVAL);
+      const mapped = new Uint8Array(this.memory.buffer, address, length);
+      for (let i = 0; i < length; i++) if (mapped[i] !== bytes[offset + i]) throw new FsError(E.ACCES);
+    };
+    return {active, checkInstalled};
   }
 
   /** An overlapping unmap, replacement or permission change retires the
    * whole binding. The VM owner may then admit a new exact file mapping. */
   invalidate(address: number, length: number): void {
-    if (!Number.isInteger(address) || !Number.isInteger(length) || address < 0 || length <= 0 || address + length > LIMIT)
-      throw new RangeError('Invalid mapped code invalidation');
-    const text = this.#text.filter(({bound: {text: t}}) => t.address >= address + length || t.address + t.length <= address);
+    this.#extent(address, length);
+    const text = this.#text.filter(t => !overlap(t.bound.text, address, length));
     if (text.length !== this.#text.length) this.#publish(text);
+  }
+
+  #extent(address: number, length: number): void {
+    if (!Number.isInteger(address) || !Number.isInteger(length) || address < 0 || length <= 0 || address + length > LIMIT)
+      throw new RangeError('Invalid mapped code extent');
   }
 
   #publish(text: ActiveText[]): void {
     this.#epoch = {};
     this.#text = text;
   }
+}
+
+function overlap(text: MappedText, address: number, length: number): boolean {
+  return text.address < address + length && address < text.address + text.length;
 }

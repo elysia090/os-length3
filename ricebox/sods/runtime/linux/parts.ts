@@ -9,6 +9,7 @@ import type {Cred} from './cred.ts';
 import type {FdTable} from './fd.ts';
 import type {Dir, File, Mapping, Mount, Place, Super, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
+import type {MappedVm} from './mapped-vm.ts';
 import type {Fs, Numbers, PidNs, Spaces} from './space.ts';
 
 // ---- signals ----
@@ -103,6 +104,8 @@ export interface Slot { task: Thread; initial: [WebAssembly.Global, unknown][] }
 
 /** A process's memory, as the kernel keeps it. */
 export interface Mem extends WebAssembly.Memory {
+  /** The authoritative inline VM, only on a separately prepared memory. */
+  readonly mappedVm?: MappedVm;
   /** How many processes run on it (a vfork child and its parent, threads' processes made with CLONE_VM). */
   users: number;
   /** Where a process wrote that is not zeroed yet. */

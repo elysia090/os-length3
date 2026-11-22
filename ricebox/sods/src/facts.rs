@@ -35,8 +35,8 @@ const ENTRY: u32 = 1 << 31;
 const INDIRECT: u8 = 0x80;
 
 impl Liveness {
-    pub fn new(program: &Program) -> Liveness { Self::for_lowering(program, &[]) }
-    pub(crate) fn for_lowering(program: &Program, summaries: &[Summary]) -> Liveness {
+    pub fn new(program: &Program) -> Liveness { Self::for_lowering(program, &[], false) }
+    pub(crate) fn for_lowering(program: &Program, summaries: &[Summary], resumable_syscalls: bool) -> Liveness {
         let entries: Vec<u64> = program.entries.keys().copied().collect();
         let blocks: usize = program.functions.iter().map(|f| f.blocks.len()).sum();
         let mut l = Liveness {
@@ -70,7 +70,10 @@ impl Liveness {
                     }
                     _ => {}
                 }
-                l.used.push(b.reads);
+                // Discovery isolates each syscall into a single-instruction
+                // block. A mapped syscall may unwind to a newly compiled
+                // continuation that needs any of the incoming flags.
+                l.used.push(if resumable_syscalls && b.resumes { ALL_FLAGS as u8 } else { b.reads });
                 l.defined.push(b.writes);
                 l.to.push(to);
                 l.fixed.push(fixed);
@@ -319,7 +322,7 @@ mod tests {
         let summaries = summarize(&elf, &p);
         assert!(!summaries[0].exits);
         assert!(!summaries[0].preserves_flags());
-        let live = Liveness::for_lowering(&p, &summaries);
+        let live = Liveness::for_lowering(&p, &summaries, false);
         assert_eq!(live.handed(0x1000), 0);
         assert_eq!(live.handed(0x1004), ALL_FLAGS);
         assert_eq!(live.cases[0] as u32, ALL_FLAGS);
@@ -338,7 +341,7 @@ mod tests {
             let summaries = summarize(&elf, &p);
             assert!(!summaries[0].exits);
             assert!(!summaries[0].preserves_flags());
-            assert_eq!(Liveness::for_lowering(&p, &summaries).handed(0x1000), expected);
+            assert_eq!(Liveness::for_lowering(&p, &summaries, false).handed(0x1000), expected);
         }
     }
 
@@ -356,7 +359,7 @@ mod tests {
         assert!(!summaries[0].exits);
         assert!(!summaries[0].preserves_flags());
         assert!(summaries[1].preserves_flags());
-        let live = Liveness::for_lowering(&p, &summaries);
+        let live = Liveness::for_lowering(&p, &summaries, false);
         assert_eq!(live.handed(0x1005), 0);
         assert_eq!(live.handed(0x1000), ALL_FLAGS);
     }

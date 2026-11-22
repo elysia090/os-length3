@@ -119,11 +119,43 @@ boundary, not a launch profile:
   changes during a host callback, and retires old slots before resuming
   against another generation. This does not change the static dispatcher.
 
-This code boundary is inline only and does not implement Linux VM
-mutations, initial mapping/stack publication, or syscall resumption after
-revocation. Those need an authoritative process memory owner before the
-guest loader can run. Worker execution requires a separate synchronization
-proof. No test-only launcher supplies any of these missing steps.
+### Inline VM publication (not a launch profile)
+
+`sods/runtime/linux/mapped-vm.ts` owns a bounded private mmap arena on a
+fresh, unshared memory. It is not pooled or shared by fork/clone. Only
+memories deliberately prepared for this internal profile route mmap,
+mprotect and munmap to it; regular start and exec still use the existing
+static address space. The profile accepts a complete page-rounded RX
+PT_LOAD on a read-only descriptor to an unchanged canonical DSO in the
+same Vfs, and only on the holding mount. Setuid/setgid, noexec, shared
+mappings, mutable source identity, anonymous executable memory and
+mprotect conversions to executable are not granted. Restoring a mount
+flag cannot resurrect an older executable mapping.
+
+Source callbacks and validation precede commitment. Fixed replacement,
+unmapping and protection changes withdraw overlapping code before touching
+the memory or making another grant. New text is published only after the
+installed bytes match the checked file extent; translation never takes
+instructions from mutable guest RAM. Any loss of part of an RX range
+withdraws its entire text binding. Data-only changes do not discard
+unrelated generations. An incomplete commit retires the address space,
+rather than presenting an errno for an unconfirmed rollback.
+
+The mapped dispatcher and compiler's v2 core can unwind after a **completed**
+host syscall that changed the relevant generation. It restores the result,
+next instruction and saved flags, retires old code, and re-dispatches
+without retrying the syscall. Throws used for wait, signal redirection,
+exec or exit still go to their owners. Mapped-only flag liveness does not
+change the code generated for static programs.
+
+This proves executable-mapping authority and backend resumption, not
+arbitrary guest load/store protection. Before any dynamic process can
+start, the runtime still needs mapped data protections for translated
+memory accesses and kernel copy-in/out, initial executable and stack
+publication, and a normal scheduler/task integration. Worker execution
+requires a separate synchronization proof. Tests exercise the syscall
+handlers and a small CPU fixture; they do not launch the guest loader
+or establish an app startup.
 
 ## Lifetime, failure and retirement
 

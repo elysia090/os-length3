@@ -43,6 +43,7 @@ import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
 import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, publishInitialPid, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
+import {MappedVmCommitError} from './mapped-vm.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -752,6 +753,7 @@ export class Kernel implements Kern {
   letGo(memory: Mem | null, written: Range[] | null = null): void {
     retireMemoryView(memory);
     if (!memory || --memory.users > 0) return;
+    if (memory.mappedVm) { memory.mappedVm.close(); this.forget(memory); return; }
     if (memory.tainted) { this.forget(memory); return; }
     memory.written = merge([...memory.written, ...written ?? [[0, memory.buffer.byteLength] as Range]]);
     // A few, and none so large that keeping it would hold much of what the host has to spare.
@@ -1173,10 +1175,10 @@ export class Kernel implements Kern {
       if (TRACE_SYSCALLS) console.error(`[${t.tid}]   = ${BigInt.asIntN(64, v)}`);
       return v;
     } catch (error) {
-      if (error instanceof ReadLifetimeError) {
+      if (error instanceof ReadLifetimeError || error instanceof MappedVmCommitError) {
         try {
-          // The callback may have replaced or renewed memory. Ordinary unmap
-          // would settle unrelated/new bytes into the old file's canonical data.
+          // A callback or failed installation may have left different bytes.
+          // Ordinary unmap must not settle these into old canonical data.
           const invalid = p.maps; p.maps = [];
           for (const m of invalid) m.node.abandon(m);
           this.exitProcess(p, SIG.KILL);
@@ -1782,7 +1784,15 @@ export class Process implements Proc {
   private image0!: Image;
   private readGeneration: object = {};
   get memory(): Mem | null { return this.memory0; }
-  set memory(value: Mem | null) { this.readGeneration = {}; this.memory0 = value; }
+  set memory(value: Mem | null) {
+    if (value?.mappedVm) {
+      if (this.kernel.shared || value.users !== 1 || value.mappedVm.memory !== value) throw new Error('Mapped memory requires one inline owner');
+      value.mappedVm.claim(this);
+    }
+    if (this.memory0 !== value) this.memory0?.mappedVm?.close();
+    this.readGeneration = {};
+    this.memory0 = value;
+  }
   get image(): Image { return this.image0; }
   set image(value: Image) { this.readGeneration = {}; this.image0 = value; }
   /** Capture identity, not a guest view. Shared byte stores do not retire it. */
@@ -1961,6 +1971,7 @@ export class Process implements Proc {
 
   /** Bytes [start, start + length) of memory are `node`'s from `off` on, both ways (MAP_SHARED). */
   mapShared(node: File, start: number, length: number, off: number): void {
+    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
     retireMemoryView(this.memory);
     const m: Shared = {proc: this, node, start, length, off};
     node.map(m);
@@ -2037,7 +2048,10 @@ export class Process implements Proc {
   }
 
   /** Replace the calling process's image through the same transaction as start(). */
-  execve(path: string, argv: string[], env: string[]): void { replaceExec<Process, Image, Task>(this, {path, argv, env}); }
+  execve(path: string, argv: string[], env: string[]): void {
+    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
+    replaceExec<Process, Image, Task>(this, {path, argv, env});
+  }
 
   // ---- fork ----
 
@@ -2099,6 +2113,7 @@ export class Process implements Proc {
    * memory is a copy, or this very memory with CLONE_VM. It is ready to run.
    */
   forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, fs = false, ns = null, cred = null, cgroup = null, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false, prepareNamespaces}: ForkOptions = {}): Process {
+    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
     const k = this.kernel, t = this.task;
     const unchanged = forkIdentity(this);
     try { this.syncShared(true); }
@@ -2237,6 +2252,7 @@ export class Process implements Proc {
 
   /** A new thread of this process (clone with CLONE_THREAD): the caller's registers, rax 0, on `stack`. */
   newThread(resume: bigint, stack: bigint, tls: bigint | null): Task {
+    if (this.memory?.mappedVm) throw new FsError(E.OPNOTSUPP);
     const k = this.kernel, t = this.task;
     const nt = k.newTask(this);
     nt.mask = t.mask;

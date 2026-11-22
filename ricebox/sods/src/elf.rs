@@ -85,6 +85,8 @@ pub struct Elf {
     pub tls: Option<Tls>,
     pub phoff: u64,
     pub phnum: u64,
+    #[cfg(feature = "mapped-code")]
+    pub(crate) mapped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -156,11 +158,20 @@ impl Elf {
             entry: vaddr, segments: vec![Segment { offset: 0, vaddr, memsz: len as u64, data, executable: true, writable: false }],
             symbols: Vec::new(), relocation_targets: Vec::new(), data_pointers: Vec::new(), fixed: false, relative_slots: Vec::new(),
             tls: None, phoff: 0, phnum: 0,
+            #[cfg(feature = "mapped-code")]
+            mapped: false,
         }
     }
 }
 
 impl Elf {
+    pub(crate) const fn resumable_syscalls(&self) -> bool {
+        #[cfg(feature = "mapped-code")]
+        { self.mapped }
+        #[cfg(not(feature = "mapped-code"))]
+        { false }
+    }
+
     pub fn parse(file: &[u8]) -> Result<Elf, Error> {
         Elf::parse_owned(file.to_vec())
     }
@@ -327,7 +338,10 @@ impl Elf {
         relocation_targets.dedup();
         relative_slots.sort_unstable();
         relative_slots.dedup();
-        let mut elf = Elf { entry, segments, symbols, relocation_targets, data_pointers, fixed: !pie, relative_slots, tls, phoff, phnum };
+        let mut elf = Elf { entry, segments, symbols, relocation_targets, data_pointers, fixed: !pie, relative_slots, tls, phoff, phnum,
+            #[cfg(feature = "mapped-code")]
+            mapped: false,
+        };
         // Slots inside code are rip-relative operands, not data tables.
         let slots = std::mem::take(&mut elf.relative_slots);
         elf.relative_slots = slots.into_iter().filter(|&p| !elf.is_code(p) && elf.read_i32(p).is_some()).collect();

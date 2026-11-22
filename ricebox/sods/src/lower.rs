@@ -26,6 +26,7 @@ pub struct Lowering<'p> {
     pub handed: &'p Liveness,
     pub summaries: &'p [Summary],
     pub trace: bool,
+    pub resumable_syscalls: bool,
 }
 
 /// Where arithmetic flags live when a known call returns.
@@ -274,7 +275,7 @@ fn clean_loops(function: &Function, s: &mut Frame) -> bool {
 /// loop, no br_table, and with no call no resume either); V8's first tier checks the stack at each loop's head and
 /// zeroes the locals of a function with more than a few.
 pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report, frame: &mut Frame, out: &mut Vec<u8>) {
-    let Lowering { elf, program, handed, summaries, trace } = *cx;
+    let Lowering { elf, program, handed, summaries, trace, resumable_syscalls } = *cx;
     let function = &program.functions[index as usize];
     let n = function.blocks.len();
     // Whether each block is an entry, found once here.
@@ -377,6 +378,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.fused = Some(*i);
                 continue;
             }
+            if resumable_syscalls && i.mnemonic() == Mnemonic::Syscall { fx.save_flags(ALL_FLAGS); }
             fx.instruction(i, needed[j] != 0);
         }
         let term = code[last];

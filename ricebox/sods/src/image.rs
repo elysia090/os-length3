@@ -181,8 +181,9 @@ fn run_loop(code: &mut Out) {
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
 fn lower_all(elf: &Elf, program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
     let summaries = summarize(elf, program);
-    let handed = Liveness::for_lowering(program, &summaries);
-    let cx = Lowering { elf, program, handed: &handed, summaries: &summaries, trace: options.trace };
+    let resumable_syscalls = elf.resumable_syscalls();
+    let handed = Liveness::for_lowering(program, &summaries, resumable_syscalls);
+    let cx = Lowering { elf, program, handed: &handed, summaries: &summaries, trace: options.trace, resumable_syscalls };
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
@@ -447,7 +448,7 @@ pub(crate) fn mapped_core() -> Vec<u8> {
     math_helpers(&mut code);
     mapped_lookup(&mut code);
     run_loop(&mut code);
-    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v1"), data: Cow::Borrowed(&[]) };
+    let abi = CustomSection { name: Cow::Borrowed("sods.mapped-core-v2"), data: Cow::Borrowed(&[]) };
     code.finish(None, &[&abi])
 }
 

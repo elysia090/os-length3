@@ -214,7 +214,7 @@ impl LoadSpec {
             entry: address,
             segments: vec![Segment {offset, vaddr: address, memsz: length, data, executable: true, writable: false}],
             symbols: Vec::new(), relocation_targets: Vec::new(), data_pointers: Vec::new(),
-            fixed: false, relative_slots: Vec::new(), tls: None, phoff: 0, phnum: 0,
+            fixed: false, relative_slots: Vec::new(), tls: None, phoff: 0, phnum: 0, mapped: true,
         })
     }
 

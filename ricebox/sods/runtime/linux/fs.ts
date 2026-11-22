@@ -578,7 +578,15 @@ export class Mount {
   rootDir: Dir | null = null;
   rootName = '';
   readonly children = new Set<Mount>();
-  flags = 0;
+  #flags = 0;
+  #execRevision = 0;
+  get flags(): number { return this.#flags; }
+  set flags(flags: number) {
+    if ((flags ^ this.#flags) & MNT.NOEXEC) this.#execRevision++;
+    this.#flags = flags;
+  }
+  /** Changing and restoring NOEXEC does not restore an old code grant. */
+  get execRevision(): number { return this.#execRevision; }
   /** How what is mounted under it spreads: to its peers (`group`), from its master (`master`), or neither; `unbindable`: nor copied. */
   group = 0;
   master = 0;

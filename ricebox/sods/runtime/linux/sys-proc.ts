@@ -648,6 +648,7 @@ function names(p: Proc, address: bigint, length: bigint): string {
 
 export const PROC_CALLS: Calls = {
   9(addr, len, prot, flags, fd, off) {
+    if (this.memory?.mappedVm) return this.memory.mappedVm.mmap(this, addr, len, prot, flags, fd, off);
     const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20, shared = (N(flags) & 3) !== 2;
     if (length <= 0) fail(E.INVAL);
     const d = anonymous ? null : this.fds.get(N(fd));
@@ -688,14 +689,19 @@ export const PROC_CALLS: Calls = {
   // mprotect is not enforced. A program's read-only bytes made writable may change, so its memory is not given to the
   // next run of it as holding them (Kernel.takeMemory).
   10(addr, len, prot) {
+    if (this.memory?.mappedVm) return this.memory.mappedVm.mprotect(this, addr, len, prot);
     const a = N(addr), b = a + N(len);
     if (N(prot) & 2 && this.image?.facts.readOnly?.some(([x, y]) => a < y && x < b)) this.memory!.imageOf = null;
     return 0;
   },
-  11(addr, len) { this.unmapShared(N(addr), N(len)); this.release(N(addr), N(len)); return 0; },
+  11(addr, len) {
+    if (this.memory?.mappedVm) return this.memory.mappedVm.munmap(this, addr, len);
+    this.unmapShared(N(addr), N(len)); this.release(N(addr), N(len)); return 0;
+  },
   12() { return this.mapBase; }, // brk never grows; libc then uses mmap
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.ts YIELDS)
   25(old, oldLength, newLength) {
+    if (this.memory?.mappedVm) fail(E.OPNOTSUPP);
     // Resolve growing file tails before changing either mapping. Keep snapshots:
     // reserving a new region may zero memory that an embedding source aliases.
     const moved = this.maps.filter((m) => m.start === N(old));
@@ -722,6 +728,7 @@ export const PROC_CALLS: Calls = {
     // mapping's read as the file is (what was written through it is the file's already).
     const a = N(addr), b = a + N(len);
     if (N(advice) !== 4 && N(advice) !== 8) return 0;
+    if (this.memory?.mappedVm) fail(E.OPNOTSUPP);
     const maps = this.sharedIn(a, N(len)), restore: [number, Uint8Array][] = [];
     if (maps.length) {
       const identity = this.readIdentity();

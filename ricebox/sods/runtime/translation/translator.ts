@@ -25,7 +25,7 @@ interface Exports {
   sods_translate_more(handle: number, seeds: number, count: number, base: number): number;
   sods_close(handle: number): void;
   sods_describe_dynamic_v1?(elf: number, length: number, role: number): number;
-  sods_mapped_core_v1?(): number;
+  sods_mapped_core_v2?(): number;
   sods_open_mapped_v1?(elf: number, length: number, role: number, bias: number, address: number,
     offset: number, bytes: number, known: number, nKnown: number): number;
   sods_unzstd(at: number, length: number, size: number): number;
@@ -142,7 +142,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     open.delete(handle);
   };
   let translatorEpoch: object = {};
-  if (x.sods_mapped_core_v1 && x.sods_open_mapped_v1) {
+  if (x.sods_mapped_core_v2 && x.sods_open_mapped_v1) {
     // Preserve parsed ELF bytes per authorized text generation. The old
     // Wasm instance itself is not retained when the translator is renewed.
     const sources = new WeakMap<Set<bigint>, {epoch: object; handle: number; elf: Uint8Array; text: MappedText}>();
@@ -161,7 +161,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
       } finally { x.sods_free(k, list.length * 8); }
     };
     const mapped: MappedTranslate = {
-      core: () => output(x.sods_mapped_core_v1!()),
+      core: () => output(x.sods_mapped_core_v2!()),
       more(elf, text, address, known, base) {
         const cached = sources.get(known);
         if (cached && (cached.elf !== elf || cached.text !== text)) throw new Error('Mapped translator source identity changed');
