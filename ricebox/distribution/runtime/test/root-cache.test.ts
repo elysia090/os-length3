@@ -269,6 +269,59 @@ test('the page owner aborts pending asset checks and cannot replace its checker'
   assert.deepEqual({created, stopped}, {created: 1, stopped: 1});
 });
 
+test('an opted-in checker settles lends and cache writes before resting, then reopens for later work', async t => {
+  const base = '/layers/', f = fixture(t, base), owner = new AbortController();
+  t.mock.timers.enable({apis: ['setTimeout']});
+  type Job = {id: number; bytes?: ArrayBuffer; keep?: {url: string; parts: Uint8Array[]}};
+  const workers: CheckWorker[] = [];
+  class CheckWorker extends EventTarget {
+    jobs: Job[] = [];
+    stopped = 0;
+    constructor() { super(); workers.push(this); }
+    postMessage(job: Job, transfer: ArrayBuffer[]) { this.jobs.push(structuredClone(job, {transfer})); }
+    reply(data: object) { this.dispatchEvent(new MessageEvent('message', {data})); }
+    terminate() { this.stopped++; }
+  }
+  f.install('Worker', CheckWorker);
+  const storage = createAssetCache({base, usedKey: 'used', checkSignal: owner.signal});
+  storage.worker();
+  t.mock.timers.tick(5_000);
+  assert.equal(workers[0]!.stopped, 0, 'do not age out a cold bootstrap');
+  const lent = Uint8Array.of(2, 3);
+  const pending = storage.checked(lent, false, true);
+  const keep = storage.keep(base + 'file', Uint8Array.of(5, 7));
+  await new Promise(resolve => setImmediate(resolve));
+  storage.restChecker();
+  const first = workers[0]!;
+  const [checkJob, storeJob] = first.jobs;
+  assert.ok(checkJob?.bytes && storeJob?.keep);
+  assert.equal(lent.byteLength, 0);
+  t.mock.timers.tick(5_000);
+  assert.equal(first.stopped, 0, 'do not strand transferred bytes');
+  first.reply({id: checkJob.id, bytes: checkJob.bytes, sha256: hash(Uint8Array.of(2, 3))});
+  assert.deepEqual((await pending).bytes, Uint8Array.of(2, 3));
+  t.mock.timers.tick(5_000);
+  assert.equal(first.stopped, 0, 'wait for the cache write as well');
+  const saved = Uint8Array.from(storeJob.keep.parts[0]!);
+  await f.cache.put(storeJob.keep.url, new Response(saved));
+  first.reply({id: storeJob.id, size: saved.length});
+  assert.equal(await keep, true);
+  t.mock.timers.tick(500);
+  assert.equal(first.stopped, 1);
+  assert.deepEqual(new Uint8Array(await (await f.cache.match(base + 'file'))!.arrayBuffer()), saved);
+
+  const later = storage.checked(Uint8Array.of(11), false, true);
+  const second = workers[1]!, reply = second.jobs[0]!;
+  assert.equal(workers.length, 2);
+  first.reply({id: reply.id, bytes: Uint8Array.of(0).buffer, sha256: 'old'});
+  second.reply({id: reply.id, bytes: reply.bytes, sha256: hash(Uint8Array.of(11))});
+  assert.deepEqual((await later).bytes, Uint8Array.of(11));
+  owner.abort();
+  t.mock.timers.tick(5_000);
+  assert.deepEqual(workers.map(w => w.stopped), [1, 1]);
+  assert.throws(() => storage.worker(), {name: 'AbortError'});
+});
+
 function addStartup(f: ReturnType<typeof fixture>, path: string, source: Uint8Array, wasm: Uint8Array) {
   const elf = f.blob(source), translated = f.blob(wasm);
   f.index.files.push({path, pack: 0, mode: 0o755, size: source.length, at: 32, len: source.length, raw: true});

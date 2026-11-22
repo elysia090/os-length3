@@ -62,8 +62,24 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
   let checker: Worker | null | undefined;
   let asking = 0;
   const answers = new Map<number, (reply: AssetReply) => void>();
+  const IDLE_MS = 500;
+  let rest = false, idle: ReturnType<typeof setTimeout> | undefined;
+  function cancelIdle() { clearTimeout(idle); idle = undefined; }
+  function considerIdle(w: Worker | null | undefined) {
+    if (!rest || !w || checker !== w || answers.size || idle !== undefined) return;
+    idle = setTimeout(() => {
+      idle = undefined;
+      if (checker !== w || answers.size) return;
+      checker = undefined; // Later cache/check work can use a fresh checker.
+      try { w.terminate(); } catch { if (checker === undefined) checker = null; }
+    }, IDLE_MS);
+  }
+  /** An opt-in bootstrap is verified. Retire only after the last admitted response,
+   * including writes, and leave a short window for late cache operations. */
+  function restChecker() { rest = true; considerIdle(checker); }
   function stopChecker(w: Worker, error: string) {
     if (checker !== w) return;
+    cancelIdle();
     checker = null;
     for (const answer of answers.values()) answer({error});
     answers.clear();
@@ -79,10 +95,12 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
       const w = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
       checker = w;
       w.addEventListener('message', e => {
+        if (checker !== w) return;
         const reply = e.data as AssetReply & {id: number};
         const answer = answers.get(reply.id);
         answers.delete(reply.id);
         answer?.(reply);
+        considerIdle(w);
       });
       const lost = () => stopChecker(w, 'Asset checker response lost');
       w.addEventListener('error', lost);
@@ -93,6 +111,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
 
   /** Null means sending failed before the Worker took ownership. */
   function send(to: Worker, message: AssetRequest, transfer: ArrayBuffer[]): Promise<AssetReply | null> {
+    cancelIdle();
     const id = ++asking;
     return new Promise(resolve => {
       answers.set(id, resolve);
@@ -100,6 +119,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
       catch {
         answers.delete(id);
         resolve(null);
+        considerIdle(to);
       }
     });
   }
@@ -230,5 +250,5 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
     } catch { /* nothing remembered */ }
   }
 
-  return {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers};
+  return {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers, restChecker};
 }

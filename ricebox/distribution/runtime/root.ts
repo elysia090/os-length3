@@ -24,6 +24,8 @@ export interface RootConfig {
   oldCaches?: readonly string[];
   /** Close this loader’s asset-check admission with its host, not its guest Workers. */
   checkSignal?: AbortSignal;
+  /** Let the drained asset-check Worker rest after the prepared root has loaded. */
+  restCheckerAfterLoad?: boolean;
   message: NonNullable<import('./download.ts').Options['message']>;
   missing(): string;
   errorText(error: unknown): string;
@@ -42,7 +44,7 @@ export function createRoot(config: RootConfig) {
   const startupPrograms = config.first ?? FIRST;
   const threadsApart = canRunApart;
   const BASE = config.base;
-  const {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers} =
+  const {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers, restChecker} =
     createAssetCache(config);
 
   const watchers = new Set<(s: Stage) => void>();
@@ -499,7 +501,10 @@ export function createRoot(config: RootConfig) {
     return job;
   }
   const execution = createExecutionProfile({first: startupPrograms, worker: rootWorker, save,
-    ready: () => tell({at: 'ready'}), failed: error => tell({at: 'failed', message: config.errorText(error)}),
+    ready: () => {
+      if (config.restCheckerAfterLoad) restChecker();
+      tell({at: 'ready'});
+    }, failed: error => tell({at: 'failed', message: config.errorText(error)}),
     executable: (root, t, quiet) => preparedHot(root.index, root.generation, t, quiet),
     async load() {
       worker();

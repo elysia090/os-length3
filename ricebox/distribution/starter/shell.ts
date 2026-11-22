@@ -224,7 +224,7 @@ async function start() {
     }
     const prefix = 'ricebox-terminal:' + base;
     const {root} = page ??= {binding, root: runtime.createRoot({base, first: [plan.program],
-      usedKey: prefix + ':used', planKey: prefix + ':plan', checkSignal: pageLifetime.signal,
+      usedKey: prefix + ':used', planKey: prefix + ':plan', checkSignal: pageLifetime.signal, restCheckerAfterLoad: true,
       message: key => key, missing: () => 'Missing staged guest assets.', errorText: detail})};
     const ready = await root.execution.load();
     if (attempt !== current) return;
