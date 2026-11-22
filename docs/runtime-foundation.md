@@ -312,9 +312,15 @@ remain fenced until then, or through retirement if that proof is revoked.
 A rejected preflight leaves the receipt available for discard; uncertain
 publication retains the exact owner without retry.
 The pinned fixture verifies publication and retirement without running
-the linker. Distribution provisioning, loader ABI, regular exec, signals,
-faults and Worker execution still need proof. Default PT_INTERP exec is
-still refused.
+the linker. The internal fresh-init pilot uses the same private working
+directory, console and first-Task ownership as static start; mapped stdout
+and stderr are explicitly write-only. It uses a provisional PID 1 in the
+held image and reserves the number only at publication. Confirmed discard
+does not consume it or report a guest exit. The receipt uses only inputs
+already authenticated in that guest root. There is no automatic
+publication or fallback. Distribution provisioning, loader ABI,
+regular exec, signals, faults and Worker execution still need proof.
+Default PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

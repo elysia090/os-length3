@@ -116,10 +116,11 @@ function regions(object: PlacedObject, verify: () => void): InitialMappedRegion[
 const placed = ({path, bias, start, end}: PlacedObject): PlacedImage => Object.freeze({path, bias, start, end});
 
 export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequest, sources: DynamicSources,
-    reader: Pick<Translate, 'describeDynamic' | 'notProgram' | 'mapped'>): DetachedDynamicImage {
+    reader: Pick<Translate, 'describeDynamic' | 'notProgram' | 'mapped'>, firstTask?: () => object): DetachedDynamicImage {
   const {describeDynamic, mapped: compiler} = reader;
   if (!describeDynamic) throw new Error('This Sods translator has no dynamic load-spec support');
   const task = process.own, scope = execScope(process), {path} = request;
+  if (firstTask && (task || !compiler)) throw new ExecPreparationChangedError();
   if (typeof path !== 'string' || path.includes('\0')) throw new FsError(E.INVAL);
   const argv = [...request.argv], env = [...request.env];
   if (!argv.length) argv.push('');
@@ -143,9 +144,14 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
     const view = Object.freeze({main: placed(plan.main), interpreter: placed(plan.interpreter), firstPc: plan.firstPc,
       aux: Object.freeze({...plan.aux}),
       stack: Object.freeze({stackLow: stack.stackLow, stackTop: stack.stackTop, mapBase: stack.mapBase, sp: stack.sp}), pages});
-    if (task && compiler) {
+    // An ordinary first process does not reserve its PID until its image is
+    // prepared. Inspection without a Task or this internal binder stays inert.
+    const target = firstTask ? firstTask() : task;
+    if (target && compiler) {
+      if (firstTask) verify();
+      if (process.own !== target) throw new ExecPreparationChangedError();
       const metadata = {source, exe: plan.main.path, argv, env, stack: view.stack};
-      heldImages.set(view, {process, task, staged, reader, compiler, metadata, identity, interpreterPermissions, reserved: false});
+      heldImages.set(view, {process, task: target, staged, reader, compiler, metadata, identity, interpreterPermissions, reserved: false});
     }
     return view;
   } catch (error) { pages.discard(); throw error; }

@@ -50,6 +50,37 @@ test('failed initial ordinary exec never publishes a task, cgroup member or PID'
   k.halt();
 });
 
+test('an initial exec that loses permission retires its private owners without an exit event', () => {
+  const k = bookkeeping(), refs = k.root.mnt.refs, source = k.vfs.file('/start');
+  const observed: string[] = [], candidates: Task[] = [];
+  k.newTask = p => {
+    const t = new BookkeepingTask(p);
+    candidates.push(t);
+    source.mode &= ~0o111; // The ordinary permission recheck refuses this exec.
+    const observe = (what: string) => {
+      assert.equal(p.execTransition, true);
+      assert.equal(t.dead, true);
+      assert.equal(k.initOf(), undefined);
+      observed.push(what);
+    };
+    t.end = () => observe('task');
+    p.fds.get(1)!.gone = () => observe('stdout');
+    return t;
+  };
+  assert.throws(() => k.start('/start', ['/start'], []), errno(E.ACCES));
+  assert.equal(candidates.length, 1);
+  assert.deepEqual(observed, ['task', 'stdout']);
+  const [t] = candidates, p = t.proc;
+  assert.equal(t.state, 'dead');
+  assert.equal(p.state, 'zombie');
+  assert.equal(p.own, undefined);
+  assert.equal(p.exitStatus, undefined);
+  assert.equal(p.execTransition, undefined);
+  assert.deepEqual([p.fds.holders, p.fds.slots.size, p.fs.users, k.runq.length, k.root.mnt.refs], [0, 0, 0, 0, refs]);
+  assert.equal(k.status, null);
+  k.halt();
+});
+
 test('a stopped kernel cannot publish an initial exec after its source callback returns', () => {
   const k = bookkeeping(() => { k.halt(); return artifact(); });
   assert.throws(() => k.start('/start', ['/start'], []), /Exec preparation lost/);

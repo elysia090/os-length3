@@ -4,7 +4,9 @@ import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 import {blockExecTree, captureExecCaller, checkExecTree, execMayRun, finishExecDescriptors, installExecLayout,
   installExecMetadata, replaceExec, withExecPreparation, type ExecOwners, type ExecPhase} from './exec/commit.ts';
-import {reserveInitialImage, type DetachedDynamicImage, type InitialImageLease} from './exec/dynamic-image.ts';
+import {prepareDynamicImage, reserveInitialImage, type DetachedDynamicImage, type InitialImageLease} from './exec/dynamic-image.ts';
+import type {DynamicSources} from './exec/dynamic-plan.ts';
+import type {ExecRequest} from './exec/plan.ts';
 import {MappedCodeChanged} from './exec/mapped-code-space.ts';
 import {MAPPED_ARCH_PRCTL, MappedTaskCpu} from './exec/mapped-task.ts';
 import {execScope, sourceRevision, ExecPreparationChangedError} from './exec/source.ts';
@@ -163,6 +165,7 @@ const MAPPED_CPU = Symbol('mapped Task CPU');
 const MAPPED_HANDOFF = Symbol('pending initial mapped Task');
 const HELD_MEMORY = Symbol('transfer held mapped memory');
 const HELD_TASKS = Symbol('unpublished initial handoff owners');
+const HOLD_MAPPED_INITIAL = Symbol('prepare checked inline init');
 const PUBLISH_MAPPED_INITIAL = Symbol('publish checked inline init');
 declare const initialMappedGrant: unique symbol;
 export interface InitialMappedGrant { readonly [initialMappedGrant]: true }
@@ -171,6 +174,25 @@ export interface HeldMappedTask {
   checkStart(): void;
   publishInitial(): void;
   discard(): void;
+}
+/** Internal fresh inline pilot. It does not publish or run a process. */
+export function prepareMappedInitial(kernel: Kernel, request: ExecRequest, sources: DynamicSources, cwd = '/'): HeldMappedTask {
+  return kernel[HOLD_MAPPED_INITIAL](request, sources, cwd);
+}
+
+/** Finish a confirmed private retirement without publishing an exit event. */
+function finishUnpublishedInitial(p: Process, task: Task | undefined, fs: Fs, table: FdTable): void {
+  const owner = p.own;
+  if (p.state !== 'live' || p.memory || p.fs !== fs || fs.users !== 0 || p.fds !== table || table.holders !== 0 || table.slots.size ||
+      (owner && owner !== task) || p.tasks.size > (task && p.tasks.has(task) ? 1 : 0) || (task && task.proc !== p))
+    throw new ExecPreparationChangedError();
+  p.state = 'zombie';
+  if (task) {
+    p.tasks.delete(task);
+    delete (p as Partial<Pick<Process, 'task'>>).task;
+    task.dead = true;
+    task.state = 'dead';
+  }
 }
 interface PendingMappedTask {
   readonly grant: InitialMappedGrant;
@@ -1018,45 +1040,99 @@ export class Kernel implements Kern {
     } else if (owners?.size) throw new Error('An initial handoff is already held');
   }
 
-  #withInitialStart(start: () => void, held?: Task): void {
+  #withInitialStart<R>(start: () => R, held?: Task): R {
     checkExecTree(this.vfs);
     this.#checkInitialHandoff(held);
     if (this.#starting) throw new Error('Initial process preparation is already in progress');
     this.#starting = true;
-    try { start(); }
+    try { return start(); }
     finally { this.#starting = false; }
   }
 
   private startInitial(path: string, argv: string[], env: string[], cwd: string): void {
+    this.#initialCandidate(cwd, (p, firstTask) => {
+      let task: Task | undefined;
+      replaceExec<Process, Image, Task>(p, {path, argv, env}, () => task = firstTask());
+      try { this.#publishInitial(p, task!); }
+      catch (cause) {
+        if (p.execFailure) throw cause;
+        p.retainExecFailure('initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
+      }
+    });
+  }
+
+  #initialCandidate<R>(cwd: string, prepare: (p: Process, firstTask: () => Task) => R, held = false): R {
     // The candidate owns its private Fs and descriptors, but no runnable
     // process, cgroup member or PID is published while input can still fail.
-    const p = new Process(this, null, false, false, null, null, false);
-    let task: Task | undefined, committed = false;
+    const p = new Process(this, null, false, false, null, null, false), {fds: table, fs} = p;
+    let task: Task | undefined;
     try {
       const at = walk(p, cwd, p.fs.pwd);
       if (typeof at !== 'number' && at.node) p.fs.go({mnt: at.mnt, node: at.node});
-      ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
-      replaceExec<Process, Image, Task>(p, {path, argv, env}, () => {
-        const t = task = this.newTask(p);
+      // The checked mapped writes honor open modes. Keep the legacy static
+      // descriptions unchanged; the held pilot opens its outputs O_WRONLY.
+      ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console',
+        {path: name, flags: held && fd > 0 ? 1 : 0}), {fd}));
+      return prepare(p, () => {
+        if (task) throw new ExecPreparationChangedError();
+        // The held owner is private; use PID 1 in its context without
+        // advancing the namespace until the exact publication commit.
+        const t = task = held ? new Task(p, 1) : this.newTask(p);
         p.pid = p.pgid = p.sid = t.tid;
         p.tasks.add(t);
         return p.task = t;
       });
-      committed = true;
-      this.#publishInitial(p, task!);
     } catch (cause) {
       if (p.execFailure) throw cause; // Preparation/commit already retained its owner.
-      if (committed) p.retainExecFailure('initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
-      const failures = [cause];
-      const retire = (action: () => void): void => { try { action(); } catch (cleanup) { failures.push(cleanup); } };
-      // No child was published or sent to a Worker. Do not run ordinary exit
-      // (no status, signals, or startup event for the failed candidate).
-      if (task) retire(() => task!.end());
-      retire(() => p.fs.drop());
-      retire(() => p.fds.letGo());
-      if (failures.length > 1) p.retainExecFailure('initial-preparation', new AggregateError(failures), {task, newFds: p.fds});
+      withExecPreparation(p, commit => commit(() => {
+        if (p.fds !== table || p.fs !== fs || table.holders !== 1 || fs.users !== 1 || p.memory)
+          p.retainExecFailure('initial-preparation', cause, {task, newMemory: p.memory ?? undefined, newFds: table});
+        const failures = [cause];
+        const retire = (action: () => void): void => { try { action(); } catch (cleanup) { failures.push(cleanup); } };
+        // Fence direct process calls and make its Task non-runnable before
+        // any release calls out. No guest exit, signals or startup event.
+        const t = task;
+        if (t) { t.dead = true; retire(() => t.end()); }
+        retire(() => {
+          if (p.fs !== fs || fs.users !== 1) throw new ExecPreparationChangedError();
+          fs.drop();
+        });
+        retire(() => {
+          if (p.fds !== table || table.holders !== 1) throw new ExecPreparationChangedError();
+          table.letGo();
+        });
+        if (failures.length === 1) retire(() => finishUnpublishedInitial(p, t, fs, table));
+        if (failures.length > 1) p.retainExecFailure('initial-preparation', new AggregateError(failures), {task, newFds: table});
+      }));
       throw cause;
     }
+  }
+
+  [HOLD_MAPPED_INITIAL](request: ExecRequest, sources: DynamicSources, cwd: string): HeldMappedTask {
+    return this.#withInitialStart(() => {
+      this.#schedulerEntry();
+      if (this.shared || this.status !== null || this.current || this.nextPid !== 1 ||
+          this.procs.size || this.tasks.size || this.runq.length || this.blocked.size)
+        throw new ExecPreparationChangedError();
+      const reader = Object.getOwnPropertyDescriptor(this, 'translate')?.value as Parameters<typeof prepareDynamicImage>[3] | undefined;
+      if (!reader || typeof Object.getOwnPropertyDescriptor(reader, 'describeDynamic')?.value !== 'function' ||
+          typeof Object.getOwnPropertyDescriptor(reader, 'notProgram')?.value !== 'function' ||
+          !Object.getOwnPropertyDescriptor(reader, 'mapped')?.value)
+        throw new Error('Held init requires the owning mapped translator');
+      return this.#initialCandidate(cwd, (p, firstTask) => {
+        p.noNewPrivs = true;
+        const {fds: table, fs} = p, {revision, limit} = table;
+        let image: DetachedDynamicImage | undefined;
+        try {
+          image = withExecPreparation(p, () => prepareDynamicImage(p, request, sources, reader, firstTask));
+          const t = p.task;
+          if (p.fds !== table || p.fs !== fs || table.revision !== revision || table.holders !== 1 ||
+              table.limit !== limit || fs.users !== 1 || t.tid !== 1 || p.pid !== t.tid)
+            throw new ExecPreparationChangedError();
+          return t.commitHeldMapped(t.prepareHeldMapped(image));
+        } finally { image?.pages.discard(); }
+      }, true);
+    });
   }
 
   #publishInitial(p: Process, t: Task): void {
@@ -1078,6 +1154,7 @@ export class Kernel implements Kern {
           this.#checkInitialHandoff(held);
           if (this.shared || t.kernel !== this || p.kernel !== this || this.status !== null || this.current ||
               this.procs.size || this.tasks.size || this.runq.length || this.blocked.size ||
+              (held && (p.pidns.parent !== null || this.nextPid !== 1)) ||
               p.pid !== 1 || t.tid !== p.pid || p.ppid || p.pgid !== p.pid || p.sid !== p.pid || p.pidns !== this.spaces.children ||
               p.state !== 'live' || p.children.size || p.cgroup.procs.has(p) || p.own !== t || p.tasks.size !== 1 || !p.tasks.has(t) ||
               p.memory !== cpu.memory || t.memory !== cpu.memory || cpu.memory.users !== 1 || p.fs.users !== 1 ||
@@ -1089,6 +1166,9 @@ export class Kernel implements Kern {
         fresh(); checkEntry(pc); fresh();
         commit(() => {
           try {
+            // This is the root namespace: use the same allocator without
+            // a backend callback or a nested lookup registration here.
+            if (held && number(p.pidns)[0] !== t.tid) throw new ExecPreparationChangedError();
             cpu.armFirstEntry(entry => {
               checkEntry(entry);
               if (this.#failedMapped) throw this.#failedMapped;
@@ -2697,7 +2777,8 @@ export class Task implements Thread {
       scope();
       if (k.shared || p.state !== 'live' || !p.noNewPrivs || p.memory !== memory || this[MAPPED_CPU] ||
           this.instance || p.pid !== pid || p.pgid !== pgid || p.sid !== sid ||
-          (memory === null && (p.image || this.memory !== undefined || this.resumeAt !== pc || this.call ||
+          (memory === null && (pid !== 1 || this.tid !== pid || k.nextPid !== 1 ||
+            p.image || this.memory !== undefined || this.resumeAt !== pc || this.call ||
             this.filters !== filters || this.strict !== strict || this.mask !== mask || this.pending.mask ||
             p.pending.mask || k.tasks.size || k.procs.size || k.runq.length || k.blocked.size ||
             p.ppid || p.children.size || p.pidns !== k.spaces.children || p.cgroup !== cgroup || cgroup.procs.has(p) ||
@@ -2765,17 +2846,20 @@ export class Task implements Thread {
     const p = this.proc, k = this.kernel;
     return withExecPreparation(p, () => {
       const reader = k.translate, compiler = reader?.mapped;
-      if (this[MAPPED_HANDOFF] || k[HELD_TASKS]?.size || p.pid !== this.tid || p.fds.holders !== 1)
+      if (this[MAPPED_HANDOFF] || k[HELD_TASKS]?.size || p.fds.holders !== 1)
         throw new ExecPreparationChangedError();
       if (!reader || !compiler) throw new Error('Held image requires the owning Kernel translator');
       const lifecycle = this.#unpublishedMapped(null), caller = captureExecCaller(p, this);
       const checkReader = (): void => checkMappedReader(k, reader, compiler);
       const check = (): void => { lifecycle(); checkReader(); };
       caller.check(); check();
-      const image = reserveInitialImage(view, p, this, reader, compiler);
-      (k[HELD_TASKS] ??= new Set()).add(this);
+      const owners = k[HELD_TASKS] ??= new Set();
+      if (owners.size) throw new ExecPreparationChangedError();
+      owners.add(this);
+      let image: InitialImageLease | undefined;
       let cpu: MappedTaskCpu | undefined;
       try {
+        image = reserveInitialImage(view, p, this, reader, compiler);
         cpu = this.#newMappedCpu(image.memory, compiler, 'held-initial');
         caller.check(); check(); image.check();
         cpu.setReg('r4', image.sp);
@@ -2783,8 +2867,8 @@ export class Task implements Thread {
         this[MAPPED_HANDOFF] = {grant, image, cpu, caller, check, checkReader};
         return grant;
       } catch (cause) {
-        this.#discardHeldCandidate(image, cpu, cause);
-        k[HELD_TASKS]!.delete(this);
+        if (image) this.#discardHeldCandidate(image, cpu, cause);
+        owners.delete(this);
         throw cause;
       }
     });
@@ -2863,7 +2947,7 @@ export class Task implements Thread {
               this.#checkUnpublishedHeld();
               if (!cpu.heldInitial || this.state !== 'new' ||
                   p.ppid || p.pidns !== k.spaces.children || p.pid !== this.tid || p.pgid !== p.pid || p.sid !== p.pid ||
-                  k.shared || k.status !== null || k.procs.size || k.tasks.size || k.runq.length || k.blocked.size)
+                  k.shared || k.status !== null || k.nextPid !== 1 || k.procs.size || k.tasks.size || k.runq.length || k.blocked.size)
                 throw new ExecPreparationChangedError();
             },
             publishInitial: () => k[PUBLISH_MAPPED_INITIAL](this, cpu, table, pc, checkEntry, () => { owner = undefined; }),
@@ -2919,17 +3003,9 @@ export class Task implements Thread {
           });
           retiring.finish();
           this.#checkUnpublishedHeld();
-          if (p.memory || p.fs !== fs || fs.users !== 0 || p.fds !== table)
-            throw new ExecPreparationChangedError();
+          finishUnpublishedInitial(p, this, fs, table);
           this[MAPPED_CPU] = undefined;
           delete (this as Partial<Pick<Task, 'memory'>>).memory;
-          // Like an unpublished failed fork, this owner is non-live but
-          // never becomes a waitable process or emits a guest exit.
-          p.state = 'zombie';
-          p.tasks.delete(this);
-          delete (p as Partial<Pick<Process, 'task'>>).task;
-          this.dead = true;
-          this.state = 'dead';
           k[HELD_TASKS]!.delete(this);
         } catch (cause) { p.retainExecFailure('held-mapped-handoff', cause, {task: this, newMemory, newFds}); }
       });

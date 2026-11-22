@@ -14,7 +14,7 @@ import {MappedVm} from '../../runtime/linux/mapped-vm.ts';
 import type {Mem} from '../../runtime/linux/parts.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
-import {ExecCommitError, ImageSourceChangedError, Kernel, Process} from '../../runtime/linux/process.ts';
+import {ExecCommitError, ImageSourceChangedError, Kernel, prepareMappedInitial, Process, Task, type HeldMappedTask} from '../../runtime/linux/process.ts';
 import {loadTranslator} from '../../runtime/translate.ts';
 import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 
@@ -357,7 +357,7 @@ function freshHeld(k: Kernel) {
   p.cred = p.cred.with({uid: 1001, euid: 1001, fsuid: 1001, gid: 1002, egid: 1002, fsgid: 1002,
     suid: 1003, sgid: 1004, effective: 0n, permitted: 0n, keep: true});
   p.comm = 'preparation'; p.dumpable = false;
-  const task = k.newTask(p);
+  const task = new Task(p, 1);
   p.pid = p.pgid = p.sid = task.tid;
   p.tasks.add(task); p.task = task;
   return {p, task};
@@ -553,39 +553,54 @@ test('ordinary exec metadata and descriptors commit only to the authenticated fr
   }
 });
 
-test('the exact held init receipt transfers one ordinary queue slot without executing the guest linker', {skip: skipHeld}, async () => {
+test('a fresh held init can be discarded before PID 1 is reserved, then publish without running the linker', {skip: skipHeld}, async () => {
   const translate = await loadTranslator(readFileSync(mappedWasm!)), compiler = translate.mapped!;
   const vfs = new Vfs(), {sources, reads} = matchedSources(vfs);
-  const k = new Kernel({vfs, translate, console: quiet}), {p, task} = freshHeld(k), {fds: table, fs} = p;
-  const stdout = new Description('console', {path: 'stdout'});
-  table.install(stdout, {fd: 1});
   const request = {path: mainPath, argv: [mainPath, 'queue'], env: ['LC_ALL=C']};
-  const more = compiler.more;
+  const k = new Kernel({vfs, translate, console: quiet}), more = compiler.more, refs = k.root.mnt.refs;
+  let receipt: HeldMappedTask | undefined, stopped = 0;
+  k.stopped = () => { stopped++; };
   compiler.more = () => { assert.fail('this proof must not compile any guest instructions'); };
-  const image = prepareDynamicImage(p, request, sources, translate), receipt = task.commitHeldMapped(task.prepareHeldMapped(image));
   try {
-    const memory = p.memory!, code = memory.mappedVm!.code, generation = code.generation;
-    const context = task.context(), revision = table.revision, readsBefore = [...reads];
-    assert.equal(context.rip, BigInt(image.firstPc));
-    assert.equal(k.initOf(), undefined);
+    const abandoned = receipt = prepareMappedInitial(k, request, sources, '/usr/bin');
+    abandoned.checkStart();
+    assert.equal(k.nextPid, 1, 'a prepared image does not advance the PID namespace');
     assert.deepEqual(k.runq, []);
-    receipt.publishInitial();
-    receipt.discard(); // A consumed receipt cannot retire the scheduler's owner.
-    assert.throws(() => receipt.publishInitial(), ExecPreparationChangedError);
-    assert.throws(() => receipt.checkStart(), ExecPreparationChangedError);
-    assert.equal(k.initOf(), p);
+    abandoned.discard();
+    assert.equal(k.root.mnt.refs, refs);
+    assert.equal(k.nextPid, 1);
+    assert.equal(k.initOf(), undefined);
+    assert.equal(k.status, null);
+    assert.equal(stopped, 0);
+
+    const ready = receipt = prepareMappedInitial(k, request, sources, '/usr/bin');
+    const readsBefore = [...reads];
+    ready.checkStart();
+    assert.equal(k.nextPid, 1);
+    assert.deepEqual(k.runq, []);
+    ready.publishInitial();
+    ready.discard(); // A consumed receipt cannot retire the scheduler's owner.
+    assert.throws(() => ready.publishInitial(), ExecPreparationChangedError);
+    assert.throws(() => ready.checkStart(), ExecPreparationChangedError);
+    assert.equal(k.nextPid, 2, 'only publication reserves the number');
+    const p = k.initOf()!, task = p.task, {fds: table, fs} = p;
+    assert.equal(p.pid, 1);
+    assert.equal(task.tid, 1);
+    assert.equal(fs.pwd.node, vfs.lookup('/usr/bin'));
+    assert.equal(p.noNewPrivs, true);
+    assert.equal(p.exe, mainPath);
+    assert.deepEqual([p.argv, p.env], [request.argv, request.env]);
+    const stdio = [0, 1, 2].map(fd => table.get(fd)!);
+    assert.deepEqual(stdio.map(d => [d.kind, d.path, d.flags]),
+      [['console', 'stdin', 0], ['console', 'stdout', 1], ['console', 'stderr', 1]]);
+    const memory = p.memory!, code = memory.mappedVm!.code, generation = code.generation;
+    const context = task.context();
     assert.equal(k.tasks.get(task.tid), task);
     assert.equal(p.cgroup.procs.has(p), true);
     assert.deepEqual(k.tty, {sid: p.sid, fg: p.pgid});
     assert.deepEqual(k.runq, [task]);
     assert.equal(task.state, 'ready');
-    assert.deepEqual(task.context(), context);
-    assert.equal(code.generation, generation);
     assert.equal(code.find(context.rip, generation)?.text.role, 'interpreter');
-    assert.equal(code.find(BigInt(image.aux.entry), generation)?.text.role, 'main');
-    assert.equal(p.fds, table);
-    assert.equal(table.revision, revision);
-    assert.equal(table.get(1), stdout);
     assert.deepEqual([...reads], readsBefore, 'the transfer reads no executable payload');
     assert.throws(() => p.syscall(39n, 0n, 0n, 0n, 0n, 0n, 0n), /Mapped syscall requires a confirmed first entry/);
     assert.throws(() => task.setReg(4, context.regs[4]), /Initial mapped Task registers/);
@@ -597,12 +612,12 @@ test('the exact held init receipt transfers one ordinary queue slot without exec
     k.halt();
     assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size], [0, 0, 0, 0]);
     assert.deepEqual([memory.users, table.holders, table.slots.size, fs.users], [0, 0, 0, 0]);
-    assert.equal(stdout.closed, true);
+    assert.ok(stdio.every(d => d.closed));
     assert.equal(code.find(context.rip, code.generation), undefined);
     assert.equal(k.spareMemories.includes(memory), false);
   } finally {
     compiler.more = more;
-    receipt.discard();
+    receipt?.discard();
     k.halt();
   }
 });
