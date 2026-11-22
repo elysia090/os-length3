@@ -1,7 +1,7 @@
 // Exec authority is the calling process's filesystem and credentials, not a
 // translated artifact or a path looked up again in the embedding's Vfs.
 import {MAY, may} from '../cred.ts';
-import {E, File, FsError, MNT, pathOf, walk} from '../fs.ts';
+import {E, File, FsError, MNT, WALK, pathOf, walk} from '../fs.ts';
 import type {Found} from '../fs.ts';
 import type {Proc} from '../parts.ts';
 
@@ -44,9 +44,13 @@ export interface ExecSource {
 }
 
 /** Settle a possibly dirty source mapping before capturing its revision. */
-export function execSource(process: ExecSourceOwner, path: string, scope: () => void): ExecSource {
+export function execSource(process: ExecSourceOwner, path: string, scope: () => void, fromRoot = false): ExecSource {
   let at: Found | number;
-  try { at = walk(process, path, process.fs.pwd); }
+  try {
+    at = fromRoot
+      ? walk(process, path, process.fs.root, WALK.FOLLOW | WALK.IN_ROOT | WALK.NO_MAGICLINKS)
+      : walk(process, path, process.fs.pwd);
+  }
   finally { scope(); }
   if (typeof at === 'number') throw new FsError(at);
   const {node, mnt} = at;

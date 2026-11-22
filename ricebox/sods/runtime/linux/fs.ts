@@ -520,7 +520,7 @@ export type Entry = File | Dir | Link | Fifo | SocketName | Device;
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
   XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, FBIG: 27, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
-  OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7, ROFS: 30, MLINK: 31, USERS: 87, NOTBLK: 15};
+  OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, LIBBAD: 80, TOOBIG: 7, ROFS: 30, MLINK: 31, USERS: 87, NOTBLK: 15};
 
 /**
  * A call's failure, as the errno it answers (thrown where it cannot go on; the call's value, Kernel.attempt). Not an

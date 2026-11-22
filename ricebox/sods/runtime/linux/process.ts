@@ -4,7 +4,7 @@ import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 import {blockExecTree, checkExecTree, execMayRun, replaceExec, type ExecOwners, type ExecPhase} from './exec/commit.ts';
 import {sourceRevision} from './exec/source.ts';
-import {WASM_PAGE} from './exec/stack.ts';
+import {STACK_BYTES, WASM_PAGE} from './exec/stack.ts';
 export {ImageSourceChangedError} from './exec/source.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
@@ -124,7 +124,6 @@ interface Kept extends ImageEntry { image: Image }
 export interface Pumped { status?: number; waiting?: true; until?: number }
 
 const PAGE = 4096;
-const STACK_BYTES = 8 << 20;
 /**
  * Resource limits a first process has ([soft, hard], RLIMIT_CPU on), as Linux gives them (systemd's descriptors: 1024,
  * raised to 524288 by whoever asks): unlimited is all ones.

@@ -6,6 +6,7 @@
 // fresh one from the same compiled module.
 
 import {said} from '../host.ts';
+import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES, dynamicLoadSpec, type DynamicRole, type ElfLoadSpec} from './dynamic-load.ts';
 
 /** The translator's own exports. */
 interface Exports {
@@ -22,6 +23,7 @@ interface Exports {
   sods_open(elf: number, length: number, known: number, count: number): number;
   sods_translate_more(handle: number, seeds: number, count: number, base: number): number;
   sods_close(handle: number): void;
+  sods_describe_dynamic_v1?(elf: number, length: number, role: number): number;
   sods_unzstd(at: number, length: number, size: number): number;
   sods_sha256(at: number, length: number): number;
 }
@@ -41,6 +43,8 @@ export interface Translate {
   (elf: Uint8Array): Uint8Array<ArrayBuffer>;
   /** Whether an error is this translator's rejection of its input, rather than a failure of the translator. */
   notProgram(error: unknown): boolean;
+  /** Metadata only. Older translator releases do not have this capability. */
+  describeDynamic?(elf: Uint8Array, role: DynamicRole): ElfLoadSpec;
   whole(elf: Uint8Array): Uint8Array<ArrayBuffer>;
   seeded(elf: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer>;
   more(elf: Uint8Array, seeds: (bigint | number)[], known: Set<bigint>, base: number): Uint8Array<ArrayBuffer>;
@@ -78,6 +82,13 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     return output(x.sods_translate(put(elf), elf.length), true);
   }
   translate.notProgram = (error: unknown): boolean => error instanceof NotAProgram;
+  if (x.sods_describe_dynamic_v1) translate.describeDynamic = (elf: Uint8Array, role: DynamicRole): ElfLoadSpec => {
+    if (!Object.hasOwn(DYNAMIC_ROLES, role) || !elf.length || elf.length > DYNAMIC_FILE_LIMIT)
+      throw new NotAProgram('Invalid dynamic object size or role');
+    const at = put(elf);
+    try { return dynamicLoadSpec(output(x.sods_describe_dynamic_v1!(at, elf.length, DYNAMIC_ROLES[role]), true), role); }
+    finally { x.sods_free(at, elf.length); }
+  };
   /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
   translate.whole = (elf: Uint8Array): Uint8Array<ArrayBuffer> => output(x.sods_translate_whole(put(elf), elf.length), true);
   const words = (list: (bigint | number)[]): Uint8Array<ArrayBuffer> => new Uint8Array(new BigUint64Array(list.map((w) => BigInt(w))).buffer);

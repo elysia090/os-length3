@@ -102,6 +102,24 @@ pub unsafe extern "C" fn sods_free(ptr: *mut u8, len: usize) {
     drop(Vec::from_raw_parts(ptr, 0, len));
 }
 
+/// Inspect a supported dynamic object's bounded load headers. The bytes
+/// remain the caller's allocation; this never translates or runs the image.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes from `sods_alloc`.
+#[cfg(feature = "dynamic-load-plan")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_describe_dynamic_v1(ptr: *const u8, len: usize, role: u32) -> i32 {
+    use crate::elf::load::{LoadSpec, Role};
+    let input = std::slice::from_raw_parts(ptr, len);
+    let (status, out) = match Role::from_wire(role).and_then(|role| LoadSpec::read(input, role)) {
+        Ok(spec) => (0, spec.encode()),
+        Err(error) => (1, error.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
 /// Translate the ELF at `ptr` (taken: the host does not free it). Returns
 /// 0 with the wasm module as output, or 1 with an error message as output.
 ///

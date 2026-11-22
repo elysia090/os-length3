@@ -6,6 +6,9 @@
 //! placed at `PIE_BASE`, where its startup code (musl's _dlstart) finds
 //! itself and applies those relocations as on Linux.
 
+#[cfg(any(test, all(target_arch = "wasm32", feature = "dynamic-load-plan")))]
+pub(crate) mod load;
+
 use std::fmt;
 use std::sync::Arc;
 

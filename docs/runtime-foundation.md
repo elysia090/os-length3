@@ -89,6 +89,25 @@ are not claimed to roll back.
 This boundary does not admit dynamic ELF executables. The static auxiliary
 vector and same-image memory/instance reuse remain in effect.
 
+### Dynamic load preparation (not execution)
+
+`sods/src/elf/load.rs` describes a bounded profile of AMD64 Linux ELF64
+PIEs, interpreters and shared objects. A versioned Wasm metadata export
+supplies file-backed load ranges and program-header facts when built with
+the non-default `dynamic-load-plan` feature. It never calls
+the interpreter, reads another file or resolves a shared library.
+`sods/runtime/linux/exec/dynamic-plan.ts` consumes those facts with the
+existing exec source checks. It resolves PT_INTERP from the caller's
+guest root, honors executable permissions and mounts, binds the selected
+file to the caller's authenticated source capability, and plans separate
+main/interpreter placements plus the initial entry and auxiliary facts.
+A shared library's optional PT_INTERP is not a second interpreter.
+
+The plan is not authorization to run. Normal static exec still rejects
+PT_INTERP. A later runtime change must implement file-backed code
+mapping and dispatch across objects before an execution opt-in is
+made available. No test-only launcher supplies that missing step.
+
 ## Lifetime, failure and retirement
 
 A prepared tree can outlive several rehearsals and runs. Its disposal requires

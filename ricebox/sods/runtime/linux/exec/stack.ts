@@ -5,7 +5,8 @@ import {E, FsError} from '../fs.ts';
 import type {Facts} from '../parts.ts';
 
 export const WASM_PAGE = 65536;
-const PAGE = 4096, GUARD = WASM_PAGE, STACK_BYTES = 8 << 20;
+export const STACK_BYTES = 8 << 20;
+const PAGE = 4096, GUARD = WASM_PAGE;
 const encoder = new TextEncoder();
 const down = (at: number, align: number): number => Math.floor(at / align) * align;
 
