@@ -305,11 +305,15 @@ Held image Tasks cannot be queued, run or enter the syscall table, even
 when a mapped translator is present. The held receipt can recheck the
 original mapped generation, loader and main entries and file permissions,
 stack, and dependency catalogue against the installed owner. This check
-has no publication or execution effect. Normal static start owns the existing PID, cgroup,
-terminal and queue publication path; no mapped launch uses it yet.
-Distribution-side catalogue provisioning, the remaining loader
-ABI, regular exec lifecycle, precise signals/faults and Worker execution
-still need proof. Normal PT_INTERP exec is still refused.
+has no publication or execution effect. An internal, interpreter-free
+arena's exact prepared initial Task can use the same Kernel publication
+as static start: one PID/cgroup/terminal owner and the ordinary queue.
+The original entry proof is consumed after a recheck before its first
+dispatcher turn. System calls cannot start while that proof is pending.
+Nothing admits held interpreter images or changes normal start/exec
+selection. Distribution-side catalogue provisioning, the remaining
+loader ABI, regular exec lifecycle, precise signals/faults and Worker
+execution still need proof. Normal PT_INTERP exec is still refused.
 
 ## Lifetime, failure and retirement
 

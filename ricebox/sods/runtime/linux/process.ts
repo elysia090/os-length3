@@ -163,6 +163,7 @@ const MAPPED_CPU = Symbol('mapped Task CPU');
 const MAPPED_HANDOFF = Symbol('pending initial mapped Task');
 const HELD_MEMORY = Symbol('transfer held mapped memory');
 const HELD_TASKS = Symbol('unpublished initial handoff owners');
+const PUBLISH_MAPPED_INITIAL = Symbol('publish checked inline arena init');
 declare const initialMappedGrant: unique symbol;
 export interface InitialMappedGrant { readonly [initialMappedGrant]: true }
 export interface HeldMappedTask {
@@ -188,6 +189,13 @@ interface MappedTaskCall {
 function checkMappedAdmission(t: Task): void {
   if (t.kernel?.[HELD_TASKS]?.has(t))
     throw new Error('Loader entry from a held initial Task is disabled');
+}
+function checkMappedReader(k: Kernel, reader: Translator | undefined, compiler: MappedTranslate): void {
+  // These are the normal Kernel/translator's own data slots. Do not
+  // invoke a reader accessor at an ownership boundary.
+  if (!reader || Object.getOwnPropertyDescriptor(k, 'translate')?.value !== reader ||
+      Object.getOwnPropertyDescriptor(reader, 'mapped')?.value !== compiler)
+    throw new ExecPreparationChangedError();
 }
 const enc = new TextEncoder();
 
@@ -999,11 +1007,15 @@ export class Kernel implements Kern {
 
   /** Create the first process (pid 1, a session and group of its own, in front on the console). */
   start(path: string, argv: string[], env: string[], cwd = '/'): void {
+    this.#withInitialStart(() => this.startInitial(path, argv, env, cwd));
+  }
+
+  #withInitialStart(start: () => void): void {
     checkExecTree(this.vfs);
     if (this[HELD_TASKS]?.size) throw new Error('An initial handoff is already held');
     if (this.#starting) throw new Error('Initial process preparation is already in progress');
     this.#starting = true;
-    try { this.startInitial(path, argv, env, cwd); }
+    try { start(); }
     finally { this.#starting = false; }
   }
 
@@ -1045,6 +1057,32 @@ export class Kernel implements Kern {
     this.tasks.set(t.tid, t);
     this.tty = {sid: p.sid, fg: p.pgid};
     this.ready(t);
+  }
+
+  [PUBLISH_MAPPED_INITIAL](t: Task, cpu: MappedTaskCpu, table: FdTable, pc: bigint, checkEntry: (entry: bigint) => void): void {
+    this.#withInitialStart(() => {
+      const p = t.proc;
+      withExecPreparation(p, commit => {
+        const fresh = (): void => {
+          this.#schedulerEntry();
+          if (this.shared || t.kernel !== this || p.kernel !== this || this.status !== null || this.current ||
+              this.procs.size || this.tasks.size || this.runq.length || this.blocked.size ||
+              p.pid !== 1 || t.tid !== p.pid || p.ppid || p.pgid !== p.pid || p.sid !== p.pid || p.pidns !== this.spaces.children ||
+              p.state !== 'live' || p.children.size || p.cgroup.procs.has(p) || p.own !== t || p.tasks.size !== 1 || !p.tasks.has(t) ||
+              p.memory !== cpu.memory || t.memory !== cpu.memory || cpu.memory.users !== 1 || p.fs.users !== 1 || p.fds.holders !== 1 ||
+              t[MAPPED_CPU] !== cpu || cpu.heldInitial || t.dead || t.state !== 'new' || t.call || p.call || p.stopped ||
+              p.pending.mask || t.pending.mask || p.vfork)
+            throw new ExecPreparationChangedError();
+        };
+        fresh(); checkEntry(pc); fresh();
+        commit(() => {
+          try {
+            cpu.armFirstEntry(checkEntry);
+            this.#publishInitial(p, t);
+          } catch (cause) { p.retainExecFailure('initial-publication', cause, {task: t, newMemory: cpu.memory, newFds: table}); }
+        });
+      });
+    });
   }
 
   // ---- threads in turn (the backend here) ----
@@ -1207,7 +1245,7 @@ export class Kernel implements Kern {
    */
   enter(t: Task, nr: bigint, args: bigint[], next: bigint): bigint {
     const mapped = t[MAPPED_CPU];
-    if (mapped && (this.#mappedTurn !== t || !mapped.active)) throw new Error('Mapped syscall has no active scheduler turn');
+    if (mapped && (this.#mappedTurn !== t || !mapped.syscallAt(next))) throw new Error('Mapped syscall has no active scheduler turn');
     // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
     // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
     const at = ++this.calls % CALL_SAMPLE === 0 ? steady() : 0;
@@ -1323,6 +1361,9 @@ export class Kernel implements Kern {
     if (this.current?.[MAPPED_CPU] && this.current.proc.call) throw new Error('A mapped syscall cannot reenter');
     if (p.execTransition) execMayRun(p);
     if (p.state !== 'live') return BigInt(-E.SRCH);
+    // Publication is not a syscall owner. Use the installed owner, not the
+    // supplied call context, including while the first-entry proof calls out.
+    if (p.own?.[MAPPED_CPU]?.firstEntryPending) throw new Error('Mapped syscall requires a confirmed first entry');
     if (t instanceof Task) {
       checkMappedAdmission(t);
       if (t[MAPPED_CPU]) this.#checkMappedTask(t, t[MAPPED_CPU]);
@@ -2616,8 +2657,8 @@ export class Task implements Thread {
     this.strict = strict;
   }
 
-  #unpublishedMapped(memory: Mem | null): () => void {
-    const p = this.proc, k = this.kernel, scope = execScope(p);
+  #unpublishedMapped(memory: Mem | null, scope = execScope(this.proc)): () => void {
+    const p = this.proc, k = this.kernel;
     const {pid, pgid, sid, cgroup} = p, pc = this.resumeAt;
     const {filters, strict, mask} = this;
     return () => {
@@ -2654,14 +2695,16 @@ export class Task implements Thread {
     }, kind);
   }
 
-  /** Prepare only an unpublished inline Task over already admitted arena
-   * code. Neither start nor execve can reach this experimental backend. */
-  prepareMapped(compiler: MappedTranslate, pc: bigint, sp: bigint): void {
-    const p = this.proc;
-    withExecPreparation(p, () => {
+  /** Prepare an interpreter-free arena. The returned action may publish
+   * only its exact fresh initial Task; normal start/exec cannot select it. */
+  prepareMapped(compiler: MappedTranslate, pc: bigint, sp: bigint): () => void {
+    const p = this.proc, k = this.kernel;
+    return withExecPreparation(p, () => {
       const memory = p.memory, vm = memory?.mappedVm;
       if (!memory || !vm) throw new Error('Mapped Task needs an owned VM');
-      const caller = captureExecCaller(p, this), check = this.#unpublishedMapped(memory), checkVm = vm.taskEntry(p, pc, sp);
+      const reader = Object.getOwnPropertyDescriptor(k, 'translate')?.value as Translator | undefined;
+      const scope = execScope(p), caller = captureExecCaller(p, this);
+      const check = this.#unpublishedMapped(memory, scope), checkVm = vm.taskEntry(p, pc, sp);
       caller.check(); check();
       const cpu = this.#newMappedCpu(memory, compiler, 'arena');
       try { caller.check(); check(); checkVm(); cpu.setReg('r4', sp); }
@@ -2669,6 +2712,19 @@ export class Task implements Thread {
       this.memory = memory;
       this.resumeAt = pc;
       this[MAPPED_CPU] = cpu;
+      const checkEntry = (entry: bigint): void => {
+        checkVm(); scope(); checkMappedReader(k, reader, compiler);
+        if (entry !== pc || Object.getOwnPropertyDescriptor(this, 'resumeAt')?.value !== pc || cpu.reg('r4') !== sp ||
+            this[MAPPED_CPU] !== cpu || this.memory !== memory)
+          throw new ExecPreparationChangedError();
+        caller.check();
+      };
+      let publish: (() => void) | undefined = () => k[PUBLISH_MAPPED_INITIAL](this, cpu, caller.table, pc, checkEntry);
+      return () => {
+        if (!publish) throw new ExecPreparationChangedError();
+        publish();
+        publish = undefined;
+      };
     });
   }
 
@@ -2681,13 +2737,7 @@ export class Task implements Thread {
         throw new ExecPreparationChangedError();
       if (!reader || !compiler) throw new Error('Held image requires the owning Kernel translator');
       const lifecycle = this.#unpublishedMapped(null), caller = captureExecCaller(p, this);
-      const checkReader = (): void => {
-        // These are the normal Kernel/translator's own data slots. Do
-        // not invoke a reader accessor at the final ownership boundary.
-        if (Object.getOwnPropertyDescriptor(k, 'translate')?.value !== reader ||
-            Object.getOwnPropertyDescriptor(reader, 'mapped')?.value !== compiler)
-          throw new ExecPreparationChangedError();
-      };
+      const checkReader = (): void => checkMappedReader(k, reader, compiler);
       const check = (): void => { lifecycle(); checkReader(); };
       caller.check(); check();
       const image = reserveInitialImage(view, p, this, reader, compiler);

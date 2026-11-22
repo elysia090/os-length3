@@ -121,9 +121,11 @@ export class MappedDispatcher {
    * old frame must unwind before its saved register context can change. */
   completeFsSyscall(pc: bigint, base: bigint): never {
     if (this.#revoked) throw this.#revoked;
-    if (!this.#active || this.#syscallPc !== pc) throw new Error('FS completion has no mapped syscall owner');
+    if (!this.syscallAt(pc)) throw new Error('FS completion has no mapped syscall owner');
     throw new SyscallReturn(pc, 0n, base);
   }
+
+  syscallAt(pc: bigint): boolean { return !!this.#active && this.#syscallPc === pc; }
 
   run(pc: bigint, budget?: number): void {
     this.#idle();

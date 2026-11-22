@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import {captureExecutableSource} from '../../runtime/linux.ts';
+import {ExecPreparationChangedError} from '../../runtime/linux/exec/source.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
 import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
@@ -40,8 +41,9 @@ function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' = 'scheduler') {
   return {file, source, bytes, path};
 }
 
-function mappedTask(kernel: Kernel, t: Translate, compiler: MappedTranslate, f: ReturnType<typeof fixture>, peer = false) {
-  const p = new Process(kernel, null);
+function mappedTask(kernel: Kernel, t: Translate, compiler: MappedTranslate, f: ReturnType<typeof fixture>,
+    {peer = false, initial = false} = {}) {
+  const p = new Process(kernel, null, false, false, null, null, !initial);
   p.noNewPrivs = true;
   p.argv = [f.path]; p.env = [];
   p.mapBase = p.mapEnd = BASE;
@@ -67,15 +69,64 @@ function mappedTask(kernel: Kernel, t: Translate, compiler: MappedTranslate, f: 
   p.tasks.add(task);
   p.task = task;
   assert.throws(() => task.prepareMapped(compiler, pc, BigInt(sp - 1)), e => e instanceof FsError && e.errno === E.FAULT);
-  task.prepareMapped(compiler, pc, BigInt(sp));
+  const publishInitial = task.prepareMapped(compiler, pc, BigInt(sp));
   task.setReg(6, data);
   task.setReg(7, peer ? 1 : 0);
   assert.equal(kernel.tasks.has(task.tid), false, 'preparation did not publish a Task');
-  // Trusted test owner, not a launcher or a way to admit exec.
-  kernel.tasks.set(task.tid, task);
-  kernel.procs.set(p.pid, p);
-  return {p, task, vm, memory, pc, stdout};
+  if (!initial) {
+    // Trusted arena fixtures exercise the scheduler independently of start.
+    kernel.tasks.set(task.tid, task);
+    kernel.procs.set(p.pid, p);
+  }
+  return {p, task, vm, memory, pc, stdout, publishInitial};
 }
+
+test('one checked interpreter-free initial Task uses ordinary publication, run and exit', {skip}, async () => {
+  const t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!, vfs = new Vfs(), output: string[] = [];
+  let full = true, checks = 0;
+  const fixtureFile = fixture(vfs), k = new Kernel({vfs, translate: t,
+    console: {...consoleOut, full: () => { checks++; return full; }, write(_fd, bytes) { output.push(Buffer.from(bytes).toString()); }}});
+  const owner = mappedTask(k, t, compiler, fixtureFile, {initial: true}), {p, task, vm, memory, stdout} = owner;
+  const generation = vm.code.generation, more = compiler.more;
+  let compiled = 0, stopped = 0;
+  compiler.more = (...args) => {
+    if (compiled++ === 0) {
+      assert.equal(k.current, task);
+      assert.equal(vm.code.generation, generation);
+      assert.equal(vm.code.find(owner.pc, generation)?.text.role, 'library');
+    }
+    return more(...args);
+  };
+  k.stopped = () => { stopped++; assert.equal(memory.users, 0); assert.equal(stdout.closed, true); };
+  try {
+    assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size, k.status], [0, 0, 0, 0, null]);
+    assert.deepEqual(k.tty, {sid: 0, fg: 0});
+    owner.publishInitial();
+    assert.equal(k.initOf(), p);
+    assert.equal(task.tid, p.pid);
+    assert.equal(k.tasks.get(task.tid), task);
+    assert.equal(p.cgroup.procs.has(p), true);
+    assert.deepEqual(k.tty, {sid: p.sid, fg: p.pgid});
+    assert.equal(task.state, 'ready');
+    assert.equal(compiled, 0, 'publication does not execute or compile guest code');
+    assert.throws(() => owner.publishInitial(), ExecPreparationChangedError);
+    assert.throws(() => syscall(p, 1, [1, data, 7]), /Mapped syscall requires a confirmed first entry/);
+    assert.equal(p.call, null);
+    assert.equal(checks, 0, 'the pending entry did not reach the console');
+    assert.deepEqual(output, []);
+    assert.deepEqual(k.runq, [task]);
+    assert.deepEqual(k.pump(), {waiting: true});
+    assert.equal(task.call?.nr, 1, 'the first guest call may wait normally');
+    assert.deepEqual(output, []);
+    full = false;
+    assert.deepEqual(k.pump(), {status: 42 << 8});
+    assert.ok(compiled > 0);
+    assert.deepEqual(output, ['mapped\n']);
+    assert.equal(stopped, 1);
+    assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, p.cgroup.procs.size], [0, 0, 0, 0]);
+    assert.equal(k.spareMemories.includes(memory), false);
+  } finally { compiler.more = more; k.halt(); }
+});
 
 test('the normal inline scheduler preempts, waits and resumes a mapped task, then retires after syscall unwind', {skip}, async () => {
   const t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!, vfs = new Vfs();
@@ -97,7 +148,7 @@ test('the normal inline scheduler preempts, waits and resumes a mapped task, the
     released.set(id, (released.get(id) ?? 0) + 1);
     compiler.close(known);
   }});
-  const first = mappedTask(k, t, tracked(1), f), peer = mappedTask(k, t, tracked(2), f, true);
+  const first = mappedTask(k, t, tracked(1), f), peer = mappedTask(k, t, tracked(2), f, {peer: true});
   const observed = new Map([[first.p, first], [peer.p, peer]]);
   const attempt = k.attempt.bind(k);
   k.attempt = (who, call) => {

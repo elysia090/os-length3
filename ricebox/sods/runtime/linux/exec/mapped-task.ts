@@ -24,6 +24,7 @@ export class MappedTaskCpu {
   #retired = false;
   #pending?: MappedExitRequest;
   #finishTidClear?: () => void;
+  #firstEntry?: (pc: bigint) => void;
 
   constructor(memory: Mem, vm: MappedVm, compiler: MappedTranslate, imports: WebAssembly.ModuleImports,
       kind: 'arena' | 'held-initial') {
@@ -36,7 +37,9 @@ export class MappedTaskCpu {
 
   get active(): boolean { return this.#active; }
   get heldInitial(): boolean { return this.#kind === 'held-initial'; }
+  get firstEntryPending(): boolean { return this.#firstEntry !== undefined; }
   get pendingExit(): MappedExitRequest | undefined { return this.#pending; }
+  syscallAt(pc: bigint): boolean { return this.#active && this.#dispatcher.syscallAt(pc); }
   reg(name: RegName): bigint { return this.#dispatcher.reg(name); }
   setReg(name: RegName, value: bigint): void { this.#dispatcher.setReg(name, value); }
   completeSyscall(pc: bigint, value: bigint): void { this.#dispatcher.completeSyscall(pc, value); }
@@ -67,11 +70,29 @@ export class MappedTaskCpu {
   /** Failed preparation has not taken the memory or run an artifact. */
   discardPreparation(): void { this.#dispatcher.close(); this.#retired = true; }
 
+  /** Transfer the publisher's original proof, not a new entry or generation. */
+  armFirstEntry(check: (pc: bigint) => void): void {
+    if (this.heldInitial || this.#active || this.#retiring || this.#retired || this.#firstEntry)
+      throw new Error('Mapped Task cannot take an initial entry');
+    this.#firstEntry = check;
+  }
+
   run(pc: bigint, budget: number): void {
     if (this.heldInitial) throw new Error('Loader entry from a held initial Task is disabled');
     if (this.#active || this.#retiring || this.#retired) throw new Error('Mapped Task cannot run');
     this.#active = true;
-    try { this.#dispatcher.run(pc, budget); }
+    try {
+      const first = this.#firstEntry;
+      if (first) {
+        try { first(pc); }
+        catch (cause) {
+          // This is not a guest wait, yield or resumed syscall.
+          throw this.#pending ?? new Error('Mapped initial entry was not confirmed', {cause});
+        }
+        this.#firstEntry = undefined;
+      }
+      this.#dispatcher.run(pc, budget);
+    }
     finally { this.#active = false; } // Every Wasm frame (including the import) has now unwound.
   }
 
@@ -81,6 +102,7 @@ export class MappedTaskCpu {
   }
 
   #revokeAccess(reason: object): void {
+    this.#firstEntry = undefined;
     this.#dispatcher.revoke(reason);
     this.#vm.close();
   }
