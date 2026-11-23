@@ -20,8 +20,9 @@ function cells(value: unknown, limit: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= limit;
 }
 
-function terminal(value: unknown) {
-  const {argv, cols = 80, rows = 24} = object(value, ['argv', 'cols', 'rows'], 'terminal declaration');
+function terminal(value: unknown, defaultArgv?: readonly string[]) {
+  const {argv = defaultArgv, cols = 80, rows = 24, autoStart = true} =
+    object(value, ['argv', 'cols', 'rows', 'autoStart'], 'terminal declaration');
   if (!Array.isArray(argv) || !argv.length || argv.length > 64 || !argv.every(localText) ||
       !argv[0].startsWith('/') || !argv[0].slice(1).split('/').every(part => part && part !== '.' && part !== '..')) {
     throw new Error('terminal.argv must start with an absolute guest executable');
@@ -29,16 +30,17 @@ function terminal(value: unknown) {
   if (!cells(cols, GUEST_SCREEN_LIMITS.columns) || !cells(rows, GUEST_SCREEN_LIMITS.rows)) {
     throw new Error('Terminal geometry must be 1–240 columns by 1–100 rows');
   }
-  return {argv: [...argv] as string[], cols, rows};
+  if (typeof autoStart !== 'boolean') throw new Error('terminal.autoStart must be true or false');
+  return {argv: [...argv] as string[], cols, rows, autoStart};
 }
 
 export function authoredPlan(value: unknown) {
   const {guest, terminal: requested} = object(value, ['guest', 'terminal'], 'Ricebox declaration; only guest and terminal are supported');
-  const {directory, webrootSha256, mukSha256} = object(guest, ['directory', 'webrootSha256', 'mukSha256'], 'prepared guest declaration');
-  if (!localText(directory) || !pin(webrootSha256) || !pin(mukSha256)) {
-    throw new Error('guest requires a prepared directory and SHA-256 pins for webroot.json and muk.json');
-  }
-  return {guest: {directory, webrootSha256, mukSha256}, terminal: terminal(requested)};
+  const {directory = './prepared', webrootSha256, mukSha256} =
+    object(guest, ['directory', 'webrootSha256', 'mukSha256'], 'prepared guest declaration');
+  if (!localText(directory)) throw new Error('guest.directory must name a local prepared directory');
+  if (!pin(webrootSha256) || !pin(mukSha256)) throw new Error('guest requires trusted SHA-256 pins for webroot.json and muk.json');
+  return {guest: {directory, webrootSha256, mukSha256}, terminal: terminal(requested === undefined ? {} : requested, ['/bin/sh', '-i'])};
 }
 
 export function stagedPlan(value: unknown) {

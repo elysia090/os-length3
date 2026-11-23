@@ -87,94 +87,80 @@ already prepared distribution. Do not pass both `build` and `distribution`.
 Serving these assets is distinct from running guest programs and from deploying
 a service.
 
+### Run the Ricebox starter
+
+Use a prepared Ricebox root with a shell. Put it in `prepared/` next to
+`ricebox.json` and copy in the two SHA-256 pins from its trusted build or
+publisher. The default guest command is `/bin/sh -i` in an 80×24 terminal.
+
+```json
+{
+  "guest": {
+    "webrootSha256": "<trusted SHA-256 of webroot.json>",
+    "mukSha256": "<trusted SHA-256 of muk.json>"
+  }
+}
+```
+
+With Node 22.18 or newer and the
+[built local tarball](../README.md#setup), run these from the directory
+containing `ricebox.json`:
+
+```sh
+npm --prefix . install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
+npm --prefix . exec --offline -- ricebox-stage-shell --preview
+```
+
+Open the printed loopback URL. The preview serves the verified snapshot with
+HTTP byte ranges and removes it when stopped with Ctrl+C. Run the same command
+again after editing the declaration.
+
+### Configure and stage
+
+Add just the fields you need to change:
+
+| Field | Example | Effect |
+| --- | --- | --- |
+| `guest.directory` | `"./prepared-workbench"` | Prepared Ricebox root, relative to the declaration |
+| `terminal.argv` | `["/usr/bin/my-shell", "-i"]` | Guest executable and arguments |
+| `terminal.cols`, `terminal.rows` | `96`, `27` | Fixed guest grid, up to 240×100 cells |
+| `terminal.autoStart` | `false` | Wait for the visitor to click **Start a new guest** |
+
+For a static directory you can deploy, use:
+
+```sh
+npm --prefix . exec --offline -- ricebox-stage-shell
+```
+
+The output is `ricebox-site/`. To use other paths, pass the declaration
+and a new output directory. Missing parents are created after verification.
+Use `--help` for the CLI syntax. Copy the complete output to a site served over HTTPS
+with [pack byte ranges](#verify-the-static-hosts-pack-transport), and use a
+new URL prefix when replacing a generation. Treat the staged files as
+public to visitors who can open the terminal.
+
 ### Embed a staged guest terminal
 
-Put the complete staged directory at any HTTPS path, such as `/tools/linux/`.
-Link to its `index.html` or use ordinary HTML in the same site:
+Link to the staged `index.html` or embed it in ordinary HTML on the same site:
 
 ```html
 <iframe src="./linux/index.html" title="Ricebox guest terminal" width="640" height="400" loading="lazy"></iframe>
 ```
 
-The iframe size is the browser viewport. The guest terminal has its own fixed
-cell geometry, set when you stage it. The page starts one temporary Linux
-guest without moving focus. To opt in at a later time, link to the page or
-mount the iframe only when requested. **End guest** closes admission;
-**Start a new guest** can start a fresh guest after that acknowledgment.
-It is not proof the old host Worker stopped. A restart uses the same
-verified environment. Reload the page after changing the declaration or
-returning to a page the browser kept after navigation. The package provides the interface, so no framework, site JavaScript, or custom
-CSS is required. It is a bounded VT screen, not an exhaustive xterm
-implementation or scrollback. The guest has scratch space in `/tmp`, not a
-persistent home. This starter exposes no display, camera, or host command API.
+The iframe dimensions control the viewport. The guest grid comes from the
+declaration. The page keeps focus where the visitor left it. **End guest**
+closes admission and **Start a new guest** opens a fresh session on the same
+verified root. Guest changes live in temporary storage.
 
-Copy the whole output together, serve modules as JavaScript, and use a new
-URL prefix when replacing a generation. Do not include secrets or host files
-in a prepared environment: any browser that can use it can retrieve its
-staged bytes. See [pack transport](#verify-the-static-hosts-pack-transport).
+The staged site also includes Everyday. To present frames from a guest surface
+owned by the embedding page, import its public browser entry:
 
-### Declare and stage the guest
-
-Start from an already prepared, compatible environment. Get the SHA-256 pins
-for its exact `webroot.json` and `muk.json` from the trusted build or publisher;
-hashing an unknown download yourself does not establish provenance. These
-instructions do not provide a registry, kit download, or new public release.
-Your declaration is a build input, never taken from a visitor's URL.
-
-Save `ricebox.json` beside your prepared directory, replacing the two pins:
-
-```json
-{
-  "guest": {
-    "directory": "./prepared",
-    "webrootSha256": "<trusted 64-character lowercase SHA-256>",
-    "mukSha256": "<trusted 64-character lowercase SHA-256>"
-  },
-  "terminal": { "argv": ["/bin/sh", "-i"], "cols": 96, "rows": 27 }
-}
+```js
+import {mountGuestSurface, surfaceFromMirror} from './linux/everyday.js';
 ```
 
-`argv` names an executable inside that guest, not on the site builder. This
-example chooses the environment's `/bin/sh`; substitute the actual entry and
-arguments your environment provides. Omit `cols` and `rows` for 80×24 cells.
-The grid is bounded to 240×100 and does not automatically resize the guest
-when the containing web page is resized.
-
-With Node 22.18 or newer and the tarball already built
-([use Node 24 to build it](../README.md#setup)):
-
-```sh
-npm init -y
-npm install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
-mkdir preview
-npm exec --offline -- ricebox-stage-shell ./ricebox.json ./preview/linux
-```
-
-If Vite is already installed in the staging project, run its local CLI from
-the same directory for a range-capable preview:
-
-```sh
-./node_modules/.bin/vite preview --outDir ./preview --base / --host 127.0.0.1 --port 8000 --strictPort
-```
-
-Confirm a real `206` response with the [pack transport check](#verify-the-static-hosts-pack-transport).
-This command does not itself configure cross-origin isolation headers. Vite is
-not required to stage the site.
-
-For a quick functional check without Vite, serve the same directory with Python:
-
-```sh
-python3 -m http.server 8000 --bind 127.0.0.1 --directory ./preview
-```
-
-Python's standard server can ignore `Range` and send whole packs (`200`). Treat
-this as a smoke check, not a measure of startup time or transfer size.
-
-For either server, open `http://127.0.0.1:8000/linux/index.html`. Staging checks
-the selected environment and copies it into a new directory. It does not build, relabel,
-execute, or deploy the root. Static checks do not prove that the entry boots
-in a browser. If a disk-write error leaves a partial directory, discard it
-or use a different output path.
+See the [Everyday surface contract](../../everyday/README.md#embed-one-guest-surface-opt-in)
+for the frame source, canvas and input options.
 
 To qualify the starter with a real sandboxed Google Chrome, use an authored
 declaration for an interactive Linux shell with `stty` on its path. The test

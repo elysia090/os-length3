@@ -194,27 +194,32 @@ async function close(current: Attempt, at: 'closed' | 'error', message: string) 
   open.disabled = pageLifetime.signal.aborted || reloadNeeded;
 }
 
-async function start() {
+async function start(automatic = false) {
   if (pageLifetime.signal.aborted || reloadNeeded || attempt || open.disabled) return;
-  const current: Attempt = {stage: 'runtime module', abort: new AbortController()};
+  const current: Attempt = {stage: 'terminal declaration', abort: new AbortController()};
   attempt = current;
   open.disabled = true;
   end.disabled = false;
   output.textContent = line.value = '';
   delete output.dataset.grid;
-  phase('loading', 'Loading Ricebox runtime…');
+  phase('loading', 'Reading the terminal configuration…');
   current.timer = setTimeout(() => {
     void close(current, 'error', `Terminal startup timed out at ${current.stage}.`);
   }, 30_000);
   try {
-    const runtime: {createRoot: typeof createRoot; retireRootWorker: typeof retire} = await import('../runtime/root.ts');
-    if (attempt !== current) return;
-    retireRootWorker = runtime.retireRootWorker;
-    current.stage = 'terminal declaration';
     const response = await fetch(new URL('ricebox-starter.json', site).href, {cache: 'no-store', signal: current.abort.signal});
     if (!response.ok) throw new Error(`ricebox-starter.json: ${response.status}`);
     const plan = stagedPlan(await response.json());
     if (attempt !== current) return;
+    if (automatic && !plan.terminal.autoStart) {
+      void close(current, 'closed', 'Ready to start a guest.');
+      return;
+    }
+    current.stage = 'runtime module';
+    phase('loading', 'Loading Ricebox runtime…');
+    const runtime: {createRoot: typeof createRoot; retireRootWorker: typeof retire} = await import('../runtime/root.ts');
+    if (attempt !== current) return;
+    retireRootWorker = runtime.retireRootWorker;
     current.stage = 'prepared root';
     phase('loading', 'Checking guest assets…');
     const binding = JSON.stringify(plan);
@@ -282,7 +287,7 @@ window.addEventListener('pagehide', () => {
 }, {once: true});
 if (globalThis.isSecureContext && typeof Worker === 'function' && typeof WebAssembly === 'object') {
   open.disabled = false;
-  void start(); // The dedicated page or iframe is the explicit mount; never steal focus.
+  void start(true); // The dedicated page or iframe is the explicit mount; never steal focus.
 } else {
   phase('error', 'Use a browser with module Workers and WebAssembly over HTTPS or loopback HTTP.');
 }

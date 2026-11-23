@@ -32,7 +32,7 @@ requirement is `>=22.18`; use Node 24 to generate the package. A browser app can
 stage the package's native modules or use a bundler with module-Worker support.
 Serve the distribution layers separately from those modules.
 
-For a no-framework starting point, see [Embed a staged guest terminal](docs/installation.md#embed-a-staged-guest-terminal).
+For a standalone browser terminal with Everyday included, see [Run the Ricebox starter](docs/installation.md#run-the-ricebox-starter).
 A build-time declaration selects a trusted prepared environment, its terminal entry, and the cell geometry.
 Staging does not acquire or publish an environment.
 

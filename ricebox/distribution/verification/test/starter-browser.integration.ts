@@ -2,13 +2,15 @@
 // downloads a browser, serves on a public interface, or disables Chrome sandboxing.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
-import {extname, join, resolve, sep} from 'node:path';
+import {dirname, extname, join, resolve, sep} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {linuxSandboxReport} from '../../../everyday/test/wayland/browser/stock-chrome.ts';
+import type {GuestSurfaceObserver} from '../../../everyday/src/surface.ts';
+import {withStarterPreview} from './fixtures/starter-preview.ts';
 
 const build = fileURLToPath(new URL('../../build/npm.ts', import.meta.url));
 const types: Record<string, string> = {
@@ -43,7 +45,7 @@ async function serve(directory: string) {
   return {origin: `http://127.0.0.1:${address.port}`, close: () => server.close()};
 }
 
-test('a declared environment attaches a real terminal at the declared size in a nested iframe', {timeout: 120_000}, async () => {
+test('the installed Ricebox starter previews defaults and embeds its configured terminal in Chrome', {timeout: 120_000}, async () => {
   const declaration = process.env.RICEBOX_STARTER_DECLARATION;
   const executablePath = process.env.RICEBOX_STARTER_CHROME;
   assert.ok(declaration && executablePath, 'Supply the authored declaration and stock Chrome');
@@ -53,12 +55,11 @@ test('a declared environment attaches a real terminal at the declared size in a 
   const work = mkdtempSync(join(tmpdir(), 'ricebox-starter-browser-'));
   try {
     const pkg = join(work, 'package'), consumer = join(work, 'consumer'), host = join(work, 'host');
-    const npm = (cwd: string, args: string[]) => execFileSync('npm', args, {cwd, encoding: 'utf8', timeout: 30_000,
+    const npm = (cwd: string, args: string[]) => execFileSync('npm', ['--prefix', '.', ...args], {cwd, encoding: 'utf8', timeout: 30_000,
       env: {...process.env, npm_config_cache: join(work, 'npm-cache')}});
     execFileSync(process.execPath, [build, pkg], {timeout: 30_000});
     const [tarball] = JSON.parse(npm(pkg, ['pack', '--offline', '--ignore-scripts', '--pack-destination', work, '--json'])) as {filename: string}[];
     mkdirSync(consumer); mkdirSync(join(host, 'docs', 'example'), {recursive: true});
-    writeFileSync(join(consumer, 'package.json'), '{"private":true}\n');
     npm(consumer, ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', join(work, tarball.filename)]);
     const staged = join(host, 'docs', 'example', 'linux');
     npm(consumer, ['exec', '--offline', '--', 'ricebox-stage-shell', resolve(declaration), staged]);
@@ -133,6 +134,59 @@ test('a declared environment attaches a real terminal at the declared size in a 
         await expect.poll(() => counts(page.workers().map(worker => worker.url()))).toEqual({checks: 0, guests: 1});
         await page.goto(http.origin + '/docs/example/left.html', {waitUntil: 'domcontentloaded'});
         await expect.poll(() => counts(page.workers().map(worker => worker.url()))).toEqual({checks: 0, guests: 0});
+
+        const source = resolve(declaration);
+        const {guest: {directory = 'prepared', webrootSha256, mukSha256}} = JSON.parse(readFileSync(source, 'utf8')) as
+          {guest: {directory?: string; webrootSha256: string; mukSha256: string}};
+        symlinkSync(resolve(dirname(source), directory), join(consumer, 'prepared'), 'junction');
+        const installed = join(consumer, 'node_modules', 'ricebox');
+        const {bin} = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')) as {bin: Record<string, string>};
+        const entry = join(installed, bin['ricebox-stage-shell']);
+        const pins = {guest: {webrootSha256, mukSha256}};
+        for (const automatic of [true, false]) {
+          const config = automatic ? pins : {...pins, terminal: {autoStart: false}};
+          writeFileSync(join(consumer, 'ricebox.json'), JSON.stringify(config));
+          await withStarterPreview(entry, consumer, async url => {
+            const preview = await browser.newPage();
+            try {
+              await preview.goto(url);
+              const status = preview.getByRole('status');
+              if (!automatic) {
+                await expect(status).toHaveText('Ready to start a guest.');
+                assert.equal(preview.workers().length, 0);
+                await preview.getByRole('button', {name: 'Start a new guest'}).click();
+              }
+              await expect(status).toHaveText('Connected to the guest terminal.', {timeout: 30_000});
+              const input = preview.getByRole('textbox', {name: 'Guest terminal input'});
+              const screen = preview.getByRole('region', {name: 'Guest terminal screen'});
+              await expect(screen).toHaveAttribute('data-grid', '80x24');
+              await input.pressSequentially("printf '\\nsize=%s\\n' \"$(stty size)\"");
+              await input.press('Enter');
+              await expect(screen.locator('.vt-row').filter({hasText: /^size=24 80 *$/})).toHaveCount(1);
+              if (automatic) {
+                const result = await preview.evaluate(async () => {
+                  const {mountGuestSurface} = await import(new URL('everyday.js', document.baseURI).href);
+                  const viewport = document.body.appendChild(document.createElement('div'));
+                  const canvas = viewport.appendChild(document.createElement('canvas'));
+                  let drawn = false, unsubscribed = false;
+                  const mount = mountGuestSurface({viewport, canvas, limits: {width: 1, height: 1, bytes: 4}, source: {
+                    observe(observer: GuestSurfaceObserver) {
+                      drawn = observer.frame({serial: 1, width: 1, height: 1, rgba: Uint8ClampedArray.of(41, 97, 101, 255)});
+                      return () => { unsubscribed = true; };
+                    },
+                  }});
+                  const pixel = Array.from(canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data);
+                  mount.close();
+                  viewport.remove();
+                  return {drawn, pixel, unsubscribed};
+                });
+                assert.deepEqual(result, {drawn: true, pixel: [41, 97, 101, 255], unsubscribed: true});
+              }
+              await preview.getByRole('button', {name: 'End guest'}).click();
+              await expect(status).toHaveText('Guest admission closed.');
+            } finally { await preview.close(); }
+          });
+        }
       } finally { await browser.close(); }
     } finally { http.close(); }
   } finally { rmSync(work, {recursive: true, force: true}); }

@@ -7,6 +7,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {packOf} from '../../format/pack.ts';
+import {withStarterPreview} from '../../verification/test/fixtures/starter-preview.ts';
 const builder = fileURLToPath(new URL('../npm.ts', import.meta.url));
 function files(dir: string): string[] {
   return readdirSync(dir, {withFileTypes:true}).flatMap(e=>e.isDirectory()?files(join(dir,e.name)):[join(dir,e.name)]);
@@ -51,7 +52,7 @@ test('browser manifest requires a direct literal module Worker URL', () => {
     }
   } finally {rmSync(work,{recursive:true,force:true});}
 });
-test('built npm package contains builder dependencies and imports public JS without a TS loader', () => {
+test('built npm package contains builder dependencies and imports public JS without a TS loader', async () => {
   const work=mkdtempSync(join(tmpdir(),'ricebox-package-')),out=join(work,'package');
   try {
     execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
@@ -257,6 +258,7 @@ test('built npm package contains builder dependencies and imports public JS with
     const descriptor=(version:string,path='/usr/bin/selected-shell', indexVersion=version)=>{
       const index=Buffer.from(JSON.stringify({sha256:rootSHA,version:indexVersion,codec:'zstd',dirs:[],
         links:[{path:'/bin',target:'usr/bin'},{path:'/usr/bin/terminal',target:'selected-shell'},
+          {path:'/usr/bin/sh',target:'selected-shell'},
           {path:'/usr/bin/cycle',target:'cycle'}],translator,
         translations:[],packs:[{name:pack.name,bytes:pack.bytes.length}],
         files:[{path,mode:0o755,size:shell.length,pack:0,at:pack.at[0],len:shell.length,raw:true}],
@@ -273,12 +275,17 @@ test('built npm package contains builder dependencies and imports public JS with
     const declaration=join(work,'terminal.json');
     const source=(webPin:string,mukPin=hash(muk), terminal:unknown={argv:['/bin/terminal','-i'],cols:96}) =>
       ({guest:{directory:'./shell-release',webrootSha256:webPin,mukSha256:mukPin},terminal});
+    const invokeStarter = (...args: string[]) => spawnSync('npm',
+      ['exec', '--offline', '--', 'ricebox-stage-shell', ...args],
+      {cwd: consumer, encoding: 'utf8', timeout: 15_000, env: {...process.env, npm_config_cache: join(work, 'empty-consumer-cache')}});
     const execStage=(value:unknown)=>{
       writeFileSync(declaration,JSON.stringify(value));
-      return spawnSync('npm',
-        ['exec','--offline','--','ricebox-stage-shell',declaration,staged],
-        {cwd:consumer,encoding:'utf8',timeout:15_000,env:{...process.env,npm_config_cache:join(work,'empty-consumer-cache')}});
+      return invokeStarter(declaration, staged);
     };
+    const help = invokeStarter('--help');
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Minimal ricebox.json/);
+    assert.match(invokeStarter().stderr, /ricebox.json: declaration not found/);
     const webPin=descriptor(pkg.version);
     for (const [value, expected] of [
       [source('0'.repeat(64)),/webroot.json does not match/],
@@ -286,6 +293,7 @@ test('built npm package contains builder dependencies and imports public JS with
       [source(webPin,hash(muk),{argv:['/usr/bin/missing','-i']}),/executable .*missing.*not present/],
       [source(webPin,hash(muk),{argv:['/bin/cycle']}),/executable .*cycle.*not present/],
       [source(webPin,hash(muk),{argv:['/bin/terminal'],cols:241}),/Terminal geometry/],
+      [source(webPin,hash(muk),{autoStart:'false'}),/autoStart must be true or false/],
       [source(webPin,hash(muk),{argv:['relative'],rows:30}),/absolute guest executable/],
       [{...source(webPin),display:{}},/only guest and terminal are supported/],
     ] as const) {
@@ -326,11 +334,15 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(hash(readFileSync(join(staged,'ricebox/muk.json'))),hash(muk));
     assert.deepEqual(JSON.parse(readFileSync(join(staged,'ricebox-starter.json'),'utf8')),{
       v:1,generation:JSON.parse(stagedWebroot.toString()).index.sha256,makerSha256:maker.sha256,
-      program:'/usr/bin/selected-shell',terminal:{argv:['/bin/terminal','-i'],cols:96,rows:24},
+      program:'/usr/bin/selected-shell',terminal:{argv:['/bin/terminal','-i'],cols:96,rows:24,autoStart:true},
     });
     assert.deepEqual(files(join(staged,'ricebox-js/everyday')).map(file=>file.slice(staged.length)).sort(),[
+      '/ricebox-js/everyday/src/mirror-surface.js','/ricebox-js/everyday/src/surface.js',
       '/ricebox-js/everyday/terminal/vt-view.js','/ricebox-js/everyday/terminal/vt.js',
     ]);
+    const everyday = await import(pathToFileURL(join(staged, 'everyday.js')).href);
+    assert.equal(typeof everyday.mountGuestSurface, 'function');
+    assert.equal(typeof everyday.surfaceFromMirror, 'function');
     const html=readFileSync(join(staged,'index.html'),'utf8'),siteURL=new URL('https://example.test/a/prefix/');
     const moduleURL=new URL(html.match(/script type="module" src="([^"]+)"/)![1]!,siteURL);
     const moduleRead=(url:URL)=>{
@@ -349,7 +361,7 @@ test('built npm package contains builder dependencies and imports public JS with
       import {join} from 'node:path';
       import {SourceTextModule,createContext} from 'node:vm';
       const files=${JSON.stringify(staged)}, prefix=${JSON.stringify(siteURL.href)};
-      async function run(cancel) {
+      async function run(cancel, manual=false) {
         const fields=new Map(), events=new Map(), seen=[], workers=[];
         const document={
           getElementById(id) {
@@ -369,13 +381,18 @@ test('built npm package contains builder dependencies and imports public JS with
           Worker:class {constructor(url){workers.push(url.href);throw Error('No Workers in this model');}},
           fetch: async url=>{
             seen.push(url);
-            if(url===new URL('ricebox-starter.json',prefix).href) return new Response(readFileSync(join(files,'ricebox-starter.json')));
+            if(url===new URL('ricebox-starter.json',prefix).href) {
+              const plan=JSON.parse(readFileSync(join(files,'ricebox-starter.json'),'utf8'));
+              if (manual) plan.terminal.autoStart=false;
+              return Response.json(plan);
+            }
             return new Response(null,{status:404});
           },
         });
         const cache=new Map();
-        let resume;
+        let resume, started;
         const hold=new Promise(resolve=>{resume=resolve;});
+        const importStarted=new Promise(resolve=>{started=resolve;});
         let imported;
         const importFinished=new Promise(resolve=>{imported=resolve;});
         function add(url) {
@@ -384,7 +401,7 @@ test('built npm package contains builder dependencies and imports public JS with
           const m=new SourceTextModule(readFileSync(join(files,url.slice(prefix.length)),'utf8'),{
             context,identifier:url,initializeImportMeta(meta){meta.url=url;},
             async importModuleDynamically(specifier,parent) {
-              if(cancel) await hold;
+              if(cancel) {started(); await hold;}
               const importedModule=add(new URL(specifier,parent.identifier).href);
               if(importedModule.status==='unlinked') await importedModule.link(link);
               if(importedModule.status==='linked') await importedModule.evaluate();
@@ -402,23 +419,34 @@ test('built npm package contains builder dependencies and imports public JS with
         assert.equal(document.getElementById('open').disabled,true);
         const status=document.getElementById('status');
         if(cancel) {
+          await importStarted;
           events.get('pagehide')();
           resume();
           await importFinished;
           await new Promise(resolve=>setImmediate(resolve));
           assert.equal(status.dataset.phase,'closed');
-          assert.deepEqual(seen,[]);
+          assert.deepEqual(seen,[new URL('ricebox-starter.json',prefix).href]);
           assert.deepEqual(workers,[]);
         } else {
+          const expected=[];
+          if (manual) {
+            for(let i=0;status.dataset.phase!=='closed'&&i<100;i++) await new Promise(resolve=>setTimeout(resolve,10));
+            expected.push('ricebox-starter.json');
+            assert.deepEqual(seen,expected.map(path=>new URL(path,prefix).href));
+            assert.deepEqual(workers,[]);
+            assert.equal(document.getElementById('open').disabled,false);
+            document.getElementById('open').click();
+          }
+          expected.push('ricebox-starter.json','ricebox/webroot.json');
           for(let i=0;status.dataset.phase!=='error'&&i<100;i++) await new Promise(resolve=>setTimeout(resolve,10));
-          assert.deepEqual(seen,['ricebox-starter.json','ricebox/webroot.json'].map(path=>new URL(path,prefix).href),status.textContent);
+          assert.deepEqual(seen,expected.map(path=>new URL(path,prefix).href),status.textContent);
           assert.deepEqual(workers,[new URL('ricebox-js/distribution/runtime/check.worker.js',prefix).href]);
           assert.match(status.textContent,/Could not attach the terminal.*webroot[.]json: 404/);
           assert.equal(document.getElementById('open').disabled,false);
           document.getElementById('open').click();
           for(let i=0;status.dataset.phase!=='error'&&i<100;i++) await new Promise(resolve=>setTimeout(resolve,10));
-          assert.deepEqual(seen,['ricebox-starter.json','ricebox/webroot.json','ricebox-starter.json','ricebox/webroot.json']
-            .map(path=>new URL(path,prefix).href));
+          expected.push('ricebox-starter.json','ricebox/webroot.json');
+          assert.deepEqual(seen,expected.map(path=>new URL(path,prefix).href));
           assert.equal(workers.length,1,'a failed retry does not construct another checker');
           events.get('pagehide')();
         }
@@ -427,11 +455,12 @@ test('built npm package contains builder dependencies and imports public JS with
       }
       await run(false);
       await run(true);
+      await run(false,true);
       console.log('starter-auto-error-ok');
     `],{cwd:consumer,encoding:'utf8',timeout:15_000});
     assert.match(boot,/starter-auto-error-ok/);
     for (const file of files(staged).map(path=>path.slice(staged.length))) {
-      assert.doesNotMatch(file,/everyday\/src|wayland|[.]tsx?$/);
+      assert.doesNotMatch(file,/wayland|[.]tsx?$/);
     }
     assert.deepEqual(files(staged).filter(file=>file.endsWith('.css')), [join(staged,'shell.css')]);
     assert.match(moduleRead(new URL('shell.css',siteURL)), /overflow: auto/);
@@ -439,6 +468,42 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(repeated.status,1,repeated.stderr);
     assert.match(repeated.stderr,/Output already exists/);
     assert.equal(readFileSync(join(staged,'index.html'),'utf8'),html);
+
+    // The conventional layout needs only the two trusted pins.
+    symlinkSync(release, join(consumer, 'prepared'), 'junction');
+    writeFileSync(join(consumer, 'ricebox.json'), JSON.stringify({guest: {webrootSha256: exactWebPin, mukSha256: hash(muk)}}));
+    const defaults = invokeStarter();
+    assert.equal(defaults.status, 0, defaults.stderr);
+    const site = join(consumer, 'ricebox-site');
+    assert.deepEqual(JSON.parse(readFileSync(join(site, 'ricebox-starter.json'), 'utf8')).terminal,
+      {argv: ['/bin/sh', '-i'], cols: 80, rows: 24, autoStart: true});
+    const nested = join(consumer, 'new-parent', 'tools', 'linux');
+    writeFileSync(packedFile, changedPack);
+    const invalidNested = invokeStarter('ricebox.json', nested);
+    assert.equal(invalidNested.status, 1, invalidNested.stderr);
+    assert.ok(!existsSync(join(consumer, 'new-parent')));
+    writeFileSync(packedFile, pack.bytes);
+    const validNested = invokeStarter('ricebox.json', nested);
+    assert.equal(validNested.status, 0, validNested.stderr);
+    assert.equal(readFileSync(join(nested, 'index.html'), 'utf8'), html);
+
+    const previewRoot = join(work, 'preview-tmp');
+    mkdirSync(previewRoot);
+    const entry = join(consumer, 'node_modules', 'ricebox', pkg.bin['ricebox-stage-shell']);
+    await withStarterPreview(entry, consumer, async url => {
+      const asset = new URL('ricebox/packs/' + pack.name, url);
+      const partial = await fetch(asset, {headers: {Range: 'bytes=1-3'}});
+      assert.equal(partial.status, 206);
+      assert.equal(partial.headers.get('content-range'), `bytes 1-3/${pack.bytes.length}`);
+      assert.deepEqual(new Uint8Array(await partial.arrayBuffer()), pack.bytes.subarray(1, 4));
+      const invalid = await fetch(asset, {headers: {Range: `bytes=${pack.bytes.length}-`}});
+      assert.equal(invalid.status, 416);
+      assert.equal(invalid.headers.get('content-range'), `bytes */${pack.bytes.length}`);
+      const presenter = await fetch(new URL('everyday.js', url), {method: 'HEAD'});
+      assert.match(presenter.headers.get('content-type') ?? '', /^text\/javascript\b/);
+      assert.equal((await fetch(new URL('package.json', url))).status, 404);
+    }, {...process.env, TMPDIR: previewRoot});
+    assert.deepEqual(readdirSync(previewRoot), []);
 
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
