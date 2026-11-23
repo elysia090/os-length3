@@ -144,9 +144,11 @@ type Posted =
   | {type: 'kept'; at: Kept['at']}
   | (Ready & {type: 'ready'})
   | Start;
-/** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
-interface Readied { translate: Translate; vfs: Vfs; files: Program[]; tree: PreparedTree;
-  prepared?: {generation: string; index: Index; executables: Map<string, PreparedExecutable>}; }
+/** The tree owns installed bytes. Only legacy needs its original program list to attach path-based translations. */
+type Readied = {translate: Translate; tree: PreparedTree} & (
+  | {legacyFiles: Program[]; prepared?: never}
+  | {legacyFiles?: never; prepared: {generation: string; index: Index; executables: Map<string, PreparedExecutable>}}
+);
 
 /** Where the bundle is in the tree (BOX, as whoever asks for the bundle names it), under the tmpfs the box has at /run: its maker and its config.json. */
 const BOX = '/run/box';
@@ -204,7 +206,7 @@ function boundExecutables(r: Readied): SourceBoundExecutable[] {
 }
 function makePreparedKernel(r: Readied, options: Parameters<typeof linux>[0]) {
   try {
-    const result = preparedLinux({...options, vfs: r.vfs, executables: boundExecutables(r)});
+    const result = preparedLinux({...options, vfs: r.tree.vfs, executables: boundExecutables(r)});
     if (!lifetime.accepting) {
       // Freeze may reenter physical/engine preparation. The retirement pass
       // could not see this newly returned owner, so explicitly retain and stop it.
@@ -289,8 +291,9 @@ function ready(data: Ready): Promise<Readied> {
       });
       // The prepared root stays reachable through this result and kernels that borrow it.
       lifetime.observe('prepared-tree', tree);
-      const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree,
-        ...(index ? {prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}} : {})};
+      const r: Readied = index
+        ? {translate, tree, prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}}
+        : {translate, tree, legacyFiles: data.files ?? []};
       if (r.prepared) addExecutables(r, data.executables);
       if (data.rehearse) await rehearse(r, data.rehearse).catch(error => {
         // Rehearsal is optional for startup speed, not optional ownership
@@ -311,11 +314,11 @@ const REHEARSAL_MS = 2000;
 
 /** `box` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
 async function rehearse(r: Readied, box: Box): Promise<void> {
-  const {translate, vfs, files} = r;
+  const {translate, tree: {vfs}} = r;
   const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
   const made = {vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed};
-  const k = r.prepared ? makePreparedKernel(r, made).kernel : linux({...made, translated: files});
+  const k = r.prepared ? makePreparedKernel(r, made).kernel : linux({...made, translated: r.legacyFiles});
   executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
   const operation = lifetime.enter('rehearsal-operation');
   let completed = false;
@@ -714,7 +717,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // Readied before, or now: then this start's files are those readied, put before the root.
       const before = readied !== null;
       const r = await ready(data);
-      const {translate, vfs, files: early} = r;
+      const {translate, tree: {vfs}} = r;
       lifetime.check();
       const later = before ? data.files ?? [] : [];
       for (const d of data.dirs ?? []) vfs.mkdirp(d);
@@ -723,7 +726,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       if (r.prepared && before) addExecutables(r, data.executables);
       for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
       vfs.mkdirp(data.cwd);
-      const files = [...early, ...later];
+      const legacyFiles = r.prepared ? undefined : [...r.legacyFiles, ...later];
       const console: Console = {
         // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
         // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
@@ -751,7 +754,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       const made = {vfs, translate, console, keeper: keep, onIdle: (r: Pumped) => paused(r), consolidateIdle: true};
       const prepared = r.prepared ? makePreparedKernel(r, made) : null;
       const firstForeground = kernel === null;
-      const k = kernel = prepared?.kernel ?? linux({...made, translated: files});
+      const k = kernel = prepared?.kernel ?? linux({...made, translated: legacyFiles});
       // A legacy replacement does not inherit a previous page's known size IDs.
       forgetTerminalResize();
       if (lifetime.accepting && !outputBoundarySent && firstForeground && data.screen && data.terminalResize === true) {
@@ -761,7 +764,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
       if (prepared) followPrepared(r, prepared.attached);
-      else for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
+      else if (legacyFiles) for (const f of legacyFiles) if (f.module) follow(k, vfs.file(f.path), f);
       if (data.mirror) {
         const preparedMirror = new Mirror(vfs, data.mirror);
         // Construction walks mappings/loaders too; retirement must not be

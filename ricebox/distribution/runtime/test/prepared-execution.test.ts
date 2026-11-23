@@ -139,6 +139,55 @@ test('actual Worker captures original source before an ordinary overlay and vali
   }finally{if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');}
 });
 
+for (const prepared of [false, true]) test(`ready overlays belong to the VFS at foreground start, prepared=${prepared}`, async () => {
+  const r = root(elf()), generation = 'f'.repeat(64), source = r.source;
+  const facts = new TextEncoder().encode('sods.facts'), body = new TextEncoder().encode('{}');
+  const module = new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0,0,1+facts.length+body.length,facts.length,...facts,...body));
+  const aot: PreparedExecutable = {generation, key: executableKey(generation, source, r.t, r.index.translator.sha256, false),
+    path: source.path, source, artifact: {sha256: r.t.wasm.sha256, translator: r.index.translator.sha256, mode: 'whole'},
+    module, segments: null, shared: false};
+  const files = [{path: '/replaced', bytes: Uint8Array.of(2)}, {path: '/retained', bytes: Uint8Array.of(3)},
+    ...(!prepared ? [{path: '/legacy-hot', bytes: Uint8Array.of(4), module, shared: false}] : [])];
+  const iterator = files[Symbol.iterator].bind(files);
+  let visits = 0;
+  files[Symbol.iterator] = () => { visits++; return iterator(); };
+  const messages: {type: string; message?: string}[] = [];
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>),
+    postMessage(message: typeof messages[number]) { messages.push(message); }};
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'self'), start = Kernel.prototype.start;
+  let reached = 0;
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  Kernel.prototype.start = function () {
+    assert.deepEqual(this.vfs.readFile('/replaced'), Uint8Array.of(9));
+    assert.deepEqual(this.vfs.readFile('/retained'), Uint8Array.of(3));
+    if (prepared) {
+      assert.equal(this.translated(this.vfs.file('/usr/bin/hard')), true);
+      assert.equal(this.translated(this.vfs.file(r.t.path)), false, 'late ordinary overlay does not inherit AOT');
+    } else assert.equal(this.translated(this.vfs.file('/legacy-hot')), true, 'legacy still attaches its ready image');
+    reached++;
+    throw new Error('Guest entry withheld by test');
+  };
+  try {
+    await import(new URL(`../worker.ts?ready-overlays-${prepared}`, import.meta.url).href);
+    const profile = prepared ? {profile: 'canonical-aot-v1', generation} : {};
+    await host.onmessage!({data: {type: 'ready', ...profile, translator: memoryModule, muk: Uint8Array.of(1), files,
+      ...(prepared && {root: {index: r.index, url: 'https://must-not-read-source.test/'}, executables: [aot]})}});
+    // Await preparation without starting a guest.
+    if (prepared) await host.onmessage!({data: {type: 'executables', generation, executables: []}});
+    assert.equal(messages.length, 0);
+    await host.onmessage!({data: {type: 'start', ...profile, box: {config: '{}', words: []}, cwd: '/',
+      files: [{path: '/replaced', bytes: Uint8Array.of(9)}, ...(prepared ? [{path: r.t.path, bytes: Uint8Array.of(5)}] : [])]}});
+    assert.equal(reached, 1);
+    assert.equal(messages.length, 1);
+    assert.match(messages[0]!.message ?? '', /^Error: Guest entry withheld by test/);
+    assert.equal(visits, 2, prepared ? 'validate and install only; foreground must not revisit the ready wire list' :
+      'legacy installs first, then reads its saved list to bind translations');
+  } finally {
+    try { await host.onmessage?.({data: {type: 'retire'}}); }
+    finally { Kernel.prototype.start = start; if (prior) Object.defineProperty(globalThis, 'self', prior); else Reflect.deleteProperty(globalThis, 'self'); }
+  }
+});
+
 for(const rehearsed of [false,true])test(`actual prepared Worker runs the real muk and AOT guest without any pack source demand, rehearsed=${rehearsed}`,{skip:!translatorPath||!process.env.RICEBOX_MUK_FILE,timeout:20_000},async()=>{
   const bytes=elf(),r=root(bytes),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes)),generation='f'.repeat(64),source=r.source;
   const executable:PreparedExecutable={generation,key:executableKey(generation,source,r.t,r.index.translator.sha256,false),path:source.path,source,
