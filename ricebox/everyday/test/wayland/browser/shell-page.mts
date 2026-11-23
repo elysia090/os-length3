@@ -7,7 +7,7 @@ import type {ResizeRequest} from './terminal-resize.mts';
 
 export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => Promise<Uint8Array>,
   translator: Uint8Array, muk: Uint8Array, rootWorker: () => Worker,
-  createTerminal?: typeof mountTerminal, fit = false): void {
+  createTerminal?: typeof mountTerminal, fit = false, canAct: () => boolean = () => true): () => Promise<void> {
   const open = section.querySelector<HTMLButtonElement>('#shell-open')!;
   const status = section.querySelector<HTMLElement>('#shell-status')!;
   const output = section.querySelector<HTMLElement>('#shell-output')!;
@@ -18,7 +18,7 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
   let worker: Worker | undefined, closing = false;
   const loading = new AbortController();
   function post(data: TerminalPost | ResizeRequest | {type: 'drained'; n: number}) {
-    if (closing) return;
+    if (closing || !canAct()) return;
     try { worker?.postMessage(data); } catch { failed(); }
   }
   const terminal = createTerminal?.(section, output, line, send, post, failed, fit ? {
@@ -35,8 +35,9 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
   async function retire() {
     if (closing) return;
     closing = true;
-    open.disabled = true;
-    open.onclick = form.onsubmit = null;
+    open.disabled = line.disabled = send.disabled = true;
+    open.onclick = null;
+    form.onsubmit = event => event.preventDefault();
     window.removeEventListener('pagehide', onPageHide);
     loading.abort();
     try { terminal?.close(); } catch { phase('error', 'Guest terminal view failed'); }
@@ -86,7 +87,7 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
   }
   form.onsubmit = event => {
     event.preventDefault();
-    if (closing || !worker || send.disabled) return;
+    if (closing || !canAct() || !worker || send.disabled) return;
     try { terminal?.echoCooked(line.value); } catch { failed(); return; }
     const bytes = encode.encode(line.value + '\n');
     line.value = '';
@@ -95,12 +96,12 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
     post({type: 'input', bytes});
   };
   open.onclick = async () => {
-    if (closing || open.disabled) return;
+    if (closing || !canAct() || open.disabled) return;
     open.disabled = true;
     phase('loading', 'Opening guest shell');
     try {
       const busybox = await load(loading.signal);
-      if (closing) return;
+      if (closing || !canAct()) return;
       worker = rootWorker();
       worker.addEventListener('message', hear);
       worker.addEventListener('error', failed);
@@ -114,4 +115,5 @@ export function offerShell(section: HTMLElement, load: (signal: AbortSignal) => 
   function onPageHide() { void retire(); }
   window.addEventListener('pagehide', onPageHide, {once: true});
   section.hidden = false;
+  return retire;
 }
