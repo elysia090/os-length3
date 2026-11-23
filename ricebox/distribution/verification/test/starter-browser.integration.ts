@@ -129,7 +129,8 @@ test('a declared environment attaches a real terminal at the declared size in a 
         await command("test -z \"$nonce\" && printf '\\nfresh guest\\n'");
         await expect(row(/^fresh guest *$/)).toHaveCount(1);
         await expect.poll(() => counts(workers)).toEqual({checks: 1, guests: 2});
-        await expect.poll(() => counts(page.workers().map(worker => worker.url()))).toEqual({checks: 1, guests: 1});
+        // The asset checker rests after the verified root is ready.
+        await expect.poll(() => counts(page.workers().map(worker => worker.url()))).toEqual({checks: 0, guests: 1});
         await page.goto(http.origin + '/docs/example/left.html', {waitUntil: 'domcontentloaded'});
         await expect.poll(() => counts(page.workers().map(worker => worker.url()))).toEqual({checks: 0, guests: 0});
       } finally { await browser.close(); }

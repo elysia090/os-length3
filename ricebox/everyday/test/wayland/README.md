@@ -32,9 +32,9 @@ run with those trees in SOURCE_ROOT and the existing Linux x86-64 GNU tools:
     sh build.sh guest SOURCE_ROOT OUT
     python3 native-check.py OUT/wayland-presenter
     SODS_TRANSLATOR_WASM=/path/to/current/sods.wasm RICEBOX_MUK_FILE=/path/to/muk \
-      node guest.integration.mjs OUT/wayland-presenter inline
+      node guest.integration.ts OUT/wayland-presenter inline
     SODS_TRANSLATOR_WASM=/path/to/current/sods.wasm RICEBOX_MUK_FILE=/path/to/muk \
-      node guest.integration.mjs OUT/wayland-presenter worker
+      node guest.integration.ts OUT/wayland-presenter worker
 
 The scanner uses host Expat; its outputs are checksum-checked before building
 guest code. The guest uses musl-gcc by default (CC can name another musl
@@ -126,3 +126,31 @@ QML timer exits the test application, not the behavior of a normal shell
 daemon. Shell IPC and physical/browser presentation are not tested. The
 official Quickshell executable is dynamically linked and this is not a
 translated Sods Quickshell result.
+
+### Optional Quickshell browser check
+
+The `EVERYDAY_WITH_QUICKSHELL=1` guest build also produces
+`wayland-quickshell-listener`. The browser check starts it and the official
+Quickshell binary in two Sods kernels sharing one guest VFS. Quickshell opens
+its Wayland socket there. The listener mirrors the committed SHM raster to the
+Everyday canvas. The check reads both canvas pixels and Chrome's composited
+screenshot at the original size and after a layer configure. It closes the
+layer and checks that both guest owners retire.
+
+Supply an offline fixture directory with `web/` (the packed Debian root with
+the QML above at `/etc/ricebox/shell.qml`), `sods.wasm` built with `mapped-code`,
+`muk`, `utc`, and `guest-sources.json`. The source file names the canonical
+`main`, `interpreter` and `libraries` paths in that index and the `pin` of the
+Quickshell binary. Pass the expected index SHA-256 independently of the fixture
+directory. With Node and the repository's locked dependencies, run:
+
+```sh
+EVERYDAY_CHROME_BIN=/opt/google/chrome/chrome \
+  node ricebox/everyday/test/wayland/qt/quickshell/browser/check.ts \
+  "$FIXTURE_INPUTS" "$BUILD_ROOT/wayland-quickshell-listener" "$EXPECTED_INDEX_SHA256"
+```
+
+For a root with a matching `prepared/index.json` and its content-addressed
+Wasm pieces, add `--prepared`. Set `EVERYDAY_QUICKSHELL_SCREENSHOT` to save
+Chrome's first composited frame. This check uses a loopback fixture server and
+requires Chrome's Linux namespace and seccomp sandbox.
