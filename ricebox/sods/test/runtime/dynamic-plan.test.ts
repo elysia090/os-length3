@@ -693,6 +693,36 @@ test('a held exec keeps unconfirmed descriptor ownership without retrying or pub
   assert.equal(closes, 1);
 });
 
+test('a failed held initial queue publication retains the original mapped owner without running it', {skip: skipHeld}, async () => {
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), vfs = new Vfs(), {sources} = matchedSources(vfs);
+  const k = new Kernel({vfs, translate, console: quiet});
+  const receipt = prepareMappedInitial(k, {path: mainPath, argv: [mainPath, 'check'], env: []}, sources, '/usr/bin');
+  receipt.checkStart();
+  const cause = new Error('Initial queue unavailable');
+  let queued: Task | undefined, attempts = 0;
+  k.ready = t => {
+    queued = t; attempts++;
+    assert.equal(k.initOf(), t.proc);
+    assert.equal(k.tasks.get(t.tid), t);
+    assert.equal(t.proc.execTransition, true);
+    throw cause;
+  };
+  assert.throws(() => receipt.publishInitial(), (error: unknown) =>
+    error instanceof ExecCommitError && error.phase === 'initial-publication' && error.cause === cause &&
+    error.owners.task === queued && error.owners.newMemory === queued?.proc.memory &&
+    error.owners.newFds === queued?.proc.fds);
+  const t = queued!, p = t.proc, failed = p.execFailure;
+  assert.ok(failed && k.failedExecs?.has(failed) && p.memory?.mappedVm);
+  assert.equal(p.cgroup.procs.has(p), true);
+  assert.deepEqual(k.tty, {sid: p.sid, fg: p.pgid});
+  assert.deepEqual([k.status, p.exitStatus, k.calls, p.fs.users, p.fds.holders, k.runq.length],
+    [null, undefined, 0, 1, 1, 0]);
+  receipt.discard(); // The irreversible boundary already consumed it.
+  assert.throws(() => receipt.publishInitial(), ExecPreparationChangedError);
+  assert.throws(() => k.halt(), error => error === failed);
+  assert.equal(attempts, 1);
+});
+
 test('held cancellation releases independent owners once when a console close is unconfirmed', {skip: skipHeld}, async () => {
   const translate = await loadTranslator(readFileSync(mappedWasm!)), vfs = new Vfs(), {sources} = matchedSources(vfs);
   const k = new Kernel({vfs, translate, console: quiet}), {p, task} = freshHeld(k), {fds: table, fs} = p;

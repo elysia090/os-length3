@@ -1013,11 +1013,7 @@ export class Kernel implements Kern {
     this.#initialCandidate(cwd, (p, firstTask) => {
       let task: Task | undefined;
       replaceExec<Process, Image, Task>(p, {path, argv, env}, () => task = firstTask());
-      try { this.#publishInitial(p, task!); }
-      catch (cause) {
-        if (p.execFailure) throw cause;
-        p.retainExecFailure('initial-publication', cause, {task, newMemory: p.memory ?? undefined, newFds: p.fds});
-      }
+      this.#publishInitial(p, task!);
     });
   }
 
@@ -1087,12 +1083,24 @@ export class Kernel implements Kern {
     });
   }
 
-  #publishInitial(p: Process, t: Task): void {
-    enter(p, p.cgroup);
-    this.procs.set(p.pid, p);
-    this.tasks.set(t.tid, t);
-    this.tty = {sid: p.sid, fg: p.pgid};
-    this.ready(t);
+  /** One irreversible publication boundary. Before this call, the caller still owns preparation. */
+  #publishInitial(p: Process, t: Task, staged?: {memory: Mem; table: FdTable; begin(): () => void}): void {
+    try {
+      // The held path arms and consumes its already checked handoff here,
+      // under its exec fence. Ordinary static/AOT starts need no such step.
+      const confirm = staged?.begin();
+      enter(p, p.cgroup);
+      this.procs.set(p.pid, p);
+      this.tasks.set(t.tid, t);
+      this.tty = {sid: p.sid, fg: p.pgid};
+      this.ready(t);
+      confirm?.();
+    } catch (cause) {
+      // An ordinary backend may already have recorded an exec owner.
+      if (!staged && p.execFailure) throw cause;
+      const owned = staged ?? {memory: p.memory, table: p.fds};
+      p.retainExecFailure('initial-publication', cause, {task: t, newMemory: owned.memory ?? undefined, newFds: owned.table});
+    }
   }
 
   [PUBLISH_MAPPED_INITIAL](t: Task, cpu: MappedTaskCpu, table: FdTable, pc: bigint, checkEntry: (entry: bigint) => void,
@@ -1116,8 +1124,9 @@ export class Kernel implements Kern {
             throw new ExecPreparationChangedError();
         };
         fresh(); checkEntry(pc); fresh();
-        commit(() => {
-          try {
+        commit(() => this.#publishInitial(p, t, {
+          memory: cpu.memory, table,
+          begin: () => {
             // This is the root namespace: use the same allocator without
             // a backend callback or a nested lookup registration here.
             if (held && number(p.pidns)[0] !== t.tid) throw new ExecPreparationChangedError();
@@ -1133,14 +1142,15 @@ export class Kernel implements Kern {
               consumeHeld();
             }
             const group = p.cgroup;
-            this.#publishInitial(p, t);
-            this.#checkMappedSchedulerOwner(t, cpu);
-            if (p.cgroup !== group || !group.procs.has(p) || this.tty.sid !== p.sid || this.tty.fg !== p.pgid ||
-                p.fds !== table || t[MAPPED_CPU] !== cpu || !cpu.firstEntryPending || t.dead || t.state !== 'ready' ||
-                this.current || this.runq.length !== 1 || this.runq[0] !== t || this.blocked.size)
-              throw new ExecPreparationChangedError();
-          } catch (cause) { p.retainExecFailure('initial-publication', cause, {task: t, newMemory: cpu.memory, newFds: table}); }
-        });
+            return () => {
+              this.#checkMappedSchedulerOwner(t, cpu);
+              if (p.cgroup !== group || !group.procs.has(p) || this.tty.sid !== p.sid || this.tty.fg !== p.pgid ||
+                  p.fds !== table || t[MAPPED_CPU] !== cpu || !cpu.firstEntryPending || t.dead || t.state !== 'ready' ||
+                  this.current || this.runq.length !== 1 || this.runq[0] !== t || this.blocked.size)
+                throw new ExecPreparationChangedError();
+            };
+          },
+        }));
       });
     }, held);
   }

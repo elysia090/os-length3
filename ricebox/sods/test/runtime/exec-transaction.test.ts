@@ -125,6 +125,38 @@ test('ordinary and source-bound AOT initial cancellation retain one failed priva
   }
 });
 
+test('ordinary and source-bound AOT publication retain the same owner on queue failure', () => {
+  for (const aot of [false, true]) {
+    const k = bookkeeping(), source = k.vfs.file('/start');
+    const cause = new Error('Initial queue unavailable');
+    const image = aot ? (() => {
+      const origin = source.origin = 'initial publication fixture';
+      const grant = captureExecutableSource(k.vfs, '/start', {origin, size: source.size});
+      return k.prebuiltSource(grant, new WebAssembly.Module(artifact()));
+    })() : undefined;
+    if (aot) assert.ok(image);
+    let queued: Task | undefined, attempts = 0;
+    k.ready = t => {
+      queued = t; attempts++;
+      assert.equal(k.initOf(), t.proc);
+      assert.equal(k.tasks.get(t.tid), t);
+      if (image) assert.equal(t.image, image);
+      throw cause;
+    };
+    assert.throws(() => k.start('/start', ['/start'], []), (error: unknown) =>
+      error instanceof ExecCommitError && error.phase === 'initial-publication' && error.cause === cause &&
+      error.owners.task === queued && error.owners.newMemory === queued?.proc.memory &&
+      error.owners.newFds === queued?.proc.fds);
+    const t = queued!, p = t.proc, failed = p.execFailure;
+    assert.ok(failed && k.failedExecs?.has(failed));
+    assert.equal(p.cgroup.procs.has(p), true);
+    assert.deepEqual(k.tty, {sid: p.sid, fg: p.pgid});
+    assert.deepEqual([k.status, p.exitStatus, p.fs.users, p.fds.holders, k.runq.length], [null, undefined, 1, 1, 0]);
+    assert.throws(() => k.halt(), error => error === failed);
+    assert.equal(attempts, 1);
+  }
+});
+
 test('a stopped kernel cannot publish an initial exec after its source callback returns', () => {
   const k = bookkeeping(() => { k.halt(); return artifact(); });
   assert.throws(() => k.start('/start', ['/start'], []), /Exec preparation lost/);
