@@ -9,7 +9,7 @@ import {Description} from '../../runtime/linux/fd.ts';
 import {E, FsError, MNT, mountTarget} from '../../runtime/linux/fs.ts';
 import {ExecCommitError, Kernel, PROFILE, Task, type Image} from '../../runtime/linux/process.ts';
 import type {Mem} from '../../runtime/linux/parts.ts';
-import {linux, RemoteKernel} from '../../runtime/linux.ts';
+import {captureExecutableSource, linux, RemoteKernel} from '../../runtime/linux.ts';
 import {loadTranslator, prepare} from '../../runtime/translate.ts';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -79,6 +79,50 @@ test('an initial exec that loses permission retires its private owners without a
   assert.deepEqual([p.fds.holders, p.fds.slots.size, p.fs.users, k.runq.length, k.root.mnt.refs], [0, 0, 0, 0, refs]);
   assert.equal(k.status, null);
   k.halt();
+});
+
+test('ordinary and source-bound AOT initial cancellation retain one failed private close', () => {
+  for (const aot of [false, true]) {
+    const k = bookkeeping(), source = k.vfs.file('/start'), refs = k.root.mnt.refs;
+    if (aot) {
+      const origin = source.origin = 'initial cancellation fixture';
+      const grant = captureExecutableSource(k.vfs, '/start', {origin, size: source.size});
+      assert.ok(k.prebuiltSource(grant, new WebAssembly.Module(artifact())));
+    }
+    const cleanup = new Error('Unconfirmed console close'), released: string[] = [];
+    let task: Task | undefined;
+    k.newTask = p => {
+      const t = task = new BookkeepingTask(p);
+      source.mode &= ~0o111;
+      t.end = () => {
+        assert.equal(t.dead, true);
+        assert.equal(p.execTransition, true);
+        released.push('task');
+      };
+      p.fds.get(1)!.gone = () => {
+        assert.equal(p.fs.users, 0);
+        released.push('stdout');
+        throw cleanup;
+      };
+      p.fds.get(2)!.gone = () => { released.push('stderr'); };
+      return t;
+    };
+    assert.throws(() => k.start('/start', ['/start'], []), (error: unknown) => {
+      assert.ok(error instanceof ExecCommitError && error.phase === 'initial-preparation');
+      assert.ok(error.cause instanceof AggregateError);
+      assert.equal(error.cause.errors.length, 2);
+      assert.equal(errno(E.ACCES)(error.cause.errors[0]), true);
+      assert.equal(error.cause.errors[1], cleanup);
+      assert.equal(error.owners.task, task);
+      assert.equal(error.owners.newFds, task?.proc.fds);
+      return true;
+    });
+    const p = task!.proc, failure = p.execFailure;
+    assert.deepEqual([p.fs.users, p.fds.holders, p.fds.slots.size, k.root.mnt.refs], [0, 0, 0, refs]);
+    assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, k.status, p.exitStatus], [0, 0, 0, null, undefined]);
+    assert.throws(() => k.halt(), error => error === failure);
+    assert.deepEqual(released, ['task', 'stdout', 'stderr']);
+  }
 });
 
 test('a stopped kernel cannot publish an initial exec after its source callback returns', () => {

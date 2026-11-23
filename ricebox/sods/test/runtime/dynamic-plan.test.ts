@@ -693,6 +693,32 @@ test('a held exec keeps unconfirmed descriptor ownership without retrying or pub
   assert.equal(closes, 1);
 });
 
+test('held cancellation releases independent owners once when a console close is unconfirmed', {skip: skipHeld}, async () => {
+  const translate = await loadTranslator(readFileSync(mappedWasm!)), vfs = new Vfs(), {sources} = matchedSources(vfs);
+  const k = new Kernel({vfs, translate, console: quiet}), {p, task} = freshHeld(k), {fds: table, fs} = p;
+  const first = new Description('console'), second = new Description('console');
+  const cleanup = new Error('Unconfirmed console close'), released: string[] = [];
+  table.install(first); table.install(second);
+  const image = prepareDynamicImage(p, {path: mainPath, argv: [], env: []}, sources, translate);
+  const receipt = task.commitHeldMapped(task.prepareHeldMapped(image)), memory = p.memory!;
+  task.end = () => { released.push('task'); };
+  first.gone = () => {
+    assert.equal(fs.users, 0);
+    released.push('first');
+    throw cleanup;
+  };
+  second.gone = () => { released.push('second'); };
+  assert.throws(() => receipt.discard(), (error: unknown) =>
+    error instanceof ExecCommitError && error.phase === 'held-mapped-handoff' && error.cause === cleanup &&
+    error.owners.task === task && error.owners.newFds === table && !error.owners.newMemory);
+  const failure = p.execFailure;
+  assert.deepEqual([fs.users, table.holders, table.slots.size, memory.users, p.memory], [0, 0, 0, 0, null]);
+  assert.deepEqual([k.procs.size, k.tasks.size, k.runq.length, k.status, p.exitStatus], [0, 0, 0, null, undefined]);
+  assert.throws(() => receipt.discard(), error => error === failure);
+  assert.throws(() => k.halt(), error => error === failure);
+  assert.deepEqual(released, ['task', 'first', 'second']);
+});
+
 test('the planned catalogue lazily maps the real guest DSO envelopes, BSS and RELRO', {
   skip: skipHeld,
 }, async t => {

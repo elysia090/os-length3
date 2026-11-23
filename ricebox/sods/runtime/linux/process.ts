@@ -181,6 +181,22 @@ export function prepareMappedInitial(kernel: Kernel, request: ExecRequest, sourc
   return kernel[HOLD_MAPPED_INITIAL](request, sources, cwd);
 }
 
+/** Retire the private first-process references in their original order.
+ * Each release is attempted independently, under the caller's exec fence. */
+function retireInitialReferences(p: Process, task: Task | undefined, fs: Fs, table: FdTable,
+    attempt: (release: () => void) => void, fdsReleased?: () => void): void {
+  if (task) attempt(() => task.end());
+  attempt(() => {
+    if (p.fs !== fs || fs.users !== 1) throw new ExecPreparationChangedError();
+    fs.drop();
+  });
+  attempt(() => {
+    if (p.fds !== table || table.holders !== 1) throw new ExecPreparationChangedError();
+    table.letGo();
+    fdsReleased?.();
+  });
+}
+
 /** Finish a confirmed private retirement without publishing an exit event. */
 function finishUnpublishedInitial(p: Process, task: Task | undefined, fs: Fs, table: FdTable): void {
   const owner = p.own;
@@ -1035,17 +1051,9 @@ export class Kernel implements Kern {
         const retire = (action: () => void): void => { try { action(); } catch (cleanup) { failures.push(cleanup); } };
         // Fence direct process calls and make its Task non-runnable before
         // any release calls out. No guest exit, signals or startup event.
-        const t = task;
-        if (t) { t.dead = true; retire(() => t.end()); }
-        retire(() => {
-          if (p.fs !== fs || fs.users !== 1) throw new ExecPreparationChangedError();
-          fs.drop();
-        });
-        retire(() => {
-          if (p.fds !== table || table.holders !== 1) throw new ExecPreparationChangedError();
-          table.letGo();
-        });
-        if (failures.length === 1) retire(() => finishUnpublishedInitial(p, t, fs, table));
+        if (task) task.dead = true;
+        retireInitialReferences(p, task, fs, table, retire);
+        if (failures.length === 1) retire(() => finishUnpublishedInitial(p, task, fs, table));
         if (failures.length > 1) p.retainExecFailure('initial-preparation', new AggregateError(failures), {task, newFds: table});
       }));
       throw cause;
@@ -2937,10 +2945,7 @@ export class Task implements Thread {
           if (memory.users !== 0) throw new ExecPreparationChangedError();
           newMemory = undefined;
           const retiring = new Retirement();
-          retiring.attempt(() => this.end());
-          retiring.attempt(() => fs.drop());
-          retiring.attempt(() => {
-            table.letGo();
+          retireInitialReferences(p, this, fs, table, action => retiring.attempt(action), () => {
             // A finalizer can leave a slot that was not in the close snapshot.
             if (table.holders !== 0 || table.slots.size !== 0) throw new ExecPreparationChangedError();
             newFds = undefined;
