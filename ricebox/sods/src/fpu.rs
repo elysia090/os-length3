@@ -42,6 +42,43 @@ fn x87_index(m: Mnemonic) -> Option<usize> {
 }
 
 impl Fx<'_> {
+    pub(crate) fn fx_state(&mut self, i: &Instruction) -> bool {
+        use Mnemonic::*;
+        if !self.checked_memory || i.op0_kind() != OpKind::Memory { return false; }
+        let wide = matches!(i.mnemonic(), Fxsave64 | Fxrstor64);
+        let restore = matches!(i.mnemonic(), Fxrstor | Fxrstor64);
+        self.address(i);
+        self.c32(i32::from(wide) | (i32::from(restore) << 1));
+        self.call(F_MAPPED_FX_STATE);
+        self.fx_image_xmm(restore);
+        true
+    }
+
+    pub(crate) fn mapped_mxcsr(&mut self, i: &Instruction) -> bool {
+        if i.op0_kind() != OpKind::Memory { return false; }
+        self.address(i);
+        if i.mnemonic() == Mnemonic::Ldmxcsr {
+            self.c32(FX_LOAD_MXCSR);
+            self.call(F_MAPPED_FX_STATE);
+            self.gset(G_MXCSR);
+        } else {
+            self.gget(G_MXCSR);
+            self.e(Mem(I32_STORE, 0, 0));
+        }
+        true
+    }
+
+    pub(crate) fn save_x87_env(&mut self, i: &Instruction) -> bool {
+        if !self.checked_memory || i.op0_kind() != OpKind::Memory || i.memory_size().size() != 28 {
+            return false;
+        }
+        self.address(i);
+        self.c32(FX_SAVE_X87_ENV);
+        self.call(F_MAPPED_FX_STATE);
+        self.e(DROP);
+        true
+    }
+
     /// One x87 instruction: fpu(registers, op, memory size, st a, st b, operand, its top word) -> i64, called
     /// wasm to wasm, for the thread whose registers its instance names (G_X87). A memory operand read is loaded
     /// here and given as its bits (an 80-bit one's top word apart); one written is the call's value, stored here (an
@@ -68,14 +105,19 @@ impl Fx<'_> {
         }
         if let Some(&r) = regs.first() { a = r; }
         if let Some(&r) = regs.get(1) { b = r; }
-        if memory && (self.checked_memory || !matches!(size, 2 | 4 | 8 | 10)) { return Some(false); }
+        use crate::x87::Op;
+        if memory && (!matches!(size, 2 | 4 | 8 | 10) || self.checked_memory &&
+            !(size == 2 && matches!(op, Op::Fnstcw | Op::Fldcw | Op::Fnstsw))) { return Some(false); }
         // Integer forms tell the coprocessor the memory holds an integer.
         let integer = name.starts_with("fi") && name != "fincstp";
         let stores = memory && op.stores();
         // A store's address first, kept for an 80-bit one's second part.
         let mut at = 0;
-        if stores { at = self.place(i); self.tee_raw(l_u(0)); }
-        self.gget(G_X87);
+        if stores {
+            at = self.place(i);
+            if !self.checked_memory { self.tee_raw(l_u(0)); }
+        }
+        if !self.checked_memory { self.gget(G_X87); }
         self.c32(index as i32);
         self.c32(if integer { -size } else { size });
         self.c32(a); self.c32(b);
@@ -91,6 +133,16 @@ impl Fx<'_> {
             }
         } else {
             self.c64(0); self.c32(0);
+        }
+        if self.checked_memory {
+            // The admitted memory forms leave the x87 environment pointers
+            // alone. Register forms end in the escape and ModRM bytes.
+            let opcode = if memory || i.mnemonic() == Mnemonic::Wait { 0 } else {
+                let bytes = self.elf.code_at(i.ip()).expect("decoded x87 instruction");
+                u16::from_be_bytes(bytes[i.len() - 2..i.len()].try_into().unwrap())
+            };
+            self.c64(i.ip() as i64);
+            self.c32(i32::from(opcode & 0x7ff));
         }
         self.call(F_FPU);
         if stores {

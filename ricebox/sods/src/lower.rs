@@ -138,12 +138,36 @@ impl Fx<'_> {
     }
     fn leave_call(&mut self) { self.gget(G_DEPTH); self.c32(1); self.op(I32_SUB); self.gset(G_DEPTH); }
 
+    /// A mapped piece has instance-local function numbers. Its core can
+    /// move the piece's table slots when a different text binding retires.
+    fn own_slot(&mut self, base: u32, index: u32, encoded: bool) {
+        let slot = base + index;
+        if self.checked_memory {
+            self.gget(G_MAPPED_BASE);
+            if slot != 0 { self.c32(slot as i32); self.op(I32_ADD); }
+            self.op(I64_EXTEND_I32_U);
+            if encoded { self.c64(32); self.op(I64_SHL); }
+        } else {
+            self.c64(i64::from(slot) << if encoded { 32 } else { 0 });
+        }
+    }
+
+    /// Direct destinations in the enclosing Wasm module. A local entry
+    /// keeps its original meaning even if another replay part marked its PC.
+    fn direct_target(&self, address: u64, local: Option<usize>) -> Option<(u32, u32)> {
+        if let Some(entry) = local {
+            let (f, block) = self.program.entries.at(entry);
+            return Some((self.module_base + f, block));
+        }
+        self.replay_targets?.get(&address).copied()
+    }
+
     /// To code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
         self.save();
         let e = self.program.entries.index(address);
         self.save_flags(self.handed.handed_at(e));
-        match e.map(|e| self.program.entries.at(e)) {
+        match self.direct_target(address, e) {
             Some((f, b)) => { self.c32(b as i32); self.return_call(guest_function(f, self.checked_memory)); }
             None => { self.c64(address as i64); self.return_call(F_DISPATCH); }
         }
@@ -185,7 +209,7 @@ pub struct Frame {
     ev: Vec<Ev>,
     ev_at: Vec<usize>,
     syncs: Vec<(usize, bool, u32)>,
-    kinds: Vec<u8>,
+    locals: Locals,
     entry: Vec<bool>,
     loops: Vec<Loop>,
     within: Vec<Option<usize>>,
@@ -194,7 +218,7 @@ pub struct Frame {
     block_at: Vec<Option<u32>>,
     loop_at: Vec<Option<u32>>,
     code: Vec<Instruction>,
-    needed: Vec<u32>,
+    needed: Vec<bool>,
     /// clean_loops' and sync_masks' own.
     marks: (Vec<usize>, Vec<usize>),
     cold: Vec<bool>,
@@ -226,6 +250,13 @@ fn cold_entries(function: &Function, succ: &[[u32; 2]], cold: &mut Vec<bool>) {
 /// such. Returns whether the function needs no dispatch loop beyond its entry: no jump back but a kept loop's round.
 fn clean_loops(function: &Function, s: &mut Frame) -> bool {
     let n = function.blocks.len();
+    if !function.has_back_edge {
+        s.loops.clear();
+        s.heads.clear();
+        s.heads.resize(n, None);
+        within_of(&s.loops, n, &mut s.within);
+        return true;
+    }
     loops_into(&function.succ, &mut s.loops, (&mut s.marks.0, &mut s.marks.1));
     cold_entries(function, &function.succ, &mut s.cold);
     loop {
@@ -275,6 +306,12 @@ fn clean_loops(function: &Function, s: &mut Frame) -> bool {
 /// loop, no br_table, and with no call no resume either); V8's first tier checks the stack at each loop's head and
 /// zeroes the locals of a function with more than a few.
 pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report, frame: &mut Frame, out: &mut Vec<u8>) {
+    lower_with_imports(cx, index, base, None, report, frame, out);
+}
+
+/// Lower a function and report whether its mapped body references XMM globals.
+pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_targets: Option<&Entries>, report: &mut Report,
+    frame: &mut Frame, out: &mut Vec<u8>) -> bool {
     let Lowering { elf, program, handed, summaries, trace, resumable_syscalls } = *cx;
     let function = &program.functions[index as usize];
     let n = function.blocks.len();
@@ -292,11 +329,11 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     s.block_at.resize(n, None);
     s.ev_at.clear();
     s.ev_at.push(0);
-    s.f.clear(); s.ev.clear(); s.syncs.clear(); s.kinds.clear(); s.labels.clear();
+    s.f.clear(); s.ev.clear(); s.syncs.clear(); s.locals.clear(); s.labels.clear();
     let mut fx = Fx {
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
-        slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: None,
-        checked_memory: resumable_syscalls,
+        locals: s.locals, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: None,
+        checked_memory: resumable_syscalls, module_base: if resumable_syscalls { base } else { 0 }, replay_targets, elf,
         entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
         loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at, tables: s.tables,
     };
@@ -348,7 +385,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     }
     let mut decoder = Code::new(elf, function.span().map_or(function.start, |(lo, _)| lo));
     for (k, block) in function.blocks.iter().enumerate() {
-        decoder.decode(elf, block.start, block.count, &mut code);
+        decoder.decode(elf, block.start, block.len, block.count, &mut code);
         // Block k's label closed so its code starts here; a loop it heads is gone round from here.
         fx.end();
         fx.close(Lab::Block(k));
@@ -366,23 +403,25 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         let (held, ext) = handed.live_out(index, k);
         // The flags needed after each instruction, from the end back.
         needed.clear();
-        needed.resize(code.len(), 0);
         let mut live = held | ext;
-        for (j, i) in code.iter().enumerate().rev() { needed[j] = live; let k = kind(i); live = (live & !k.writes as u32) | k.reads as u32; }
-        let last = code.len() - 1;
-        for (j, i) in code.iter().enumerate() {
-            fx.report.instructions += 1;
-            if j == last && !runs_on(i) { break; }
-            // A compare whose flags only the branch that ends the block reads is that branch's condition.
-            if j + 1 == last && held | ext == 0 && matches!(block.exit, Exit::Branch { .. })
-                && code[last].condition_code() != ConditionCode::None && Fx::fusable(i, code[last].condition_code()) {
-                fx.fused = Some(*i);
-                continue;
-            }
-            if resumable_syscalls && i.mnemonic() == Mnemonic::Syscall { fx.save_flags(ALL_FLAGS); }
-            fx.instruction(i, needed[j] != 0);
+        for i in code.iter().rev() {
+            needed.push(live != 0);
+            let k = kind(i);
+            live = (live & !k.writes as u32) | k.reads as u32;
         }
+        fx.report.instructions += code.len();
+        let last = code.len() - 1;
         let term = code[last];
+        let mut emit = last + usize::from(runs_on(&term));
+        let compare = if emit == last && last > 0 && held | ext == 0 && matches!(block.exit, Exit::Branch { .. })
+            && Fx::fusable(&code[last - 1], term.condition_code()) {
+            emit -= 1;
+            Some(code[last - 1])
+        } else {
+            None
+        };
+        for (i, &need) in code[..emit].iter().zip(needed.iter().rev()) { fx.instruction(i, need); }
+        if compare.is_some() { fx.fused = compare; }
         let to = fx.succ[k];
         if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags_mask(held | ext); }
         match block.exit {
@@ -426,8 +465,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.read(&term, 0, 8);
                 fx.set(l_t(0));
                 fx.get(l_t(0)); fx.call(F_RESOLVE); fx.set(l_t(1));
-                // This function's own (by the table's numbering, which a module made later starts at its base).
-                fx.get(l_t(1)); fx.c64(32); fx.op(I64_SHR_U); fx.c64((base + index) as i64); fx.op(I64_EQ);
+                fx.get(l_t(1)); fx.c64(32); fx.op(I64_SHR_U); fx.own_slot(base, index, false); fx.op(I64_EQ);
                 fx.note(Ev::Edge);
                 fx.if_();
                 fx.get(l_t(1)); fx.op(I32_WRAP_I64); fx.set(L_BLK);
@@ -462,13 +500,13 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                         CallFlags::Held
                     };
                     fx.sync_in(true, s.reads | s.writes);
-                    fx.c32(0); fx.call(guest_function(f, resumable_syscalls));
+                    fx.c32(0); fx.call(guest_function(fx.module_base + f, resumable_syscalls));
                     fx.set(l_t(0));
                     fx.after_call((ret, to[0]), next, Some(s.writes), flags);
                 } else {
                     fx.save();
                     fx.enter_call(ALL_FLAGS, |fx| fx.c64(target as i64));
-                    match e.map(|e| program.entries.at(e)) {
+                    match fx.direct_target(target, e) {
                         Some((f, b)) => { fx.c32(b as i32); fx.call(guest_function(f, resumable_syscalls)); }
                         None => { fx.c64(target as i64); fx.call(F_DISPATCH); }
                     }
@@ -490,11 +528,12 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.after_call((ret, to[0]), next, None, CallFlags::Returned);
             }
             Exit::Return => {
-                fx.pop_value(l_t(0));
+                if resumable_syscalls { fx.pop_to_stack(); } else { fx.pop_value(l_t(0)); }
                 if term.op_count() == 1 { fx.get(l_reg(RSP)); fx.c64(term.immediate16() as i64); fx.op(I64_ADD); fx.set(l_reg(RSP)); }
                 fx.save();
                 if !summaries[index as usize].preserves_flags() { fx.save_flags(ALL_FLAGS); }
-                fx.get(l_t(0)); fx.op(RETURN);
+                if !resumable_syscalls { fx.get(l_t(0)); }
+                fx.op(RETURN);
             }
             Exit::Trap => {
                 fx.c64(term.ip() as i64);
@@ -527,10 +566,10 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     fx.end();
     fx.get(l_t(0)); fx.call(F_RESOLVE); fx.set(l_t(1));
     if lean {
-        fx.get(l_t(1)); fx.c64(((base + index) as i64) << 32); fx.op(I64_EQ);
+        fx.get(l_t(1)); fx.own_slot(base, index, true); fx.op(I64_EQ);
         fx.br_if(0);
     } else {
-        fx.get(l_t(1)); fx.c64(32); fx.op(I64_SHR_U); fx.c64((base + index) as i64); fx.op(I64_EQ);
+        fx.get(l_t(1)); fx.c64(32); fx.op(I64_SHR_U); fx.own_slot(base, index, false); fx.op(I64_EQ);
         fx.if_();
         fx.get(l_t(1)); fx.op(I32_WRAP_I64); fx.set(L_ENTRY);
         fx.br(1);
@@ -544,60 +583,58 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
 }
 
 /// The rest of a frame, handed back with the function's own buffers.
-type Rest = (Vec<Instruction>, Vec<u32>, (Vec<usize>, Vec<usize>), Vec<bool>, Vec<bool>, Masks);
+type Rest = (Vec<Instruction>, Vec<bool>, (Vec<usize>, Vec<usize>), Vec<bool>, Vec<bool>, Masks);
 
 /// Onto `out`: the function's size, its locals, then its code with each sync put in, only the registers it must move
 /// (sync_masks: one the function never touches stays in its global, where code it calls and the host find it); and
 /// every buffer back into `frame`.
-fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) {
+fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) -> bool {
     let (code, needed, marks, cold, entered, mut masks) = rest;
     fx.end_run();
     sync_masks(&fx, &mut masks);
-    if fx.budget { fx.slot(L_BUDGET); }
-    let (used, budget, slots) = (fx.used, fx.budget, fx.slots);
-    // Room for the size (five bytes at most), then the body; the size written in at the end, and the body moved up
-    // to it.
-    let at = out.len();
-    out.extend_from_slice(&[0; 5]);
-    let groups = 1 + fx.kinds.windows(2).filter(|w| w[0] != w[1]).count() - fx.kinds.is_empty() as usize;
-    uleb(out, groups as u64);
-    let mut k = 0;
-    while k < fx.kinds.len() {
-        let run = fx.kinds[k..].iter().take_while(|&&t| t == fx.kinds[k]).count();
-        uleb(out, run as u64);
-        out.push(fx.kinds[k]);
-        k += run;
-    }
-    // A move: local.get, global.set (a save), or global.get, local.set (a load).
-    let pair = |f: &mut Vec<u8>, save: bool, local: u32, global: u32| {
-        let (first, a, second, b) = if save { (0x20, local, 0x24, global) } else { (0x23, global, 0x21, local) };
-        if a < 0x80 && b < 0x80 { f.extend_from_slice(&[first, a as u8, second, b as u8]) } else { f.push(first); uleb(f, a as u64); f.push(second); uleb(f, b as u64); }
-    };
+    if fx.budget { fx.locals.slot(L_BUDGET); }
+    let used = fx.used;
+    let instructions = fx.syncs.iter().zip(&masks.mask);
+    let mut imported = 0;
+    let moves: usize = instructions.clone().map(|(&(_, _, scope), &mask)| {
+        let registers = mask & used;
+        imported |= registers;
+        registers.count_ones() as usize + usize::from(fx.budget && scope == ALL)
+    }).sum();
+    let xmm_imports = fx.checked_memory && imported >> 16 != 0;
+    // A sync moves one register in two operators with one-byte indices.
+    // With their count known, the body can be appended at its final offset.
+    const _: () = assert!(fragment_global_index(g_xmm(15), true) < 128 && G_BUDGET < 128);
+    let body = fx.locals.encoded_len() + fx.f.len() + moves * 4;
+    uleb(out, body as u64);
+    let start = out.len();
+    fx.locals.encode(out);
     let mut from = 0;
-    for (&(offset, save, scope), &m) in fx.syncs.iter().zip(&masks.mask) {
+    let mapped = fx.checked_memory;
+    for (&(offset, save, scope), &m) in instructions {
         out.extend_from_slice(&fx.f[from..offset]);
+        let mut pair = |local, global| {
+            let local = fx.locals.assigned(local);
+            let global = fragment_global_index(global, mapped) as u8;
+            let bytes = if save { [0x20, local, 0x24, global] } else { [0x23, global, 0x21, local] };
+            out.extend_from_slice(&bytes);
+        };
         let mut moved = used & m;
         while moved != 0 {
             let n = moved.trailing_zeros();
             moved &= moved - 1;
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
-            pair(out, save, slots[local as usize], global);
+            pair(local, global);
         }
         // (A call to a function that never goes out leaves the budget alone: it has no loop, and counts no call.)
-        if budget && scope == ALL { pair(out, save, slots[L_BUDGET as usize], G_BUDGET); }
+        if fx.budget && scope == ALL { pair(L_BUDGET, G_BUDGET); }
         from = offset;
     }
     out.extend_from_slice(&fx.f[from..]);
-    let body = out.len() - at - 5;
-    let mut size = [0u8; 5];
-    let mut n = 0;
-    let mut v = body;
-    loop { size[n] = (v & 0x7f) as u8 | if v >= 0x80 { 0x80 } else { 0 }; n += 1; v >>= 7; if v == 0 { break; } }
-    out[at..at + n].copy_from_slice(&size[..n]);
-    out.copy_within(at + 5.., at + n);
-    out.truncate(out.len() - (5 - n));
+    debug_assert_eq!(out.len() - start, body);
     *frame = Frame {
-        f: fx.f, ev: fx.ev, ev_at: fx.ev_at, syncs: fx.syncs, kinds: fx.kinds, entry: fx.entry, loops: fx.loops, within: fx.within,
+        f: fx.f, ev: fx.ev, ev_at: fx.ev_at, syncs: fx.syncs, locals: fx.locals, entry: fx.entry, loops: fx.loops, within: fx.within,
         heads: fx.heads, labels: fx.labels, block_at: fx.block_at, loop_at: fx.loop_at, code, needed, marks, cold, entered, masks, tables: fx.tables,
     };
+    xmm_imports
 }

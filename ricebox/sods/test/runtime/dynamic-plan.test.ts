@@ -22,8 +22,8 @@ import {loadTranslator} from '../../runtime/translate.ts';
 import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 
 const root = process.env.SODS_TEST_DYNAMIC_ROOT;
-const translatorPath = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 const mappedWasm = process.env.SODS_TEST_MAPPED_WASM;
+const translatorPath = mappedWasm ?? process.env.SODS_CURRENT_TRANSLATOR_WASM;
 const packedRoot = process.env.SODS_TEST_DYNAMIC_PACK_ROOT, packedPin = process.env.SODS_TEST_DYNAMIC_PACK_INDEX_SHA256;
 const skip = !root || !translatorPath ? 'requires the staged dynamic fixture and current Sods translator' : false;
 const mainPath = '/usr/bin/ricebox-pie-fixture', builtin = '/lib64/ld-linux-x86-64.so.2';

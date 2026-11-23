@@ -25,7 +25,7 @@ const consoleOut = {read: () => null, write(_fd: number, _data: Uint8Array) {}};
 const syscall = (p: Process, nr: number, args: number[]): bigint => p.syscall(BigInt(nr),
   ...[...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]);
 
-function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' | 'origin' = 'scheduler', path = `/${name}.so`) {
+function fixture(vfs: Vfs, name: 'scheduler' | 'tls' | 'tid' | 'origin' | 'threads' = 'scheduler', path = `/${name}.so`) {
   const dir = mkdtempSync(join(tmpdir(), 'sods-task-'));
   let bytes: Uint8Array;
   try {
@@ -127,6 +127,35 @@ test('one checked interpreter-free initial Task uses ordinary publication, run a
   } finally { compiler.more = more; k.halt(); }
 });
 
+test('mapped clone shares a code table and wakes a join while preserving each CPU context', {skip}, async () => {
+  const t = await loadTranslator(readFileSync(wasm!)), vfs = new Vfs();
+  const file = fixture(vfs, 'threads');
+  const k = new Kernel({vfs, translate: t, console: consoleOut}), compiler = t.mapped!;
+  let cores = 0;
+  const core = compiler.core;
+  compiler.core = () => { cores++; return core(); };
+  const owner = mappedTask(k, t, compiler, file, {initial: true});
+  const {p, task, memory} = owner, enter = k.run.bind(k);
+  let switchedToChild = false;
+  k.run = who => {
+    if (who !== task) {
+      switchedToChild = true;
+      assert.equal(who.proc, p);
+      assert.equal(who.memory, memory);
+      assert.ok(k.blocked.has(task) && k.futexes.size === 1);
+    }
+    enter(who);
+  };
+  try {
+    owner.publishInitial();
+    assert.deepEqual(k.pump(), {status: 42 << 8});
+    assert.equal(switchedToChild, true);
+    assert.equal(cores, 1);
+    assert.deepEqual([k.tasks.size, k.procs.size, k.runq.length, k.blocked.size, k.futexes.size, memory.users], [0, 0, 0, 0, 0, 0]);
+    assert.equal(k.retireInitialMounts(), true);
+  } finally { compiler.core = core; k.halt(); }
+});
+
 test('an owned mapped Task reads its guest executable link with Linux byte counts', {skip}, async () => {
   const t = await loadTranslator(readFileSync(wasm!)), vfs = new Vfs();
   const f = fixture(vfs, 'origin', '/usr/bin/origin-📦.so'), encode = new TextEncoder();
@@ -139,21 +168,23 @@ test('an owned mapped Task reads its guest executable link with Linux byte count
   user.copyOut(data, encode.encode('/proc/self/exe\0'));
   user.copyOut(data + 128 + target.length, Uint8Array.of(0x7f));
   user.copyOut(data + 64 + 17, Uint8Array.of(0x7f));
-  const calls: number[] = [], attempt = k.attempt.bind(k);
+  const calls: [number, number][] = [], attempt = k.attempt.bind(k);
   k.attempt = (who, call) => {
-    if (call.nr !== 267) return attempt(who, call);
+    if (call.nr !== 89 && call.nr !== 267) return attempt(who, call);
     assert.equal(who, task);
-    const got = attempt(who, call), asked = Number(call.args[3]);
+    const outputArg = call.nr === 89 ? 1 : 2;
+    const buffer = Number(call.args[outputArg]), asked = Number(call.args[outputArg + 1]);
+    const got = attempt(who, call);
     const expected = target.subarray(0, asked);
     assert.equal(got, BigInt(expected.length));
-    assert.deepEqual(user.copyIn(Number(call.args[2]), expected.length + 1), Uint8Array.of(...expected, 0x7f));
-    calls.push(asked);
+    assert.deepEqual(user.copyIn(buffer, expected.length + 1), Uint8Array.of(...expected, 0x7f));
+    calls.push([call.nr, asked]);
     return got;
   };
   try {
     owner.publishInitial();
     assert.deepEqual(k.pump(), {status: 0});
-    assert.deepEqual(calls, [4096, 17]); // The short count ends within the UTF-8 name.
+    assert.deepEqual(calls, [[89, 4096], [267, 17]]); // The short count ends within the UTF-8 name.
     assert.equal(memory.users, 0);
   } finally { k.halt(); }
 });

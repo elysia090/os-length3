@@ -16,7 +16,7 @@ import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.t
 import {take} from './mount.ts';
 import * as pty from './pty.ts';
 import {TimerFd, capTimerTime} from './timerfd.ts';
-import {clocks} from './clock.ts';
+import {clocks, readTimespec} from './clock.ts';
 import {byNr, nrIn} from './space.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
@@ -26,7 +26,7 @@ import {epoch, steady} from '../host.ts';
 const AT_FDCWD = -100;
 const O = {WRONLY: 1, RDWR: 2, CREAT: 0x40, EXCL: 0x80, TRUNC: 0x200, APPEND: 0x400, NONBLOCK: 0x800,
   DIRECTORY: 0x10000, NOFOLLOW: 0x20000, CLOEXEC: 0x80000};
-const AT = {SYMLINK_NOFOLLOW: 0x100, REMOVEDIR: 0x200, EMPTY_PATH: 0x1000};
+const AT = {SYMLINK_NOFOLLOW: 0x100, REMOVEDIR: 0x200, NO_AUTOMOUNT: 0x800, EMPTY_PATH: 0x1000};
 
 declare module './fs.ts' {
   interface Fifo {
@@ -60,6 +60,28 @@ const pipeOf = (d: Description): Pipe => d.pipe ?? fail(E.BADF);
 const counterOf = (d: Description) => d.event ?? fail(E.BADF);
 const interestOf = (d: Description) => d.interest ?? fail(E.INVAL);
 
+function readEvent(d: Description, length: number, copy: (bytes: Uint8Array) => void): number {
+  if (length < 8) fail(E.INVAL);
+  const counter = counterOf(d);
+  if (!counter.count) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+  const n = counter.semaphore ? 1n : counter.count;
+  const bytes = new Uint8Array(8);
+  new DataView(bytes.buffer).setBigUint64(0, n, true);
+  copy(bytes);
+  counter.count -= n;
+  counter.changes++;
+  return 8;
+}
+
+function writeEvent(d: Description, n: bigint): number {
+  if (n === 0xffffffffffffffffn) fail(E.INVAL);
+  const counter = counterOf(d);
+  if (counter.count + n > 0xfffffffffffffffen) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+  counter.count += n;
+  counter.changes++;
+  return 8;
+}
+
 /** Where a path that is not from the root starts: where the process works, or what `dirfd` holds open. */
 function base(p: Proc, dirfd: bigint): Place {
   // (An int, as Linux takes it: its low 32 bits. AT_FDCWD written into a 32-bit register comes with nothing above it.)
@@ -82,12 +104,14 @@ function at(p: Proc, dirfd: bigint, name: string, follow = true): Found & {node:
 
 /** What a call names: by its path from `dirfd`, or (no path, or an empty one, where `empty` allows it) what `dirfd` itself is. */
 function named(p: Proc, dirfd: bigint, address: bigint, follow: boolean, empty: boolean): {mnt: Mount | null; node: Entry} {
-  if (empty && (!N(address) || !p.bytes[N(address)])) {
-    if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return p.fs.pwd;
-    const d = descriptor(p, dirfd);
-    return {mnt: d.mnt, node: d.node ?? fail(E.BADF)};
-  }
+  if (empty && (!N(address) || !p.bytes[N(address)])) return byDescriptor(p, dirfd);
   return at(p, dirfd, path(p, address), follow);
+}
+
+function byDescriptor(p: Proc, dirfd: bigint): {mnt: Mount | null; node: Entry} {
+  if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return p.fs.pwd;
+  const d = descriptor(p, dirfd);
+  return {mnt: d.mnt, node: d.node ?? fail(E.BADF)};
 }
 
 /** A change to what `mnt` shows is refused where it, or its file system, is read-only (EROFS). */
@@ -421,25 +445,9 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
       return data.length;
     }
     case 'pipe-r': case 'pipe-rw': {
-      const pipe = pipeOf(d);
-      if (pipe.size) return pipe.readInto(into, at, length);
-      // Empty with no writer left: the end of the data.
-      if (!pipe.writers) return 0;
-      if (nonblock) fail(E.AGAIN);
-      throw new Wait();
+      return readablePipe(d)?.readInto(into, at, length) ?? 0;
     }
-    case 'eventfd': {
-      if (length < 8) fail(E.INVAL);
-      const e = counterOf(d);
-      if (!e.count) { if (nonblock) fail(E.AGAIN); throw new Wait(); }
-      const n = e.semaphore ? 1n : e.count;
-      e.count -= n;
-      e.changes++;
-      const b = new Uint8Array(8);
-      new DataView(b.buffer).setBigUint64(0, n, true);
-      into.set(b, at);
-      return 8;
-    }
+    case 'eventfd': return readEvent(d, length, bytes => into.set(bytes, at));
     case 'device': {
       const data = deviceOf(d).readDevice(length);
       into.set(data, at);
@@ -546,12 +554,7 @@ function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | n
     }
     case 'eventfd': {
       if (length < 8) fail(E.INVAL);
-      const n = new DataView(data.buffer, data.byteOffset, 8).getBigUint64(0, true), e = counterOf(d);
-      if (n === 0xffffffffffffffffn) fail(E.INVAL);
-      if (e.count + n > 0xfffffffffffffffen) { if (nonblock) fail(E.AGAIN); throw new Wait(); }
-      e.count += n;
-      e.changes++;
-      return 8;
+      return writeEvent(d, new DataView(data.buffer, data.byteOffset, 8).getBigUint64(0, true));
     }
     case 'device': return deviceOf(d).writeDevice(data);
     case 'socket': return net.write(p, d, data);
@@ -848,41 +851,49 @@ function readlink(p: Proc, dirfd: bigint, address: bigint, buf: bigint, size: bi
 function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
   const d = descriptor(p, fd);
   if (d.kind !== 'dir') fail(E.NOTDIR);
+  const user = p.memory?.mappedVm?.userMemory(p);
+  if (user && d.flags & O_PATH) fail(E.BADF);
+  const table = p.fds, offset = d.offset, after = d.after;
   const dir = dirOf(d);
   // Linux leaves the order unspecified; name order keeps listings readable. Where it goes on from is the name it gave
   // last (d.after), not how many it gave, so one removed or added meanwhile moves none of the others: each there all
   // along is given once (rm -r removes what it reads as it reads).
   const names = [...dir.entries.keys()].sort();
   let i = 0;
-  const after = d.after;
   if (after !== undefined) for (let hi = names.length; i < hi;) { const m = (i + hi) >> 1; if (names[m] <= after) i = m + 1; else hi = m; }
-  // The room it gave, as far as it is the guest's memory: entries are put while they fit there.
-  const start = N(buf), asked = start + N(count), end = Math.min(asked, p.bytes.length);
-  let at = start;
+  const address = N(buf), asked = user ? mapCopyCount(count) : N(count);
+  const output = user ? new Uint8Array(user.prefix(address, asked, 'write')) : p.bytes;
+  const view = user ? new DataView(output.buffer) : p.view;
+  const start = user ? 0 : address, end = Math.min(start + asked, output.length);
+  let at = start, nextOffset = offset, nextAfter = after;
   for (;;) {
-    const dot = d.offset < 2;
+    const dot = nextOffset < 2;
     if (!dot && i >= names.length) break;
-    const name = dot ? (d.offset ? '..' : '.') : names[i];
+    const name = dot ? (nextOffset ? '..' : '.') : names[i];
     const node = dot ? dir : dir.entries.get(name);
     if (!node) break;
     const bytes = enc.encode(name);
     const reclen = (19 + bytes.length + 1 + 7) & ~7;
     if (at + reclen > end) {
       // Not one put: the room it gave is too small for the next (EINVAL), or was enough and is not its memory (EFAULT).
-      if (at === start) fail(at + reclen > asked ? E.INVAL : E.FAULT);
+      if (at === start) fail(reclen > asked ? E.INVAL : E.FAULT);
       break;
     }
-    const v = p.view;
-    v.setBigUint64(at, BigInt(node.ino), true);
-    v.setBigInt64(at + 8, BigInt(d.offset + 1), true);
-    v.setUint16(at + 16, reclen, true);
-    v.setUint8(at + 18, DT[node.type] ?? 8);
-    p.bytes.set(bytes, at + 19);
-    p.bytes.fill(0, at + 19 + bytes.length, at + reclen);
+    view.setBigUint64(at, BigInt(node.ino), true);
+    view.setBigInt64(at + 8, BigInt(++nextOffset), true);
+    view.setUint16(at + 16, reclen, true);
+    view.setUint8(at + 18, DT[node.type] ?? 8);
+    output.set(bytes, at + 19);
+    output.fill(0, at + 19 + bytes.length, at + reclen);
     at += reclen;
-    d.offset++;
-    if (!dot) d.after = names[i++];
+    if (!dot) nextAfter = names[i++];
   }
+  if (user) {
+    if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.offset !== offset || d.after !== after) throw new ReadLifetimeError();
+    if (at) user.copyOut(address, output.subarray(0, at));
+  }
+  d.offset = nextOffset;
+  d.after = nextAfter;
   return at - start;
 }
 
@@ -899,10 +910,13 @@ function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0
   if (!(f & AT_EACCESS) && (c.uid !== c.fsuid || c.gid !== c.fsgid || c.effective !== c.permitted)) {
     c = c.with({fsuid: c.uid, fsgid: c.gid, effective: c.uid === idOf(c.ns, 0) ? c.permitted : 0n});
   }
+  const name = !address && (f & AT.EMPTY_PATH) ? '' : p.cstring(N(address));
   let x: {mnt: Mount | null; node: Entry};
-  if (f & AT.EMPTY_PATH && !p.bytes[N(address)]) x = named(p, dirfd, address, true, true);
+  if (f & AT.EMPTY_PATH && !name) x = byDescriptor(p, dirfd);
   else {
-    const r = walk({root: p.fs.root, cred: c}, path(p, address), path(p, address).charCodeAt(0) === 47 ? p.fs.root : base(p, dirfd), f & AT.SYMLINK_NOFOLLOW ? 0 : WALK.FOLLOW);
+    if (!name) fail(E.NOENT);
+    const from = name.charCodeAt(0) === 47 ? p.fs.root : base(p, dirfd);
+    const r = walk({root: p.fs.root, cred: c}, name, from, f & AT.SYMLINK_NOFOLLOW ? 0 : WALK.FOLLOW);
     if (typeof r === 'number') return -r;
     if (!r.node) return r.held !== undefined ? 0 : -E.NOENT;
     x = {mnt: r.mnt, node: r.node};
@@ -995,20 +1009,40 @@ function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint, dev: bi
 }
 
 function pipe(p: Proc, address: bigint, flags: bigint): number {
+  const user = p.memory?.mappedVm?.userMemory(p), at = N(address);
+  const mode = Number(BigInt.asUintN(32, flags));
+  if (user && mode & ~(O.CLOEXEC | O.NONBLOCK)) fail(E.INVAL);
   // Both its descriptors are found before the pipe is made: with fewer than two left it is EMFILE and nothing is left
   // behind, as Linux has it. (Before: -1 was written for each end there was no descriptor for and the call said 0;
   // with one left, the reading end was made and kept.)
   const r = p.fds.lowest(), w = r < 0 ? -1 : p.fds.lowest(r + 1);
   if (w < 0) fail(E.MFILE);
   // And where they are to be told is the guest's memory, or EFAULT with nothing made.
-  whole(p, N(address), 8);
+  if (user) {
+    if (user.prefix(at, 8, 'write') !== 8) fail(E.FAULT);
+  } else whole(p, at, 8);
   const pipe = new Pipe();
-  const cloexec = !!(N(flags) & O.CLOEXEC), nonblock = N(flags) & O.NONBLOCK;
+  const cloexec = !!(mode & O.CLOEXEC), nonblock = mode & O.NONBLOCK;
   p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {fd: r, cloexec});
   p.fds.install(new Description('pipe-w', {pipe, flags: O.WRONLY | nonblock}), {fd: w, cloexec});
-  p.view.setInt32(N(address), r, true);
-  p.view.setInt32(N(address) + 4, w, true);
+  if (user) {
+    const bytes = new Uint8Array(8), view = new DataView(bytes.buffer);
+    view.setInt32(0, r, true);
+    view.setInt32(4, w, true);
+    user.copyOut(at, bytes);
+  } else {
+    p.view.setInt32(at, r, true);
+    p.view.setInt32(at + 4, w, true);
+  }
   return 0;
+}
+
+function readablePipe(d: Description): Pipe | null {
+  const pipe = pipeOf(d);
+  if (pipe.size) return pipe;
+  if (!pipe.writers) return null;
+  if (d.flags & O.NONBLOCK) fail(E.AGAIN);
+  throw new Wait();
 }
 
 const POLL = {IN: 1, PRI: 2, OUT: 4, ERR: 8, HUP: 0x10, NVAL: 0x20, RDNORM: 0x40, RDBAND: 0x80, WRNORM: 0x100, WRBAND: 0x200, RDHUP: 0x2000};
@@ -1046,9 +1080,11 @@ const changes = (p: Proc, d: Description): number => (d.kind === 'socket' ? net.
 function swapMask(p: Proc, address: number): void {
   const s = p.call!.state, t = p.task;
   if (!address || s.swapped) return;
+  const bytes = p.memory?.mappedVm?.userMemory(p).copyIn(address, 8);
+  const mask = bytes ? new DataView(bytes.buffer).getBigUint64(0, true) : p.view.getBigUint64(address, true);
   s.swapped = true;
   t.savedMask = t.mask;
-  t.mask = p.view.getBigUint64(address, true) & ~UNBLOCKABLE;
+  t.mask = mask & ~UNBLOCKABLE;
   // One it lets through that is pending already interrupts the call at once.
   if (deliverable(t)) fail(E.INTR);
 }
@@ -1062,29 +1098,45 @@ function restoreMask(p: Proc): void {
 /** Wait for a timeout of `ms` (null: none) from the first time the call was made; true once it is over. */
 function timedOut(p: Proc, ms: number | null): boolean {
   const s = p.call!.state;
-  if (ms === null) return false;
-  s.deadline ??= steady() + ms;
-  return steady() >= s.deadline;
+  if (s.deadline === undefined && ms !== null) s.deadline = steady() + ms;
+  return s.deadline !== undefined && steady() >= s.deadline;
 }
 
 /** poll/ppoll. With nothing ready and a timeout other than 0 the call waits, like a blocking read. */
 function poll(p: Proc, address: bigint, count: bigint, timeout: number, mask = 0): number {
   const at = N(address), n = N(count);
   if (n < 0 || n > 1024) fail(E.INVAL);
-  swapMask(p, mask);
-  let ready = 0;
-  for (let i = 0; i < n; i++) {
-    const slot = at + i * 8;
-    const fd = p.view.getInt32(slot, true), events = p.view.getInt16(slot + 4, true);
-    let revents = 0;
-    if (fd >= 0) {
-      const d = p.fds.get(fd);
-      revents = d ? readiness(p, d) & (events | POLL.ERR | POLL.HUP) : POLL.NVAL;
+  const user = p.memory?.mappedVm?.userMemory(p);
+  try {
+    const entries = user?.copyIn(at, n * 8);
+    const view = entries ? new DataView(entries.buffer) : p.view, from = entries ? 0 : at;
+    swapMask(p, mask);
+    let ready = 0;
+    for (let i = 0; i < n; i++) {
+      const slot = from + i * 8;
+      const fd = view.getInt32(slot, true), events = view.getInt16(slot + 4, true);
+      let revents = 0;
+      if (fd >= 0) {
+        const d = p.fds.get(fd);
+        revents = d ? readiness(p, d) & (events | POLL.ERR | POLL.HUP) : POLL.NVAL;
+      }
+      view.setInt16(slot + 6, revents, true);
+      if (revents) ready++;
     }
-    p.view.setInt16(slot + 6, revents, true);
-    if (revents) ready++;
+    if (ready || timeout === 0 || timedOut(p, timeout < 0 ? null : timeout)) {
+      if (user && entries) {
+        // Validate every result before publishing any. The fd and requested
+        // event fields are input only, even when another thread shares them.
+        for (let i = 6; i < entries.length; i += 8) if (user.prefix(at + i, 2, 'write') !== 2) fail(E.FAULT);
+        for (let i = 6; i < entries.length; i += 8) user.copyOut(at + i, entries.subarray(i, i + 2));
+      }
+      restoreMask(p);
+      return ready;
+    }
+  } catch (error) {
+    restoreMask(p);
+    throw error;
   }
-  if (ready || timeout === 0 || timedOut(p, timeout < 0 ? null : timeout)) { restoreMask(p); return ready; }
   throw new Wait();
 }
 
@@ -1179,6 +1231,7 @@ function epollCreate(p: Proc, flags: number): number {
 }
 
 function eventfd(p: Proc, initval: number, flags: number): number {
+  if (flags & ~(1 | O.NONBLOCK | O.CLOEXEC)) fail(E.INVAL);
   const d = new Description('eventfd', {flags: O.RDWR | (flags & O.NONBLOCK)});
   d.event = {count: BigInt.asUintN(32, BigInt(initval)), semaphore: !!(flags & 1), changes: 0};
   const fd = p.fds.install(d, {cloexec: !!(flags & O.CLOEXEC)});
@@ -1254,7 +1307,7 @@ function timerfd(p: Proc, clock: number, flags: number): number {
 }
 
 /** A timespec at `at` as milliseconds (null: none given, so no timeout). */
-const timespecMs = (p: Proc, at: number): number | null => (at ? Number(p.view.getBigInt64(at, true)) * 1000 + Number(p.view.getBigInt64(at + 8, true)) / 1e6 : null);
+const timespecMs = (p: Proc, at: number): number | null => at ? Number(readTimespec(p, at)) / 1e6 : null;
 /** A timeval at `at` as milliseconds. */
 const timevalMs = (p: Proc, at: number): number | null => (at ? Number(p.view.getBigInt64(at, true)) * 1000 + Number(p.view.getBigInt64(at + 8, true)) / 1e3 : null);
 
@@ -1490,7 +1543,11 @@ export const FILE_CALLS: Calls = {
   5(fd, st) { return statOpen(this, descriptor(this, fd), st); },
   6(name, st) { return statAt(this, BigInt(AT_FDCWD), path(this, name), false, st); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
-  271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
+  271(fds, count, spec, mask, maskSize) {
+    if (this.memory?.mappedVm && mask && maskSize !== 8n) fail(E.INVAL);
+    const timeout = this.call!.state.deadline === undefined ? timespecMs(this, N(spec)) ?? -1 : -1;
+    return poll(this, fds, count, timeout, N(mask));
+  },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
     if (d.timer) return N(whence) >= 0 && N(whence) <= 4 ? 0 : fail(E.INVAL);
@@ -1789,12 +1846,10 @@ function mappedUser(p: Proc) {
   return vm.userMemory(p);
 }
 
-/** This first profile copies at most one bounded transfer. No pipe, socket,
- * device, pseudo-file callback, or shared file writeback is made into guest
- * memory by borrowing its bytes. Port those paths separately before use. */
+/** A mapped regular-file transfer uses a bounded, independent buffer. */
 function regularMappedFile(d: Description): File {
   const file = d.kind === 'file' && d.node instanceof File && d.node.isFile ? d.node : fail(E.OPNOTSUPP);
-  if (file.maps?.size || madeOf(file)) fail(E.OPNOTSUPP);
+  if ((file.maps?.size && !(file instanceof Memfd)) || madeOf(file)) fail(E.OPNOTSUPP);
   return file;
 }
 
@@ -1814,13 +1869,30 @@ function currentMappedFile(p: Proc, fd: bigint, d: Description, file: File, chec
   return () => {
     check();
     if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.node !== file || d.offsetRevision !== revision ||
-        d.flags !== flags || d.mnt !== mnt || file.maps?.size) throw new ReadLifetimeError();
+        d.flags !== flags || d.mnt !== mnt || (file.maps?.size && !(file instanceof Memfd))) throw new ReadLifetimeError();
   };
 }
 
 function mappedRead(p: Proc, fd: bigint, address: bigint, count: bigint, offset: bigint | null = null): number {
   const d = descriptor(p, fd), access = d.flags & 3;
   if (d.flags & O_PATH || access === O.WRONLY || access === 3) fail(E.BADF);
+  if (d.kind === 'eventfd') {
+    if (offset !== null) fail(E.SPIPE);
+    const asked = mapCopyCount(count);
+    return asked ? readEvent(d, asked, bytes => mappedUser(p).copyOut(N(address), bytes)) : 0;
+  }
+  if (d.kind === 'pipe-r' || d.kind === 'pipe-rw') {
+    if (offset !== null) fail(E.SPIPE);
+    const asked = mapCopyCount(count);
+    if (!asked) return 0;
+    const pipe = readablePipe(d);
+    if (!pipe) return 0;
+    const user = mappedUser(p), at = N(address), length = user.prefix(at, Math.min(asked, pipe.size), 'write');
+    if (!length) fail(E.FAULT);
+    const bytes = pipe.read(length);
+    user.copyOut(at, bytes);
+    return bytes.length;
+  }
   const file = regularMappedFile(d), asked = mapCopyCount(count);
   if (!asked) return 0;
   const user = mappedUser(p), at = N(address), length = user.prefix(at, asked, 'write');
@@ -1835,28 +1907,45 @@ function mappedRead(p: Proc, fd: bigint, address: bigint, count: bigint, offset:
   return got;
 }
 
-function mappedWrite(p: Proc, fd: bigint, address: bigint, count: bigint, offset: bigint | null = null): number {
+function mappedWriteDescriptor(p: Proc, fd: bigint): Description {
   const d = descriptor(p, fd), access = d.flags & 3;
   if (d.flags & O_PATH || !access || access === 3) fail(E.BADF);
-  const terminal = d.kind === 'console', file = terminal ? null : regularMappedFile(d), asked = mapCopyCount(count);
-  if (terminal && offset !== null) fail(E.SPIPE);
+  return d;
+}
+
+function writeMappedConsole(p: Proc, fd: bigint, d: Description, bytes: Uint8Array, checkMemory: () => void): number {
+  const table = p.fds, flags = d.flags;
+  const check = (): void => {
+    checkMemory();
+    if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.flags !== flags) throw new ReadLifetimeError();
+  };
+  const full = p.kernel.console.full?.();
+  check();
+  if (full) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+  p.kernel.say(d.path === 'stderr' ? 2 : 1, bytes);
+  check(); // A delivered write is not rolled back on an embedding failure.
+  return bytes.length;
+}
+
+function mappedWrite(p: Proc, fd: bigint, address: bigint, count: bigint, offset: bigint | null = null): number {
+  const d = mappedWriteDescriptor(p, fd);
+  if (d.kind === 'eventfd') {
+    if (offset !== null) fail(E.SPIPE);
+    const asked = mapCopyCount(count);
+    if (!asked) return 0;
+    if (asked < 8) fail(E.INVAL);
+    const bytes = mappedUser(p).copyIn(N(address), 8);
+    return writeEvent(d, new DataView(bytes.buffer).getBigUint64(0, true));
+  }
+  const terminal = d.kind === 'console', pipe = d.kind === 'pipe-w' || d.kind === 'pipe-rw';
+  const file = terminal || pipe ? null : regularMappedFile(d), asked = mapCopyCount(count);
+  if (!file && offset !== null) fail(E.SPIPE);
   if (!asked) return 0;
   const user = mappedUser(p), at = N(address), length = user.prefix(at, asked, 'read');
-  if (!length || (terminal && length !== asked)) fail(E.FAULT);
+  if (!length || (!file && length !== asked)) return (pipe && p.call?.state.done) || fail(E.FAULT);
   const bytes = user.copyIn(at, length);
-  if (!file) {
-    const table = p.fds, flags = d.flags;
-    const check = (): void => {
-      user.check();
-      if (p.fds !== table || table.get(N(fd)) !== d || d.closed || d.flags !== flags) throw new ReadLifetimeError();
-    };
-    const full = p.kernel.console.full?.();
-    check();
-    if (full) { if (d.flags & O.NONBLOCK) fail(E.AGAIN); throw new Wait(); }
-    p.kernel.say(d.path === 'stderr' ? 2 : 1, bytes);
-    check(); // A delivered write is not rolled back on an embedding failure.
-    return length;
-  }
+  if (pipe) return writeData(p, d, bytes);
+  if (!file) return writeMappedConsole(p, fd, d, bytes, user.check);
   const ready = currentMappedFile(p, fd, d, file, user.check);
   try { file.materialize(); } finally { ready(); }
   const dest = mappedOffset(offset, d.flags & O.APPEND ? file.size : d.offset);
@@ -1867,6 +1956,49 @@ function mappedWrite(p: Proc, fd: bigint, address: bigint, count: bigint, offset
   return n;
 }
 
+function mappedConsoleWritev(p: Proc, fd: bigint, address: bigint, count: bigint): number {
+  const d = mappedWriteDescriptor(p, fd);
+  if (d.kind !== 'console') fail(E.OPNOTSUPP);
+  const vectorCount = N(count);
+  if (vectorCount < 0 || vectorCount > 1024) fail(E.INVAL);
+  if (!vectorCount) return 0;
+
+  const user = mappedUser(p);
+  const table = new DataView(user.copyIn(N(address), vectorCount * 16).buffer);
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (let at = 0; at < table.byteLength; at += 16) {
+    const requested = table.getBigInt64(at + 8, true);
+    if (requested < 0n) fail(E.INVAL);
+    const length = Math.min(Number(requested), MAPPED_COPY_LIMIT - total);
+    if (!length) continue;
+    parts.push(user.copyIn(Number(table.getBigUint64(at, true)), length));
+    total += length;
+  }
+  if (!total) return 0;
+
+  // Snapshot every vector before the console can wait or consume bytes.
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) { bytes.set(part, at); at += part.length; }
+  return writeMappedConsole(p, fd, d, bytes, user.check);
+}
+
+function mappedReadlink(p: Proc, dirfd: bigint, name: bigint, buf: bigint, size: bigint): number {
+  const count = Number(BigInt.asIntN(32, size)); // Linux takes an int bufsiz.
+  if (count <= 0) return -E.INVAL;
+  const user = mappedUser(p), value = user.cstring(N(name));
+  if (!value) return -E.NOENT; // Only named links in this profile.
+  const target = readlinkTarget(p, dirfd, value);
+  if (typeof target === 'number') return target;
+  const limit = Math.min(count, MAPPED_COPY_LIMIT);
+  // Each UTF-16 unit needs at least one UTF-8 byte; keep one more unit
+  // so truncating the output bytes cannot split the input surrogate pair.
+  const bytes = enc.encode(target.slice(0, limit + 1)).subarray(0, limit);
+  user.copyOut(N(buf), bytes);
+  return bytes.length;
+}
+
 /** Opt-in, typed kernel-copy entry points; do not inherit FILE_CALLS. */
 export const MAPPED_FILE_CALLS: Calls = {
   0(fd, buf, len) { return mappedRead(this, fd, buf, len); },
@@ -1874,13 +2006,32 @@ export const MAPPED_FILE_CALLS: Calls = {
   2: FILE_CALLS[2],
   3: FILE_CALLS[3],
   5: FILE_CALLS[5],
+  7: FILE_CALLS[7],
   8: FILE_CALLS[8],
   17(fd, buf, len, off) { return mappedRead(this, fd, buf, len, off); },
   18(fd, buf, len, off) { return mappedWrite(this, fd, buf, len, off); },
+  20(fd, vec, count) { return mappedConsoleWritev(this, fd, vec, count); },
+  21: FILE_CALLS[21],
+  22: FILE_CALLS[22],
+  72(fd, cmd, arg) {
+    switch (N(cmd)) {
+      case 0: case 1: case 2: case 3: case 4: case 1030: case 1033: case 1034:
+        return FILE_CALLS[72].call(this, fd, cmd, arg);
+      default: return fail(E.NOSYS);
+    }
+  },
+  77: FILE_CALLS[77],
+  83: FILE_CALLS[83],
+  84: FILE_CALLS[84],
+  87: FILE_CALLS[87],
+  88: FILE_CALLS[88],
+  89(name, buf, size) { return mappedReadlink(this, BigInt(AT_FDCWD), name, buf, size); },
+  217: FILE_CALLS[217],
   257: FILE_CALLS[257],
+  258: FILE_CALLS[258],
   262(dirfd, name, st, flags) {
     const value = this.cstring(N(name)), mode = N(flags);
-    if (mode & ~(AT.EMPTY_PATH | AT.SYMLINK_NOFOLLOW)) fail(E.INVAL);
+    if (mode & ~(AT.EMPTY_PATH | AT.SYMLINK_NOFOLLOW | AT.NO_AUTOMOUNT)) fail(E.INVAL);
     if (!value && mode & AT.EMPTY_PATH) {
       if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return writeStat(this, st, this.fs.pwd.node, this.fs.pwd.mnt);
       return statOpen(this, descriptor(this, dirfd), st);
@@ -1888,18 +2039,16 @@ export const MAPPED_FILE_CALLS: Calls = {
     if (!value) fail(E.NOENT);
     return statAt(this, dirfd, value, !(mode & AT.SYMLINK_NOFOLLOW), st);
   },
-  267(dirfd, name, buf, size) {
-    const count = Number(BigInt.asIntN(32, size)); // Linux takes an int bufsiz.
-    if (count <= 0) return -E.INVAL;
-    const user = mappedUser(this), value = user.cstring(N(name));
-    if (!value) return -E.NOENT; // Only named links in this profile.
-    const target = readlinkTarget(this, dirfd, value);
-    if (typeof target === 'number') return target;
-    const limit = Math.min(count, MAPPED_COPY_LIMIT);
-    // Each UTF-16 unit needs at least one UTF-8 byte; keep one more unit
-    // so truncating the output bytes cannot split the input surrogate pair.
-    const bytes = enc.encode(target.slice(0, limit + 1)).subarray(0, limit);
-    user.copyOut(N(buf), bytes);
-    return bytes.length;
+  263(dirfd, name, flags) {
+    if (flags & ~BigInt(AT.REMOVEDIR)) fail(E.INVAL);
+    return FILE_CALLS[263].call(this, dirfd, name, flags);
   },
+  266: FILE_CALLS[266],
+  267(dirfd, name, buf, size) { return mappedReadlink(this, dirfd, name, buf, size); },
+  269: FILE_CALLS[269],
+  271: FILE_CALLS[271],
+  290: FILE_CALLS[290],
+  293: FILE_CALLS[293],
+  319: FILE_CALLS[319],
+  439: FILE_CALLS[439],
 };

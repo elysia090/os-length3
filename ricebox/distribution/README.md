@@ -97,6 +97,24 @@ has stopped. See the [runtime foundation](../../docs/runtime-foundation.md) for
 compatibility and browser-transfer constraints. Node integration results are not
 browser cold-start measurements.
 
+### Prepared code for the inline dynamic VM
+
+`build/mapped-code.ts` uses a supplied translator loader to replay ordered
+dispatch misses for each exact RX placement in a verified root. It emits
+content-addressed Wasm and a sidecar bound to the root generation and decoded
+translator. A replay keeps earlier
+discovery fences and each part's register and flag analysis, then emits one
+module for the placement. Direct branches can target functions in that module.
+Each PC has one dispatcher record with the target from the last part that
+published it.
+
+`runtime/mapped-code.ts` binds a trusted sidecar to a prepared tree's captured
+inodes. Supply the resulting `preparedCode` to `prepareMappedInitial` with the
+ordinary main, interpreter and library grants. Make artifacts available through
+its reader. The first matching dispatch miss checks the blob digest and
+attaches the code under the VM's live RX permission. Missing code uses the
+ordinary translator. Withdrawal retires an attached piece with its mapping.
+
 ## Build, deploy and verify
 
 - `build/packages.sh` builds a pinned source-package cache. `fetch-sources.sh`

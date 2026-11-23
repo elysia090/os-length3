@@ -10,7 +10,7 @@ import {copySpace} from './mount.ts';
 import {down} from './fs.ts';
 import {CgroupNs, Ipc, NS, Net, PidNs, Uts, byNr, nrIn, pidReservationAllowed, spaceOf, withSpaces, type Spaces} from './space.ts';
 import {move, zero} from './bulk.ts';
-import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
+import {answerTime, clocks, cpuClock, cpuOf, readTimespec} from './clock.ts';
 import {E, File, FsError, MNT} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
@@ -23,7 +23,9 @@ const fail = (errno: number): never => { throw new FsError(errno); };
 const enc = new TextEncoder();
 
 const CLONE = {VM: 0x100, FS: 0x200, FILES: 0x400, SIGHAND: 0x800, PIDFD: 0x1000, VFORK: 0x4000, PARENT: 0x8000,
-  THREAD: 0x10000, SETTLS: 0x80000, PARENT_SETTID: 0x100000, CHILD_CLEARTID: 0x200000, CHILD_SETTID: 0x1000000};
+  THREAD: 0x10000, SYSVSEM: 0x40000, SETTLS: 0x80000, PARENT_SETTID: 0x100000, CHILD_CLEARTID: 0x200000, CHILD_SETTID: 0x1000000};
+const MAPPED_THREAD = CLONE.VM | CLONE.FS | CLONE.FILES | CLONE.SIGHAND | CLONE.THREAD;
+const MAPPED_THREAD_FLAGS = MAPPED_THREAD | CLONE.SYSVSEM | CLONE.SETTLS | CLONE.PARENT_SETTID | CLONE.CHILD_CLEARTID | CLONE.CHILD_SETTID;
 /** Every kind of namespace a clone or an unshare can make (a time namespace is not made here: asked for, EINVAL). */
 const NEW = NS.mnt | NS.cgroup | NS.uts | NS.ipc | NS.user | NS.pid | NS.net;
 
@@ -79,14 +81,23 @@ const W = {NOHANG: 1, UNTRACED: 2, EXITED: 4, CONTINUED: 8, NOWAIT: 0x01000000};
 function exitStatus(code: number): number { return (code & 0xff) << 8; }
 
 function writeTime(p: Proc, address: number, ns: bigint): void {
-  p.view.setBigInt64(address, ns / 1000000000n, true);
-  p.view.setBigInt64(address + 8, ns % 1000000000n, true);
+  const vm = p.memory?.mappedVm;
+  if (vm) {
+    const bytes = new Uint8Array(16);
+    putTime(new DataView(bytes.buffer), 0, ns);
+    vm.userMemory(p).copyOut(address, bytes);
+  } else {
+    putTime(p.view, address, ns);
+  }
+}
+
+function putTime(view: DataView, address: number, ns: bigint): void {
+  view.setBigInt64(address, ns / 1000000000n, true);
+  view.setBigInt64(address + 8, ns % 1000000000n, true);
 }
 
 // The kernel's clocks (clock.ts): what a thread reads without a call is what these say.
 const CLOCK = clocks(), wall = CLOCK.wall, monotonic = CLOCK.monotonic;
-/** A timespec in guest memory, in nanoseconds. */
-const readTime = (p: Proc, at: number): bigint => p.view.getBigInt64(at, true) * 1000000000n + p.view.getBigInt64(at + 8, true);
 const ms = (ns: bigint): number => Number(ns) / 1e6;
 
 /**
@@ -201,9 +212,19 @@ function execve(p: Proc, nameAddress: bigint, argvAddress: bigint, envAddress: b
  */
 function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number, tls: bigint, into: Cgroup | null = null): number {
   const t = p.task, s = p.call!.state;
+  const vm = p.memory?.mappedVm;
+  if (vm && ((flags & MAPPED_THREAD) !== MAPPED_THREAD || (flags & ~MAPPED_THREAD_FLAGS))) fail(E.OPNOTSUPP);
   // (A place for the new thread's id that is not the memory is not written, and the clone goes on: Linux's put_user
   // there is not looked at either.)
   const writeTid = (memory: WebAssembly.Memory, at: number, tid: number): void => {
+    if (vm) {
+      const user = vm.userMemory(p);
+      if (user.prefix(at, 4, 'write') !== 4) return;
+      const value = new Uint8Array(4);
+      new DataView(value.buffer).setInt32(0, tid, true);
+      user.copyOut(at, value);
+      return;
+    }
     if (at > 0 && at + 4 <= memory.buffer.byteLength) new DataView(memory.buffer).setInt32(at, tid, true);
   };
   if (flags & CLONE.THREAD) {
@@ -272,12 +293,16 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
 function clone3(p: Proc, at: number, size: number): number {
   if (size < 64) fail(E.INVAL);
   if (size > 4096) fail(E.TOOBIG);
-  if (p.bytes.subarray(at + Math.min(size, 88), at + size).some((b) => b !== 0)) fail(E.TOOBIG);
-  const v = p.view, word = (k: number): bigint => (8 * k + 8 <= size ? v.getBigUint64(at + 8 * k, true) : 0n);
+  const bytes = p.memory?.mappedVm?.userMemory(p).copyIn(at, size);
+  const from = bytes ? 0 : at, input = bytes ?? p.bytes;
+  if (input.subarray(from + Math.min(size, 88), from + size).some((b) => b !== 0)) fail(E.TOOBIG);
+  const v = bytes ? new DataView(bytes.buffer) : p.view;
+  const word = (k: number): bigint => 8 * k + 8 <= size ? v.getBigUint64(from + 8 * k, true) : 0n;
   const flags = word(0), signal = word(4), INTO_CGROUP = 0x200000000n;
   if (flags & 0xffn || flags & 0x400000n /* CLONE_DETACHED */ || flags >> 34n) fail(E.INVAL);
   if (signal > 64n) fail(E.INVAL);
   if (word(9)) fail(E.INVAL); // set_tid_size
+  if (bytes && flags >> 32n) fail(E.OPNOTSUPP);
   let into: Cgroup | null = null;
   if (flags & INTO_CGROUP) {
     if (flags & BigInt(CLONE.THREAD)) fail(E.INVAL);
@@ -289,6 +314,7 @@ function clone3(p: Proc, at: number, size: number): number {
     if (into.parent && into.gives.size) fail(E.BUSY);
   }
   const stack = word(5), length = word(6);
+  if (bytes && !!stack !== !!length) fail(E.INVAL);
   return clone(p, Number(flags & 0xffffffffn & ~0xffn) | Number(signal), stack ? stack + length : 0n, N(word(3)), N(word(2)), word(7), into);
 }
 
@@ -407,9 +433,26 @@ function seccomp(p: Proc, op: number, flags: number, uargs: number): number {
 
 /** futex(2): wait while a word holds a value, and wake those waiting on it. */
 function futex(p: Proc, uaddr: bigint, op: bigint, val: bigint, timeout: bigint, uaddr2: bigint, val3: bigint): number {
-  const k = p.kernel, s = p.call!.state, address = N(uaddr), cmd = N(op) & 0x7f, realtime = N(op) & 256;
-  if (address & 3) fail(E.INVAL);
-  const word = (at: number): number => p.view.getInt32(at, true);
+  const k = p.kernel, s = p.call!.state, address = N(uaddr), operation = Number(BigInt.asUintN(32, op));
+  const cmd = operation & 0x7f, realtime = operation & 256;
+  if (uaddr & 3n) fail(E.INVAL);
+  const vm = p.memory?.mappedVm;
+  if (vm) {
+    // All mapped futex words are private to this address space, including
+    // join words used without FUTEX_PRIVATE_FLAG.
+    switch (operation) {
+      case 0: case 9: case 0x109: case 0x80: case 0x89: case 0x189: break;
+      case 1: case 5: case 10: case 0x81: case 0x85: case 0x8a:
+        if (!vm.permits(uaddr, 4n, 'read')) fail(E.FAULT);
+        break;
+      default: fail(E.NOSYS);
+    }
+  }
+  const word = (at: number): number => {
+    if (!vm) return p.view.getInt32(at, true);
+    const bytes = vm.userMemory(p).copyIn(at, 4);
+    return new DataView(bytes.buffer).getInt32(0, true);
+  };
   switch (cmd) {
     case 0: case 9: { // WAIT, WAIT_BITSET
       if (!s.waiter) {
@@ -417,16 +460,17 @@ function futex(p: Proc, uaddr: bigint, op: bigint, val: bigint, timeout: bigint,
         if (!bitset) fail(E.INVAL);
         // Changed already: given back, not thrown (a lock taken and let go meanwhile, as often as not).
         if (word(address) !== Number(BigInt.asIntN(32, val))) return -E.AGAIN;
-        const w = s.waiter = {task: p.task, bitset, woken: false, key: p.futexKey(address)};
-        k.futexQueue(w.key).add(w);
-        s.cancel = () => { k.futexes.get(w.key[0])?.get(w.key[1])?.delete(w); };
         if (N(timeout)) {
-          const t = readTime(p, N(timeout));
+          const t = readTimespec(p, N(timeout));
           // WAIT: an interval; WAIT_BITSET: a time on its clock.
           const left = cmd === 0 ? t : t - (realtime ? wall() : monotonic());
-          s.deadline = steady() + Math.max(0, ms(left));
+          if (left <= 0n) fail(E.TIMEDOUT);
+          s.deadline = steady() + ms(left);
           s.timed = true;
         }
+        const w = s.waiter = {task: p.task, bitset, woken: false, key: p.futexKey(address)};
+        k.futexQueue(w.key).add(w);
+        s.cancel = () => k.futexCancel(w);
       }
       if (s.waiter?.woken) return 0;
       if (s.deadline !== undefined && steady() >= s.deadline) { s.cancel?.(); fail(E.TIMEDOUT); }
@@ -444,17 +488,37 @@ function futex(p: Proc, uaddr: bigint, op: bigint, val: bigint, timeout: bigint,
       return woken + k.futexRequeue(p.futexKey(address), p.futexKey(N(uaddr2)), Number(BigInt.asUintN(32, timeout)));
     }
     case 5: { // WAKE_OP
+      if (uaddr2 & 3n) fail(E.INVAL);
       const at2 = N(uaddr2), code = Number(BigInt.asUintN(32, val3));
       const opcode = (code >>> 28) & 7, cmp = (code >>> 24) & 15;
-      let oparg = (code << 8) >> 20, cmparg = (code << 20) >> 20;
+      if (opcode > 4 || cmp > 5) fail(E.NOSYS);
+      let oparg = (code << 8) >> 20;
+      const cmparg = (code << 20) >> 20;
       if ((code >>> 28) & 8) oparg = 1 << (oparg & 31);
-      const old = word(at2);
-      const next = [oparg, old + oparg, old | oparg, old & ~oparg, old ^ oparg][opcode] ?? fail(E.NOSYS);
-      p.view.setInt32(at2, next, true);
-      let woken = k.futexWake(p.futexKey(address), N(val), -1);
-      const hit = [old === cmparg, old !== cmparg, old < cmparg, old <= cmparg, old > cmparg, old >= cmparg][cmp];
-      if (hit) woken += k.futexWake(p.futexKey(at2), Number(BigInt.asUintN(32, timeout)), -1);
-      return woken;
+      const user = vm?.userMemory(p), bytes = user?.copyIn(at2, 4);
+      const view = bytes ? new DataView(bytes.buffer) : p.view, at = bytes ? 0 : at2;
+      const old = view.getInt32(at, true);
+      let next: number;
+      switch (opcode) {
+        case 0: next = oparg; break;
+        case 1: next = old + oparg; break;
+        case 2: next = old | oparg; break;
+        case 3: next = old & ~oparg; break;
+        default: next = old ^ oparg;
+      }
+      view.setInt32(at, next, true);
+      if (user && bytes) user.copyOut(at2, bytes);
+      const woken = k.futexWake(p.futexKey(address), N(val), -1);
+      let wakeOther: boolean;
+      switch (cmp) {
+        case 0: wakeOther = old === cmparg; break;
+        case 1: wakeOther = old !== cmparg; break;
+        case 2: wakeOther = old < cmparg; break;
+        case 3: wakeOther = old <= cmparg; break;
+        case 4: wakeOther = old > cmparg; break;
+        default: wakeOther = old >= cmparg;
+      }
+      return wakeOther ? woken + k.futexWake(p.futexKey(at2), Number(BigInt.asUintN(32, timeout)), -1) : woken;
     }
     default: return fail(E.NOSYS); // the priority-inheriting kinds
   }
@@ -746,7 +810,7 @@ export const PROC_CALLS: Calls = {
     for (const [from, bytes] of restore) this.bytes.set(bytes, from);
     return 0;
   },
-  35(req, rem) { return sleepUntil(this, steady() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep
+  35(req, rem) { return sleepUntil(this, steady() + ms(readTimespec(this, N(req))), N(rem)); }, // nanosleep
   36(which, value) { // getitimer
     if (N(which) !== 0) { this.bytes.fill(0, N(value), N(value) + 32); return 0; }
     writeTimeval(this, N(value), this.alarm?.interval ?? 0);
@@ -762,7 +826,10 @@ export const PROC_CALLS: Calls = {
     return 0;
   },
   39() { return nr(this, this.pid); },
-  56(flags, stack, ptid, ctid, tls) { return clone(this, N(flags), BigInt.asUintN(64, stack), N(ptid), N(ctid), tls); },
+  56(flags, stack, ptid, ctid, tls) {
+    if (this.memory?.mappedVm && flags !== BigInt.asUintN(32, flags)) fail(E.OPNOTSUPP);
+    return clone(this, N(flags), BigInt.asUintN(64, stack), N(ptid), N(ctid), tls);
+  },
   57() { return clone(this, SIG.CHLD, 0n, 0, 0, 0n); }, // fork
   58() { return clone(this, CLONE.VM | CLONE.VFORK | SIG.CHLD, 0n, 0, 0, 0n); }, // vfork
   59(name, argv, env) { return execve(this, name, argv, env); },
@@ -919,7 +986,7 @@ export const PROC_CALLS: Calls = {
     return 0;
   },
   230(clock, flags, req, rem) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
-    const t = readTime(this, N(req));
+    const t = readTimespec(this, N(req));
     if (!(N(flags) & 1)) return sleepUntil(this, steady() + ms(t), N(rem));
     const now = N(clock) === 0 ? wall() : monotonic();
     return sleepUntil(this, steady() + ms(t > now ? t - now : 0n));
@@ -938,10 +1005,20 @@ export const PROC_CALLS: Calls = {
     if (target.state !== 'live') fail(E.SRCH);
     return rlimit(this, target, resource, next, old);
   },
-  318(buf, len) { // getrandom
+  318(buf, len, flags) { // getrandom
     // As much as is asked for and is the guest's memory: of a span that runs off its end, the part inside (Linux's
     // short count); one that begins outside it is EFAULT.
     const at = N(buf), asked = N(len) < 0 ? 65536 : Math.min(N(len), 65536);
+    const vm = this.memory?.mappedVm;
+    if (vm) {
+      const options = Number(BigInt.asUintN(32, flags));
+      if ((options & ~7) || (options & 6) === 6) fail(E.INVAL);
+      if (!asked) return 0;
+      const user = vm.userMemory(this), n = user.prefix(at, asked, 'write');
+      if (!n) fail(E.FAULT);
+      user.copyOut(at, randomBytes(n));
+      return n;
+    }
     if (!asked) return 0;
     if (!(at >= 0 && at < this.bytes.length)) fail(E.FAULT);
     const n = Math.min(asked, this.bytes.length - at);

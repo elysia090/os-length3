@@ -12,6 +12,48 @@ const X: u32 = 1;
 const W: u32 = 2;
 const R: u32 = 4;
 
+/// The parser only reads the ELF header, program headers, dynamic table
+/// and interpreter name. PT_LOAD ranges are checked against the file size.
+struct LoadFile<'a> {
+    size: u64,
+    spans: [(u64, &'a [u8]); 4],
+}
+
+impl<'a> LoadFile<'a> {
+    fn whole(file: &'a [u8]) -> Self {
+        Self { size: file.len() as u64, spans: [(0, file), (0, &[]), (0, &[]), (0, &[])] }
+    }
+
+    fn metadata(packet: &'a [u8], size: usize) -> Result<Self, Error> {
+        let mut input = Self { size: size as u64, spans: [(0, &[]); 4] };
+        let wire = Reader(packet);
+        let mut payload = 32;
+        for (i, span) in input.spans.iter_mut().enumerate() {
+            let at = i as u64 * 8;
+            let (offset, length) = (wire.u32(at)? as u64, wire.u32(at + 4)? as u64);
+            if offset + length > input.size {
+                return err("ELF metadata span exceeds its file");
+            }
+            *span = (offset, wire.bytes(payload, length)?);
+            payload += length;
+        }
+        if payload != packet.len() as u64 {
+            return err("invalid ELF metadata length");
+        }
+        Ok(input)
+    }
+
+    fn bytes(&self, at: u64, length: u64) -> Result<&'a [u8], Error> {
+        for (offset, bytes) in self.spans {
+            let Some(start) = at.checked_sub(offset) else { continue };
+            if length <= bytes.len() as u64 && start <= bytes.len() as u64 - length {
+                return Ok(&bytes[start as usize..(start + length) as usize]);
+            }
+        }
+        err(format!("truncated at {at:#x}+{length:#x}"))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
     Main = 1,
@@ -61,7 +103,7 @@ impl Header {
             .then(|| self.vaddr + relative)
     }
 
-    fn validate_load(self, r: &Reader) -> Result<(), Error> {
+    fn validate_load(self, size: u64) -> Result<(), Error> {
         if self.filesz > self.memsz
             || self.vaddr.checked_add(self.memsz).is_none_or(|end| end > 1 << 32)
             || [self.offset, self.vaddr, self.filesz, self.memsz, self.align]
@@ -73,7 +115,9 @@ impl Header {
         {
             return err("invalid or unsupported PT_LOAD");
         }
-        r.bytes(self.offset, self.filesz)?;
+        if self.offset + self.filesz > size {
+            return err("PT_LOAD exceeds its file");
+        }
         Ok(())
     }
 }
@@ -90,9 +134,19 @@ pub(crate) struct LoadSpec {
 
 impl LoadSpec {
     pub(crate) fn read(file: &[u8], role: Role) -> Result<Self, Error> {
-        let r = Reader(file);
-        if file.len() > MAX_FILE
-            || r.bytes(0, HEADER)?[..7] != [0x7f, b'E', b'L', b'F', 2, 1, 1]
+        Self::read_file(LoadFile::whole(file), role)
+    }
+
+    pub(crate) fn read_metadata(packet: &[u8], size: usize, role: Role) -> Result<Self, Error> {
+        Self::read_file(LoadFile::metadata(packet, size)?, role)
+    }
+
+    fn read_file(file: LoadFile, role: Role) -> Result<Self, Error> {
+        if file.size > MAX_FILE as u64 {
+            return err("expected an ELF64 x86-64 dynamic object");
+        }
+        let r = Reader(file.bytes(0, HEADER)?);
+        if r.0[..7] != [0x7f, b'E', b'L', b'F', 2, 1, 1]
             || r.u16(16)? != 3
             || r.u16(18)? != 62
             || r.u32(20)? != 1
@@ -106,15 +160,15 @@ impl LoadSpec {
         if phoff < HEADER || bytes == 0 || bytes > 65536 {
             return err("invalid ELF program-header table");
         }
-        r.bytes(phoff, bytes)?;
+        let ph = Reader(file.bytes(phoff, bytes)?);
 
         let (mut interpreter, mut dynamic, mut phdr) = (None, None, None);
         let mut loads: Vec<Header> = Vec::new();
         for i in 0..phnum {
-            let h = Header::read(&r, phoff + i * PHENT)?;
+            let h = Header::read(&ph, i * PHENT)?;
             match h.kind {
                 PT_LOAD => {
-                    h.validate_load(&r)?;
+                    h.validate_load(file.size)?;
                     // This profile has one owner per mapped page. Adjacent
                     // file-backed ranges need not be adjacent in the file.
                     if h.memsz > 0 {
@@ -133,7 +187,7 @@ impl LoadSpec {
                     if role != Role::Main || interpreter.is_some() || !(2..=4096).contains(&h.filesz) {
                         return err("invalid or unexpected PT_INTERP");
                     }
-                    let path = r.bytes(h.offset, h.filesz)?;
+                    let path = file.bytes(h.offset, h.filesz)?;
                     if path[0] != b'/' || path[h.filesz as usize - 1] != 0 || path[..path.len() - 1].contains(&0) {
                         return err("expected an absolute, NUL-terminated PT_INTERP path");
                     }
@@ -170,16 +224,16 @@ impl LoadSpec {
             return err("PT_DYNAMIC is not a valid file-backed table");
         }
         let mut terminated = false;
-        for i in (0..dynamic.filesz).step_by(16) {
-            let at = dynamic.offset + i;
-            match r.u64(at)? {
+        let table = Reader(file.bytes(dynamic.offset, dynamic.filesz)?);
+        for at in (0..dynamic.filesz).step_by(16) {
+            match table.u64(at)? {
                 0 => { terminated = true; break; }
                 // DT_TEXTREL or DT_FLAGS with DF_TEXTREL. The loader owns all
                 // other dependencies, symbols, TLS and relocation semantics.
                 22 => return err("text relocations are not supported"),
-                30 if r.u64(at + 8)? & 4 != 0 => return err("text relocations are not supported"),
+                30 if table.u64(at + 8)? & 4 != 0 => return err("text relocations are not supported"),
                 // DT_FLAGS_1 with DF_1_PIE is an executable, not a library.
-                0x6fff_fffb if role == Role::SharedObject && r.u64(at + 8)? & 0x0800_0000 != 0 =>
+                0x6fff_fffb if role == Role::SharedObject && table.u64(at + 8)? & 0x0800_0000 != 0 =>
                     return err("a PIE executable is not a shared library"),
                 _ => {}
             }
@@ -194,22 +248,24 @@ impl LoadSpec {
     /// Discovery cannot walk into another segment or use unmapped file data.
     #[cfg(feature = "mapped-code")]
     pub(crate) fn placed_text(
-        file: Vec<u8>, role: Role, bias: u64, address: u64, offset: u64, length: u64,
+        &self, file: Vec<u8>, start: usize, bias: u64, address: u64, offset: u64, length: u64,
     ) -> Result<super::Elf, Error> {
         use super::{Bytes, Elf, Segment};
         use std::sync::Arc;
-        let spec = Self::read(&file, role)?;
-        let alignment = spec.loads.iter().map(|h| h.align).max().unwrap_or(PAGE).max(PAGE);
+        let alignment = self.loads.iter().map(|h| h.align).max().unwrap_or(PAGE).max(PAGE);
         if bias % alignment != 0 || address < PAGE || length == 0
             || address.checked_add(length).is_none_or(|end| end > 1 << 32)
+            || length > file.len() as u64 || start > file.len() - length as usize
         {
             return err("mapped text does not fit a biased ELF");
         }
-        let h = spec.loads.iter().find(|h| {
+        if !self.loads.iter().any(|h| {
             h.flags == R | X && h.offset == offset && h.filesz == length &&
                 bias.checked_add(h.vaddr) == Some(address)
-        }).ok_or_else(|| Error("executable bytes do not match one file-backed RX segment".into()))?;
-        let data = Bytes {file: Arc::new(file), start: h.offset as usize, len: h.filesz as usize};
+        }) {
+            return err("executable bytes do not match one file-backed RX segment");
+        }
+        let data = Bytes {file: Arc::new(file), start, len: length as usize};
         Ok(Elf {
             entry: address,
             segments: vec![Segment {offset, vaddr: address, memsz: length, data, executable: true, writable: false}],
@@ -305,5 +361,24 @@ mod tests {
         u64_at(&mut file, 0x600, 0);
         u64_at(&mut file, 24, 4096);
         assert!(LoadSpec::read(&file, Role::Main).is_err());
+    }
+
+    #[test]
+    fn sparse_metadata_keeps_the_full_file_checks() {
+        let file = fixture();
+        let spans = [(0, 64), (64, 3 * 56), (0x600, 16), (0x500, PATH.len())];
+        let mut packet = vec![0; 32];
+        for (i, (start, len)) in spans.into_iter().enumerate() {
+            u32_at(&mut packet, i * 8, start as u32);
+            u32_at(&mut packet, i * 8 + 4, len as u32);
+            packet.extend(&file[start..start + len]);
+        }
+        let from_file = LoadSpec::read(&file, Role::Main).unwrap().encode();
+        let from_packet = LoadSpec::read_metadata(&packet, file.len(), Role::Main).unwrap().encode();
+        assert_eq!(from_packet, from_file);
+        assert!(LoadSpec::read_metadata(&packet, file.len() - 1, Role::Main).is_err());
+        assert!(LoadSpec::read_metadata(&packet[..packet.len() - 1], file.len(), Role::Main).is_err());
+        u64_at(&mut packet, 32 + 64 + 3 * 56, 22); // DT_TEXTREL
+        assert!(LoadSpec::read_metadata(&packet, file.len(), Role::Main).is_err());
     }
 }

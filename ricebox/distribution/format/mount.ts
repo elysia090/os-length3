@@ -18,7 +18,7 @@ export interface Packed {
   links: {path: string; target: string}[];
   files: {path: string; mode: number; size: number; pack: number; at: number; len: number; raw?: boolean}[];
 }
-/** How a pack's bytes are had: a range of one, a file's zstd frames decoded to `size`, the SHA-256 they are checked by. */
+/** How a pack is read. The decoder gives the mounted file ownership of its output. */
 export interface Reading { range: (pack: string, at: number, len: number) => Uint8Array; decode: (bytes: Uint8Array, size: number) => Uint8Array; sha256: Sha256 }
 /** A file given with its bytes (and the root's own, `root`). */
 export interface Given { path: string; bytes: Uint8Array; mode?: number; root?: boolean }
@@ -28,7 +28,7 @@ export interface MountTarget<F> {
   directory(path: string, mode: number): void;
   has(path: string): boolean;
   symlink(target: string, path: string): void;
-  file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string): F;
+  file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string, ownership?: 'owned'): F;
   hardlink(file: F, path: string): void;
 }
 
@@ -49,8 +49,8 @@ export function mountPack<F>(target: MountTarget<F>, index: Packed, {range, deco
     if (same !== undefined) { target.hardlink(same, path); continue; }
     const file = target.file(path, f.mode, f.size, () => {
       const stored = read(f.pack, f.at, f.len);
-      return f.raw ? stored.slice() : decode(stored, f.size);
-    }, `${pack.replace(/\.pack$/, '')}_${f.at}_${f.len}`);
+      return f.raw ? new Uint8Array(stored) : decode(stored, f.size);
+    }, `${pack.replace(/\.pack$/, '')}_${f.at}_${f.len}`, 'owned');
     if (f.len) named.set(where, file);
   }
 }

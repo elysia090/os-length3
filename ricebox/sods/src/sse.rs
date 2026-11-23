@@ -1,11 +1,23 @@
 //! SSE on v128: the subset C compilers emit for x86-64-v2.
 
+use crate::abi::{F_TRAP, G_MXCSR, MXCSR_RESET, TRAP_UNSUPPORTED};
 use crate::flags::*;
 use crate::frame::*;
 use crate::wasm::*;
 use crate::x86::*;
 
 impl Fx<'_> {
+    /// MXCSR retains the guest's control bits. Wasm arithmetic can only
+    /// execute with the reset controls (the low six status bits are ignored).
+    fn require_sse_mode(&mut self, i: &Instruction) {
+        if !self.checked_memory { return; }
+        self.gget(G_MXCSR); self.c32(0xffc0); self.e(I32_AND);
+        self.c32(MXCSR_RESET); self.e(I32_NE);
+        self.if_();
+        self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.call(F_TRAP); self.e(UNREACHABLE);
+        self.end();
+    }
+
     pub(crate) fn xread(&mut self, i: &Instruction, n: u32, bytes: u32) -> bool {
         match i.op_kind(n) {
             OpKind::Register => match xmm(i.op_register(n)) {
@@ -60,6 +72,14 @@ impl Fx<'_> {
             Addss => Some(F32_ADD), Subss => Some(F32_SUB), Mulss => Some(F32_MUL), Divss => Some(F32_DIV),
             _ => None,
         };
+        if arith.is_some()
+            || matches!(m, Sqrtsd | Sqrtss | Minsd | Maxsd | Minss | Maxss | Cvtsi2sd | Cvtsi2ss
+                | Cvtss2sd | Cvtsd2ss | Cvttsd2si | Cvtsd2si | Cvttss2si | Cvtss2si
+                | Ucomisd | Comisd | Ucomiss | Comiss)
+            || (i.op_count() == 3 && matches!(m, Cmpsd | Cmpss))
+        {
+            self.require_sse_mode(i);
+        }
         let done = |fx: &mut Self| { fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) };
         Some(match m {
             _ if arith.is_some() => {
@@ -201,6 +221,12 @@ impl Fx<'_> {
         }
         if !(is_x0 || is_x1) {
             return false;
+        }
+        if matches!(m, Addpd | Subpd | Mulpd | Divpd | Addps | Subps | Mulps | Divps | Sqrtps | Sqrtpd
+            | Rcpps | Rsqrtps | Maxps | Minps | Maxpd | Minpd | Cmpps | Cmppd | Cvtdq2ps | Cvtdq2pd
+            | Cvtps2pd | Cvtpd2ps | Cvttps2dq | Cvtps2dq | Cvttpd2dq | Cvtpd2dq)
+        {
+            self.require_sse_mode(i);
         }
         let binary = |fx: &mut Self, op: Op| -> bool {
             fx.xread(i, 0, 16) && fx.xread(i, 1, 16) && { fx.e(op); fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) }

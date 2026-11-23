@@ -47,7 +47,7 @@ impl Block {
     pub fn last_ip(&self) -> u64 { self.end() - self.last as u64 }
     /// Its instructions, decoded again from `elf` into `into`.
     pub fn decode(&self, elf: &Elf, into: &mut Vec<Instruction>) {
-        Code::new(elf, self.start).decode(elf, self.start, self.count, into);
+        Code::new(elf, self.start).decode(elf, self.start, self.len, self.count, into);
     }
     pub fn instructions(&self, elf: &Elf) -> Vec<Instruction> {
         let mut out = Vec::with_capacity(self.count as usize);
@@ -78,8 +78,10 @@ pub struct Function {
     pub blocks: Vec<Block>,
     /// Each block's successors within (as goes_to has them), by index; NO where none or not this function's.
     pub succ: Vec<[u32; 2]>,
-    /// Its blocks' indices, by their addresses.
-    pub(crate) by_address: Vec<u32>,
+    /// A local edge to the same or an earlier block in lowering order.
+    pub(crate) has_back_edge: bool,
+    /// Present only when lowering uses a different order from the addresses.
+    pub(crate) by_address: Option<Vec<u32>>,
 }
 
 impl Function {
@@ -91,12 +93,20 @@ impl Function {
         into
     }
     pub fn block_index(&self, address: u64) -> Option<usize> {
-        self.by_address.binary_search_by_key(&address, |&k| self.blocks[k as usize].start).ok().map(|i| self.by_address[i] as usize)
+        match &self.by_address {
+            Some(order) => order.binary_search_by_key(&address, |&k| self.blocks[k as usize].start).ok().map(|i| order[i] as usize),
+            None => self.blocks.binary_search_by_key(&address, |block| block.start).ok(),
+        }
+    }
+    /// Block indices in address order.
+    pub(crate) fn address_order(&self) -> impl Iterator<Item = u32> + '_ {
+        (0..self.blocks.len() as u32).map(|i| self.by_address.as_ref().map_or(i, |order| order[i as usize]))
     }
     /// The first and last of its blocks' addresses.
     pub fn span(&self) -> Option<(u64, u64)> {
-        let at = |k: &u32| self.blocks[*k as usize].start;
-        Some((at(self.by_address.first()?), at(self.by_address.last()?)))
+        let last = self.blocks.len().checked_sub(1)?;
+        let last = self.by_address.as_ref().map_or(last, |order| order[last] as usize);
+        Some((self.blocks[0].start, self.blocks[last].start))
     }
 }
 
@@ -148,6 +158,23 @@ impl Entries {
         // The first marked of an address is the one of the lowest function (a function marks an address one way). (A
         // sort that goes along the runs already in order: find hands them over nearly so.)
         marks.sort_by_key(|&(a, (f, _))| (a, f));
+        Self::from_sorted(marks)
+    }
+
+    /// Replay publishes each program's entries in order. A later program
+    /// replaces any earlier record for the same PC in the dispatcher.
+    pub(crate) fn replay_targets(programs: &[Program]) -> Entries {
+        let mut marks = Vec::with_capacity(programs.iter().map(|p| p.entries.len()).sum());
+        let mut base = 0;
+        for p in programs {
+            marks.extend(p.entries.iter().map(|(&pc, &(f, block))| (pc, (base + f, block))));
+            base += p.functions.len() as u32;
+        }
+        marks.sort_unstable_by_key(|&(pc, (f, _))| (pc, std::cmp::Reverse(f)));
+        Self::from_sorted(marks)
+    }
+
+    fn from_sorted(mut marks: Vec<(u64, (u32, u32))>) -> Entries {
         marks.dedup_by_key(|&mut (a, _)| a);
         marks.shrink_to_fit();
         let buckets = Buckets::of(marks.iter().map(|&(a, _)| a));

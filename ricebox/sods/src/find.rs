@@ -42,7 +42,7 @@ struct Follow {
 /// has translated first, the rest being reached later (`discover_within`).
 pub fn discover(elf: &Elf) -> Program {
     let known = BTreeSet::new();
-    find(elf, Find { starts: BTreeSet::from([elf.entry]), targets: &elf.relocation_targets, pointed_start: elf.symbols.is_empty(), known: &known, budget: usize::MAX, follow: Follow { calls: true, tables: true, taken: false }, symbols: true })
+    find(elf, Find { starts: BTreeSet::from([elf.entry]), targets: &elf.relocation_targets, pointed_start: elf.symbols.is_empty(), known: &known, budget: usize::MAX, follow: Follow { calls: true, tables: true, taken: false }, symbols: true }, &mut DiscoveryScratch::default())
 }
 
 /// Exactly the functions starting at `seeds` (with the entry and the named ones): what the program's runs have
@@ -50,7 +50,7 @@ pub fn discover(elf: &Elf) -> Program {
 /// followed (each is reached later, as before).
 pub fn discover_seeded(elf: &Elf, seeds: &[u64]) -> Program {
     let (starts, known) = (std::iter::once(elf.entry).chain(seeds.iter().copied().filter(|&a| elf.is_code(a))).collect(), BTreeSet::new());
-    find(elf, Find { starts, targets: &elf.relocation_targets, pointed_start: false, known: &known, budget: usize::MAX, follow: Follow { calls: false, tables: false, taken: false }, symbols: true })
+    find(elf, Find { starts, targets: &elf.relocation_targets, pointed_start: false, known: &known, budget: usize::MAX, follow: Follow { calls: false, tables: false, taken: false }, symbols: true }, &mut DiscoveryScratch::default())
 }
 
 /// The whole program, ahead of time: as `discover`, and where no function of its own is named every function its
@@ -61,7 +61,7 @@ pub fn discover_whole(elf: &Elf) -> Program {
     targets.dedup();
     let named = elf.symbols.iter().any(|s| s.function && elf.is_code(s.value));
     let known = BTreeSet::new();
-    find(elf, Find { starts: BTreeSet::from([elf.entry]), targets: &targets, pointed_start: !named, known: &known, budget: usize::MAX, follow: Follow { calls: true, tables: true, taken: true }, symbols: true })
+    find(elf, Find { starts: BTreeSet::from([elf.entry]), targets: &targets, pointed_start: !named, known: &known, budget: usize::MAX, follow: Follow { calls: true, tables: true, taken: true }, symbols: true }, &mut DiscoveryScratch::default())
 }
 
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
@@ -77,12 +77,46 @@ pub const BUDGET: usize = crate::identity::DEFAULT_DISCOVERY_BUDGET as usize;
 /// a walk stops there and a call to it goes through the dispatcher; past `budget` instructions walked, a call or jump
 /// to code not walked does too. Nothing of the file is read but the code execution reaches from the seeds.
 pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: usize) -> Program {
+    discover_within_in(elf, seeds, known, budget, &mut DiscoveryScratch::default())
+}
+
+pub(crate) fn discover_within_in(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: usize,
+    scratch: &mut DiscoveryScratch) -> Program {
     let starts = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
-    find(elf, Find { starts, targets: &[], pointed_start: false, known, budget, follow: Follow { calls: true, tables: false, taken: false }, symbols: false })
+    find(elf, Find { starts, targets: &[], pointed_start: false, known, budget, follow: Follow { calls: true, tables: false, taken: false }, symbols: false }, scratch)
+}
+
+/// Build-time replay of single-PC requests with the same discovery fences
+/// as incremental translation. An earlier request can make a later one known.
+#[cfg(all(feature = "mapped-code", target_arch = "wasm32"))]
+pub(crate) fn replay_mapped(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: usize,
+    scratch: &mut DiscoveryScratch) -> Result<Vec<Program>, &'static str> {
+    let mut known = known.clone();
+    let mut programs = Vec::new();
+    let mut slots = 0;
+    for &pc in seeds {
+        if known.contains(&pc) { continue; }
+        let program = discover_within_in(elf, &[pc], &known, budget, scratch);
+        if !program.entries.contains_key(&pc) { return Err("replay PC is not a mapped code entry"); }
+        slots += program.functions.len();
+        if slots > crate::abi::MAPPED_SLOTS { return Err("replay exceeds mapped table capacity"); }
+        known.extend(program.functions.iter().map(|f| f.start));
+        programs.push(program);
+    }
+    Ok(programs)
+}
+
+/// Reusable buffers for sequential discovery. Each walk initializes the
+/// parts it needs. Decoded instruction caches still belong to one attempt.
+#[derive(Default)]
+pub(crate) struct DiscoveryScratch {
+    walk: Scratch,
+    layout: Layout,
+    decoded: Vec<Instruction>,
 }
 
 /// The program `walk` finds.
-fn find(elf: &Elf, walk: Find) -> Program {
+fn find(elf: &Elf, walk: Find, scratch: &mut DiscoveryScratch) -> Program {
     let Find { mut starts, targets, pointed_start, known, budget, follow, symbols } = walk;
     let (mut sizes, mut names) = (BTreeMap::new(), BTreeMap::new());
     if symbols {
@@ -103,31 +137,32 @@ fn find(elf: &Elf, walk: Find) -> Program {
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
+    let mut pending: Vec<u64> = starts.iter().copied().collect();
+    let limited = budget != usize::MAX;
+    let mut instructions = 0;
     let seen = Seen::new(elf);
-    // (The instructions of a block read for its switch: one list, read into again and again.)
-    let mut read: Vec<Instruction> = Vec::new();
     loop {
-        let sorted: Vec<u64> = starts.iter().copied().collect();
-        let end = |s: u64| {
-            let next = after(&starts, s).min(after(known, s));
-            match sizes.get(&s) { Some(&size) if size > 0 => s + size, _ => next }
+        let end = |s: u64, next: u64| {
+            match sizes.get(&s) { Some(&size) if size > 0 => s + size, _ => next.min(after(known, s)) }
         };
-        let inside = |all: &[u64], s: u64, e: u64| (all.partition_point(|&a| a <= s), all.partition_point(|&a| a < e));
-        // The starts not walked yet: both lists in order, gone through together.
-        let mut walked = done.keys().copied().peekable();
-        let jobs: Vec<Job> = sorted.iter().filter(|&&s| { while walked.next_if(|&d| d < s).is_some() {} walked.next_if_eq(&s).is_none() }).map(|&s| {
-            let e = end(s);
-            let ((p, q), (i, j)) = (inside(&pointers, s, e), inside(&sorted, s, e));
-            (s, e, &pointers[p..q], &sorted[i..j])
+        // Only new starts and functions whose ranges changed are walked.
+        let jobs: Vec<Job> = pending.iter().map(|&s| {
+            let next = after(&starts, s);
+            let e = end(s, next);
+            let p = pointers.partition_point(|&a| a <= s);
+            let q = pointers.partition_point(|&a| a < e);
+            (s, e, &pointers[p..q], (next < e).then_some(&starts))
         }).collect();
+        pending.clear();
         fresh.clear();
-        let (walked, mut found) = walk_all(elf, &seen, &jobs, collect.then_some(&mut fresh));
+        let (walked, mut found) = walk_all(elf, &seen, &jobs, collect.then_some(&mut fresh), &mut scratch.walk);
         let mut switches = Vec::new();
         // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
         if !follow.calls { found.clear(); }
         for (s, blocks) in walked {
-            if guess && follow.tables { switch_targets(elf, &blocks, s, end(s), &mut read, &mut switches); }
+            if guess && follow.tables { switch_targets(elf, &blocks, s, end(s, after(&starts, s)), &mut scratch.decoded, &mut switches); }
             if !follow.calls { found.extend(continuations(&blocks)); }
+            if limited { instructions += count_instructions(&blocks); }
             done.insert(s, blocks);
         }
         // Only those not known yet, then each place once (a function is called from many): the few that are new are
@@ -144,30 +179,38 @@ fn find(elf: &Elf, walk: Find) -> Program {
         tables.sort_unstable();
         tables.dedup();
         tables.retain(|t| pointers.binary_search(t).is_err());
-        let walked: usize = if budget == usize::MAX { 0 } else { done.values().flatten().map(|b| b.count as usize).sum() };
-        if (found.is_empty() && tables.is_empty()) || walked >= budget { break; }
+        if (found.is_empty() && tables.is_empty()) || instructions >= budget { break; }
         // A table's targets are leaders of the functions that hold them; a new start splits the walk whose range
         // held it (unless a known start ends that range before it).
-        for t in &tables { if let Some(h) = starts.range(..=*t).next_back() { done.remove(h); } }
-        pointers.extend(tables);
-        pointers.sort_unstable();
+        if !tables.is_empty() {
+            pending.extend(tables.iter().filter_map(|t| starts.range(..=*t).next_back().copied()));
+            pointers.extend(tables);
+            pointers.sort_unstable();
+        }
         // (Only when what it walked reaches the new start: a walk that stopped short of it would be walked again to the
         // same blocks.)
         for &t in &found {
             if let Some(b) = before(&starts, t) {
                 let reaches = done.get(&b).is_some_and(|blocks| blocks.iter().any(|k| k.end() >= t));
-                if reaches && before(known, t).is_none_or(|k| k < b) { done.remove(&b); }
+                if reaches && before(known, t).is_none_or(|k| k < b) { pending.push(b); }
             }
         }
-        starts.extend(found);
+        for s in &pending {
+            if let Some(blocks) = done.remove(s) {
+                if limited { instructions -= count_instructions(&blocks); }
+            }
+        }
+        starts.extend(found.iter().copied());
+        pending.extend(found);
+        pending.sort_unstable();
+        pending.dedup();
     }
     let mut functions = Vec::new();
     let mut marks = Vec::new();
-    let mut scratch = Layout::default();
     for (start, blocks) in done {
         let name = names.get(&start).cloned().unwrap_or_default();
         let (first, from) = (functions.len(), marks.len());
-        runs(start, name, blocks, &mut scratch, &mut functions);
+        runs(start, name, blocks, &mut scratch.layout, &mut functions);
         for (k, f) in functions.iter().enumerate().skip(first) {
             let k = k as u32;
             let found = |a: u64| f.block_index(a).map(|b| (a, (k, b as u32)));
@@ -181,8 +224,8 @@ fn find(elf: &Elf, walk: Find) -> Program {
             }
             // Only the pointers between its first and last block can land in it: both in address order, gone through
             // together.
-            if let Some((lo, hi)) = f.span() {
-                let mut by_address = f.by_address.iter().map(|&b| (f.blocks[b as usize].start, b)).peekable();
+            if let Some((lo, hi)) = f.span().filter(|_| !pointers.is_empty()) {
+                let mut by_address = f.address_order().map(|b| (f.blocks[b as usize].start, b)).peekable();
                 for &p in &pointers[pointers.partition_point(|&a| a < lo)..pointers.partition_point(|&a| a <= hi)] {
                     while by_address.next_if(|&(a, _)| a < p).is_some() {}
                     if let Some(&(a, b)) = by_address.peek() { if a == p { marks.push((p, (k, b))); } }
@@ -198,24 +241,34 @@ fn find(elf: &Elf, walk: Find) -> Program {
 }
 
 /// A walk's work: its start, the end of its range, the pointers into the range and the other starts inside it.
-type Job<'a> = (u64, u64, &'a [u64], &'a [u64]);
+type Job<'a> = (u64, u64, &'a [u64], Option<&'a BTreeSet<u64>>);
+
+fn count_instructions(blocks: &[Block]) -> usize {
+    blocks.iter().map(|b| b.count as usize).sum()
+}
 
 /// Each job walked: natively on every core, in wasm (one thread) in turn; in the order given. With what they call
 /// or go on to outside, all together.
-fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u64>>) -> (Vec<(u64, Vec<Block>)>, Vec<u64>) {
+fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u64>>, scratch: &mut Scratch) -> (Vec<(u64, Vec<Block>)>, Vec<u64>) {
     let collect = references.is_some();
-    let go = |part: &[Job], r: &mut Vec<u64>, calls: &mut Vec<u64>| -> Vec<(u64, Vec<Block>)> {
-        let mut scratch = Scratch::default();
-        part.iter().map(|&job| (job.0, walk(elf, seen, job, collect.then_some(&mut *r), calls, &mut scratch))).collect()
+    let go = |part: &[Job], r: &mut Vec<u64>, calls: &mut Vec<u64>, scratch: &mut Scratch| -> Vec<(u64, Vec<Block>)> {
+        part.iter().map(|&job| (job.0, walk(elf, seen, job, collect.then_some(&mut *r), calls, scratch))).collect()
     };
     let mut own = Vec::new();
     let r = references.unwrap_or(&mut own);
     let mut calls = Vec::new();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
-    if threads == 1 || jobs.len() < 64 { let walked = go(jobs, r, &mut calls); return (walked, calls); }
+    if threads == 1 || jobs.len() < 64 { let walked = go(jobs, r, &mut calls, scratch); return (walked, calls); }
     let size = jobs.len().div_ceil(threads);
     let parts: Vec<_> = std::thread::scope(|scope| {
-        let workers: Vec<_> = jobs.chunks(size).map(|part| { let go = &go; scope.spawn(move || { let (mut r, mut calls) = (Vec::new(), Vec::new()); let out = go(part, &mut r, &mut calls); (out, r, calls) }) }).collect();
+        let workers: Vec<_> = jobs.chunks(size).map(|part| {
+            let go = &go;
+            scope.spawn(move || {
+                let (mut r, mut calls) = (Vec::new(), Vec::new());
+                let out = go(part, &mut r, &mut calls, &mut Scratch::default());
+                (out, r, calls)
+            })
+        }).collect();
         workers.into_iter().map(|w| w.join().expect("a walking thread panicked")).collect()
     });
     let mut out = Vec::with_capacity(jobs.len());
@@ -250,15 +303,15 @@ impl Seen {
     fn get(&self, a: u64) -> u16 {
         match self.page(a) { Some((p, k)) => p.get().map_or(0, |p| p[k].load(Relaxed)), None => 0 }
     }
-    /// `e` kept for the instruction at `a`; false where it is nowhere code can be.
-    fn set(&self, a: u64, e: u16) -> bool {
-        let Some((p, k)) = self.page(a) else { return false };
+    /// The cached slot for the instruction, allocating its page on first touch.
+    #[inline]
+    fn slot(&self, a: u64) -> Option<&AtomicU16> {
+        let (p, k) = self.page(a)?;
         let page = p.get_or_init(|| {
             let fresh: Box<[AtomicU16]> = (0..PAGE).map(|_| AtomicU16::new(0)).collect();
             fresh.try_into().unwrap_or_else(|_| unreachable!("a page is PAGE entries"))
         });
-        page[k].store(e, Relaxed);
-        true
+        Some(&page[k])
     }
 }
 
@@ -308,7 +361,7 @@ use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
 /// `inner` starts of others), and (onto `calls`) the code it calls or goes on to outside: each block from a leader along next_ip
 /// (not address order, so a wrong table guess decoding bytes inside an instruction leaves the real blocks as they are).
 fn walk(elf: &Elf, seen: &Seen, (start, end, extra, inner): Job, mut references: Option<&mut Vec<u64>>, calls: &mut Vec<u64>, s: &mut Scratch) -> Vec<Block> {
-    let inside = |a: u64| a >= start && a < end && (a == start || inner.is_empty() || inner.binary_search(&a).is_err());
+    let inside = |a: u64| a >= start && a < end && (a == start || inner.is_none_or(|starts| !starts.contains(&a)));
     // The code from the start to its segment's end; code elsewhere (a call's continuation past the segment) found
     // on its own.
     let code = elf.code_at(start).unwrap_or_default();
@@ -341,20 +394,22 @@ fn walk(elf: &Elf, seen: &Seen, (start, end, extra, inner): Job, mut references:
             let was = *m;
             *m = was | WALKED;
             if was & WALKED != 0 { s.lead(at); break; }
-            let mut e = seen.get(at);
+            let Some(slot) = seen.slot(at) else { *m &= !WALKED; break };
+            let mut e = slot.load(Relaxed);
             if e == 0 {
-                let found = scan(bytes_at(at), at);
+                let bytes = bytes_at(at);
+                let found = scan(bytes, at);
                 e = found.entry;
-                if !seen.set(at, e) { e = INVALID; }
+                slot.store(e, Relaxed);
                 if e != INVALID {
                     if let Some(r) = references.as_deref_mut() {
-                        r.extend(found.rip(bytes_at(at), at));
+                        r.extend(found.rip(bytes, at));
                         // Where code is not position-independent, an address in its code given as a number is one too.
-                        if elf.fixed { r.extend(found.imm(bytes_at(at)).filter(|&a| elf.is_code(a))); }
+                        if elf.fixed { r.extend(found.imm(bytes).filter(|&a| elf.is_code(a))); }
                     }
                 }
             }
-            if e == INVALID { *s.at(at) &= !WALKED; break; }
+            if e == INVALID { *m &= !WALKED; break; }
             let next = at + (e & 15) as u64;
             if e & SYSTEM != 0 { s.lead(at); s.lead(next); }
             match (e >> 4 & 7) as u8 {

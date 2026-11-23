@@ -1,14 +1,17 @@
 // Register, Wasm-frame and retirement owner of one inline mapped Task.
 // The Linux scheduler owns the task's queue, system calls and exit status.
-import type {MappedTranslate} from '../../translation/mapped.ts';
 import {Exit} from '../flow.ts';
 import {E, FsError} from '../fs.ts';
 import {MAPPED_VM_LIMIT, type MappedVm} from '../mapped-vm.ts';
 import type {Mem, RegName} from '../parts.ts';
 import {MappedDispatcher} from './mapped-dispatcher.ts';
+import type {MappedContext, MappedSyscall} from './mapped-registers.ts';
 
 /** An exit request unwinds execution; it is not yet a process exit. */
-export class MappedExitRequest extends Exit {}
+export class MappedExitRequest extends Exit {
+  readonly group: boolean;
+  constructor(status: number, group: boolean) { super(status); this.group = group; }
+}
 
 export const MAPPED_ARCH_PRCTL = 158;
 const SET_FS = 0x1002n, GET_FS = 0x1003n, ADDRESS_LIMIT = BigInt(MAPPED_VM_LIMIT);
@@ -20,6 +23,7 @@ export class MappedTaskCpu {
   readonly memory: Mem;
   #vm: MappedVm;
   #dispatcher: MappedDispatcher;
+  #context: MappedContext;
   #active = false;
   #retiring = false;
   #retired = false;
@@ -27,13 +31,13 @@ export class MappedTaskCpu {
   #finishTidClear?: () => void;
   #firstEntry?: typeof HELD_ENTRY | EntryCheck | typeof REVOKED_ENTRY;
 
-  constructor(memory: Mem, vm: MappedVm, compiler: MappedTranslate, imports: WebAssembly.ModuleImports,
-      kind: 'arena' | 'held-initial') {
+  constructor(memory: Mem, vm: MappedVm, dispatcher: MappedDispatcher, context = dispatcher.initial, held = false) {
     if (memory.mappedVm !== vm || vm.memory !== memory) throw new TypeError('Invalid mapped Task backing');
     this.memory = memory;
     this.#vm = vm;
-    if (kind === 'held-initial') this.#firstEntry = HELD_ENTRY;
-    this.#dispatcher = new MappedDispatcher(this.#vm.code, compiler, imports);
+    if (held) this.#firstEntry = HELD_ENTRY;
+    this.#dispatcher = dispatcher;
+    this.#context = context;
   }
 
   get active(): boolean { return this.#active; }
@@ -41,10 +45,19 @@ export class MappedTaskCpu {
   get firstEntryPending(): boolean { return this.#firstEntry !== undefined && this.#firstEntry !== HELD_ENTRY; }
   get initialEntryProtected(): boolean { return this.#firstEntry !== undefined; }
   get pendingExit(): MappedExitRequest | undefined { return this.#pending; }
-  syscallAt(pc: bigint): boolean { return this.#active && this.#dispatcher.syscallAt(pc); }
-  reg(name: RegName): bigint { return this.#dispatcher.reg(name); }
-  setReg(name: RegName, value: bigint): void { this.#dispatcher.setReg(name, value); }
-  completeSyscall(pc: bigint, value: bigint): void { this.#dispatcher.completeSyscall(pc, value); }
+  syscallAt(pc: bigint): boolean { return this.#active && this.#dispatcher.syscallAt(pc, this.#context); }
+  reg(name: RegName): bigint { return this.#dispatcher.reg(name, this.#context); }
+  setReg(name: RegName, value: bigint): void { this.#dispatcher.setReg(name, value, this.#context); }
+  completeSyscall(pc: bigint, value: bigint): void { this.#dispatcher.completeSyscall(pc, value, this.#context); }
+
+  fork(owner: Owner, syscall: MappedSyscall, pc: bigint, stack: bigint, fs: bigint | null): MappedTaskCpu {
+    if (!this.syscallAt(pc) || this.#pending) throw new Error('Mapped clone has no active task');
+    this.#vm.checkTaskOwner(owner);
+    if (fs !== null && (fs < 0n || fs >= ADDRESS_LIMIT)) throw new FsError(E.PERM);
+    if (stack && !this.#vm.permits(stack - 128n, 128n, 'write')) throw new FsError(E.FAULT);
+    const context = this.#dispatcher.fork(this.#context, syscall, pc, stack, fs);
+    return new MappedTaskCpu(this.memory, this.#vm, this.#dispatcher, context);
+  }
 
   /** ARCH_GET_FS completes here. ARCH_SET_FS returns a checked candidate
    * to the owning syscall, without changing any active Wasm register. */
@@ -67,7 +80,7 @@ export class MappedTaskCpu {
     throw new FsError(E.INVAL);
   }
 
-  completeFsSyscall(pc: bigint, base: bigint): never { return this.#dispatcher.completeFsSyscall(pc, base); }
+  completeFsSyscall(pc: bigint, base: bigint): never { return this.#dispatcher.completeFsSyscall(pc, base, this.#context); }
 
   /** Failed preparation has not taken the memory or run an artifact. */
   discardPreparation(): void { this.#dispatcher.close(); this.#retired = true; }
@@ -96,7 +109,7 @@ export class MappedTaskCpu {
         }
         this.#firstEntry = undefined;
       }
-      this.#dispatcher.run(pc, budget);
+      this.#dispatcher.run(pc, budget, this.#context);
     }
     finally { this.#active = false; } // Every Wasm frame (including the import) has now unwound.
   }
@@ -114,12 +127,15 @@ export class MappedTaskCpu {
     this.#vm.close();
   }
 
-  requestExit(status: number, owner: Owner, address: number): never {
+  requestExit(status: number, owner: Owner, address: number, group: boolean): never {
     if (!this.#active) throw new Error('No mapped frame to unwind');
     if (this.#pending) throw this.#pending;
-    this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
-    const request = this.#pending = new MappedExitRequest(status);
-    this.#revokeAccess(request);
+    this.#vm.flushShared();
+    const last = this.#dispatcher.threads === 1;
+    if (last) this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
+    const request = this.#pending = new MappedExitRequest(status, group);
+    if (group || last) this.#revokeAccess(request);
+    else this.#context.revoked = request;
     throw request;
   }
 
@@ -129,11 +145,14 @@ export class MappedTaskCpu {
     if (this.#retired) return;
     this.#retiring = true;
     try {
-      if (!this.#pending && owner) this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
-      this.#revokeAccess(this.#pending ?? new Error('Mapped Task retired'));
+      if (this.#dispatcher.threads === 1) {
+        this.#vm.flushShared();
+        if (!this.#pending && owner) this.#finishTidClear = this.#vm.prepareTidClear(owner, address);
+        this.#revokeAccess(this.#pending ?? new Error('Mapped Task retired'));
+      }
       const clear = this.#finishTidClear;
       this.#finishTidClear = undefined;
-      this.#dispatcher.close();
+      this.#dispatcher.retire(this.#context);
       this.#retired = true;
       if (this.#firstEntry === REVOKED_ENTRY) this.#firstEntry = undefined;
       return clear;

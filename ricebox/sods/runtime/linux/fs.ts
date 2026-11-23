@@ -58,8 +58,28 @@ class Entries extends Map<string, Entry> {
   }
 }
 
+/** Internal observers withdraw executable mappings synchronously at the mutation. */
+class ExecutableChanges {
+  revision = 0;
+  #observers?: Set<() => void>;
+
+  watch(withdraw: () => void): () => void {
+    const observers = this.#observers ??= new Set();
+    observers.add(withdraw);
+    return () => { observers.delete(withdraw); };
+  }
+
+  changed(): void {
+    this.revision++;
+    const observers = this.#observers;
+    this.#observers = undefined;
+    if (observers) for (const withdraw of observers) withdraw();
+  }
+}
+
 export class Node {
-  declare mode: number;
+  #mode: number;
+  #executable?: ExecutableChanges;
   declare ino: number;
   declare uid: number;
   declare gid: number;
@@ -75,13 +95,24 @@ export class Node {
   /** The mounts that cover it, in whatever mount each is (null, or not there: none). */
   declare covered?: Mount[] | null;
   constructor(mode: number) {
-    this.mode = mode;
+    this.#mode = mode;
     this.ino = inodes++;
     this.uid = 0;
     this.gid = 0;
     this.nlink = 1;
     this.mtime = epoch();
   }
+  get mode(): number { return this.#mode; }
+  set mode(mode: number) {
+    const previous = this.#mode;
+    this.#mode = mode;
+    if ((previous ^ mode) & (S_IFMT | 0o6000)) this.executableChanged();
+  }
+  get execRevision(): number { return (this.#executable ??= new ExecutableChanges()).revision; }
+  watchExecutable(withdraw: () => void): () => void {
+    return (this.#executable ??= new ExecutableChanges()).watch(withdraw);
+  }
+  protected executableChanged(): void { this.#executable?.changed(); }
   get type() { return this.mode & S_IFMT; }
   get isDir() { return this.type === S_IFDIR; }
   get isFile() { return this.type === S_IFREG; }
@@ -92,7 +123,25 @@ export class Node {
  * A MAP_SHARED mapping of a file (File.map): bytes [off, off + length) of it at `start` in `proc`'s memory, and what it
  * last had in common with the file (`seen`).
  */
-export interface Mapping { proc: {readonly bytes: Uint8Array}; start: number; length: number; off: number; seen?: Uint8Array }
+export interface Mapping {
+  proc: {readonly bytes: Uint8Array; sharedMappingsChanged?(): void};
+  start: number;
+  length: number;
+  off: number;
+  seen?: Uint8Array;
+  /** Optional set of dirty page starts in file coordinates. */
+  pending?: {pages: ReadonlySet<number>; settled(page: number): void};
+  resized?(size: number): void;
+}
+
+/** A read-only alias of file bytes. The VM consumes each publication in
+ * place during the same turn. Bytes between the supplied data and `end`
+ * have been cleared by a size change. The data view must not escape. */
+export interface FileReadMapping {
+  readonly offset: number;
+  readonly length: number;
+  publish(start: number, end: number, data: Uint8Array, size: number): void;
+}
 
 /**
  * The most a file holds here: its bytes are one array, with no holes kept, and 2 GiB less a byte is what every engine
@@ -101,8 +150,16 @@ export interface Mapping { proc: {readonly bytes: Uint8Array}; start: number; le
 export const FILE_MOST = 2 ** 31 - 1;
 
 export class File extends Node {
+  #size: number;
+  #version = 0;
+  #origin?: string;
+  // A writable shared mapping can change the source independently of file writes.
+  #maps: Set<Mapping> | null = null;
   #loading = false;
   #loadConflict = false;
+  #ownedLoader?: () => Uint8Array;
+  #ownsLoadedBytes = false;
+  #readMappings?: Set<FileReadMapping>;
   /** A synchronous source cannot wait for its own stack. Poison even a swallowed reentry. */
   #notLoading(): void {
     if (!this.#loading) return;
@@ -110,31 +167,57 @@ export class File extends Node {
     throw new FsError(E.IO);
   }
   declare _data: Uint8Array;
-  declare size: number;
   declare load: (() => Uint8Array) | null;
   declare reload: (() => Uint8Array) | null;
   declare shared: boolean;
-  declare version: number;
-  declare maps: Set<Mapping> | null;
   /** The folder it was last put in (Entries), and the files its tree holds read (Loaded.files) while it is one of them. */
   declare home: Dir | null;
   declare pool: Set<File> | null;
-  /** Where its bytes are in the root's packs (pack.ts), while it is the root's own: what a kept translation is for. */
-  declare origin?: string;
-  constructor(data: Uint8Array = new Uint8Array(0), mode = 0o644, load: (() => Uint8Array) | null = null) {
+  constructor(data: Uint8Array = new Uint8Array(0), mode = 0o644, load: (() => Uint8Array) | null = null,
+      ownership?: 'owned') {
     super(S_IFREG | mode);
     this._data = data;
-    this.size = data.length;
+    this.#size = data.length;
     this.load = load; // () => Uint8Array, called once on first access
     this.reload = load; // the same, kept: unchanged bytes can be let go and read again
+    if (ownership === 'owned' && load) this.#ownedLoader = load;
     this.shared = false; // a view of the bytes was handed out (share): change a copy
-    // Counts every change to the contents; times can repeat within a millisecond.
-    this.version = 0;
-    // MAP_SHARED mappings of it (map below): while one lasts, its memory is the file's bytes there (Linux's page
-    // cache), so a read takes what was written through it and a write shows in it.
-    this.maps = null;
     this.home = null;
     this.pool = null;
+  }
+  get size(): number { return this.#size; }
+  set size(size: number) {
+    if (size === this.#size) return;
+    this.#size = size;
+    this.executableChanged();
+  }
+  /** Content revision, independent of the file's timestamps. */
+  get version(): number { return this.#version; }
+  set version(version: number) {
+    if (version === this.#version) return;
+    this.#version = version;
+    this.executableChanged();
+  }
+  /** The pack entry supplying the original bytes and any kept translation. */
+  get origin(): string | undefined { return this.#origin; }
+  set origin(origin: string | undefined) {
+    if (origin === this.#origin) return;
+    this.#origin = origin;
+    this.executableChanged();
+  }
+  get maps(): ReadonlySet<Mapping> | null { return this.#maps; }
+  /** The original loader transferred this backing to a plain inode. */
+  static ownsLoadedBacking(file: File, bytes: Uint8Array): boolean {
+    return Object.getPrototypeOf(file) === File.prototype && file.#ownsLoadedBytes && bytes.buffer === file._data.buffer;
+  }
+
+  /** A check used when static preparation must avoid a user-defined revision getter. */
+  static plainVersion(file: File, revision: number): boolean {
+    const own = Object.getOwnPropertyDescriptor(file, 'version');
+    if (own) return own.value === revision;
+    return Object.getPrototypeOf(file) === File.prototype &&
+      Object.getOwnPropertyDescriptor(File.prototype, 'version')?.get === fileVersion &&
+      file.#version === revision;
   }
   /**
    * Its bytes came from its loader, which can give them again: the tree it lies in holds them, found from the folder
@@ -163,9 +246,10 @@ export class File extends Node {
       this.#loading = true;
       this.#loadConflict = false;
       try {
-        const bytes = this.load();
+        const loader = this.load, bytes = loader();
         if (this.#loadConflict) throw new FsError(E.IO);
         this._data = bytes;
+        this.#ownsLoadedBytes = loader === this.#ownedLoader;
       } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
       finally { this.#loading = false; this.#loadConflict = false; }
       this.size = this._data.length;
@@ -182,7 +266,7 @@ export class File extends Node {
     return this.range(start, end);
   }
   /** A retained range, independent of subsequent file or mapping changes. */
-  snapshotRange(start: number, end: number): Uint8Array { return this.read(start, end).slice(); }
+  snapshotRange(start: number, end: number): Uint8Array { return new Uint8Array(this.read(start, end)); }
   /** Internal payload access. Mapping visibility remains owned by this inode. */
   protected range(start: number, end: number): Uint8Array { return this.data.subarray(start, Math.min(end, this.size)); }
   protected replaceRange(at: number, bytes: Uint8Array): void { this.data.set(bytes, at); }
@@ -215,6 +299,7 @@ export class File extends Node {
     this.#notLoading();
     if (!this.load) return;
     this._data = bytes;
+    this.#ownsLoadedBytes = false;
     this.size = bytes.length;
     this.load = null;
     this.#loaded();
@@ -222,9 +307,11 @@ export class File extends Node {
   /** About to change the bytes: from here on they are this file's own. */
   own(): void {
     this.#notLoading();
-    if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
+    if (this.shared) { this._data = new Uint8Array(this.data.subarray(0, this.size)); this.shared = false; }
     this.unholdLoaded();
     this.reload = null;
+    this.#ownedLoader = undefined;
+    this.#ownsLoadedBytes = false;
   }
   /** Let go of bytes its loader can give again (unchanged since); returns how many. */
   release(): number {
@@ -232,6 +319,7 @@ export class File extends Node {
     if (this.load || !this.reload || this.version !== 0) return 0;
     const n = this._data.length;
     this._data = new Uint8Array(0);
+    this.#ownsLoadedBytes = false;
     this.shared = false;
     this.load = this.reload;
     this.unholdLoaded();
@@ -240,6 +328,7 @@ export class File extends Node {
   write(at: number, bytes: Uint8Array): number {
     this.materialize();
     this.own();
+    const was = this.size;
     const need = at + bytes.length;
     let data = this.data;
     if (need > data.length) {
@@ -252,7 +341,9 @@ export class File extends Node {
     this.mtime = epoch();
     this.version++;
     counted.changes++;
-    if (this.maps) this.show(at, need);
+    // A write beyond EOF also makes the zero-filled gap visible.
+    if (this.#readMappings) this.#publishReads(Math.min(was, at), need);
+    if (this.maps) this.show(Math.min(was, at), need, null, this.size !== was);
     return bytes.length;
   }
   /**
@@ -281,13 +372,44 @@ export class File extends Node {
     this.mtime = epoch();
     this.version++;
     counted.changes++;
-    if (this.maps) this.show(Math.min(was, length), Math.max(was, length));
+    const start = Math.min(was, length), end = Math.max(was, length);
+    if (this.#readMappings) this.#publishReads(start, end);
+    if (this.maps) this.show(start, end, null, length !== was);
   }
   protected checkResize(_length: number): void {}
   /** The exact contents as an independent array. */
   bytes(): Uint8Array {
     if (this.maps) this.settle();
     return this.data.slice(0, this.size);
+  }
+
+  /** Whether writable mappings have another view to publish their changes to. */
+  get hasSharedAliases(): boolean { return !!this.#readMappings || (this.maps?.size ?? 0) > 1; }
+
+  refreshSharedAliases(): void {
+    if (this.maps) for (const {proc} of this.maps) proc.sharedMappingsChanged?.();
+  }
+
+  mapReadOnly(mapping: FileReadMapping): void {
+    const first = !this.#readMappings;
+    (this.#readMappings ??= new Set()).add(mapping);
+    if (first) this.refreshSharedAliases();
+  }
+
+  unmapReadOnly(mapping: FileReadMapping): void {
+    if (this.#readMappings?.delete(mapping) && !this.#readMappings.size) {
+      this.#readMappings = undefined;
+      this.refreshSharedAliases();
+    }
+  }
+
+  #publishReads(start: number, end: number, bytes?: Uint8Array): void {
+    for (const m of this.#readMappings!) {
+      const a = Math.max(start, m.offset), b = Math.min(end, m.offset + m.length);
+      if (a >= b) continue;
+      const part = bytes ? bytes.subarray(a - start, b - start) : this.range(a, Math.min(b, this.size));
+      m.publish(a, b, part, this.size);
+    }
   }
 
   /**
@@ -305,9 +427,13 @@ export class File extends Node {
     // share subranges: a small surviving mapping must not retain a larger snapshot.
     const other = this.maps?.values().next().value;
     m.seen = other && other.off === m.off && other.length === m.length
-      && other.seen!.length === bytes.length && same(other.seen!, bytes) ? other.seen : bytes.slice();
-    if (!this.maps) { this.maps = new Set(); counted.mapped++; }
-    this.maps.add(m);
+      && sameBytes(other.seen!, bytes) ? other.seen : bytes.slice();
+    if (this.#maps) this.#maps.add(m);
+    else {
+      this.#maps = new Set([m]);
+      counted.mapped++;
+      this.executableChanged();
+    }
   }
   /** It ends: what was written through it stays. */
   unmap(m: Mapping): void {
@@ -320,36 +446,44 @@ export class File extends Node {
    * Unobserved writes are not recovered by this abnormal retirement path.
    */
   abandon(m: Mapping): void {
-    if (!this.maps?.delete(m)) return;
-    if (!this.maps.size) { this.maps = null; counted.mapped--; }
+    if (!this.#maps?.delete(m)) return;
+    if (!this.#maps.size) { this.#maps = null; counted.mapped--; }
   }
   /** What was written through the mappings (all, or `only`) into [start, end) goes to the bytes and the other mappings. */
   settle(start = 0, end = this.size, only: Mapping | null = null): void {
     this.#notLoading();
     for (const m of only ? [only] : [...this.maps ?? []]) {
       const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length, this.size);
-      if (a >= b) continue;
-      const memory = m.proc.bytes, base = m.start - m.off, seen = m.seen!;
-      // A page at a time; within a page that changed, each run of changed bytes.
-      for (let page = a; page < b; page = (Math.floor(page / PAGE) + 1) * PAGE) {
-        const to = Math.min(b, (Math.floor(page / PAGE) + 1) * PAGE);
-        if (same(memory.subarray(base + page, base + to), seen.subarray(page - m.off, to - m.off))) continue;
-        // Revision is an invalidation nonce, not a completed-write receipt.
-        // A run or its alias publication may fail after a canonical prefix was
-        // written. Invalidate before either can have an effect or call out;
-        // neither abandonment nor retry may revive this page's old identity.
-        this.version++;
-        counted.changes++;
-        this.mtime = epoch();
-        for (let k = page; k < to;) {
-          if (memory[base + k] === seen[k - m.off]) { k++; continue; }
-          let e = k + 1;
-          while (e < to && memory[base + e] !== seen[e - m.off]) e++;
-          const run = memory.slice(base + k, base + e);
-          this.publishRange(k, run);
-          k = e;
+      if (a >= b || m.pending?.pages.size === 0) continue;
+      const memory = m.proc.bytes;
+      if (m.pending) {
+        // Finish an intersecting tracked page in full before rearming its writes.
+        for (const page of m.pending.pages) {
+          if (page >= b || page + PAGE <= a) continue;
+          this.#settlePage(m, memory, page, Math.min(page + PAGE, m.off + m.length, this.size));
+          m.pending.settled(page);
         }
+        continue;
       }
+      for (let page = a; page < b; page = (Math.floor(page / PAGE) + 1) * PAGE) {
+        this.#settlePage(m, memory, page, Math.min(b, (Math.floor(page / PAGE) + 1) * PAGE));
+      }
+    }
+  }
+
+  #settlePage(m: Mapping, memory: Uint8Array, page: number, end: number): void {
+    const base = m.start - m.off, seen = m.seen!;
+    if (sameBytes(memory.subarray(base + page, base + end), seen.subarray(page - m.off, end - m.off))) return;
+    // Invalidate the previous revision before the first run can change bytes.
+    this.version++;
+    counted.changes++;
+    this.mtime = epoch();
+    for (let at = page; at < end;) {
+      if (memory[base + at] === seen[at - m.off]) { at++; continue; }
+      let after = at + 1;
+      while (after < end && memory[base + after] !== seen[after - m.off]) after++;
+      this.publishRange(at, memory.slice(base + at, base + after));
+      at = after;
     }
   }
   /** Keep each accepted run's ownership, canonical update and publication ordered.
@@ -357,10 +491,11 @@ export class File extends Node {
   protected publishRange(at: number, bytes: Uint8Array): void {
     this.own();
     this.replaceRange(at, bytes);
+    if (this.#readMappings) this.#publishReads(at, at + bytes.length, bytes);
     this.show(at, at + bytes.length, bytes);
   }
   /** Bytes [start, end) are these now (`bytes`, or the file's own; zero past its end, as a new page is) in every mapping. */
-  protected show(start: number, end: number, bytes: Uint8Array | null = null): void {
+  protected show(start: number, end: number, bytes: Uint8Array | null = null, resized = false): void {
     for (const m of this.maps ?? []) {
       const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length);
       if (a >= b) continue;
@@ -369,9 +504,12 @@ export class File extends Node {
         into.set(part, at);
         into.fill(0, at + part.length, at + b - a);
       }
+      if (resized) m.resized?.(this.size);
     }
   }
 }
+
+const fileVersion = Object.getOwnPropertyDescriptor(File.prototype, 'version')!.get;
 
 const SEAL = {SEAL: 1, SHRINK: 2, GROW: 4};
 /** Anonymous memfd storage: size seals belong to the file, not any one descriptor or mapping. */
@@ -417,13 +555,14 @@ export class Memfd extends File {
 
 const PAGE = 4096;
 
-/** Two byte ranges of one length alike: compared a word at a time where both are aligned. */
-function same(x: Uint8Array, y: Uint8Array): boolean {
+/** Compare aligned byte extents a word at a time. */
+export function sameBytes(x: Uint8Array, y: Uint8Array): boolean {
+  if (x.length !== y.length) return false;
   let k = 0;
   if (x.byteOffset % 4 === 0 && y.byteOffset % 4 === 0) {
-    const n = x.length >> 2, u = new Uint32Array(x.buffer, x.byteOffset, n), v = new Uint32Array(y.buffer, y.byteOffset, n);
+    const n = Math.floor(x.length / 4), u = new Uint32Array(x.buffer, x.byteOffset, n), v = new Uint32Array(y.buffer, y.byteOffset, n);
     for (; k < n; k++) if (u[k] !== v[k]) return false;
-    k = n << 2;
+    k = n * 4;
   }
   for (; k < x.length; k++) if (x[k] !== y[k]) return false;
   return true;
@@ -570,8 +709,22 @@ let mounts = 0;
 export class Mount {
   readonly id = ++mounts + 20;
   /** The mount it is in and the node there it covers; that node's directory and name there (a file's has no other way up). */
-  parent: Mount | null = null;
-  point: Entry | null = null;
+  #parent: Mount | null = null;
+  #point: Entry | null = null;
+  #space: object | null = null;
+  #executable = new ExecutableChanges();
+  get parent(): Mount | null { return this.#parent; }
+  set parent(parent: Mount | null) {
+    if (parent === this.#parent) return;
+    this.#parent = parent;
+    this.#executable.changed();
+  }
+  get point(): Entry | null { return this.#point; }
+  set point(point: Entry | null) {
+    if (point === this.#point) return;
+    this.#point = point;
+    this.#executable.changed();
+  }
   pointDir: Dir | null = null;
   pointName = '';
   /** Where its root lies in its file system, where that root is no directory (a file bound): its directory and name. */
@@ -579,20 +732,28 @@ export class Mount {
   rootName = '';
   readonly children = new Set<Mount>();
   #flags = 0;
-  #execRevision = 0;
   get flags(): number { return this.#flags; }
   set flags(flags: number) {
-    if ((flags ^ this.#flags) & MNT.NOEXEC) this.#execRevision++;
+    const changed = (flags ^ this.#flags) & MNT.NOEXEC;
     this.#flags = flags;
+    if (changed) this.#executable.changed();
   }
-  /** Changing and restoring NOEXEC does not restore an old code grant. */
-  get execRevision(): number { return this.#execRevision; }
+  /** Removing and restoring a mount or its execution permission retires old grants. */
+  get execRevision(): number { return this.#executable.revision; }
+  watchExecutable(withdraw: () => void): () => void {
+    return this.#executable.watch(withdraw);
+  }
   /** How what is mounted under it spreads: to its peers (`group`), from its master (`master`), or neither; `unbindable`: nor copied. */
   group = 0;
   master = 0;
   unbindable = false;
   /** The namespace it is in (mount.ts Space); null once taken out, or not yet put in (open_tree's copy). */
-  space: object | null = null;
+  get space(): object | null { return this.#space; }
+  set space(space: object | null) {
+    if (space === this.#space) return;
+    this.#space = space;
+    this.#executable.changed();
+  }
   /** What holds it: descriptors, where processes work and their roots (a mount held is busy to umount). */
   refs = 0;
   /** It, and the flags it has, came with a namespace from a more privileged one: not taken away, nor loosened (mount.ts). */
@@ -928,9 +1089,9 @@ export function mountTarget(vfs: Vfs) {
     },
     has(path: string): boolean { const [dir, name] = place(path); return dir.entries.has(name); },
     symlink(target: string, path: string): void { vfs.symlink(target, path); },
-    file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string): File {
+    file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string, ownership?: 'owned'): File {
       const [dir, name] = place(path);
-      const file = new File(undefined, mode, read);
+      const file = new File(undefined, mode, read, ownership);
       file.size = size;
       file.origin = origin;
       dir.entries.set(name, file);

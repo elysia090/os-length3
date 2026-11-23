@@ -7,9 +7,12 @@
 //! then on (it is parsed where it lies, not copied): the host does not free
 //! it.
 
+use crate::image::OutputBytes;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
+#[cfg(feature = "mapped-code")]
+use std::collections::BTreeMap;
 
 /// The translator's allocator: the system's, with its memory grown by a quarter again at a time rather than by as
 /// little as each allocation needs. An engine may collect its whole heap as a wasm memory grows; a big program's
@@ -66,12 +69,21 @@ unsafe impl GlobalAlloc for Roomy {
     }
 }
 
+struct OpenElf {
+    handle: u32,
+    elf: crate::elf::Elf,
+    known: BTreeSet<u64>,
+}
+
 thread_local! {
-    static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    /// The ELFs sods_translate_more reads, by handle (sods_open), each with
-    /// the function starts translated so far; the oldest go first.
-    static OPEN: RefCell<Vec<(u32, crate::elf::Elf, BTreeSet<u64>)>> = const { RefCell::new(Vec::new()) };
+    static OUTPUT: RefCell<OutputBytes> = RefCell::default();
+    /// Static callers reuse a small working set of parsed ELFs.
+    static OPEN: RefCell<VecDeque<OpenElf>> = const { RefCell::new(VecDeque::new()) };
+    /// Mapped text is owned by its installed bindings, which close their handles on withdrawal.
+    #[cfg(feature = "mapped-code")]
+    static MAPPED_OPEN: RefCell<BTreeMap<u32, OpenElf>> = const { RefCell::new(BTreeMap::new()) };
     static NEXT: Cell<u32> = const { Cell::new(1) };
+    static TRANSLATION_SCRATCH: RefCell<(crate::find::DiscoveryScratch, crate::lower::Frame)> = RefCell::default();
     /// How many instructions one module of code reached later may hold, past its seeds' own (sods_budget).
     static BUDGET: Cell<usize> = const { Cell::new(crate::find::BUDGET) };
     /// The x87's registers of each thread whose translated code calls sods_fpu, by handle (an instance of this module
@@ -80,6 +92,10 @@ thread_local! {
     static FPUS: RefCell<Vec<crate::x87::Fpu>> = const { RefCell::new(Vec::new()) };
     /// Handles given back, for the next thread.
     static FREE_FPUS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
+fn publish_output(bytes: impl Into<OutputBytes>) {
+    OUTPUT.with(|out| *out.borrow_mut() = bytes.into());
 }
 
 /// u64s as little-endian bytes from sods_alloc, which promises no alignment.
@@ -116,7 +132,24 @@ pub unsafe extern "C" fn sods_describe_dynamic_v1(ptr: *const u8, len: usize, ro
         Ok(spec) => (0, spec.encode()),
         Err(error) => (1, error.to_string().into_bytes()),
     };
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    publish_output(out);
+    status
+}
+
+/// As sods_describe_dynamic_v1, from the metadata ranges of a file.
+///
+/// # Safety
+/// The metadata pointer must span the initialized allocation named by its length.
+#[cfg(feature = "dynamic-load-plan")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_describe_dynamic_v2(metadata: *const u8, metadata_len: usize, file_len: usize, role: u32) -> i32 {
+    use crate::elf::load::{LoadSpec, Role};
+    let input = std::slice::from_raw_parts(metadata, metadata_len);
+    let (status, out) = match Role::from_wire(role).and_then(|role| LoadSpec::read_metadata(input, file_len, role)) {
+        Ok(spec) => (0, spec.encode()),
+        Err(error) => (1, error.to_string().into_bytes()),
+    };
+    publish_output(out);
     status
 }
 
@@ -134,7 +167,7 @@ pub unsafe extern "C" fn sods_translate(ptr: *mut u8, len: usize) -> i32 {
         }
         Err(e) => (1, e.to_string().into_bytes()),
     };
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    publish_output(out);
     status
 }
 
@@ -152,7 +185,7 @@ pub unsafe extern "C" fn sods_translate_whole(ptr: *mut u8, len: usize) -> i32 {
         }
         Err(e) => (1, e.to_string().into_bytes()),
     };
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    publish_output(out);
     status
 }
 
@@ -171,7 +204,7 @@ pub unsafe extern "C" fn sods_translate_seeded(ptr: *mut u8, len: usize, seeds: 
         }
         Err(e) => (1, e.to_string().into_bytes()),
     };
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    publish_output(out);
     status
 }
 
@@ -180,7 +213,7 @@ pub unsafe extern "C" fn sods_translate_seeded(ptr: *mut u8, len: usize, seeds: 
 /// function at a time, and each time the same file is read, so it is parsed
 /// once, and what each module adds is remembered here. Returns its handle,
 /// or 0 with an error as output. A few stay open (a compiler's driver, cc1
-/// and the assembler take turns); opening more lets the oldest go.
+/// and the assembler take turns); opening more lets the least recently used go.
 ///
 /// # Safety
 /// `ptr` and `len` must come from one `sods_alloc` call, all written (it is
@@ -194,7 +227,7 @@ pub unsafe extern "C" fn sods_open(ptr: *mut u8, len: usize, known: *const u8, n
 #[cfg(feature = "mapped-code")]
 #[no_mangle]
 pub extern "C" fn sods_mapped_core_v4() -> i32 {
-    OUTPUT.with(|o| *o.borrow_mut() = crate::image::mapped_core());
+    publish_output(crate::image::mapped_core());
     0
 }
 
@@ -212,9 +245,30 @@ pub unsafe extern "C" fn sods_open_mapped_v1(
 ) -> u32 {
     use crate::elf::load::{LoadSpec, Role};
     let file = Vec::from_raw_parts(ptr, len, len);
-    let elf = Role::from_wire(role).and_then(|role| {
-        LoadSpec::placed_text(file, role, bias.into(), address.into(), offset.into(), bytes.into())
-    });
+    let elf = Role::from_wire(role)
+        .and_then(|role| LoadSpec::read(&file, role))
+        .and_then(|spec| spec.placed_text(file, offset as usize, bias.into(), address.into(), offset.into(), bytes.into()));
+    open_file(elf, known, n_known)
+}
+
+/// Open a mapped segment from its own bytes and the original ELF metadata.
+///
+/// # Safety
+/// rx transfers exactly bytes initialized bytes from sods_alloc. The caller
+/// retains the initialized metadata and known-start allocations.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_open_mapped_v2(
+    metadata: *const u8, metadata_len: usize, file_len: usize, rx: *mut u8,
+    role: u32, bias: u32, address: u32, offset: u32, bytes: u32,
+    known: *const u8, n_known: usize,
+) -> u32 {
+    use crate::elf::load::{LoadSpec, Role};
+    let text = Vec::from_raw_parts(rx, bytes as usize, bytes as usize);
+    let input = std::slice::from_raw_parts(metadata, metadata_len);
+    let elf = Role::from_wire(role)
+        .and_then(|role| LoadSpec::read_metadata(input, file_len, role))
+        .and_then(|spec| spec.placed_text(text, 0, bias.into(), address.into(), offset.into(), bytes.into()));
     open_file(elf, known, n_known)
 }
 
@@ -224,14 +278,20 @@ unsafe fn open_file(elf: Result<crate::elf::Elf, crate::elf::Error>, known: *con
         Ok(elf) => {
             let handle = NEXT.with(|n| { let h = n.get(); n.set(h + 1); h });
             let known = words(known, n_known).into_iter().collect();
+            let file = OpenElf { handle, elf, known };
+            #[cfg(feature = "mapped-code")]
+            if file.elf.mapped() {
+                MAPPED_OPEN.with(|open| open.borrow_mut().insert(handle, file));
+                return handle;
+            }
             OPEN.with(|o| {
                 let mut o = o.borrow_mut();
-                if o.len() >= KEPT { o.remove(0); }
-                o.push((handle, elf, known));
+                if o.len() == KEPT { o.pop_front(); }
+                o.push_back(file);
             });
             handle
         }
-        Err(e) => { OUTPUT.with(|o| *o.borrow_mut() = e.to_string().into_bytes()); 0 }
+        Err(e) => { publish_output(e.to_string().into_bytes()); 0 }
     }
 }
 
@@ -244,17 +304,76 @@ unsafe fn open_file(elf: Result<crate::elf::Elf, crate::elf::Error>, known: *con
 /// `seeds` must point to `n_seeds` u64s.
 #[no_mangle]
 pub unsafe extern "C" fn sods_translate_more(handle: u32, seeds: *const u8, n_seeds: usize, base: u32) -> i32 {
-    let seeds = words(seeds, n_seeds);
-    let (status, out) = OPEN.with(|o| match o.borrow_mut().iter_mut().find(|(h, _, _)| *h == handle) {
-        Some((_, elf, known)) => {
-            let program = crate::find::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
-            known.extend(program.functions.iter().map(|f| f.start));
-            (0, crate::image::translate_more(elf, &program, base, crate::image::Options::default()).wasm)
-        }
-        None => (1, b"that ELF is not open".to_vec()),
-    });
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    translate_more(handle, &words(seeds, n_seeds), base)
+}
+
+/// The single PC that missed in a mapped thread's code table.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub extern "C" fn sods_translate_mapped_one(handle: u32, seed: u64) -> i32 {
+    translate_more(handle, &[seed], 0)
+}
+
+/// Produce one mapped module from ordered demand requests for one RX extent.
+/// The open file and its known starts are unchanged.
+///
+/// # Safety
+/// `seeds` must point to `count` initialized u64s when `count` is in range.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_replay_mapped_v1(handle: u32, seeds: *const u8, count: usize) -> i32 {
+    let result = if count == 0 || count > crate::abi::MAPPED_SLOTS {
+        Err("invalid number of mapped replay PCs")
+    } else {
+        let seeds = words(seeds, count);
+        MAPPED_OPEN.with(|open| {
+            let open = open.borrow();
+            let file = open.get(&handle).ok_or("mapped file is not open")?;
+            TRANSLATION_SCRATCH.with(|scratch| {
+                let (discovery, frame) = &mut *scratch.borrow_mut();
+                let budget = BUDGET.with(|b| b.get());
+                let programs = crate::find::replay_mapped(&file.elf, &seeds, &file.known, budget, discovery)?;
+                Ok(crate::image::translate_mapped_in(&file.elf, &programs, crate::image::Options::default(), frame).0)
+            })
+        })
+    };
+    let (status, bytes) = result.map_or_else(|e| (1, e.as_bytes().to_vec().into()), |wasm| (0, wasm));
+    publish_output(bytes);
     status
+}
+
+fn translate_more(handle: u32, seeds: &[u64], base: u32) -> i32 {
+    #[cfg(feature = "mapped-code")]
+    let mapped = MAPPED_OPEN.with(|open| open.borrow_mut().get_mut(&handle).map(|file| lower_open(file, seeds, base)));
+    #[cfg(not(feature = "mapped-code"))]
+    let mapped = None;
+    let (status, out) = mapped.map_or_else(|| OPEN.with(|open| {
+        let mut open = open.borrow_mut();
+        if open.back().is_none_or(|file| file.handle != handle) {
+            let Some(index) = open.iter().rposition(|file| file.handle == handle) else {
+                return (1, b"that ELF is not open".to_vec().into());
+            };
+            let file = open.remove(index).unwrap();
+            open.push_back(file);
+        }
+        (0, lower_open(open.back_mut().unwrap(), seeds, base))
+    }), |wasm| (0, wasm));
+    publish_output(out);
+    status
+}
+
+fn lower_open(OpenElf {elf, known, ..}: &mut OpenElf, seeds: &[u64], base: u32) -> OutputBytes {
+    TRANSLATION_SCRATCH.with(|scratch| {
+        let (discovery, frame) = &mut *scratch.borrow_mut();
+        let program = crate::find::discover_within_in(elf, seeds, known, BUDGET.with(|b| b.get()), discovery);
+        known.extend(program.functions.iter().map(|f| f.start));
+        let options = crate::image::Options::default();
+        if elf.mapped() {
+            crate::image::translate_mapped_in(elf, std::slice::from_ref(&program), options, frame).0
+        } else {
+            crate::image::translate_more_in(elf, &program, base, options, frame).wasm.into()
+        }
+    })
 }
 
 /// Decode the zstd frames at `ptr` (left to the host to free), `size`
@@ -276,7 +395,7 @@ pub unsafe extern "C" fn sods_unzstd(ptr: *const u8, len: usize, size: usize) ->
         Ok(_) => (1, format!("decoded {} bytes, not {size}", out.len()).into_bytes()),
         Err(e) => (1, e.into_bytes()),
     };
-    OUTPUT.with(|o| *o.borrow_mut() = out);
+    publish_output(out);
     status
 }
 
@@ -291,7 +410,7 @@ pub unsafe extern "C" fn sods_unzstd(ptr: *const u8, len: usize, size: usize) ->
 pub unsafe extern "C" fn sods_sha256(ptr: *const u8, len: usize) -> i32 {
     use sha2::Digest;
     let digest = sha2::Sha256::digest(std::slice::from_raw_parts(ptr, len));
-    OUTPUT.with(|o| *o.borrow_mut() = digest.to_vec());
+    publish_output(digest.to_vec());
     0
 }
 
@@ -311,17 +430,21 @@ pub extern "C" fn sods_run(blocks: u32) {
 /// Let go of the ELF opened as `handle`, and of what was remembered with it.
 #[no_mangle]
 pub extern "C" fn sods_close(handle: u32) {
-    OPEN.with(|o| o.borrow_mut().retain(|(h, _, _)| *h != handle));
+    #[cfg(feature = "mapped-code")]
+    if MAPPED_OPEN.with(|open| open.borrow_mut().remove(&handle).is_some()) {
+        return;
+    }
+    OPEN.with(|o| o.borrow_mut().retain(|file| file.handle != handle));
 }
 
 #[no_mangle]
 pub extern "C" fn sods_output_ptr() -> *const u8 {
-    OUTPUT.with(|o| o.borrow().as_ptr())
+    OUTPUT.with(|o| o.borrow().as_slice().as_ptr())
 }
 
 #[no_mangle]
 pub extern "C" fn sods_output_len() -> usize {
-    OUTPUT.with(|o| o.borrow().len())
+    OUTPUT.with(|o| o.borrow().as_slice().len())
 }
 
 /// One x87 instruction of the thread whose registers are `fpu` (crate::x87::Fpu::call): what translated code imports
@@ -329,6 +452,47 @@ pub extern "C" fn sods_output_len() -> usize {
 #[no_mangle]
 pub extern "C" fn sods_fpu(fpu: u32, op: i32, size: i32, a: i32, b: i32, lo: i64, hi: i32) -> i64 {
     FPUS.with(|f| f.borrow_mut().get_mut(fpu as usize).map_or(0, |s| s.call(op, size, a, b, lo as u64, hi as u32) as i64))
+}
+
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub extern "C" fn sods_mapped_fpu(fpu: u32, op: i32, size: i32, a: i32, b: i32, lo: i64, hi: i32, pc: u64, opcode: u32) -> i64 {
+    FPUS.with(|f| f.borrow_mut().get_mut(fpu as usize).map_or(0, |s| {
+        s.note_mapped_instruction(op, pc, opcode as u16);
+        s.call(op, size, a, b, lo as u64, hi as u32) as i64
+    }))
+}
+
+/// Copy the x87 part of the architectural image to the Wasm output buffer.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub extern "C" fn sods_fxsave(fpu: u32, wide: u32) -> i32 {
+    let image = FPUS.with(|f| f.borrow().get(fpu as usize).map(|s| s.fxsave(wide != 0)));
+    publish_output(image.map_or_else(Vec::new, |bytes| bytes.to_vec()));
+    image.is_none() as i32
+}
+
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub extern "C" fn sods_fnstenv(fpu: u32) -> i32 {
+    let image = FPUS.with(|f| f.borrow_mut().get_mut(fpu as usize).map(|s| s.fnstenv()));
+    publish_output(image.map_or_else(Vec::new, |bytes| bytes.to_vec()));
+    image.is_none() as i32
+}
+
+/// Replace one inline owner's x87 state from an architectural image.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call, all written.
+#[cfg(feature = "mapped-code")]
+#[no_mangle]
+pub unsafe extern "C" fn sods_fxrestore(fpu: u32, wide: u32, ptr: *mut u8, len: usize) -> i32 {
+    let bytes = Vec::from_raw_parts(ptr, len, len);
+    let Ok(image) = <&[u8; crate::x87::FX87_BYTES]>::try_from(bytes.as_slice()) else { return 1 };
+    FPUS.with(|f| match f.borrow_mut().get_mut(fpu as usize) {
+        Some(state) => { state.fxrestore(image, wide != 0); 0 }
+        None => 1,
+    })
 }
 
 /// A handle to `fpu`'s registers: where a thread's start.
@@ -367,7 +531,7 @@ pub extern "C" fn sods_x87_free(fpu: u32) {
 #[no_mangle]
 pub extern "C" fn sods_x87_save(fpu: u32) -> i32 {
     let saved = FPUS.with(|f| f.borrow().get(fpu as usize).map(|s| s.save()));
-    OUTPUT.with(|o| *o.borrow_mut() = saved.map_or_else(Vec::new, |s| s.to_vec()));
+    publish_output(saved.map_or_else(Vec::new, |s| s.to_vec()));
     saved.is_none() as i32
 }
 
@@ -385,6 +549,6 @@ pub unsafe extern "C" fn sods_x87_load(ptr: *mut u8, len: usize) -> u32 {
 /// checks a translation's (its sods.fpu section) is the same before it runs it.
 #[no_mangle]
 pub extern "C" fn sods_x87_names() -> i32 {
-    OUTPUT.with(|o| *o.borrow_mut() = crate::x87::NAMES.join(",").into_bytes());
+    publish_output(crate::x87::NAMES.join(",").into_bytes());
     0
 }

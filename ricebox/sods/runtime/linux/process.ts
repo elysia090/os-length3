@@ -9,6 +9,7 @@ import type {DynamicSources} from './exec/dynamic-plan.ts';
 import type {ExecRequest} from './exec/plan.ts';
 import {MappedCodeChanged} from './exec/mapped-code-space.ts';
 import {MAPPED_ARCH_PRCTL, MappedTaskCpu} from './exec/mapped-task.ts';
+import {MappedDispatcher} from './exec/mapped-dispatcher.ts';
 import {execScope, sourceRevision, ExecPreparationChangedError} from './exec/source.ts';
 import {STACK_BYTES, WASM_PAGE} from './exec/stack.ts';
 export {ImageSourceChangedError} from './exec/source.ts';
@@ -52,7 +53,7 @@ import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {mappedTidAddress, MappedVmCommitError} from './mapped-vm.ts';
 import {FILE_CALLS, MAPPED_FILE_CALLS} from './sys-file.ts';
-import {NET_CALLS} from './sys-net.ts';
+import {MAPPED_NET_CALLS, NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
 import {prepare, type Segment} from '../translation/share.ts';
 import {initialPreparationFor, type InitialPreparationResult} from '../translation/translator.ts';
@@ -158,9 +159,13 @@ const CLOCK = clocks();
 const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS, ...MOUNT_CALLS};
 // Only these handlers have a checked, bounded mapped-memory path, or
 // take no guest pointers. An unported syscall is not a static fallback.
-const MAPPED_CALLS: Calls = {...MAPPED_FILE_CALLS, 9: PROC_CALLS[9], 10: PROC_CALLS[10],
-  11: PROC_CALLS[11], 12: PROC_CALLS[12], 39: PROC_CALLS[39], 231: PROC_CALLS[231]};
+const MAPPED_CALLS: Calls = {...MAPPED_FILE_CALLS, ...MAPPED_NET_CALLS, 9: PROC_CALLS[9], 10: PROC_CALLS[10],
+  11: PROC_CALLS[11], 12: PROC_CALLS[12], 39: PROC_CALLS[39], 56: PROC_CALLS[56], 60: PROC_CALLS[60],
+  102: PROC_CALLS[102], 104: PROC_CALLS[104], 107: PROC_CALLS[107], 108: PROC_CALLS[108],
+  186: PROC_CALLS[186], 202: PROC_CALLS[202], 228: PROC_CALLS[228], 229: PROC_CALLS[229],
+  231: PROC_CALLS[231], 318: PROC_CALLS[318], 435: PROC_CALLS[435]};
 const SET_TID_ADDRESS = 218;
+const CLEARED_TID = new Uint8Array(4);
 // Only the owning kernel and task may enter or retire this backend.
 const MAPPED_CPU = Symbol('mapped Task CPU');
 const MAPPED_HANDOFF = Symbol('pending initial mapped Task');
@@ -176,7 +181,7 @@ export interface HeldMappedTask {
   publishInitial(): void;
   discard(): void;
 }
-/** Internal fresh inline pilot. It does not publish or run a process. */
+/** Stage a fresh inline dynamic guest for explicit admission by its owner. */
 export function prepareMappedInitial(kernel: Kernel, request: ExecRequest, sources: DynamicSources, cwd = '/'): HeldMappedTask {
   return kernel[HOLD_MAPPED_INITIAL](request, sources, cwd);
 }
@@ -402,6 +407,8 @@ export interface Made {
   outside?: Outside | null;
   machine?: Machine;
   consolidateIdle?: boolean;
+  /** Limit on encoded mapped code retained by one dispatcher. */
+  mappedCodeBytes?: number;
   /** The translator's module, its x87 an instance of (x87.ts); else the translator's own (`translate.module`). */
   x87?: WebAssembly.Module;
 }
@@ -443,6 +450,7 @@ export class Kernel implements Kern {
   declare readonly keeper: Keeper | null;
   declare readonly outside: Outside | null;
   declare readonly translateMore: NonNullable<Translator['more']> | null;
+  declare readonly mappedCodeBytes: number | undefined;
   declare readonly console: Console;
   #rootConsoleGuest: RootConsoleGuest | undefined;
   declare readonly images: Map<File, Kept>;
@@ -483,7 +491,8 @@ export class Kernel implements Kern {
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?, screen?, cols?,
    * rows?} (`screen`: its output is shown as a terminal's screen, `cols` by `rows`, though keys come a line at a time).
    */
-  constructor({vfs = new Vfs(), translate, console, keeper = null, outside = null, machine: host = machine(), consolidateIdle = false, x87}: Made) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null, outside = null, machine: host = machine(), consolidateIdle = false,
+      mappedCodeBytes, x87}: Made) {
     checkExecTree(vfs);
     this.vfs = vfs;
     // The x87 its threads run (x87.ts), made when the first is.
@@ -496,6 +505,7 @@ export class Kernel implements Kern {
     // The memory and storage the host says it has (machine.ts): what meminfo, sysinfo and statfs tell programs.
     this.machine = host;
     this.translate = translate;
+    this.mappedCodeBytes = mappedCodeBytes;
     // Translations kept from earlier runs, by a root file's origin (pack.ts): {has(origin), take(origin)}. take gives
     // {module, segments, size, more} once read, null when it cannot be had, or undefined while it is being read
     // (the exec that wants it waits; the keeper wakes the kernel when it is read).
@@ -623,7 +633,7 @@ export class Kernel implements Kern {
       Object.getPrototypeOf(bytes) === Uint8Array.prototype && !Object.hasOwn(bytes, 'length')
       ? initialPreparationFor(configured) : undefined;
     // Only pure preparation and an ordinary source revision can move work across this fence.
-    const shared = initial && Object.getOwnPropertyDescriptor(node, 'version')?.value === revision
+    const shared = initial && File.plainVersion(node, revision)
       ? this.#defaultImageSharing() : undefined;
     let translated: InitialPreparationResult | {raw: Uint8Array};
     try { translated = initial && shared !== undefined ? initial(bytes, shared) : {raw: this.translate(bytes)}; }
@@ -900,10 +910,12 @@ export class Kernel implements Kern {
     return {before, after: this.held()};
   }
 
-  /** The files whose translations it keeps or runs: their bytes are not spare, to it or to another kernel on its tree. */
+  /** Files backing live mappings or kept translations are still in use. */
   sources(): Set<File> {
-    const using = new Set<Program>(this.live().map((p) => p.image));
-    return new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
+    const live = this.live(), using = new Set(live.map(p => p.image)), files = new Set<File>();
+    for (const [node, e] of this.images) if (e.kept || using.has(e.image)) files.add(node);
+    for (const p of live) p.memory?.mappedVm?.keepSources(files);
+    return files;
   }
   /**
    * The files of its tree that are not spare: its own sources, and those of every other kernel running on the same
@@ -1095,6 +1107,7 @@ export class Kernel implements Kern {
       this.tty = {sid: p.sid, fg: p.pgid};
       this.ready(t);
       confirm?.();
+      if (p.memory?.mappedVm) this.vfs.loaded.keepers.add(this);
     } catch (cause) {
       // An ordinary backend may already have recorded an exec owner.
       if (!staged && p.execFailure) throw cause;
@@ -1180,7 +1193,7 @@ export class Kernel implements Kern {
   #checkMappedSchedulerOwner(t: Task, cpu: MappedTaskCpu): void {
     const p = t.proc;
     if (this.shared || p.kernel !== this || p.memory !== cpu.memory || cpu.memory.users !== 1 ||
-        p.tasks.size !== 1 || !p.tasks.has(t) || p.own !== t || this.tasks.get(t.tid) !== t || this.procs.get(p.pid) !== p)
+        t[MAPPED_CPU] !== cpu || !p.tasks.has(t) || this.tasks.get(t.tid) !== t || this.procs.get(p.pid) !== p)
       throw new Error('Mapped Task has no current scheduler owner');
   }
 
@@ -1266,7 +1279,8 @@ export class Kernel implements Kern {
             if (e !== exit && !(e instanceof MappedCodeChanged)) this.#mappedFailed(t, e);
             // The dispatcher has unwound. Exit status cannot be published
             // until its remaining compiler/table ownership is retired.
-            this.exitProcess(t.proc, exit.status);
+            if (exit.group) this.exitProcess(t.proc, exit.status);
+            else this.exitThread(t, exit.status);
             return;
           }
           if (e instanceof Preempted) {
@@ -1276,7 +1290,7 @@ export class Kernel implements Kern {
             // What it wrote and the console gathered goes on its way at a turn, not only once every thread waits.
             this.console.flush?.(false);
             if (e.code === TRAP_YIELD) t.slice = nextSlice(t.slice, now - t.ranAt);
-            if (t.proc.maps.length) t.proc.syncShared();
+            if (mapped || t.proc.maps.length) t.proc.syncShared();
             if (mapped && (t.dead || t.proc.stopped)) { if (!t.dead) t.state = 'stopped'; return; }
             // Its time is up: due timers, a signal for it and other threads first; else it goes on at once.
             if (e.code === TRAP_YIELD && (this.runq.length || deliverable(t) || [...this.timers].some((x) => x.at <= now))) { this.ready(t); return; }
@@ -1452,7 +1466,7 @@ export class Kernel implements Kern {
     const mapped = !!p.memory?.mappedVm, handler = (mapped ? MAPPED_CALLS : CALLS)[call.nr];
     const owned = mapped && this.#mappedTaskCall?.task === t && this.#mappedTaskCall.call === call ? this.#mappedTaskCall : undefined;
     if (!handler && !owned) { if (mapped) p.call = null; return BigInt(-E.NOSYS); }
-    const shares = p.maps.length > 0;
+    const shares = mapped || p.maps.length > 0;
     if (shares) p.syncShared();
     // Whose call this is, while it is made: what /proc's "self" leads to. (A thread run here is `current` as it runs;
     // one in a Worker of its own is only while the kernel answers it.)
@@ -1632,9 +1646,17 @@ export class Kernel implements Kern {
   exitThread(t: Task, status: number): void {
     if (t.dead) return;
     const p = t.proc;
+    const mapped = t[MAPPED_CPU];
+    if (mapped) {
+      if (p.tasks.size === 1) { this.exitProcess(p, status); return; }
+      const address = status & 0x7f ? 0 : t.clearTid;
+      if (mapped.active) mapped.requestExit(status, p, address, false);
+      this.#retireMapped(t, address, true);
+    }
     this.endTask(t);
     p.tasks.delete(t);
     if (!p.tasks.size) { this.exitProcess(p, status); return; }
+    if (mapped && p.task === t) p.task = p.tasks.values().next().value!;
     // Its instance stays with the memory its process goes on with, for the process's next thread (Task.load, goesOn):
     // a thread made one at a time (a pool's worker, a spawn's child) is not instantiated each time.
     const m = p.memory;
@@ -1691,14 +1713,22 @@ export class Kernel implements Kern {
     m.pooled = [kept, ...(m.pooled ?? []).filter((x) => x.image !== only.image)].slice(0, KEEP_INSTANCES);
   }
 
-  #retireMapped(t: Task, address = 0): void {
+  #retireMapped(t: Task, address = 0, processContinues = false): void {
     const cpu = t[MAPPED_CPU]!;
     try {
-      const clear = cpu.retire(t.proc, address);
+      const p = t.proc, clear = cpu.retire(p, address);
       // Compiler cleanup may call out. No exit effect before the kernel
       // has checked its health and the surviving scheduler owner again.
       if (this.#failedMapped) throw this.#failedMapped;
       if (clear) { this.#checkMappedSchedulerOwner(t, cpu); clear(); }
+      if (processContinues && address) {
+        this.#checkMappedSchedulerOwner(t, cpu);
+        const user = cpu.memory.mappedVm!.userMemory(p);
+        if (user.prefix(address, 4, 'write') === 4) {
+          user.copyOut(address, CLEARED_TID);
+          this.futexWake(p.futexKey(address), 1, -1);
+        }
+      }
     } catch (error) { this.#mappedFailed(t, error); }
     t.clearTid = 0;
   }
@@ -1712,13 +1742,17 @@ export class Kernel implements Kern {
     // Backends may separately request worker stop; this still owns evidence.
     execMayRun(p);
     if (p.state !== 'live') return;
-    const task = p.own, mapped = task?.[MAPPED_CPU];
+    const task = this.#mappedTurn?.proc === p ? this.#mappedTurn : p.own, mapped = task?.[MAPPED_CPU];
     if (task) checkMappedAdmission(task);
     if (mapped) {
       if (p.kernel !== this) throw new TypeError('Mapped Task belongs to another Kernel');
-      const address = status & 0x7f ? 0 : task!.clearTid;
-      if (mapped.active) mapped.requestExit(status, p, address);
-      this.#retireMapped(task!, address);
+      const address = status & 0x7f || p.tasks.size !== 1 ? 0 : task!.clearTid;
+      if (mapped.active) mapped.requestExit(status, p, address, true);
+      for (const thread of p.tasks) {
+        const cpu = thread[MAPPED_CPU];
+        if (!cpu || cpu.memory !== mapped.memory) this.#mappedFailed(task!, new Error('Mapped process has a foreign task'));
+        this.#retireMapped(thread, thread === task ? address : 0);
+      }
       p.call = null;
     }
     // Ended by a signal in front of the terminal: the shell gets it back as it had it (sys-file.ts handed).
@@ -1869,6 +1903,18 @@ export class Kernel implements Kern {
     return q;
   }
 
+  futexCancel(waiter: FutexWaiter): void {
+    const [space, at] = waiter.key;
+    const queue = this.futexes.get(space)?.get(at);
+    if (queue?.delete(waiter) && !queue.size) this.#dropFutexQueue(space, at);
+  }
+
+  #dropFutexQueue(space: FutexKey[0], at: number): void {
+    const queues = this.futexes.get(space)!;
+    queues.delete(at);
+    if (!queues.size) this.futexes.delete(space);
+  }
+
   /** Wake up to `n` waiters on `key` whose bitset meets `bitset`; how many. */
   futexWake([space, at]: FutexKey, n: number, bitset: number): number {
     const q = this.futexes.get(space)?.get(at);
@@ -1881,7 +1927,7 @@ export class Kernel implements Kern {
       w.woken = true;
       woken++;
     }
-    if (!q.size) this.futexes.get(space)?.delete(at);
+    if (!q.size) this.#dropFutexQueue(space, at);
     if (woken) this.dirty = true;
     return woken;
   }
@@ -1898,7 +1944,7 @@ export class Kernel implements Kern {
       this.futexQueue(to).add(w);
       moved++;
     }
-    if (!q.size) this.futexes.get(space)?.delete(at);
+    if (!q.size) this.#dropFutexQueue(space, at);
     return moved;
   }
 
@@ -2057,12 +2103,6 @@ function zeroExcept(memory: Mem, from: number, to: number, keep: Range[]): numbe
   return n;
 }
 /** Whether data segment `s` ({offset, bytes}) lies within one of `ranges`. */
-
-/** Each process mapping `node`: whether it shares memory with another, where its threads see it (SHARES). */
-function markShares(node: File): void {
-  // (Every mapping of a file is a process's: Process.mapShared.)
-  for (const m of (node.maps ?? []) as Set<Shared>) m.proc.view.setInt32(SHARES, m.proc.maps.some((x) => (x.node.maps?.size ?? 0) > 1) ? 1 : 0, true);
-}
 
 /** A shared file mapping a process made (Process.mapShared): its process and file, and where. */
 type Shared = Mapping & {proc: Process; node: File};
@@ -2331,15 +2371,23 @@ export class Process implements Proc {
     const m: Shared = {proc: this, node, start, length, off};
     node.map(m);
     this.maps.push(m);
-    markShares(node);
+    node.refreshSharedAliases();
   }
+
+  /** Shared views need a writer's updates at each time slice. */
+  sharedMappingsChanged(): void {
+    if (this.memory) this.view.setInt32(SHARES, this.maps.some(m => m.node.hasSharedAliases) ? 1 : 0, true);
+  }
+
   /**
    * What this process wrote through its shared mappings goes to their files and to the other processes mapping them
    * (all its mappings; else those another mapping shares): at each system call and time slice's end, so a process
    * sees another's writes once that one has made a call (futex, a pipe, its exit) or had its turn.
    */
   syncShared(all = false): void {
-    for (const m of this.maps) if (all || (m.node.maps?.size ?? 0) > 1) m.node.settle(m.off, m.off + m.length, m);
+    const vm = this.memory?.mappedVm;
+    if (vm) { vm.flushShared(); return; }
+    for (const m of this.maps) if (all || m.node.hasSharedAliases) m.node.settle(m.off, m.off + m.length, m);
   }
   /** Where a futex word is, as Linux keys it: a file and offset in a shared mapping, else this memory and address. */
   futexKey(address: number): FutexKey {
@@ -2354,7 +2402,7 @@ export class Process implements Proc {
     for (const m of this.sharedIn(start, length)) {
       m.node.unmap(m);
       this.maps.splice(this.maps.indexOf(m), 1);
-      markShares(m.node);
+      m.node.refreshSharedAliases();
       if (!this.maps.length && this.memory) this.view.setInt32(SHARES, 0, true);
       const end = start + length, mend = m.start + m.length;
       if (m.start < start) this.mapShared(m.node, m.start, start - m.start, m.off);
@@ -2367,11 +2415,12 @@ export class Process implements Proc {
   retireShared(): void {
     retireMemoryView(this.memory);
     const retiring = new Retirement(), maps = this.maps;
+    retiring.attempt(() => this.memory?.mappedVm?.flushShared());
     this.maps = [];
     for (const m of maps) {
       retiring.attempt(() => m.node.unmap(m));
       retiring.attempt(() => m.node.abandon(m));
-      retiring.attempt(() => markShares(m.node));
+      retiring.attempt(() => m.node.refreshSharedAliases());
     }
     retiring.attempt(() => {
       if (!this.maps.length && this.memory && !this.memory.mappedVm && this.memory.users === 1) this.view.setInt32(SHARES, 0, true);
@@ -2618,8 +2667,27 @@ export class Process implements Proc {
 
   /** A new thread of this process (clone with CLONE_THREAD): the caller's registers, rax 0, on `stack`. */
   newThread(resume: bigint, stack: bigint, tls: bigint | null): Task {
-    this.#requireStaticOwner();
     const k = this.kernel, t = this.task;
+    const vm = this.memory?.mappedVm;
+    if (vm) {
+      const cpu = t?.[MAPPED_CPU];
+      const nr = this.call?.nr;
+      if ((nr !== 56 && nr !== 435) || !cpu?.syscallAt(resume)) throw new FsError(E.OPNOTSUPP);
+      let nt: Task;
+      const prepared = cpu.fork(this, (nr, a, b, c, d, e, f, next) =>
+        k.enter(nt, nr, [a, b, c, d, e, f], next), resume, stack, tls);
+      try { nt = k.newTask(this); }
+      catch (cause) { prepared.retire(); throw cause; }
+      nt.mask = t.mask;
+      nt.screen(t.filters, t.strict);
+      nt.memory = prepared.memory;
+      nt.resumeAt = resume;
+      nt[MAPPED_CPU] = prepared;
+      this.tasks.add(nt);
+      k.tasks.set(nt.tid, nt);
+      return nt;
+    }
+    this.#requireStaticOwner();
     const nt = k.newTask(this);
     nt.mask = t.mask;
     nt.screen(t.filters, t.strict);
@@ -2757,17 +2825,17 @@ export class Task implements Thread {
   }
 
   #newMappedCpu(memory: Mem, compiler: MappedTranslate, kind: 'arena' | 'held-initial'): MappedTaskCpu {
-    const k = this.kernel;
-    return new MappedTaskCpu(memory, memory.mappedVm!, compiler, {
+    const k = this.kernel, vm = memory.mappedVm!;
+    const dispatcher = new MappedDispatcher(vm.code, compiler, {
       syscall: (nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint) =>
         k.enter(this, nr, [a, b, c, d, e, f], next),
       trap: trapOrPreempt,
       div128: (hi: bigint, lo: bigint, d: bigint, signed: number) => div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(steady() * 1e6)),
-      fpu: () => { throw new Error('Mapped x87 state is not supported'); },
       trace: () => {},
       time: () => NaN,
-    }, kind);
+    }, () => k.x87, k.mappedCodeBytes);
+    return new MappedTaskCpu(memory, vm, dispatcher, dispatcher.initial, kind === 'held-initial');
   }
 
   /** Prepare an interpreter-free arena. The returned action may publish

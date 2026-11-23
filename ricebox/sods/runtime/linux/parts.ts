@@ -402,7 +402,6 @@ export interface Kern {
   readonly tasks: Map<number, Thread>;
   readonly runq: Thread[];
   readonly blocked: Set<Thread>;
-  readonly futexes: Map<WebAssembly.Memory | File, Map<number, Set<FutexWaiter>>>;
   readonly timers: Set<Timer>;
   readonly nextPid: number;
   /** The numbers of what was not made in the first pid namespace (space.ts). */
@@ -444,6 +443,7 @@ export interface Kern {
   stopProcess(p: Proc, sig: number): void;
   continueProcess(p: Proc): void;
   futexQueue(key: FutexKey): Set<FutexWaiter>;
+  futexCancel(waiter: FutexWaiter): void;
   futexWake(key: FutexKey, n: number, bitset: number): number;
   futexRequeue(key: FutexKey, to: FutexKey, n: number): number;
 }

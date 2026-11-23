@@ -99,8 +99,8 @@ pub struct Tls {
 
 struct Reader<'a>(&'a [u8]);
 
-impl Reader<'_> {
-    fn bytes(&self, at: u64, n: u64) -> Result<&[u8], Error> {
+impl<'a> Reader<'a> {
+    fn bytes(&self, at: u64, n: u64) -> Result<&'a [u8], Error> {
         let start = usize::try_from(at).map_err(|_| Error("offset".into()))?;
         // try_from, not `as`: on wasm32 a 64-bit size must not wrap to a small one.
         let n = usize::try_from(n).map_err(|_| Error("size".into()))?;

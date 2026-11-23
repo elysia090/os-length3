@@ -7,6 +7,7 @@ import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} f
 import {E, FsError, type Vfs} from '../fs.ts';
 import {mappedLibrariesFor, type MappedLibraries} from '../mapped-libraries.ts';
 import {execScope, execSource, type ExecSource, type ExecSourceOwner} from './source.ts';
+import type {PreparedMappedCode} from './prepared-mapped-code.ts';
 import {STACK_BYTES, WASM_PAGE} from './stack.ts';
 
 const PAGE = 4096, FIRST = 0x40_0000, END = 2 ** 32;
@@ -40,6 +41,7 @@ export type DynamicSources = {
   readonly interpreter: ExecutableSource;
   /** Exact authenticated dependency inodes supplied before guest lookup. */
   readonly libraries?: MappedLibraries;
+  readonly preparedCode?: PreparedMappedCode;
 };
 type Reader = Pick<Translate, 'describeDynamic' | 'notProgram'>;
 export interface DynamicExecOwner extends ExecSourceOwner {

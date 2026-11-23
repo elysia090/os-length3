@@ -7,7 +7,7 @@
 
 import {said} from '../host.ts';
 import type {MappedText, MappedTranslate} from './mapped.ts';
-import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES, dynamicLoadSpec, type DynamicRole, type ElfLoadSpec} from './dynamic-load.ts';
+import {DYNAMIC_FILE_LIMIT, DYNAMIC_ROLES, dynamicLoadSpec, dynamicMetadataSpans, type DynamicRole, type ElfLoadSpec} from './dynamic-load.ts';
 import {prepare} from './share.ts';
 
 /** The translator's own exports. */
@@ -26,9 +26,14 @@ interface Exports {
   sods_translate_more(handle: number, seeds: number, count: number, base: number): number;
   sods_close(handle: number): void;
   sods_describe_dynamic_v1?(elf: number, length: number, role: number): number;
+  sods_describe_dynamic_v2?(metadata: number, metadataLength: number, fileLength: number, role: number): number;
   sods_mapped_core_v4?(): number;
   sods_open_mapped_v1?(elf: number, length: number, role: number, bias: number, address: number,
     offset: number, bytes: number, known: number, nKnown: number): number;
+  sods_open_mapped_v2?(metadata: number, metadataLength: number, fileLength: number, rx: number,
+    role: number, bias: number, address: number, offset: number, bytes: number, known: number, nKnown: number): number;
+  sods_translate_mapped_one?(handle: number, seed: bigint): number;
+  sods_replay_mapped_v1?(handle: number, seeds: number, count: number): number;
   sods_unzstd(at: number, length: number, size: number): number;
   sods_sha256(at: number, length: number): number;
 }
@@ -73,6 +78,17 @@ export function initialPreparationFor(translate: (elf: Uint8Array) => Uint8Array
   return initialPreparations.get(translate);
 }
 
+type MappedEmitter = MappedTranslate['more'];
+const mappedOutputViews = new WeakMap<MappedEmitter, MappedEmitter>();
+
+/** Synchronous use of the built-in translator's output. Consume it before
+ * another translator call. An embedding's replacement `more` is called as usual. */
+export function withMappedOutput<T>(compiler: MappedTranslate, args: Parameters<MappedEmitter>,
+    consume: (code: Uint8Array<ArrayBuffer>) => T): T {
+  const more = compiler.more, view = mappedOutputViews.get(more);
+  return consume(view ? view(...args) : more.apply(compiler, args));
+}
+
 export async function loadTranslator(source: WebAssembly.Module | BufferSource): Promise<Translate> {
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
   const instance = (m: WebAssembly.Module): Exports => new WebAssembly.Instance(m, {}).exports as unknown as Exports;
@@ -86,6 +102,21 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   // What a fresh instance holds: that much never goes back.
   let base = x.memory.buffer.byteLength;
   const put = (bytes: Uint8Array): number => { const p = x.sods_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p; };
+  const putMetadata = (file: Uint8Array, role: DynamicRole): {at: number; length: number} => {
+    const spans = dynamicMetadataSpans(file, role);
+    const header = 8 * spans.length, length = spans.reduce((total, span) => total + span.length, header);
+    const at = x.sods_alloc(length);
+    const target = new Uint8Array(x.memory.buffer, at, length), view = new DataView(target.buffer, at, header);
+    let payload = header;
+    for (const [i, span] of spans.entries()) {
+      const {offset, length} = span;
+      view.setUint32(i * 8, offset, true);
+      view.setUint32(i * 8 + 4, length, true);
+      if (length) target.set(file.subarray(offset, offset + length), payload);
+      payload += length;
+    }
+    return {at, length};
+  };
   // (`read`: the call's only failure is the ELF's reading, as sods_translate and its kin fail: NotAProgram.)
   const outputView = (status: number, read = false): Uint8Array<ArrayBuffer> => {
     const view = new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len());
@@ -105,16 +136,21 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     try { return prepare(view, {shared}); }
     catch (preparationError) { return {preparationError}; }
   });
-  if (x.sods_describe_dynamic_v1) translate.describeDynamic = (elf: Uint8Array, role: DynamicRole): ElfLoadSpec => {
+  if (x.sods_describe_dynamic_v1 || x.sods_describe_dynamic_v2) translate.describeDynamic = (elf: Uint8Array, role: DynamicRole): ElfLoadSpec => {
     if (!Object.hasOwn(DYNAMIC_ROLES, role) || !elf.length || elf.length > DYNAMIC_FILE_LIMIT)
       throw new NotAProgram('Invalid dynamic object size or role');
+    if (x.sods_describe_dynamic_v2) {
+      const {at, length} = putMetadata(elf, role);
+      try { return dynamicLoadSpec(output(x.sods_describe_dynamic_v2(at, length, elf.length, DYNAMIC_ROLES[role]), true), role); }
+      finally { x.sods_free(at, length); }
+    }
     const at = put(elf);
     try { return dynamicLoadSpec(output(x.sods_describe_dynamic_v1!(at, elf.length, DYNAMIC_ROLES[role]), true), role); }
     finally { x.sods_free(at, elf.length); }
   };
   /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
   translate.whole = (elf: Uint8Array): Uint8Array<ArrayBuffer> => output(x.sods_translate_whole(put(elf), elf.length), true);
-  const words = (list: (bigint | number)[]): Uint8Array<ArrayBuffer> => new Uint8Array(new BigUint64Array(list.map((w) => BigInt(w))).buffer);
+  const words = (list: readonly (bigint | number)[]): Uint8Array<ArrayBuffer> => new Uint8Array(new BigUint64Array(list.map((w) => BigInt(w))).buffer);
   /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
   translate.seeded = function seeded(elf: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer> {
     const s = put(words(seeds));
@@ -160,43 +196,71 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
     open.delete(handle);
   };
   let translatorEpoch: object = {};
-  if (x.sods_mapped_core_v4 && x.sods_open_mapped_v1) {
+  if (x.sods_mapped_core_v4 && (x.sods_open_mapped_v1 || x.sods_open_mapped_v2)) {
     // Preserve parsed ELF bytes per authorized text generation. The old
     // Wasm instance itself is not retained when the translator is renewed.
     const sources = new WeakMap<Set<bigint>, {epoch: object; handle: number; elf: Uint8Array; text: MappedText}>();
+    const openText = (elf: Uint8Array, text: MappedText, knownAt: number, knownCount: number): number => {
+      const {role, bias, address, offset, length} = text, kind = DYNAMIC_ROLES[role];
+      if (!x.sods_open_mapped_v2)
+        return x.sods_open_mapped_v1!(put(elf), elf.length, kind, bias, address, offset, length, knownAt, knownCount);
+      const metadata = putMetadata(elf, role);
+      try {
+        const rx = put(elf.subarray(offset, offset + length));
+        return x.sods_open_mapped_v2(metadata.at, metadata.length, elf.length, rx,
+          kind, bias, address, offset, length, knownAt, knownCount);
+      } finally { x.sods_free(metadata.at, metadata.length); }
+    };
     const openMapped = (elf: Uint8Array, text: MappedText, known: Set<bigint>): number => {
       const u32 = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0xffff_ffff;
       if (!Object.hasOwn(DYNAMIC_ROLES, text.role) || !elf.length || elf.length > DYNAMIC_FILE_LIMIT ||
-          ![text.bias, text.address, text.offset, text.length].every(u32))
+          ![text.bias, text.address, text.offset, text.length].every(u32) || !text.length || text.offset + text.length > elf.length)
         throw new NotAProgram('Invalid mapped ELF input');
       const list = [...known], k = put(words(list));
       try {
-        const handle = x.sods_open_mapped_v1!(put(elf), elf.length, DYNAMIC_ROLES[text.role], text.bias,
-          text.address, text.offset, text.length, k, list.length);
+        const handle = openText(elf, text, k, list.length);
         if (!handle) output(1, true);
         sources.set(known, {epoch: translatorEpoch, handle, elf, text});
         return handle;
       } finally { x.sods_free(k, list.length * 8); }
     };
+    const mappedView: MappedEmitter = (elf, text, address, known) => {
+      const cached = sources.get(known);
+      if (cached && (cached.elf !== elf || cached.text !== text)) throw new Error('Mapped translator source identity changed');
+      let seed: number | undefined;
+      const go = (handle: number): number => {
+        if (x.sods_translate_mapped_one) return x.sods_translate_mapped_one(handle, address);
+        seed ??= put(words([address]));
+        return x.sods_translate_more(handle, seed, 1, 0);
+      };
+      let status: number;
+      try {
+        status = go(cached?.epoch === translatorEpoch ? cached.handle : openMapped(elf, text, known));
+        if (status && new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len())) === 'that ELF is not open')
+          status = go(openMapped(elf, text, known));
+      } finally { if (seed !== undefined) x.sods_free(seed, 8); }
+      return outputView(status);
+    };
     const mapped: MappedTranslate = {
       core: () => output(x.sods_mapped_core_v4!()),
-      more(elf, text, address, known, base) {
-        const cached = sources.get(known);
-        if (cached && (cached.elf !== elf || cached.text !== text)) throw new Error('Mapped translator source identity changed');
-        const s = put(words([address]));
-        try {
-          const go = (handle: number): number => x.sods_translate_more(handle, s, 1, base);
-          let status = go(cached?.epoch === translatorEpoch ? cached.handle : openMapped(elf, text, known));
-          if (status && new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len())) === 'that ELF is not open')
-            status = go(openMapped(elf, text, known));
-          return output(status);
-        } finally { x.sods_free(s, 8); }
-      },
+      more: (...args) => mappedView(...args).slice(),
       close(known) {
         const cached = sources.get(known);
         if (cached?.epoch === translatorEpoch) x.sods_close(cached.handle);
         sources.delete(known);
       },
+    };
+    mappedOutputViews.set(mapped.more, mappedView);
+    if (x.sods_replay_mapped_v1) mapped.replay = (elf, text, pcs) => {
+      if (!pcs.length || pcs.length > 65536 || pcs.some(pc => !Number.isInteger(pc) || pc < text.address || pc >= text.address + text.length))
+        throw new RangeError('Invalid mapped replay PCs');
+      const known = new Set<bigint>();
+      const handle = openMapped(elf, text, known);
+      try {
+        const seeds = words(pcs), at = put(seeds);
+        try { return output(x.sods_replay_mapped_v1!(handle, at, pcs.length)); }
+        finally { x.sods_free(at, seeds.length); }
+      } finally { mapped.close(known); }
     };
     translate.mapped = mapped;
   }

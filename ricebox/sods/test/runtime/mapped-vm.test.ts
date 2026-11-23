@@ -7,19 +7,23 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import {MappedCodeChanged} from '../../runtime/linux/exec/mapped-code-space.ts';
+import {MAPPED_ABI_VERSION} from '../../runtime/linux/exec/mapped-code-table.ts';
 import {MappedDataFault, MappedDispatcher} from '../../runtime/linux/exec/mapped-dispatcher.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import type {ExecutableSource} from '../../runtime/linux/executable-source.ts';
 import {Exit} from '../../runtime/linux/flow.ts';
-import {E, FsError, MNT, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
+import {E, File, FsError, MNT, mountTarget, Vfs} from '../../runtime/linux/fs.ts';
 import {captureMappedLibraries} from '../../runtime/linux/mapped-libraries.ts';
-import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MappedStringLimit, MappedVm} from '../../runtime/linux/mapped-vm.ts';
+import {MAPPED_COPY_LIMIT, MAPPED_STRING_LIMIT, MAPPED_VM_LIMIT, MappedStringLimit, MappedVm} from '../../runtime/linux/mapped-vm.ts';
+import type {Kern} from '../../runtime/linux/parts.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
+import {SHARES} from '../../runtime/linux/thread-abi.ts';
 import {captureExecutableSource} from '../../runtime/linux.ts';
 import {loadTranslator} from '../../runtime/translate.ts';
 import type {ElfLoadSpec} from '../../runtime/translation/dynamic-load.ts';
 import type {Translate} from '../../runtime/translation/translator.ts';
+import {X87} from '../../runtime/translation/x87.ts';
 
 const wasm = process.env.SODS_TEST_MAPPED_WASM;
 const officialRoot = process.env.SODS_TEST_DYNAMIC_ROOT;
@@ -32,9 +36,9 @@ const encode = new TextEncoder();
 const syscall = (p: Process, n: number, ...args: number[]): bigint => p.syscall(BigInt(n),
   ...[...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]);
 
-function fixture(vfs: Vfs, path: string, bytes: Uint8Array, loader = () => bytes) {
+function fixture(vfs: Vfs, path: string, bytes: Uint8Array, loader = () => bytes, ownership?: 'owned') {
   const origin = createHash('sha256').update(bytes).digest('hex');
-  const file = mountTarget(vfs).file(path, 0o644, bytes.length, loader, origin);
+  const file = mountTarget(vfs).file(path, 0o644, bytes.length, loader, origin, ownership);
   return {file, source: captureExecutableSource(vfs, path, {origin, size: bytes.length})};
 }
 
@@ -60,6 +64,17 @@ function processWithVm(vfs = new Vfs(), {base = BASE, sources = [], translate, i
   };
   const clean = () => { if (p.state === 'live') kernel.exitProcess(p, 0); kernel.halt(); };
   return {kernel, p, memory, vm, code: vm.code, user, open, clean};
+}
+
+function staticPeer(kernel: Kernel): Process {
+  const peer = new Process(kernel, null);
+  peer.stackLow = PAGE;
+  peer.stackTop = 2 * PAGE;
+  peer.mapBase = peer.mapEnd = 65536;
+  peer.free = [];
+  peer.fixed = [];
+  peer.memory = Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
+  return peer;
 }
 
 test('mapped VM is one inline owner, with bounded private mmap/mprotect/munmap and no static reuse', () => {
@@ -98,6 +113,409 @@ test('mapped VM is one inline owner, with bounded private mmap/mprotect/munmap a
   } finally { clean(); }
   assert.equal(memory.users, 0);
   assert.ok(!kernel.spareMemories.includes(memory));
+});
+
+test('batched memory growth keeps spare pages inaccessible and retries the required size', () => {
+  const {p, memory, vm, user, clean} = processWithVm();
+  try {
+    const map = (at: number) => syscall(p, 9, at, PAGE, 3, 0x32, -1, 0);
+    const first = memory.buffer.byteLength;
+    assert.equal(map(first), BigInt(first));
+    const backing = memory.buffer, spare = first + 65536;
+    assert.ok(backing.byteLength > spare);
+    assert.equal(vm.permits(BigInt(spare), 1n, 'read'), false);
+    assert.equal(vm.permits(BigInt(spare), 1n, 'write'), false);
+    assert.equal(map(spare), BigInt(spare));
+    assert.equal(memory.buffer, backing);
+    assert.deepEqual(user().copyIn(spare, 1), Uint8Array.of(0));
+
+    const attempts: number[] = [], grow = memory.grow.bind(memory);
+    memory.grow = pages => {
+      attempts.push(pages);
+      if (pages > 1) throw new RangeError('No spare capacity available');
+      return grow(pages);
+    };
+    const next = backing.byteLength;
+    assert.equal(map(next), BigInt(next));
+    assert.equal(attempts.length, 2);
+    assert.ok(attempts[0] > 1);
+    assert.equal(attempts[1], 1);
+    assert.equal(memory.buffer.byteLength, next + 65536);
+  } finally { clean(); }
+});
+
+test('mapped stack reservations protect the guard and fixed replacement clears old bytes', () => {
+  const {p, user, clean} = processWithVm();
+  try {
+    const stack = BASE + PAGE, top = stack + PAGE;
+    assert.equal(syscall(p, 9, 0, 2 * PAGE, 0, 0x20022, -1, 0), BigInt(BASE));
+    assert.equal(syscall(p, 10, stack, PAGE, 3), 0n);
+    assert.equal(user().prefix(BASE, 1, 'read'), 0);
+    user().copyOut(stack, Uint8Array.of(42));
+    assert.equal(syscall(p, 9, top + PAGE, PAGE, 3, 0x32, -1, 0), BigInt(top + PAGE));
+    user().copyOut(top + PAGE, Uint8Array.of(7));
+    assert.equal(syscall(p, 9, stack, 2 * PAGE, 3, 0x32, -1, 0), BigInt(stack));
+    assert.equal(user().copyIn(stack, 2 * PAGE).some(Boolean), false);
+    assert.equal(user().copyIn(top + PAGE, 1)[0], 7);
+    assert.equal(user().prefix(BASE, 1, 'read'), 0);
+  } finally { clean(); }
+});
+
+test('mapped MAP_NORESERVE keeps the ordinary capacity and page permissions', () => {
+  const {p, user, clean} = processWithVm();
+  try {
+    user().copyOut(NAME, encode.encode('arena\0'));
+    const fd = Number(syscall(p, 319, NAME, 1));
+    assert.ok(fd >= 0);
+    assert.equal(syscall(p, 77, fd, 2 * PAGE), 0n);
+    assert.equal(syscall(p, 9, 0, MAPPED_VM_LIMIT, 0, 0x4002, fd, 0), err(E.NOMEM));
+    assert.equal(syscall(p, 9, 0, 2 * PAGE, 0, 0x4002, fd, 0), BigInt(BASE));
+    assert.equal(user().prefix(BASE, 1, 'read'), 0);
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 3), 0n);
+    user().copyOut(BASE + PAGE, Uint8Array.of(42));
+    assert.equal(user().copyIn(BASE + PAGE, 1)[0], 42);
+    assert.equal(user().prefix(BASE, 1, 'write'), 0);
+  } finally { clean(); }
+});
+
+test('mapped memfd stores publish and rearm only the written pages', () => {
+  const {p, code, memory, user, clean} = processWithVm();
+  try {
+    user().copyOut(NAME, encode.encode('wayland-shm\0'));
+    const fd = Number(syscall(p, 319, NAME, 3)), file = p.fds.get(fd)?.node;
+    const alias = BASE + 4 * PAGE, rights = new Uint8Array(code.accessPages.buffer);
+    assert.ok(file instanceof File);
+    assert.equal(syscall(p, 77, fd, 2 * PAGE + 3), 0n);
+    const duplicate = Number(syscall(p, 72, fd, 1030, 10));
+    assert.ok(duplicate >= 10 && p.fds.cloexec(duplicate));
+    assert.equal(p.fds.get(duplicate)?.node, file);
+    assert.equal(syscall(p, 9, BASE, 3 * PAGE, 3, 0x11, fd, 0), BigInt(BASE));
+    assert.equal(syscall(p, 9, alias, 3 * PAGE, 1, 0x11, duplicate, 0), BigInt(alias));
+    assert.deepEqual(rights.slice(BASE / PAGE, BASE / PAGE + 3), Uint8Array.of(1, 1, 1));
+    assert.equal(code.beginWrite(BigInt(BASE + 2 * PAGE - 2), 4n), true);
+    new Uint8Array(memory.buffer, BASE + 2 * PAGE - 2, 4).set([10, 20, 30, 40]);
+    assert.deepEqual(rights.slice(BASE / PAGE, BASE / PAGE + 3), Uint8Array.of(1, 3, 3));
+    assert.deepEqual(file.read(2 * PAGE, 2 * PAGE + 1), Uint8Array.of(30));
+    assert.deepEqual(rights.slice(BASE / PAGE, BASE / PAGE + 3), Uint8Array.of(1, 3, 1));
+    assert.deepEqual(user().copyIn(alias + 2 * PAGE, 2), Uint8Array.of(30, 40));
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    assert.equal(user().prefix(BASE + PAGE, 1, 'write'), 0);
+    assert.deepEqual(user().copyIn(alias + 2 * PAGE - 2, 4), Uint8Array.of(10, 20, 30, 40));
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 3), 0n);
+    assert.equal(syscall(p, 77, fd, 2 * PAGE), 0n);
+    assert.equal(code.beginWrite(BigInt(BASE + 2 * PAGE - 2), 4n), false);
+    assert.equal(rights[BASE / PAGE + 1], 1, 'reject the entire store before tracking any page');
+    assert.equal(syscall(p, 77, fd, 2 * PAGE + 3), 0n);
+    assert.deepEqual(user().copyIn(BASE + 2 * PAGE, 4), Uint8Array.of(0, 0, 0, 0));
+    assert.equal(syscall(p, 3, fd), 0n);
+    assert.equal(syscall(p, 3, duplicate), 0n);
+    user().copyOut(BASE + 2 * PAGE, Uint8Array.of(44, 55, 66, 77));
+    clean();
+    assert.deepEqual(file.read(2 * PAGE, 3 * PAGE), Uint8Array.of(44, 55, 66));
+    assert.equal(file.size, 2 * PAGE + 3);
+    assert.equal(file.maps, null);
+    assert.equal(file.hasSharedAliases, false);
+  } finally { if (p.state === 'live') clean(); }
+});
+
+test('read-only shared mmap retains the file offset, page rights and lifetime', () => {
+  const vfs = new Vfs(), bytes = new Uint8Array(2 * PAGE + 3);
+  bytes[PAGE] = 10;
+  bytes[2 * PAGE] = 20;
+  const file = vfs.writeFile('/plugin.so', bytes);
+  const {p, memory, code, user, open, clean} = processWithVm(vfs);
+  const copy = BASE + 4 * PAGE;
+  const mayRead = (at: number): number => new Uint8Array(code.accessPages.buffer)[at / PAGE];
+  try {
+    const source = open('/plugin.so'), writer = open('/plugin.so', 2);
+    const map = (at: number) => syscall(p, 9, at, 3 * PAGE, 1, 0x11, source, PAGE);
+    const write = (offset: number, value: number) => {
+      user().copyOut(NAME, Uint8Array.of(value));
+      assert.equal(syscall(p, 18, writer, NAME, 1, offset), 1n);
+    };
+    assert.equal(map(BASE), BigInt(BASE));
+    assert.equal(map(copy), BigInt(copy));
+    assert.equal(syscall(p, 9, BASE, PAGE, 1, 0x100001, source, 0), err(E.EXIST));
+    assert.equal(syscall(p, 9, BASE, PAGE, 3, 0x11, writer, 0), err(E.OPNOTSUPP));
+    assert.equal(syscall(p, 3, source), 0n);
+    assert.equal(user().copyIn(BASE, 1)[0], 10);
+    assert.deepEqual(user().copyIn(BASE + PAGE, 4), Uint8Array.of(20, 0, 0, 0));
+    assert.equal(user().prefix(BASE, 3 * PAGE, 'read'), 2 * PAGE);
+    assert.equal(user().prefix(BASE + 2 * PAGE + 1, 1, 'read'), 0);
+    assert.equal(mayRead(BASE + 2 * PAGE), 0);
+    assert.equal(syscall(p, 0, writer, BASE, 1), err(E.FAULT));
+    assert.equal(syscall(p, 10, BASE, PAGE, 3), err(E.ACCES));
+    assert.equal(syscall(p, 10, BASE, PAGE, 5), err(E.ACCES));
+
+    // Force a new Wasm memory buffer after the mappings are installed.
+    assert.equal(syscall(p, 9, NAME + 0x10000, PAGE, 3, 0x32, -1, 0), BigInt(NAME + 0x10000));
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
+    write(2 * PAGE, 21);
+    assert.equal(mayRead(BASE + PAGE), 0);
+    assert.equal(user().copyIn(copy + PAGE, 1)[0], 21);
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    assert.equal(user().copyIn(BASE + PAGE, 1)[0], 21);
+
+    assert.equal(syscall(p, 11, BASE + PAGE, PAGE), 0n);
+    assert.equal(syscall(p, 9, copy + PAGE, PAGE, 3, 0x32, -1, 0), BigInt(copy + PAGE));
+    user().copyOut(copy + PAGE, Uint8Array.of(99));
+    write(2 * PAGE, 22);
+    write(3 * PAGE + 1, 31);
+    assert.equal(user().prefix(BASE + PAGE, 1, 'read'), 0);
+    assert.equal(user().copyIn(copy + PAGE, 1)[0], 99);
+    assert.deepEqual(user().copyIn(BASE + 2 * PAGE, 3), Uint8Array.of(0, 31, 0));
+    assert.deepEqual(user().copyIn(copy + 2 * PAGE, 3), Uint8Array.of(0, 31, 0));
+    assert.equal(mayRead(BASE + 2 * PAGE), 1);
+    assert.equal(syscall(p, 77, writer, PAGE + 5), 0n);
+    assert.equal(mayRead(BASE + 2 * PAGE), 0);
+    assert.equal(user().prefix(copy + 2 * PAGE, 1, 'read'), 0);
+    write(3 * PAGE + 3, 32);
+    assert.deepEqual(user().copyIn(BASE + 2 * PAGE, 4), Uint8Array.of(0, 0, 0, 32));
+  } finally { clean(); }
+  assert.equal(file.hasSharedAliases, false);
+  assert.equal(memory.users, 0);
+  const old = new Uint8Array(memory.buffer, BASE, 1)[0];
+  file.write(PAGE, Uint8Array.of(42));
+  assert.equal(new Uint8Array(memory.buffer, BASE, 1)[0], old);
+});
+
+test('a read-only alias observes stores made through the existing writable mapping path', () => {
+  const vfs = new Vfs(), file = vfs.writeFile('/shared', Uint8Array.of(1));
+  const {kernel, p, user, open, clean} = processWithVm(vfs);
+  const writer = staticPeer(kernel), at = 0x2000;
+  writer.bytes[at] = 1;
+  try {
+    writer.mapShared(file, at, PAGE, 0);
+    assert.equal(writer.view.getInt32(SHARES, true), 0);
+    const fd = open('/shared');
+    assert.equal(syscall(p, 9, BASE, PAGE, 1, 1, fd, 0), BigInt(BASE));
+    assert.equal(writer.view.getInt32(SHARES, true), 1);
+    writer.bytes[at] = 42;
+    writer.syncShared();
+    assert.equal(user().copyIn(BASE, 1)[0], 42);
+    assert.equal(syscall(p, 11, BASE, PAGE), 0n);
+    assert.equal(writer.view.getInt32(SHARES, true), 0);
+  } finally {
+    try { kernel.exitProcess(writer, 0); }
+    finally { clean(); }
+  }
+});
+
+test('mapped Unix streams check guest addresses before sharing bytes and descriptors with a static peer', () => {
+  const {kernel, p, user, open, clean} = processWithVm();
+  const peer = staticPeer(kernel), at = 0x2000;
+  const address = Uint8Array.of(1, 0, ...encode.encode('/wayland-0\0'));
+  kernel.vfs.writeFile('/buffer', Uint8Array.of(42));
+  const message = (base: number, fd?: number) => {
+    const bytes = new Uint8Array(98), view = new DataView(bytes.buffer);
+    view.setBigUint64(16, BigInt(base + 56), true); // one iovec
+    view.setBigUint64(24, 1n, true);
+    view.setBigUint64(32, BigInt(base + 72), true); // one aligned cmsghdr
+    view.setBigUint64(40, 24n, true);
+    view.setBigUint64(56, BigInt(base + 96), true);
+    view.setBigUint64(64, 2n, true);
+    if (fd !== undefined) {
+      view.setBigUint64(72, 20n, true);
+      view.setInt32(80, 1, true); // SOL_SOCKET
+      view.setInt32(84, 1, true); // SCM_RIGHTS
+      view.setInt32(88, fd, true);
+      bytes.set([12, 34], 96);
+    }
+    return {bytes, view};
+  };
+  try {
+    assert.equal(syscall(p, 41, 2, 1, 0), err(E.AFNOSUPPORT));
+    const client = Number(syscall(p, 41, 1, 0x80001, 0));
+    const listener = Number(syscall(peer, 41, 1, 0x80801, 0));
+    assert.ok(client >= 0 && listener >= 0);
+    assert.equal(p.fds.cloexec(client), true);
+    peer.bytes.set(address, at);
+    assert.equal(syscall(peer, 49, listener, at, address.length), 0n);
+    assert.equal(syscall(peer, 50, listener, 1), 0n);
+
+    const boundary = NAME + PAGE - 2;
+    user().copyOut(boundary, address.subarray(0, 2));
+    assert.equal(syscall(p, 42, client, boundary, address.length), err(E.FAULT));
+    assert.equal(syscall(peer, 43, listener, 0, 0), err(E.AGAIN));
+    user().copyOut(NAME, address);
+    assert.equal(syscall(p, 42, client, NAME, address.length), 0n);
+    const accepted = Number(syscall(peer, 288, listener, 0, 0, 0x800));
+    assert.ok(accepted >= 0);
+
+    const fd = open('/buffer'), held = p.fds.get(fd), slot = NAME + 128;
+    const badSend = message(slot, fd);
+    badSend.view.setBigUint64(56, BigInt(boundary + 1), true);
+    user().copyOut(slot, badSend.bytes);
+    assert.equal(syscall(p, 46, client, slot, 0), err(E.FAULT));
+    peer.bytes.set(message(at).bytes, at);
+    assert.equal(syscall(peer, 47, accepted, at, 0), err(E.AGAIN));
+    user().copyOut(slot, message(slot, fd).bytes);
+    assert.equal(syscall(p, 46, client, slot, 0), 2n);
+    assert.equal(syscall(p, 3, fd), 0n);
+    assert.equal(syscall(peer, 47, accepted, at, 0x40000000), 2n);
+    assert.deepEqual(peer.bytes.slice(at + 96, at + 98), Uint8Array.of(12, 34));
+    const received = peer.view.getInt32(at + 88, true);
+    assert.equal(peer.fds.cloexec(received), true);
+    assert.equal(peer.fds.get(received), held);
+
+    peer.bytes.set(message(at, received).bytes, at);
+    assert.equal(syscall(peer, 46, accepted, at, 0), 2n);
+    assert.equal(syscall(peer, 3, received), 0n);
+    const badReceive = message(slot);
+    badReceive.view.setBigUint64(32, BigInt(boundary), true);
+    user().copyOut(slot, badReceive.bytes);
+    assert.equal(syscall(p, 47, client, slot, 0), err(E.FAULT));
+    user().copyOut(slot, message(slot).bytes);
+    assert.equal(syscall(p, 47, client, slot, 0x40000000), 2n);
+    assert.deepEqual(user().copyIn(slot + 96, 2), Uint8Array.of(12, 34));
+    const returned = new DataView(user().copyIn(slot + 88, 4).buffer).getInt32(0, true);
+    assert.equal(p.fds.cloexec(returned), true);
+    assert.equal(p.fds.get(returned), held);
+    assert.equal(syscall(p, 0, returned, slot, 1), 1n);
+    assert.equal(user().copyIn(slot, 1)[0], 42);
+    assert.equal(syscall(p, 3, returned), 0n);
+    assert.equal(held?.closed, true);
+    assert.equal(syscall(peer, 3, accepted), 0n);
+    assert.equal(syscall(p, 3, client), 0n);
+  } finally {
+    try { kernel.exitProcess(peer, 0); }
+    finally { clean(); }
+  }
+  const owner: Kern = kernel;
+  assert.equal(owner.sockets?.size, 0);
+});
+
+test('mapped clock, entropy and private futex wait and wake use checked guest addresses', () => {
+  const {kernel, p, user, clean} = processWithVm();
+  const edge = BASE + PAGE - 8, fill = new Uint8Array(16).fill(0xa5);
+  try {
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    assert.equal(syscall(p, 229, 1, BASE), 0n);
+    const spec = new DataView(user().copyIn(BASE, 16).buffer);
+    assert.deepEqual([spec.getBigInt64(0, true), spec.getBigInt64(8, true)], [0n, 1n]);
+    assert.equal(syscall(p, 228, 6, BASE), 0n);
+    user().copyOut(edge, fill);
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    assert.equal(syscall(p, 228, 1, edge), err(E.FAULT));
+    assert.deepEqual(user().copyIn(edge, 16), fill);
+    assert.equal(syscall(p, 318, edge, 16, 0), 8n, 'entropy stops at the first read-only page');
+    assert.deepEqual(user().copyIn(BASE + PAGE, 8), fill.subarray(8));
+    assert.equal(syscall(p, 318, BASE + PAGE, 1, 0), err(E.FAULT));
+    assert.equal(syscall(p, 318, BASE, 1, 16), err(E.INVAL));
+    assert.equal(syscall(p, 202, edge, 0x81, 1), 0n);
+    assert.equal(syscall(p, 202, edge + 1, 0x81, 1), err(E.INVAL));
+    assert.equal(syscall(p, 202, 0x100, 0x81, 1), err(E.FAULT));
+    const word = BASE + 32, timeout = BASE + 48;
+    assert.equal(syscall(p, 202, word, 0x80, 1), err(E.AGAIN));
+    assert.equal(syscall(p, 202, word, 0x80, 0, timeout), err(E.TIMEDOUT));
+    assert.equal(syscall(p, 202, 0x100, 0x80, 0), err(E.FAULT));
+    assert.equal(syscall(p, 202, word, 0x80, 0, BASE + 2 * PAGE - 8), err(E.FAULT));
+    const invalid = new Uint8Array(16);
+    new DataView(invalid.buffer).setBigInt64(8, 1000000000n, true);
+    user().copyOut(timeout, invalid);
+    assert.equal(syscall(p, 202, word, 0x80, 0, timeout), err(E.INVAL));
+    assert.equal(syscall(p, 202, word, 0, 1), err(E.AGAIN), 'a private word can be used by pthread_join');
+    assert.equal(syscall(p, 202, word, 3, 0), err(E.NOSYS));
+    const addFive = 0x10005000;
+    assert.equal(syscall(p, 202, word, 0x85, 1, 1, word + 4, addFive), 0n);
+    assert.deepEqual(user().copyIn(word + 4, 4), Uint8Array.of(5, 0, 0, 0));
+    assert.equal(syscall(p, 202, word, 0x85, 1, 1, BASE + PAGE, addFive), err(E.FAULT));
+    assert.deepEqual(user().copyIn(BASE + PAGE, 8), fill.subarray(8));
+    assert.equal(kernel.futexes.size, 0, 'validation and expired deadlines never publish waiters');
+  } finally { clean(); }
+});
+
+test('mapped eventfd transfers one checked word and preserves the counter on a failed read', () => {
+  const {p, user, clean} = processWithVm();
+  try {
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    const fd = Number(syscall(p, 290, 3, 0x80800));
+    assert.ok(fd >= 0);
+    const input = new Uint8Array(8);
+    new DataView(input.buffer).setBigUint64(0, 4n, true);
+    user().copyOut(BASE, input);
+    assert.equal(syscall(p, 1, fd, BASE, 8), 8n);
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    assert.equal(syscall(p, 0, fd, BASE + PAGE - 4, 8), err(E.FAULT));
+    assert.equal(syscall(p, 0, fd, BASE, 8), 8n);
+    assert.equal(new DataView(user().copyIn(BASE, 8).buffer).getBigUint64(0, true), 7n);
+    assert.equal(syscall(p, 0, fd, BASE, 8), err(E.AGAIN));
+    assert.equal(syscall(p, 3, fd), 0n);
+  } finally { clean(); }
+});
+
+test('mapped pipe2 publishes a pair after validation and transfers only to checked memory', () => {
+  const {p, user, clean} = processWithVm();
+  try {
+    assert.equal(syscall(p, 9, BASE, PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    const count = p.fds.slots.size, limit = p.fds.limit, flags = 0x80800;
+    assert.equal(syscall(p, 293, BASE + PAGE - 4, flags), err(E.FAULT));
+    assert.equal(syscall(p, 293, BASE, 1), err(E.INVAL));
+    p.fds.limit = p.fds.lowest() + 1;
+    assert.equal(syscall(p, 293, BASE, flags), err(E.MFILE));
+    p.fds.limit = limit;
+    assert.equal(p.fds.slots.size, count);
+
+    assert.equal(syscall(p, 293, BASE, flags), 0n);
+    const pair = new DataView(user().copyIn(BASE, 8).buffer), r = pair.getInt32(0, true), w = pair.getInt32(4, true);
+    const pipe = p.fds.get(r)!.pipe;
+    assert.ok(pipe && p.fds.get(w)!.pipe === pipe);
+    assert.equal(p.fds.cloexec(r) && p.fds.cloexec(w), true);
+    assert.equal(syscall(p, 0, r, BASE + 16, 3), err(E.AGAIN));
+    user().copyOut(BASE + 8, Uint8Array.of(4, 5, 6));
+    assert.equal(syscall(p, 1, w, BASE + 8, 3), 3n);
+    assert.equal(syscall(p, 0, r, BASE + PAGE, 3), err(E.FAULT));
+    assert.equal(pipe.size, 3);
+    assert.equal(syscall(p, 0, r, BASE + 16, 3), 3n);
+    assert.deepEqual(user().copyIn(BASE + 16, 3), Uint8Array.of(4, 5, 6));
+    assert.equal(syscall(p, 3, w), 0n);
+    assert.equal(syscall(p, 0, r, BASE + 16, 3), 0n);
+    assert.equal(syscall(p, 3, r), 0n);
+    assert.deepEqual([p.fds.slots.size, pipe.readers, pipe.writers], [count, 0, 0]);
+  } finally { clean(); }
+});
+
+test('mapped ppoll reads eventfd readiness and publishes only checked result fields', () => {
+  const {p, user, clean} = processWithVm();
+  try {
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    const fd = Number(syscall(p, 290, 3, 0x80800));
+    const entries = new Uint8Array(16), view = new DataView(entries.buffer);
+    view.setInt32(0, fd, true); view.setInt16(4, 1, true);
+    view.setInt16(6, 0x4000, true);
+    view.setInt32(8, -1, true); view.setInt16(14, 0x4000, true);
+    user().copyOut(BASE, entries);
+    assert.equal(syscall(p, 271, BASE, 2, BASE + 32, 0, 8), 1n);
+    const result = new DataView(user().copyIn(BASE, 16).buffer);
+    assert.deepEqual([result.getInt32(0, true), result.getInt16(4, true), result.getInt16(6, true), result.getInt16(14, true)],
+      [fd, 1, 1, 0]);
+    const crossing = BASE + PAGE - 12;
+    user().copyOut(crossing, entries);
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    assert.equal(syscall(p, 7, crossing, 2, 0), err(E.FAULT));
+    assert.deepEqual(user().copyIn(crossing, 16), entries);
+  } finally { clean(); }
+});
+
+test('mapped directory reads advance only after publishing whole records', () => {
+  const vfs = new Vfs();
+  mountTarget(vfs).directory('/plugins', 0o755);
+  fixture(vfs, '/plugins/example.so', Uint8Array.of(42));
+  const {p, user, open, clean} = processWithVm(vfs);
+  try {
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
+    const fd = open('/plugins', 0x10000);
+    assert.equal(syscall(p, 217, fd, BASE + PAGE - 16, 128), err(E.FAULT));
+    const one = BASE + PAGE - 24;
+    assert.equal(syscall(p, 217, fd, one, 128), 24n);
+    assert.equal(user().copyIn(one + 19, 1)[0], 46);
+    assert.equal(syscall(p, 217, fd, BASE, 128), 56n);
+    const remainder = user().copyIn(BASE, 56);
+    assert.equal(new TextDecoder().decode(remainder.subarray(19, 21)), '..');
+    assert.equal(new TextDecoder().decode(remainder.subarray(43, 53)), 'example.so');
+    assert.equal(syscall(p, 217, fd, BASE, 128), 0n);
+  } finally { clean(); }
 });
 
 test('ordinary mprotect can only reduce initial load data and never move the mmap floor', () => {
@@ -177,6 +595,88 @@ test('ordinary mmap source failure, descriptor replacement and destination retir
     assert.throws(() => syscall(p, 9, BASE, PAGE, 1, 0x12, fd, 0), ReadLifetimeError);
     assert.equal(p.state, 'zombie');
     assert.equal(Buffer.from(memory.buffer, BASE, 4).toString(), 'data');
+  } finally { clean(); }
+});
+
+test('private library mappings keep their source snapshot through guest memory growth', () => {
+  const vfs = new Vfs(), original = Buffer.from([11, 12, 13]);
+  const {file, source} = fixture(vfs, '/library.so', original);
+  const {p, open, memory, user, clean} = processWithVm(vfs, {sources: [source]});
+  try {
+    const fd = open('/library.so'), at = memory.buffer.byteLength;
+    const grow = memory.grow.bind(memory);
+    memory.grow = pages => { file.write(0, Uint8Array.of(99)); return grow(pages); };
+    assert.equal(syscall(p, 9, at, PAGE, 3, 0x12, fd, 0), BigInt(at));
+    assert.deepEqual(user().copyIn(at, 4), Uint8Array.of(11, 12, 13, 0));
+    assert.deepEqual(file.read(0, 3), Uint8Array.of(99, 12, 13));
+    assert.deepEqual(original, Buffer.from([11, 12, 13]));
+    user().copyOut(at + 1, Uint8Array.of(42));
+    assert.deepEqual(file.read(0, 3), Uint8Array.of(99, 12, 13));
+  } finally { clean(); }
+});
+
+test('private library mappings take an independent snapshot of an aliased guest buffer', () => {
+  const vfs = new Vfs(), original = Uint8Array.of(21, 22, 23);
+  let backing: ArrayBuffer;
+  const {source} = fixture(vfs, '/alias.so', original, () => Buffer.from(backing, NAME + 32, original.length));
+  const {p, open, memory, user, clean} = processWithVm(vfs, {sources: [source]});
+  try {
+    backing = memory.buffer;
+    const at = backing.byteLength;
+    user().copyOut(NAME + 32, original);
+    const fd = open('/alias.so');
+    assert.equal(syscall(p, 9, at, PAGE, 3, 0x12, fd, 0), BigInt(at));
+    assert.notEqual(memory.buffer, backing);
+    assert.deepEqual(user().copyIn(at, 4), Uint8Array.of(21, 22, 23, 0));
+  } finally { clean(); }
+});
+
+test('cold private pages preserve offsets and zero tails through protection changes and replacement', () => {
+  const vfs = new Vfs(), bytes = new Uint8Array(4 * PAGE - 1);
+  for (let page = 0; page < 4; page++) bytes.fill(page + 1, page * PAGE, (page + 1) * PAGE);
+  const {file, source} = fixture(vfs, '/owned.so', bytes, () => bytes.slice(), 'owned');
+  const {kernel, p, open, memory, user, clean} = processWithVm(vfs, {sources: [source]});
+  p.pid = 1;
+  kernel.procs.set(p.pid, p);
+  try {
+    const fd = open('/owned.so'), raw = () => new Uint8Array(memory.buffer);
+    assert.equal(syscall(p, 9, BASE, 4 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    user().copyOut(BASE + 3 * PAGE, new Uint8Array(PAGE).fill(99));
+    assert.equal(syscall(p, 9, BASE, 4 * PAGE, 0, 0x12, fd, 0), BigInt(BASE));
+    assert.equal(syscall(p, 3, fd), 0n);
+    assert.equal(kernel.free().after.files, bytes.length, 'a live private mapping owns this loaded snapshot');
+    assert.equal(raw()[BASE + 4 * PAGE - 1], 0, 'replacement leaves the partial last page backed by zeros');
+    assert.equal(syscall(p, 10, BASE + PAGE, 2 * PAGE, 1), 0n);
+    assert.equal(syscall(p, 10, BASE, PAGE, 1), 0n);
+    assert.equal(raw()[BASE + PAGE], 0, 'mprotect does not fault in a page');
+    file.write(PAGE, Uint8Array.of(42));
+    assert.deepEqual(user().copyIn(BASE + PAGE - 1, 2), Uint8Array.of(1, 2));
+    assert.equal(raw()[BASE + 2 * PAGE], 0, 'adjacent cold page stays uninitialized');
+    assert.equal(syscall(p, 10, BASE + 2 * PAGE, PAGE, 3), 0n);
+    user().copyOut(BASE + 2 * PAGE + 1, Uint8Array.of(8));
+    assert.deepEqual(user().copyIn(BASE + 2 * PAGE, 3), Uint8Array.of(3, 8, 3));
+    assert.equal(file.read(2 * PAGE + 1, 2 * PAGE + 2)[0], 3);
+    assert.equal(syscall(p, 11, BASE + PAGE, PAGE), 0n);
+    assert.equal(syscall(p, 9, BASE + PAGE, PAGE, 3, 0x32, -1, 0), BigInt(BASE + PAGE));
+    assert.equal(user().copyIn(BASE + PAGE, 1)[0], 0);
+    assert.equal(syscall(p, 10, BASE + 3 * PAGE, PAGE, 1), 0n);
+    assert.deepEqual(user().copyIn(BASE + 4 * PAGE - 2, 2), Uint8Array.of(4, 0));
+  } finally { clean(); }
+});
+
+test('an untouched private mapping stops pinning its file when unmapped', () => {
+  const vfs = new Vfs(), bytes = new Uint8Array(PAGE);
+  const {source} = fixture(vfs, '/owned.so', bytes, () => bytes.slice(), 'owned');
+  const {kernel, p, open, clean} = processWithVm(vfs, {sources: [source]});
+  p.pid = 1;
+  kernel.procs.set(p.pid, p);
+  try {
+    const fd = open('/owned.so');
+    assert.equal(syscall(p, 9, BASE, PAGE, 1, 0x12, fd, 0), BigInt(BASE));
+    assert.equal(syscall(p, 3, fd), 0n);
+    assert.equal(kernel.free().after.files, bytes.length);
+    assert.equal(syscall(p, 11, BASE, PAGE), 0n);
+    assert.equal(kernel.free().after.files, 0);
   } finally { clean(); }
 });
 
@@ -261,9 +761,39 @@ test('ordinary mapped read, pread, write, stat and console use bounded checked k
     assert.equal(syscall(p, 10, after, PAGE, 0), 0n);
     assert.equal(syscall(p, 1, output, after, 1), err(E.FAULT));
     assert.equal(syscall(p, 19, input, BASE, 1), err(E.NOSYS), 'an unported iovec cannot reach the old raw copy');
-    assert.equal(syscall(p, 318, BASE, 1), err(E.NOSYS), 'an unported buffer syscall is not a fallback');
+    assert.equal(syscall(p, 79, BASE, 16), err(E.NOSYS), 'an unported buffer syscall is not a fallback');
     assert.equal(p.call, null);
     assert.equal(p.fds.get(output)?.offset, 7);
+  } finally { clean(); }
+});
+
+test('mapped console writev checks every vector before delivering one write', () => {
+  const printed: [number, string][] = [];
+  const {p, user, clean} = processWithVm(new Vfs(), {write: (fd, bytes) => printed.push([fd, Buffer.from(bytes).toString()])});
+  try {
+    const fd = p.fds.install(new Description('console', {flags: 1, path: 'stdout'}));
+    const first = BASE, second = BASE + PAGE, a = encode.encode('dynamic-pie:42');
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    user().copyOut(first, a);
+    user().copyOut(second, Uint8Array.of(10));
+    const entries = new Uint8Array(32), table = new DataView(entries.buffer);
+    table.setBigUint64(0, BigInt(first), true);
+    table.setBigUint64(8, BigInt(a.length), true);
+    table.setBigUint64(16, BigInt(second), true);
+    table.setBigUint64(24, 1n, true);
+    user().copyOut(NAME, entries);
+    assert.equal(syscall(p, 20, fd, NAME, 2), BigInt(a.length + 1));
+    assert.deepEqual(printed, [[1, 'dynamic-pie:42\n']]);
+
+    assert.equal(syscall(p, 10, second, PAGE, 0), 0n);
+    assert.equal(syscall(p, 20, fd, NAME, 2), err(E.FAULT), 'a bad later buffer publishes no prefix');
+    assert.equal(syscall(p, 20, fd, NAME + PAGE - 16, 2), err(E.FAULT), 'the whole vector table must be readable');
+    assert.equal(syscall(p, 20, fd, 0, 1025), err(E.INVAL));
+    assert.equal(syscall(p, 20, fd, 0, 0), 0n);
+    table.setBigInt64(24, -1n, true);
+    user().copyOut(NAME, entries);
+    assert.equal(syscall(p, 20, fd, NAME, 2), err(E.INVAL));
+    assert.equal(printed.length, 1);
   } finally { clean(); }
 });
 
@@ -351,6 +881,147 @@ function textMap(spec: ElfLoadSpec, bias: number) {
     pc: bias + text.vaddr};
 }
 
+test('mapped FXSR transfers the architectural state and checks the full image before changing it', {skip}, async t => {
+  const vfs = new Vfs(), translate = await loadTranslator(readFileSync(wasm!));
+  const scratch = mkdtempSync(join(tmpdir(), 'sods-fxsr-'));
+  const src = fileURLToPath(new URL('../fixtures/mapped-code/fxsr.S', import.meta.url));
+  const dst = join(scratch, 'fxsr.so');
+  t.after(() => rmSync(scratch, {recursive: true, force: true}));
+  execFileSync(process.env.SODS_FIXTURE_CC ?? 'cc', ['-nostdlib', '-shared', '-fPIC', '-s',
+    '-Wl,-e,fxsr,--build-id=none', src, '-o', dst], {timeout: 6_000});
+  const binary = new Uint8Array(readFileSync(dst)), lib = fixture(vfs, '/fxsr.so', binary);
+  const {p, code, user, open, clean} = processWithVm(vfs, {sources: [lib.source], translate});
+  const {addr, length, offset, pc} = textMap(translate.describeDynamic!(binary, 'library'), 0x30000);
+  const coprocessor = new X87(translate.module!);
+  const make = t.mock.method(coprocessor, 'make'), free = t.mock.method(coprocessor, 'free');
+  const finished = new Error('Completed FXSR fixture');
+  const unsupported = new Error('Unsupported SSE mode');
+  const imports = {
+    syscall(nr: bigint) { assert.equal(nr, 231n); throw finished; },
+    trap(at: bigint, reason: number) {
+      assert.equal(reason, 3, `unexpected trap at ${at.toString(16)}`);
+      throw unsupported;
+    },
+    div128() { assert.fail('unused div128'); }, clock: () => 0n, time: () => NaN, trace() {},
+  };
+  const compiler = translate.mapped!;
+  const dispatcher = new MappedDispatcher(code, compiler, imports, () => coprocessor);
+  const image = BASE, out = BASE + 512, edge = BASE + PAGE - 480;
+  const xmm = Uint8Array.from({length: 256}, (_, i) => (i * 17 + 1) & 255);
+  const fill = (at: number, n = 512) => user().copyOut(at, new Uint8Array(n).fill(0xa5));
+  const enter = (mode: number, input = image, output = out) => {
+    dispatcher.setReg('r7', BigInt(input));
+    dispatcher.setReg('r6', BigInt(output));
+    dispatcher.setReg('r2', BigInt(mode));
+    return () => dispatcher.run(BigInt(pc));
+  };
+  const run = (mode: number) => assert.throws(enter(mode), error => error === finished);
+  const read = () => user().copyIn(out, 512);
+  try {
+    assert.equal(syscall(p, 9, addr, length, 5, 0x12, open('/fxsr.so'), offset), BigInt(addr));
+    assert.equal(syscall(p, 9, BASE, 2 * PAGE, 3, 0x32, -1, 0), BigInt(BASE));
+    assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
+    user().copyOut(image, xmm);
+    fill(out);
+    run(0);
+    const initial = read(), state = new DataView(initial.buffer);
+    assert.equal(state.getUint16(0, true), 0x037f);
+    assert.equal(state.getUint16(2, true), 6 << 11);
+    assert.equal(initial[4], 0xc0, 'physical tags of ST0 and ST1 at TOP 6');
+    assert.equal(state.getUint16(6, true), 0x1ee, 'FLDZ escape and ModRM');
+    const fip = state.getBigUint64(8, true);
+    assert.ok(fip >= BigInt(pc) && fip < BigInt(pc + length));
+    assert.deepEqual(user().copyIn(Number(fip), 2), Uint8Array.of(0xd9, 0xee));
+    assert.equal(state.getUint32(24, true), 0x1f80);
+    assert.equal(state.getUint32(28, true), 0xffbf);
+    assert.deepEqual(initial.slice(32, 42), new Uint8Array(10));
+    assert.equal(state.getBigUint64(48, true), 0x8000_0000_0000_0000n);
+    assert.equal(state.getUint16(56, true), 0x3fff);
+    assert.deepEqual(initial.slice(160, 176), xmm.slice(0, 16));
+    assert.deepEqual(initial.slice(400, 416), xmm.slice(240));
+    assert.deepEqual(initial.slice(464), new Uint8Array(48).fill(0xa5));
+
+    state.setUint16(0, 0x077f, true);
+    state.setUint16(2, 3 << 11, true);
+    initial[4] = 0x08;
+    state.setBigUint64(8, 0x1234_5678_9abc_def0n, true);
+    state.setBigUint64(16, 0xfedc_ba98_7654_3210n, true);
+    state.setUint32(24, 0x3fa0, true);
+    initial.fill(0x42, 32, 42);
+    initial.set(xmm, 160);
+    user().copyOut(image, initial);
+    run(1);
+    assert.deepEqual(read().slice(0, 416), initial.slice(0, 416));
+    assert.deepEqual(read().slice(464), new Uint8Array(48).fill(0xa5));
+
+    const legacy = initial.slice(), legacyView = new DataView(legacy.buffer);
+    legacyView.setUint32(12, 0x33, true);
+    legacyView.setUint32(20, 0x2b, true);
+    user().copyOut(image, legacy);
+    run(2);
+    assert.deepEqual(read().slice(0, 416), legacy.slice(0, 416), 'legacy form also restores XMM8–15');
+
+    user().copyOut(image, Uint8Array.of(0xa0, 0x5f, 0, 0));
+    run(3);
+    assert.deepEqual(read().subarray(0, 4), Uint8Array.of(0xa0, 0x5f, 0, 0));
+    run(4);
+    const committed = read().slice(0, 416);
+    fill(edge, 480);
+    const fault = (access: 'read' | 'write') => (e: unknown) =>
+      e instanceof MappedDataFault && e.address === BigInt(edge) && e.length === 512 && e.access === access;
+    assert.throws(enter(4, image, edge), fault('write'));
+    assert.deepEqual(user().copyIn(edge, 480), new Uint8Array(480).fill(0xa5));
+    assert.throws(enter(1, edge), fault('read'));
+    assert.throws(enter(4, image, out + 1), /Unaligned/);
+    assert.throws(enter(1, image + 1), /Unaligned/);
+    legacyView.setUint32(24, 0x0001_0000, true);
+    user().copyOut(image, legacy);
+    assert.throws(enter(1), /Reserved MXCSR/);
+    assert.throws(enter(5), error => error === unsupported);
+    run(4);
+    assert.deepEqual(read().slice(0, 416), committed);
+
+    user().copyOut(image, Uint8Array.of(0x7f, 0x0b));
+    fill(out);
+    run(6);
+    assert.deepEqual(read().subarray(0, 5), Uint8Array.of(0x7f, 0x0b, 0, 0x18, 0xa5));
+    const last = BASE + PAGE - 1;
+    user().copyOut(last, Uint8Array.of(0x42));
+    const wordFault = (access: 'read' | 'write') => (e: unknown) =>
+      e instanceof MappedDataFault && e.address === BigInt(last) && e.length === 2 && e.access === access;
+    assert.throws(enter(6, last), wordFault('read'));
+    assert.throws(enter(7, image, last), wordFault('write'));
+    assert.equal(user().copyIn(last, 1)[0], 0x42);
+    run(7);
+    assert.deepEqual(read().subarray(0, 2), Uint8Array.of(0x7f, 0x0b));
+    run(4);
+    assert.deepEqual(read().subarray(6, 24), committed.subarray(6, 24));
+    assert.equal(make.mock.callCount(), 1);
+    dispatcher.close();
+    assert.equal(free.mock.callCount(), 1);
+    assert.deepEqual(free.mock.calls[0]?.arguments, [make.mock.calls[0]?.result]);
+
+    const lost = new Error('Compiler retirement confirmation lost');
+    const failure = new MappedDispatcher(code, {...compiler, close(known) {
+      compiler.close(known);
+      throw lost;
+    }}, imports, () => coprocessor);
+    try {
+      failure.setReg('r6', BigInt(out));
+      failure.setReg('r2', 4n);
+      assert.throws(() => failure.run(BigInt(pc)), error => error === finished);
+    } finally {
+      const retained = (error: unknown) => error instanceof AggregateError && error.errors[0] === lost;
+      assert.throws(() => failure.close(), retained);
+      assert.throws(() => failure.close(), retained);
+    }
+    assert.equal(free.mock.callCount(), 2, 'the unwound x87 owner retires even when code retirement is unconfirmed');
+    assert.deepEqual(free.mock.calls[1]?.arguments, [make.mock.calls[1]?.result]);
+  } finally {
+    try { dispatcher.close(); } finally { clean(); }
+  }
+});
+
 test('actual mmap syscalls authorize the pinned Debian fixture DSO and revoke before changes, no interpreter run', {
   skip: !officialRoot || !wasm ? 'requires the staged official fixture and mapped-code translator' : false,
 }, async () => {
@@ -412,7 +1083,7 @@ test('actual mmap syscalls authorize the pinned Debian fixture DSO and revoke be
   } finally { clean(); }
 });
 
-test('one real mprotect invalidates old Wasm, restores RAX, RCX and flags, and returns to guest exactly once', {skip}, async () => {
+test('one real mprotect unwinds the old frame, restores RAX, RCX and flags, and reuses live code', {skip}, async () => {
   const vfs = new Vfs(), t = await loadTranslator(readFileSync(wasm!)), compiler = t.mapped!;
   const scratch = mkdtempSync(join(tmpdir(), 'sods-vm-'));
   try {
@@ -453,8 +1124,7 @@ test('one real mprotect invalidates old Wasm, restores RAX, RCX and flags, and r
       dispatcher.setReg('r2', 1n);
       assert.throws(() => dispatcher.run(BigInt(m.pc)), e => e instanceof Exit && e.status === 42 << 8);
       assert.deepEqual(calls.map(([n]) => n), [10n, 231n], 'mprotect completed once and the guest finished through exit_group');
-      assert.equal(functions[0], BigInt(m.pc));
-      assert.equal(functions[1], calls[0][1], 'new Wasm starts at the retired call frame\'s next PC');
+      assert.deepEqual(functions, [BigInt(m.pc)], 'live code already contains the syscall continuation');
       assert.equal(code.find(BigInt(target.pc), code.generation), undefined);
       assert.equal(p.exitStatus, 42 << 8);
       assert.equal(p.memory, null);
@@ -470,15 +1140,19 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
     const src = fileURLToPath(new URL('../fixtures/mapped-code/data.S', import.meta.url)), dst = join(scratch, 'data.so');
     execFileSync(process.env.SODS_FIXTURE_CC ?? 'cc', ['-nostdlib', '-shared', '-fPIC', '-s',
       '-Wl,-e,data,--build-id=none', src, '-o', dst], {timeout: 6_000});
-    const binary = new Uint8Array(readFileSync(dst)), f = fixture(vfs, '/data.so', binary);
-    const {p, code, user, open, clean} = processWithVm(vfs, {sources: [f.source], translate: t});
+    const binary = new Uint8Array(readFileSync(dst)), f = fixture(vfs, '/data.so', binary, () => binary.slice(), 'owned');
+    const coldBytes = new Uint8Array(2 * PAGE).fill(17);
+    const coldFile = fixture(vfs, '/constants.so', coldBytes, () => coldBytes.slice(), 'owned');
+    const {p, code, user, open, clean} = processWithVm(vfs, {sources: [f.source, coldFile.source], translate: t});
     const {addr, length, offset, pc} = textMap(t.describeDynamic!(binary, 'library'), 0x30000);
     const source = BASE + PAGE - 24, dest = 0x20000 + PAGE - 24, stack = 0x40000;
     const payload = Uint8Array.from({length: 32}, (_, i) => i + 1), results: bigint[] = [];
-    let reads = 0, writes = 0;
-    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find, string: code.string,
+    let hostSpans = 0;
+    const observed = {memory: code.memory, accessPages: code.accessPages, get generation() { return code.generation; }, find: code.find, string: code.string,
+      beginRead(a: bigint, n: bigint) { hostSpans++; return code.beginRead(a, n); },
+      beginWrite(a: bigint, n: bigint) { hostSpans++; return code.beginWrite(a, n); },
       permits(a: bigint, n: bigint, access: 'read' | 'write') {
-        if (access === 'read') reads++; else writes++;
+        if (n) hostSpans++;
         return code.permits(a, n, access);
       }};
     const done = new Error('Completed CPU fixture');
@@ -492,11 +1166,13 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
     const previous = (bytes: Uint8Array<ArrayBuffer>, marker: string): Uint8Array<ArrayBuffer> => {
       const output = bytes.slice(), at = Buffer.from(output).indexOf(marker);
       assert.ok(at >= 0);
-      output[at + marker.length - 1] = '3'.charCodeAt(0);
+      const version = String(MAPPED_ABI_VERSION - 1), current = String(MAPPED_ABI_VERSION);
+      assert.equal(version.length, current.length);
+      output.set(encode.encode(version), at + marker.length - current.length);
       return output;
     };
     assert.throws(() => new MappedDispatcher(observed,
-      {...compiler, core: () => previous(compiler.core(), 'sods.mapped-core-v4')}, imports), /checked dispatcher/);
+      {...compiler, core: () => previous(compiler.core(), 'sods.mapped-core-v' + MAPPED_ABI_VERSION)}, imports), /checked dispatcher/);
     const dispatcher = new MappedDispatcher(observed, compiler, imports);
     const normal = (mode: bigint, a = BigInt(source), d = BigInt(dest), rounds = 1n) => {
       dispatcher.setReg('r7', a); dispatcher.setReg('r6', d); dispatcher.setReg('r2', mode);
@@ -513,10 +1189,10 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
       user().copyOut(source, payload);
       assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 1), 0n);
       const stale = new MappedDispatcher(observed, {...compiler,
-        more: (...args) => previous(compiler.more(...args), 'sods.mapped-piece-v4')}, imports);
+        more: (...args) => previous(compiler.more(...args), 'sods.mapped-piece-v' + MAPPED_ABI_VERSION)}, imports);
       try {
         assert.throws(() => stale.run(BigInt(pc)), /checked data ABI/);
-        assert.deepEqual([reads, writes], [0, 0], 'an older fragment is not attached or run');
+        assert.equal(hostSpans, 0, 'an older fragment is not attached or run');
       } finally { stale.close(); }
       assert.throws(normal(0n), error => error === done);
       const expected = new Uint8Array(32);
@@ -525,16 +1201,30 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
       expected.set(payload.subarray(16), 16);
       assert.deepEqual(user().copyIn(dest, 32), expected);
       assert.deepEqual(results, [42n]);
-      assert.deepEqual([reads, writes], [5, 5], 'each emitted load and store takes one whole-span decision');
+      assert.equal(hostSpans, 0, 'loads and stores check the published page rights in Wasm');
 
       // Warm loop: exact policy work, optional diagnostic throughput;
       // this is not a browser/loader performance measurement.
       assert.throws(normal(2n, BigInt(source), BigInt(dest), 1000n), error => error === done);
-      const before = [reads, writes], now = performance.now(), rounds = 160_000n;
+      const now = performance.now(), rounds = 160_000n;
       assert.throws(normal(2n, BigInt(source), BigInt(dest), rounds), error => error === done);
       const ms = performance.now() - now;
-      assert.deepEqual([reads - before[0], writes - before[1]], [Number(rounds), Number(rounds)]);
-      if (process.env.SODS_MEASURE_MAPPED) test.diagnostic(`checked-access loop: ${reads + writes - before[0] - before[1]} decisions in ${ms.toFixed(1)} ms`);
+      assert.equal(hostSpans, 0, 'the hot access loop does not ask JS for each span');
+      if (process.env.SODS_MEASURE_MAPPED) test.diagnostic(`checked-access loop: ${2n * rounds} decisions in ${ms.toFixed(1)} ms`);
+
+      const cold = 0x60000, from = BigInt(cold + PAGE - 24);
+      assert.equal(new Uint8Array(code.memory.buffer)[pc], 0, 'executing text does not read it into guest RAM');
+      assert.equal(syscall(p, 9, cold, 2 * PAGE, 1, 0x12, open('/constants.so'), 0), BigInt(cold));
+      assert.equal(syscall(p, 10, cold + PAGE, PAGE, 0), 0n);
+      assert.throws(normal(1n, from), permission(from + 16n, 16, 'read'));
+      assert.equal(new Uint8Array(code.memory.buffer)[cold], 0, 'a denied span commits neither page');
+      assert.equal(syscall(p, 10, cold + PAGE, PAGE, 1), 0n);
+      const beforeCold = hostSpans;
+      assert.throws(normal(1n, from), error => error === done);
+      assert.deepEqual(user().copyIn(dest + 16, 16), coldBytes.subarray(0, 16));
+      assert.equal(hostSpans, beforeCold + 1, 'one slow access initializes both pages');
+      assert.throws(normal(1n, from), error => error === done);
+      assert.equal(hostSpans, beforeCold + 1, 'the same access now stays in Wasm');
 
       dispatcher.setReg('fs', BigInt(source - 8));
       assert.throws(normal(3n, 0n), error => error === done);
@@ -542,14 +1232,68 @@ test('mapped scalar, stack and SIMD accesses use the VM authority before touchin
       assert.throws(normal(4n, BigInt(source - 8) + (1n << 32n)), error => error === done);
       assert.deepEqual(user().copyIn(dest, 8), payload.subarray(0, 8), 'explicit addr32 has its legitimate x86 width');
 
+      const locked = 0x20000 + PAGE - 2, ones = new Uint8Array(4).fill(255);
+      user().copyOut(locked, ones);
+      assert.throws(normal(5n, BigInt(source), BigInt(locked)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'locked add leaves the normal carry and zero flags');
+      assert.deepEqual(user().copyIn(locked, 4), new Uint8Array(4));
+
+      user().copyOut(locked, Uint8Array.of(4, 0, 0, 0));
+      assert.throws(normal(6n, BigInt(source), BigInt(locked)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'a matching compare-and-exchange keeps the accumulator');
+      assert.deepEqual(user().copyIn(locked, 4), Uint8Array.of(7, 0, 0, 0));
+      assert.throws(normal(6n, BigInt(source), BigInt(locked)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'a mismatched compare-and-exchange returns the old value');
+      assert.deepEqual(user().copyIn(locked, 4), Uint8Array.of(7, 0, 0, 0));
+      assert.throws(normal(7n, BigInt(source), BigInt(locked)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'exchange returns the old value and preserves carry');
+      assert.deepEqual(user().copyIn(locked, 4), Uint8Array.of(9, 0, 0, 0));
+      const xadd = locked - 2, qwordOnes = new Uint8Array(8).fill(255);
+      user().copyOut(xadd, qwordOnes);
+      assert.throws(normal(8n, BigInt(source), BigInt(xadd)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'exchange-and-add returns the old operand and produces carry and zero');
+      assert.deepEqual(user().copyIn(xadd, 8), new Uint8Array(8));
+      assert.throws(normal(9n, BigInt(source), BigInt(locked + 4)), error => error === done);
+      assert.equal(results.at(-1), 42n, 'negative bit offsets address the preceding word and return its old bit');
+      assert.deepEqual(user().copyIn(locked, 4), Uint8Array.of(0, 0, 0, 0x80));
+      user().copyOut(xadd, qwordOnes);
+
       const snapshot = user().copyIn(dest, 32), unchangedCode = code.generation;
       assert.equal(syscall(p, 10, 0x20000 + PAGE, PAGE, 1), 0n);
       assert.equal(code.generation, unchangedCode, 'already-compiled code must observe new data permissions');
       assert.throws(normal(1n), permission(BigInt(dest + 16), 16, 'write'));
       assert.deepEqual(user().copyIn(dest, 32), snapshot, 'a refused whole vector store has no partial write');
+      assert.throws(normal(5n, BigInt(source), BigInt(locked)), permission(BigInt(locked), 4, 'write'));
+      assert.deepEqual(user().copyIn(locked, 4), ones, 'a refused locked add has no partial write');
+      assert.throws(normal(6n, BigInt(source), BigInt(locked)), permission(BigInt(locked), 4, 'write'));
+      assert.deepEqual(user().copyIn(locked, 4), ones, 'a mismatched compare-and-exchange still requires write permission');
+      assert.throws(normal(7n, BigInt(source), BigInt(locked)), permission(BigInt(locked), 4, 'write'));
+      assert.deepEqual(user().copyIn(locked, 4), ones, 'a refused exchange has no partial write');
+      assert.throws(normal(8n, BigInt(source), BigInt(xadd)), permission(BigInt(xadd), 8, 'write'));
+      assert.deepEqual(user().copyIn(xadd, 8), qwordOnes);
+      assert.throws(normal(9n, BigInt(source), BigInt(locked + 4)), permission(BigInt(locked), 4, 'write'));
+      assert.deepEqual(user().copyIn(locked, 4), ones);
+      assert.equal(syscall(p, 10, 0x20000 + PAGE, PAGE, 0), 0n);
+      assert.throws(normal(5n, BigInt(source), BigInt(locked)), permission(BigInt(locked), 4, 'read'));
       assert.equal(syscall(p, 10, BASE + PAGE, PAGE, 0), 0n);
       assert.throws(normal(1n), permission(BigInt(source + 16), 16, 'read'));
       assert.throws(normal(0n, BigInt(source) + (1n << 32n)), permission(BigInt(source) + (1n << 32n), 8, 'read'));
+
+      normal(10n);
+      dispatcher.setReg('r4', BigInt(stack + 16));
+      assert.throws(() => dispatcher.run(BigInt(pc)), permission(BigInt(stack - 8), 8, 'write'));
+      const bytes = user().copyIn(stack, 16), pushed = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      assert.equal(pushed.getBigUint64(0, true), BigInt(dest));
+      assert.equal(pushed.getBigUint64(8, true), BigInt(source));
+      const unmapped = stack + PAGE;
+      normal(11n, BigInt(unmapped));
+      dispatcher.setReg('r4', BigInt(stack));
+      assert.throws(() => dispatcher.run(BigInt(pc)), permission(BigInt(unmapped), 8, 'read'));
+      assert.equal(syscall(p, 9, stack - PAGE, PAGE, 3, 0x32, -1, 0), BigInt(stack - PAGE));
+      normal(10n);
+      dispatcher.setReg('r4', BigInt(stack + 16));
+      assert.throws(() => dispatcher.run(BigInt(pc)), error => error === done);
+      assert.equal(dispatcher.reg('r4'), BigInt(stack + 16));
     } finally { dispatcher.close(); clean(); }
   } finally { rmSync(scratch, {recursive: true, force: true}); }
 });
@@ -568,7 +1312,8 @@ test('checked MOVS/STOS preserve normal string semantics and use one bounded VM 
     const payload = Uint8Array.from({length: 32}, (_, i) => i + 1);
     const value = 0x1122_3344_5566_7788n, pattern = Uint8Array.of(0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11);
     let operations = 0, result: [bigint, bigint, bigint, bigint] | undefined;
-    const observed = {memory: code.memory, get generation() { return code.generation; }, find: code.find, permits: code.permits,
+    const observed = {memory: code.memory, accessPages: code.accessPages, get generation() { return code.generation; }, find: code.find, permits: code.permits,
+      beginRead: code.beginRead, beginWrite: code.beginWrite,
       string(...args: Parameters<typeof code.string>) { operations++; return code.string(...args); }};
     const done = new Error('Completed string fixture');
     const imports = {

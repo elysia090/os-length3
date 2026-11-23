@@ -3,25 +3,24 @@
 .text
 origin:
     mov %rsi, %r12
-    lea 128(%r12), %rdx
-    mov $4096, %r10d
-    call read_origin
+    mov %r12, %rdi
+    lea 128(%r12), %rsi
+    mov $4096, %edx
+    mov $89, %eax
+    syscall
     test %rax, %rax
     jle failed
 
     lea 64(%r12), %rdx
     mov $17, %r10d
-    call read_origin
-    cmp $17, %rax
-    jne failed
-    xor %edi, %edi
-    jmp done
-read_origin:
     mov $267, %eax
     mov $-100, %edi
     mov %r12, %rsi
     syscall
-    ret
+    cmp $17, %rax
+    jne failed
+    xor %edi, %edi
+    jmp done
 failed:
     mov $2, %edi
 done:

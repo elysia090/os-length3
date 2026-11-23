@@ -6,11 +6,21 @@ use crate::frame::*;
 use crate::wasm::*;
 use crate::x86::*;
 
-/// An offset and alignment for an access to memory 0.
-pub(crate) fn mem_at(offset: u64, align: u32) -> (u64, u32) { (offset, align) }
-
 /// All ones in `size` bytes.
 pub(crate) fn mask(size: u8) -> i64 { if size >= 8 { -1 } else { (1i64 << (size as u32 * 8)) - 1 } }
+
+fn sized_store(size: u8) -> (Op, i32) {
+    match size {
+        1 => (I64_STORE8, 1),
+        2 => (I64_STORE16, 2),
+        4 => (I64_STORE32, 4),
+        _ => (I64_STORE, 8),
+    }
+}
+
+fn sized_load(size: u8) -> Op {
+    match size { 1 => I64_LOAD8_U, 2 => I64_LOAD16_U, 4 => I64_LOAD32_U, _ => I64_LOAD }
+}
 
 impl Fx<'_> {
     pub(crate) fn zext32(&mut self) { self.e(I32_WRAP_I64); self.e(I64_EXTEND_I32_U); }
@@ -50,9 +60,9 @@ impl Fx<'_> {
         true
     }
 
-    /// low = min(low, rsp) (G_LOW): a read and a compare, and a store only at a new low (rarely, once a thread's
-    /// stack has been as deep once), not a select stored at every call.
+    /// The static pool uses the stack's deepest address to clear reused memory.
     pub(crate) fn note_low(&mut self) {
+        if self.checked_memory { return; }
         self.get(l_reg(RSP)); self.gget(G_LOW); self.e(I64_LT_U);
         self.if_();
         self.get(l_reg(RSP)); self.gset(G_LOW);
@@ -129,18 +139,23 @@ impl Fx<'_> {
 
     pub(crate) fn address(&mut self, i: &Instruction) {
         if self.checked_memory {
-            self.effective_from(i, false, false, false);
-            let (base, index) = (i.memory_base(), i.memory_index());
-            // The x86 address-size override wraps its offset before the
-            // segment base is added. A 64-bit operand is never narrowed.
-            if base == Register::EIP || base.size() == 4 || index.size() == 4
-                || base == Register::None && index == Register::None && i.memory_displ_size() == 4 {
-                self.zext32();
-            }
-            if i.memory_segment() == Register::FS { self.gget(G_FS); self.e(I64_ADD); }
+            self.mapped_address(i, None);
         } else {
             self.effective_from(i, true, false, true);
         }
+    }
+
+    /// An implicit address adjustment, such as the word of a bit string,
+    /// belongs to the x86 offset before addr32 and the segment base.
+    pub(crate) fn mapped_address(&mut self, i: &Instruction, extra: Option<u32>) {
+        self.effective_from(i, false, false, false);
+        if let Some(extra) = extra { self.get(extra); self.e(I64_ADD); }
+        let (base, index) = (i.memory_base(), i.memory_index());
+        if base == Register::EIP || base.size() == 4 || index.size() == 4
+            || base == Register::None && index == Register::None && i.memory_displ_size() == 4 {
+            self.zext32();
+        }
+        if i.memory_segment() == Register::FS { self.gget(G_FS); self.e(I64_ADD); }
     }
 
     /// The address for a load or store of operand memory, and the offset that load or store adds.
@@ -152,23 +167,40 @@ impl Fx<'_> {
     pub(crate) fn store_sized(&mut self, size: u8) { self.store_at(size, 0) }
 
     pub(crate) fn load_at(&mut self, size: u8, offset: u64) {
-        let m = mem_at(offset, 0);
-        self.e(match size {
-            1 => Mem(I64_LOAD8_U, m.1, m.0),
-            2 => Mem(I64_LOAD16_U, m.1, m.0),
-            4 => Mem(I64_LOAD32_U, m.1, m.0),
-            _ => Mem(I64_LOAD, m.1, m.0),
-        });
+        self.e(Mem(sized_load(size), 0, offset));
     }
 
     pub(crate) fn store_at(&mut self, size: u8, offset: u64) {
-        let m = mem_at(offset, 0);
-        self.e(match size {
-            1 => Mem(I64_STORE8, m.1, m.0),
-            2 => Mem(I64_STORE16, m.1, m.0),
-            4 => Mem(I64_STORE32, m.1, m.0),
-            _ => Mem(I64_STORE, m.1, m.0),
-        });
+        self.e(Mem(sized_store(size).0, 0, offset));
+    }
+
+    /// For a value that cannot fault, check before placing it on the Wasm
+    /// stack. The address stays below the value, so neither needs a spill.
+    fn store_value(&mut self, size: u8, align: u32, offset: u64, value: impl FnOnce(&mut Self) -> bool) -> bool {
+        let (op, width) = sized_store(size);
+        if self.checked_memory {
+            debug_assert_eq!(offset, 0);
+            self.check_address(width, MappedAccess::Write);
+        }
+        if !value(self) { return false; }
+        self.raw_mem(op, align, offset);
+        true
+    }
+
+    /// Keep the checked destination below the loaded value on the stack.
+    /// Integer arithmetic between this and its store cannot call the host.
+    pub(crate) fn load_update(&mut self, i: &Instruction, size: u8) -> u64 {
+        let offset = self.place(i);
+        if self.checked_memory { self.check_address(sized_store(size).1, MappedAccess::Update); }
+        let address = l_u(0);
+        self.tee_raw(address);
+        self.get_raw(address);
+        self.raw_mem(sized_load(size), 0, offset);
+        offset
+    }
+
+    pub(crate) fn finish_update(&mut self, size: u8, offset: u64) {
+        self.raw_mem(sized_store(size).0, 0, offset);
     }
 
     pub(crate) fn size(i: &Instruction, n: u32) -> u8 {
@@ -202,7 +234,7 @@ impl Fx<'_> {
     pub(crate) fn write(&mut self, i: &Instruction, n: u32, size: u8, from: u32) -> bool {
         match i.op_kind(n) {
             OpKind::Register => { self.get(from); self.write_reg(i.op_register(n)) }
-            OpKind::Memory => { let at = self.place(i); self.get(from); self.store_at(size, at); true }
+            OpKind::Memory => { let at = self.place(i); self.store_value(size, 0, at, |fx| { fx.get(from); true }) }
             _ => false,
         }
     }
@@ -227,13 +259,12 @@ impl Fx<'_> {
         self.push_with(|fx| { fx.get(from); true });
     }
 
-    /// Push what `value` puts on the stack, made after rsp moved (so it must not read rsp).
+    /// Push a value computed after RSP moves. Mapped operands that can fault
+    /// or read the old RSP are evaluated by the caller first.
     pub(crate) fn push_with(&mut self, value: impl FnOnce(&mut Self) -> bool) -> bool {
         self.get(l_reg(RSP)); self.c64(8); self.e(I64_SUB); self.tee(l_reg(RSP));
         self.guest_address();
-        if !value(self) { return false; }
-        self.e(Mem(I64_STORE, 3, 0));
-        true
+        self.store_value(8, 3, 0, value)
     }
 
     /// Write a value known now to a register: a full or 32-bit one takes it as it is.
@@ -246,11 +277,16 @@ impl Fx<'_> {
         }
     }
 
-    /// Put what `value` pushes into operand 0 (a register, or memory whose address is taken first).
-    pub(crate) fn assign(&mut self, i: &Instruction, size: u8, value: impl FnOnce(&mut Self) -> bool) -> bool {
+    /// MOV and MOVNTI take the address first for memory destinations. Their
+    /// store sources are immediates and general registers.
+    pub(crate) fn assign(&mut self, i: &Instruction, size: u8) -> bool {
         match i.op0_kind() {
-            OpKind::Register => value(self) && self.write_reg(i.op0_register()),
-            OpKind::Memory => { let at = self.place(i); value(self) && { self.store_at(size, at); true } }
+            OpKind::Register => self.read(i, 1, size) && self.write_reg(i.op0_register()),
+            OpKind::Memory => {
+                if i.op1_kind() == OpKind::Register && gpr(i.op1_register()).is_none() { return false; }
+                let at = self.place(i);
+                self.store_value(size, 0, at, |fx| fx.read(i, 1, size))
+            }
             _ => false,
         }
     }
@@ -265,9 +301,24 @@ impl Fx<'_> {
         }
     }
 
-    pub(crate) fn pop_value(&mut self, into: u32) {
-        self.get(l_reg(RSP)); self.guest_address(); self.e(Mem(I64_LOAD, 3, 0)); self.set(into);
+    fn pop_word(&mut self) {
+        self.get(l_reg(RSP)); self.guest_address(); self.e(Mem(I64_LOAD, 3, 0));
+    }
+
+    fn advance_rsp(&mut self) {
         self.get(l_reg(RSP)); self.c64(8); self.e(I64_ADD); self.set(l_reg(RSP));
+    }
+
+    pub(crate) fn pop_value(&mut self, into: u32) {
+        self.pop_word();
+        self.set(into);
+        self.advance_rsp();
+    }
+
+    /// RET carries the popped PC on the Wasm stack through register sync.
+    pub(crate) fn pop_to_stack(&mut self) {
+        self.pop_word();
+        self.advance_rsp();
     }
 
     /// Operand `n` of `i` as an i32, zero-extended from `size` (4 bytes or fewer).

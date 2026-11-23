@@ -519,12 +519,18 @@ jobs:
       # identity, and the cache that keeps translations under it.
       - name: Test sods
         if: matrix.part == 'native'
-        run: cargo test --locked --release --manifest-path ricebox/sods/Cargo.toml
+        run: cargo test --locked --release --features mapped-code --manifest-path ricebox/sods/Cargo.toml
+      - name: Build the mapped-code translator for runtime tests
+        if: matrix.part == 'native'
+        run: >-
+          cargo build --locked --release --lib --features mapped-code --target wasm32-unknown-unknown
+          --manifest-path ricebox/sods/Cargo.toml --target-dir target/sods-mapped
       - name: Test the Sods runtime with current translators
         if: matrix.part == 'native'
         env:
           SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
           SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          SODS_TEST_MAPPED_WASM: target/sods-mapped/wasm32-unknown-unknown/release/sods.wasm
           SODS_NATIVE: ricebox/sods/target/release/sods
         run: node --test --test-concurrency=3 ricebox/sods/test/runtime/*.test.ts
       # Verify the distribution against the translator binaries this job just built.

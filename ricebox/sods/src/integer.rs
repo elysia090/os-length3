@@ -43,9 +43,7 @@ impl Fx<'_> {
         // The destination's address once, kept for the store.
         let mut at = 0;
         if memory && write {
-            at = self.place(i);
-            let address = self.address_scratch();
-            self.tee_raw(address); self.get_raw(address); self.load_at(size, at);
+            at = self.load_update(i, size);
         } else if !self.read(i, 0, size) { return false; }
         let logic = matches!(state, Flags::Logic(_));
         if need && !logic {
@@ -66,7 +64,7 @@ impl Fx<'_> {
         } else {
             self.set_flags(Flags::Held);
         }
-        if memory { self.store_at(size, at); true } else {
+        if memory { self.finish_update(size, at); true } else {
             // A frame let go (add rsp, n at a function's end) is no new low.
             let up = i.op0_register() == Register::RSP && matches!(i.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64)
                 && match op { Mnemonic::Add => i.immediate(1) as i64 >= 0, Mnemonic::Sub => i.immediate(1) as i64 <= 0, _ => false };
@@ -600,12 +598,20 @@ impl Fx<'_> {
         self.set(l_t(2));
         let register_offset_into_memory = i.op0_kind() == OpKind::Memory && i.op1_kind() == OpKind::Register;
         if register_offset_into_memory {
-            // The offset is signed and may select a different word.
-            self.effective(i, true);
-            self.get(l_t(2)); self.sign_extend(size); self.c64(3); self.e(I64_SHR_S);
-            self.c64(-(size as i64)); self.e(I64_AND);
-            self.e(I64_ADD); self.set(l_t(5));
-            self.get(l_t(5)); self.e(I32_WRAP_I64); self.load_sized(size); self.set(l_t(1));
+            let word_offset = |fx: &mut Self| {
+                fx.get(l_t(2)); fx.sign_extend(size); fx.c64(3); fx.e(I64_SHR_S);
+                fx.c64(-(size as i64)); fx.e(I64_AND);
+            };
+            if self.checked_memory {
+                word_offset(self); self.set(l_t(5));
+                self.mapped_address(i, Some(l_t(5)));
+            } else {
+                self.effective(i, true);
+                word_offset(self);
+                self.e(I64_ADD);
+            }
+            self.set(l_t(5));
+            self.get(l_t(5)); self.guest_address(); self.load_sized(size); self.set(l_t(1));
         } else {
             if !self.read(i, 0, size) { return false; }
             self.set(l_t(1));
@@ -628,7 +634,7 @@ impl Fx<'_> {
         self.mask_to(size);
         self.set(l_t(1));
         if register_offset_into_memory {
-            self.get(l_t(5)); self.e(I32_WRAP_I64); self.get(l_t(1)); self.store_sized(size);
+            self.get(l_t(5)); self.guest_address(); self.get(l_t(1)); self.store_sized(size);
             true
         } else {
             self.write(i, 0, size, l_t(1))
@@ -703,8 +709,8 @@ impl Fx<'_> {
     }
 
     pub(crate) fn cpuid(&mut self) {
-        // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
-        // libc choosing its string routines by cpuid takes the SSE2 ones sods translates.
+        // Select the SSE2 string routines in libc. The mapped profile has
+        // checked FXSR, and CMPXCHG16B remains a static CPU capability.
         self.get(l_reg(RAX)); self.e(I32_WRAP_I64); self.e(I32_EQZ);
         self.if_();
         self.c64(1); self.set(l_reg(RAX));
@@ -714,8 +720,11 @@ impl Fx<'_> {
         self.else_();
         self.c64(0x0006_06a6); self.set(l_reg(RAX));
         self.c64(0); self.set(l_reg(3));
-        self.c64((1 << 0) | (1 << 13) | (1 << 23)); self.set(l_reg(RCX));
-        self.c64((1 << 0) | (1 << 4) | (1 << 8) | (1 << 15) | (1 << 23) | (1 << 25) | (1 << 26)); self.set(l_reg(RDX));
+        let cx16 = if self.checked_memory { 0 } else { 1 << 13 };
+        self.c64((1 << 0) | cx16 | (1 << 23)); self.set(l_reg(RCX));
+        let fxsr = if self.checked_memory { 1 << 24 } else { 0 };
+        self.c64((1 << 0) | (1 << 4) | (1 << 8) | (1 << 15) | (1 << 23) | fxsr | (1 << 25) | (1 << 26));
+        self.set(l_reg(RDX));
         self.end();
     }
 
@@ -724,8 +733,12 @@ impl Fx<'_> {
         let m = i.mnemonic();
         if self.checked_memory {
             let memory = (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Memory);
-            if i.has_lock_prefix() || (memory && (i.memory_segment() == Register::GS ||
-                matches!(m, Xchg | Xadd | Cmpxchg | Bt | Bts | Btr | Btc))) {
+            // One task owns this private memory. These read-modify-write
+            // operations check both full spans and cannot yield between them.
+            let checked_rmw = i.op0_kind() == OpKind::Memory
+                && matches!(m, Add | Sub | And | Or | Xor | Cmpxchg | Xchg | Xadd | Bts | Btr | Btc);
+            let unsupported_memory = memory && i.memory_segment() == Register::GS;
+            if (i.has_lock_prefix() && !checked_rmw) || unsupported_memory {
                 self.unsupported(i);
                 return;
             }
@@ -748,7 +761,7 @@ impl Fx<'_> {
                     | OpKind::Immediate64 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32to64) {
                     self.write_reg_known(i.op0_register(), i.immediate(1) as i64)
                 } else {
-                    self.assign(i, size, |fx| fx.read(i, 1, size))
+                    self.assign(i, size)
                 }
             }
             Movzx => {
@@ -787,8 +800,14 @@ impl Fx<'_> {
                 let size = if i.op0_kind() == OpKind::Memory { size } else { 8 };
                 let immediate = i.op0_kind() != OpKind::Register && i.op0_kind() != OpKind::Memory;
                 let value = |fx: &mut Self| fx.read(i, 0, size) && { if immediate { fx.sign_extend(size); } true };
-                // The operand is read as it was before rsp moves: made first if it reads rsp.
-                if Self::uses_rsp(i, 0) { value(self) && { self.set(l_t(1)); self.push_value(l_t(1)); true } } else { self.push_with(value) }
+                // A mapped memory source must fault before the destination.
+                if Self::uses_rsp(i, 0) || self.checked_memory && i.op0_kind() == OpKind::Memory {
+                    value(self) && { self.set(l_t(1)); self.push_value(l_t(1)); true }
+                } else if i.op0_kind() == OpKind::Register && gpr(i.op0_register()).is_none() {
+                    false
+                } else {
+                    self.push_with(value)
+                }
             }
             Pop => match gpr(i.op0_register()) {
                 Some((n, Part::Full)) if i.op0_kind() == OpKind::Register && n != RSP => { self.pop_value(l_reg(n)); true }
@@ -833,10 +852,14 @@ impl Fx<'_> {
                     self.depth += 1;
                     let ok = self.read(i, 1, size) && { self.set(l_t(1)); self.write(i, 0, size, l_t(1)) };
                     self.else_();
+                    // A memory destination is written even when the comparison
+                    // fails. Check that write before changing the accumulator.
+                    let writeback = !self.checked_memory || i.op0_kind() != OpKind::Memory
+                        || self.write(i, 0, size, L_FB);
                     self.get(L_FB); self.write_reg(acc);
                     self.end();
                     self.depth -= 1;
-                    ok
+                    ok && writeback
                 }
             }
             Bswap => {
@@ -871,6 +894,7 @@ impl Fx<'_> {
                 }
             }
             Syscall => {
+                if self.checked_memory { self.save_flags(ALL_FLAGS); }
                 self.save();
                 self.block();
                 if !self.checked_memory {
@@ -924,8 +948,11 @@ impl Fx<'_> {
                 self.set(L_CF);
                 true
             }
-            Movnti => { let size = Self::size(i, 0); self.assign(i, size, |fx| fx.read(i, 1, size)) }
+            Movnti => self.assign(i, Self::size(i, 0)),
             Clflush | Clflushopt | Clwb => true,
+            Fxsave | Fxsave64 | Fxrstor | Fxrstor64 => self.fx_state(i),
+            Fnstenv => self.save_x87_env(i),
+            Stmxcsr | Ldmxcsr if self.checked_memory => self.mapped_mxcsr(i),
             // MXCSR as a process starts with it (round to nearest, every exception masked, no flush to zero): what
             // wasm computes. Another rounding or denormal mode is not followed, so setting one traps rather than
             // round otherwise than asked.

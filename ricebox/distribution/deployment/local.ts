@@ -9,6 +9,16 @@ import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
 
+/** Decode a typical pack member into one buffer, with a byte for the end
+ * check. Cap the initial allocation for larger members. */
+function unzstd(bytes: Uint8Array, size?: number): Buffer {
+  if (size === undefined) return zstdDecompressSync(bytes);
+  const chunkSize = Math.max(64, Math.min(size + 1, 32 << 20));
+  const decoded = zstdDecompressSync(bytes, {chunkSize, maxOutputLength: Math.max(1, size)});
+  if (decoded.length !== size) throw new Error(`root: decoded ${decoded.length} bytes, not ${size}`);
+  return decoded;
+}
+
 /** The web root, opened: {about (webroot.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
 export function openDistribution(dir: string) {
   const about: About = JSON.parse(readFileSync(join(dir, 'webroot.json'), 'utf8'));
@@ -24,8 +34,8 @@ export function openDistribution(dir: string) {
   /** A file's stored bytes from its pack, checked against its table, and decoded. */
   const checked = checkedRange(index, range, digest);
   const read = (f: IndexFile): Buffer => {
-    const stored = Buffer.from(checked(f.pack, f.at, f.len));
-    return f.raw || !f.len ? stored : zstdDecompressSync(stored);
+    const stored = checked(f.pack, f.at, f.len);
+    return f.raw || !f.len ? Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength) : unzstd(stored, f.size);
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
   const blob = (b: Blob) => {
@@ -36,7 +46,6 @@ export function openDistribution(dir: string) {
     if (decoded.length !== b.bytes) throw new Error(`${asset.path}: wrong decoded size`);
     return decoded;
   };
-  const unzstd = (bytes: Uint8Array) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };
   /** Every pack whole: its table, each file it stores, and nothing besides (distribution/pack.ts checkPacks). */
   const checkAll = () => checkPacks(index, range, (name) => statSync(join(dir, 'packs', name)).size, digest);

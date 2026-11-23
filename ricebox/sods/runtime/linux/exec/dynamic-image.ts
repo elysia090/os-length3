@@ -6,6 +6,7 @@ import type {MappedTranslate} from '../../translation/mapped.ts';
 import {E, FsError} from '../fs.ts';
 import {MAPPED_VM_LIMIT, MappedVm, type DetachedMappedMemory, type InitialMappedRegion, type StagedMappedMemory} from '../mapped-vm.ts';
 import {captureExecPermissions, execIdentity, type ExecIdentity} from './commit.ts';
+import {preparedMappedCodeFor} from './prepared-mapped-code.ts';
 import {planDynamicExec, type DynamicExecOwner, type DynamicExecPlan, type DynamicSources, type PlacedObject} from './dynamic-plan.ts';
 import type {ExecMetadata, ExecRequest} from './plan.ts';
 import {ExecPreparationChangedError, execScope} from './source.ts';
@@ -126,6 +127,8 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   if (!argv.length) argv.push('');
   scope();
   const plan = planDynamicExec(process, path, sources, reader);
+  const prepared = sources.preparedCode === undefined ? undefined
+    : preparedMappedCodeFor(sources.preparedCode, process.kernel.vfs, compiler);
   const source = plan.main.source, identity = execIdentity(process, source);
   const interpreterPermissions = captureExecPermissions(plan.interpreter.source);
   const verify = (): void => { scope(); plan.check(); identity.check(false); interpreterPermissions(); };
@@ -135,7 +138,7 @@ export function prepareDynamicImage(process: DynamicExecOwner, request: ExecRequ
   const layout: InitialMappedRegion[] = [...regions(plan.main, verify), ...regions(plan.interpreter, verify),
     {kind: 'stack', start: stack.stackLow, end: stack.stackTop, prot: PROT_R | PROT_W, writes: stack.writes}];
   const staged = MappedVm.stage({vfs: process.kernel.vfs, base: stack.mapBase, pages: stack.mapBase / WASM_PAGE,
-    libraries: plan.libraries, reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
+    libraries: plan.libraries, prepared, reader: {describeDynamic, notProgram: reader.notProgram}}, layout, verify);
   const {pages} = staged;
   try {
     staged.checkEntry(BigInt(plan.firstPc), BigInt(plan.aux.entry), stack.sp);

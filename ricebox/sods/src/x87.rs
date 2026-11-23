@@ -7,6 +7,12 @@
 
 use std::cmp::Ordering;
 
+#[cfg(feature = "mapped-code")]
+mod fxsr;
+
+/// Bytes of the legacy FXSR region before the XMM registers.
+pub const FX87_BYTES: usize = 160;
+
 const ZERO: u8 = 0;
 const NORMAL: u8 = 1;
 const INF: u8 = 2;
@@ -159,23 +165,51 @@ impl Op {
     pub fn stores(self) -> bool { matches!(self, Op::Fst | Op::Fstp | Op::Fist | Op::Fistp | Op::Fisttp | Op::Fnstsw | Op::Fnstcw) }
 }
 
+/// Restoring a state image must preserve the physical register bits even
+/// when arithmetic would normalize them or the register is tagged empty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Register {
+    Value(X),
+    #[cfg(feature = "mapped-code")]
+    Image(u64, u16),
+}
+
+impl Register {
+    fn value(self) -> X {
+        match self {
+            Self::Value(value) => value,
+            #[cfg(feature = "mapped-code")]
+            Self::Image(mantissa, exponent) => load_extended(mantissa, exponent),
+        }
+    }
+}
+
 /// One thread's registers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fpu {
-    st: [X; 8],
+    st: [Register; 8],
+    occupied: u8,
     top: u32,
     cw: u32,
     sw: u32,
+    #[cfg(feature = "mapped-code")]
+    environment: fxsr::Environment,
     /// The sign-and-exponent word of the 80-bit value stored last, for the translated code's second store (Op::High).
     high: u32,
 }
 
 impl Default for Fpu {
-    fn default() -> Fpu { Fpu { st: [zero(0); 8], top: 0, cw: 0x37f, sw: 0, high: 0 } }
+    fn default() -> Fpu {
+        Fpu { st: [Register::Value(zero(0)); 8], occupied: 0, top: 0, cw: 0x37f, sw: 0, high: 0,
+            #[cfg(feature = "mapped-code")]
+            environment: fxsr::Environment::default(),
+        }
+    }
 }
 
-/// The bytes `save` gives: each register's mantissa, exponent, kind and sign; then top, cw and sw.
-pub const SAVED: usize = 8 * 14 + 12;
+const LEGACY_SAVED: usize = 8 * 14 + 12;
+/// Private thread-transfer format: the original register record followed by the occupancy bits.
+pub const SAVED: usize = LEGACY_SAVED + 1;
 
 /// Two-operand arithmetic: ST(a) the destination and ST(b) the source in the register forms; a memory operand
 /// pairs with ST(0).
@@ -192,7 +226,8 @@ impl Fpu {
     /// Its registers as bytes, as a new thread or process in another Worker starts from them.
     pub fn save(&self) -> [u8; SAVED] {
         let mut out = [0u8; SAVED];
-        for (k, x) in self.st.iter().enumerate() {
+        for (k, register) in self.st.iter().enumerate() {
+            let x = register.value();
             let at = k * 14;
             out[at..at + 8].copy_from_slice(&x.m.to_le_bytes());
             out[at + 8..at + 12].copy_from_slice(&x.e.to_le_bytes());
@@ -202,30 +237,45 @@ impl Fpu {
         for (k, v) in [self.top, self.cw, self.sw].into_iter().enumerate() {
             out[8 * 14 + 4 * k..8 * 14 + 4 * k + 4].copy_from_slice(&v.to_le_bytes());
         }
+        out[LEGACY_SAVED] = self.occupied;
         out
     }
 
     /// Registers as `save` gave them; none where the bytes are not as many.
     pub fn restore(bytes: &[u8]) -> Option<Fpu> {
-        if bytes.len() != SAVED { return None; }
+        if !matches!(bytes.len(), LEGACY_SAVED | SAVED) { return None; }
         let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
         let mut f = Fpu::default();
         for (k, x) in f.st.iter_mut().enumerate() {
             let at = k * 14;
             let mut m = [0u8; 8];
             m.copy_from_slice(&bytes[at..at + 8]);
-            *x = X { kind: bytes[at + 12] & 3, sign: bytes[at + 13] & 1, e: word(at + 8) as i32, m: u64::from_le_bytes(m) };
+            *x = Register::Value(X { kind: bytes[at + 12] & 3, sign: bytes[at + 13] & 1,
+                e: word(at + 8) as i32, m: u64::from_le_bytes(m) });
         }
         f.top = word(8 * 14) & 7;
         f.cw = word(8 * 14 + 4) & 0xffff;
         f.sw = word(8 * 14 + 8) & 0xffff;
+        f.occupied = bytes.get(LEGACY_SAVED).copied().unwrap_or(u8::MAX);
         Some(f)
     }
 
-    fn get(&self, k: i32) -> X { self.st[((self.top as i32 + k) & 7) as usize] }
-    fn set(&mut self, k: i32, x: X) { self.st[((self.top as i32 + k) & 7) as usize] = x; }
-    fn push(&mut self, x: X) { self.top = self.top.wrapping_sub(1) & 7; self.set(0, x); }
-    fn pop(&mut self) { self.top = (self.top + 1) & 7; }
+    fn slot(&self, k: i32) -> usize { ((self.top as i32 + k) & 7) as usize }
+    fn get(&self, k: i32) -> X {
+        let slot = self.slot(k);
+        if self.occupied & (1 << slot) != 0 { self.st[slot].value() } else { zero(0) }
+    }
+    fn put(&mut self, k: i32, register: Register) {
+        let slot = self.slot(k);
+        self.st[slot] = register;
+        self.occupied |= 1 << slot;
+    }
+    fn set(&mut self, k: i32, x: X) { self.put(k, Register::Value(x)); }
+    fn push_register(&mut self, register: Register) { self.top = self.top.wrapping_sub(1) & 7; self.put(0, register); }
+    fn push(&mut self, x: X) { self.push_register(Register::Value(x)); }
+    fn free(&mut self, k: i32) { self.occupied &= !(1 << self.slot(k)); }
+    fn pop(&mut self) { self.free(0); self.top = (self.top + 1) & 7; }
+    fn status(&self) -> u16 { ((self.sw & !0x3800) | self.top << 11) as u16 }
 
     fn rc(&self) -> u32 { (self.cw >> 10) & 3 }
     fn precision(&self) -> u32 { [24, 64, 53, 64][((self.cw >> 8) & 3) as usize] }
@@ -463,11 +513,14 @@ impl Fpu {
         let Some(op) = Op::at(op as usize) else { return 0 };
         let on = Operands { size, a, b, lo, hi };
         match op {
-            Op::Fld => { let x = if size != 0 { self.read(size, lo, hi) } else { self.get(a) }; self.push(x); }
+            Op::Fld => {
+                let register = if size != 0 { Register::Value(self.read(size, lo, hi)) } else { self.st[self.slot(a)] };
+                self.push_register(register);
+            }
             Op::Fild => { let x = self.read(size, lo, hi); self.push(x); }
             Op::Fst | Op::Fstp => {
                 let x = self.get(0);
-                let out = if size != 0 { self.store(size, x, false) } else { self.set(a, x); 0 };
+                let out = if size != 0 { self.store(size, x, false) } else { self.put(a, self.st[self.slot(0)]); 0 };
                 if op == Op::Fstp { self.pop(); }
                 return out;
             }
@@ -498,10 +551,11 @@ impl Fpu {
             Op::Fsqrt => { let x = self.sqrt(self.get(0)); self.set(0, x); }
             Op::Frndint => { let x = self.round_integer(self.get(0)); self.set(0, x); }
             Op::Fxch => {
-                let k = if a == 0 { b } else { a };
-                let t = self.get(0);
-                self.set(0, self.get(k));
-                self.set(k, t);
+                let left = self.slot(0);
+                let right = self.slot(if a == 0 { b } else { a });
+                self.st.swap(left, right);
+                let different = ((self.occupied >> left) ^ (self.occupied >> right)) & 1;
+                self.occupied ^= (different << left) ^ (different << right);
             }
             Op::Fucomi | Op::Fcomi => return Fpu::compare_flags(self.compare(self.get(0), self.get(b))),
             Op::Fucomip | Op::Fcomip => { let r = Fpu::compare_flags(self.compare(self.get(0), self.get(b))); self.pop(); return r; }
@@ -513,18 +567,22 @@ impl Fpu {
             Op::Fucompp | Op::Fcompp => { self.set_status(self.compare(self.get(0), self.get(1))); self.pop(); self.pop(); }
             Op::Ftst => self.set_status(self.compare(self.get(0), zero(0))),
             Op::Fxam => {
-                let x = self.get(0);
+                let slot = self.slot(0);
+                let x = self.st[slot].value();
                 // C3 C2 C0 the class; C1 the sign.
-                let code = match x.kind { ZERO => 0x4000, NORMAL => 0x400, INF => 0x500, _ => 0x100 };
+                let code = if self.occupied & (1 << slot) == 0 { 0x4100 }
+                    else { match x.kind { ZERO => 0x4000, NORMAL => 0x400, INF => 0x500, _ => 0x100 } };
                 self.sw = (self.sw & !0x4700) | code | (x.sign as u32) << 9;
             }
-            Op::Fnstsw => return ((self.sw & !0x3800) | self.top << 11) as u64,
+            Op::Fnstsw => return self.status() as u64,
             Op::Fnstcw => return self.cw as u64,
             Op::Fldcw => self.cw = (lo & 0xffff) as u32,
-            Op::Fninit => *self = Fpu::default(),
+            Op::Fninit => *self = Fpu { st: self.st, ..Fpu::default() },
             Op::Fnclex => self.sw &= 0x7f00,
-            Op::Fwait | Op::Fnop | Op::Ffree => {}
-            Op::Ffreep | Op::Fincstp => self.pop(),
+            Op::Fwait | Op::Fnop => {}
+            Op::Ffree => self.free(a),
+            Op::Ffreep => { self.free(a); self.pop(); }
+            Op::Fincstp => self.top = (self.top + 1) & 7,
             Op::Fdecstp => self.top = self.top.wrapping_sub(1) & 7,
             Op::Fprem => self.remainder(true),
             Op::Fprem1 => self.remainder(false),

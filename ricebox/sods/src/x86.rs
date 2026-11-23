@@ -30,19 +30,56 @@ impl<'e> Code<'e> {
     pub(crate) fn new(elf: &'e Elf, base: u64) -> Code<'e> {
         Code { base, decoder: Decoder::with_ip(64, elf.code_at(base).unwrap_or_default(), base, DecoderOptions::NONE) }
     }
-    pub(crate) fn decode(&mut self, elf: &Elf, start: u64, count: u32, into: &mut Vec<Instruction>) {
-        // Each instruction decoded where it is kept, the decoder moved only where the block starts.
+    pub(crate) fn decode(&mut self, elf: &'e Elf, start: u64, len: u32, count: u32, into: &mut Vec<Instruction>) {
+        let mut offset = start.wrapping_sub(self.base);
+        if offset >= self.decoder.max_position() as u64 {
+            *self = Self::new(elf, start);
+            offset = 0;
+        }
+        let offset = offset as usize;
+        let end = self.decoder.max_position();
+        self.decoder.set_position(offset).expect("the start is in the decoder's bytes");
+        self.decoder.set_ip(start);
         into.clear();
-        into.resize(count as usize, Instruction::default());
-        let o = start.wrapping_sub(self.base);
-        if o < self.decoder.max_position() as u64 { let _ = self.decoder.set_position(o as usize); self.decoder.set_ip(start); }
+        if len as usize <= end - offset {
+            // A discovered block wholly in these bytes needs no boundary test per instruction.
+            into.extend((0..count).map(|_| self.decoder.decode()));
+            return;
+        }
+        self.decode_across_segments(elf, start, count, into);
+    }
+
+    #[cold]
+    fn decode_across_segments(&mut self, elf: &Elf, start: u64, count: u32, into: &mut Vec<Instruction>) {
+        into.reserve(count as usize);
         let mut at = start;
-        for i in into.iter_mut() {
-            // (A block running on past this segment's end, or in another, decodes the rest on its own.)
-            if self.decoder.ip() == at && self.decoder.can_decode() { self.decoder.decode_out(i) } else { *i = decode(elf, at).unwrap_or_default() }
+        for _ in 0..count {
+            let i = if self.decoder.ip() == at && self.decoder.can_decode() {
+                self.decoder.decode()
+            } else {
+                decode(elf, at).unwrap_or_default()
+            };
             at = i.next_ip();
+            into.push(i);
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn block_decoder_crosses_into_the_next_executable_segment() {
+    let start = 0x1000;
+    let tail = [0x31, 0xc0, 0xc3]; // xor eax, eax; ret
+    let mut elf = Elf::of_code(start, vec![0x90]);
+    elf.segments.extend(Elf::of_code(start + 1, tail.to_vec()).segments);
+    let mut decoder = Code::new(&elf, start);
+    let mut code = Vec::new();
+    decoder.decode(&elf, start, 4, 3, &mut code);
+    assert_eq!(code, decode_all(&[0x90, 0x31, 0xc0, 0xc3], start));
+    decoder.decode(&elf, start + 1, 3, 2, &mut code);
+    assert_eq!(code, decode_all(&tail, start + 1));
+    decoder.decode(&elf, start, 1, 1, &mut code);
+    assert_eq!(code, decode_all(&[0x90], start));
 }
 
 /// CF, ZF, SF, OF, PF and AF: the flags translated code keeps (as RflagsBits).
@@ -76,6 +113,13 @@ const OPERANDS: u8 = 8;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Kind { pub flow: u8, pub reads: u8, pub writes: u8, pub bits: u8 }
 
+impl Kind {
+    #[inline(always)]
+    fn from_word(w: u32) -> Self {
+        Self { flow: (w & 7) as u8, reads: (w >> 8) as u8, writes: (w >> 16) as u8, bits: (w >> 24 & 0x7f) as u8 }
+    }
+}
+
 /// Every way an instruction reads and writes the flags kept (read, written): what iced says of each of its codes,
 /// and of each as its operands change it (the test asks them all). An instruction's way is its place here.
 const WAYS: [(u8, u8); 26] = [
@@ -89,9 +133,20 @@ fn way(reads: u8, writes: u8) -> u8 { WAYS.iter().position(|&w| w == (reads, wri
 /// An instruction's class: its way with the flags, and whether it goes out to the kernel; six bits (find.rs keeps
 /// one for each instruction it has decoded).
 pub(crate) const CLASS_TRAPS: u8 = 32;
+const CLASSES: [[u8; 3]; 64] = {
+    let mut classes = [[0; 3]; 64];
+    let mut i = 0;
+    while i < classes.len() {
+        let (read, write) = WAYS[(i & 31) % WAYS.len()];
+        classes[i] = [read, write, if i as u8 & CLASS_TRAPS == 0 { 0 } else { TRAPS }];
+        i += 1;
+    }
+    classes
+};
+
 /// What class `c` says: the flags read, those written, and TRAPS or nothing.
 #[inline(always)]
-pub(crate) fn of_class(c: u8) -> [u8; 3] { let (r, w) = WAYS[(c & 31) as usize % WAYS.len()]; [r, w, if c & CLASS_TRAPS != 0 { TRAPS } else { 0 }] }
+pub(crate) fn of_class(c: u8) -> [u8; 3] { CLASSES[(c & 63) as usize] }
 
 /// Every code's Kind, each worked out the first time an instruction of that code is met: a program has a few hundred
 /// of iced's thousands, and working one out asks iced seven times. A code's word is its flow, its way with the
@@ -117,13 +172,16 @@ impl Kinds {
     #[inline(always)]
     pub(crate) fn kind_class(&self, i: &Instruction) -> (Kind, u8) {
         let w = self.word(i);
-        let k = Kind { flow: (w & 7) as u8, reads: (w >> 8) as u8, writes: (w >> 16) as u8, bits: (w >> 24 & 0x7f) as u8 };
+        let k = Kind::from_word(w);
         let traps = if k.bits & TRAPS != 0 { CLASS_TRAPS } else { 0 };
         if k.bits & OPERANDS == 0 { (k, (w >> 3 & 31) as u8 | traps) } else { let k = by_operands(i, k); (k, way(k.reads, k.writes) | traps) }
     }
     /// `i`'s Kind.
     #[inline(always)]
-    pub(crate) fn kind(&self, i: &Instruction) -> Kind { self.kind_class(i).0 }
+    pub(crate) fn kind(&self, i: &Instruction) -> Kind {
+        let k = Kind::from_word(self.word(i));
+        if k.bits & OPERANDS == 0 { k } else { by_operands(i, k) }
+    }
 }
 
 /// `i`'s Kind.
