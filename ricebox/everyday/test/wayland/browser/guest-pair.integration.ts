@@ -5,8 +5,10 @@ import {createHash} from 'node:crypto';
 import {rasterStart} from './raster-fixture.ts';
 import {shellStart} from './shell-fixture.ts';
 import {decodeRaster, rasterFile} from '../support/mirror-raster.ts';
-import {createRoot} from 'ricebox';
-import {surfaceFromMirror} from 'ricebox/everyday';
+import type {GuestEvent} from '../support/worker-events.ts';
+
+const {createRoot} = await import(import.meta.resolve('ricebox')) as typeof import('../../../../distribution/runtime/root.ts');
+const {surfaceFromMirror} = await import(import.meta.resolve('ricebox/everyday')) as typeof import('../../../src/surface.ts');
 // Engine-only corroboration: actual independent Workers/guests, no browser claim.
 const [wasm, mukFile, elfFile, busyboxFile, profile] = process.argv.slice(2);
 const alpha = profile === "--alpha";
@@ -26,17 +28,17 @@ const root=createRoot({base:'/fixture/', first:[], usedKey:'everyday-proof-used'
   errorText:error=>String(error)});
 function startRoot() {
   const original=globalThis.Worker;
-  globalThis.Worker=class {
-    constructor(url) {
+  Object.assign(globalThis, {Worker: class {
+    constructor(url: URL) {
       assert.equal(url.href,entry);
       return new NodeWorker(bridge,{workerData:{entry}});
     }
-  };
-  try { return root.rootWorker(); }
+  }});
+  try { return root.rootWorker() as unknown as NodeWorker; }
   finally { globalThis.Worker=original; }
 }
 const a=startRoot(), b=startRoot();
-const port=Object.assign(new EventTarget(), {postMessage: data=>a.postMessage(data)});
+const port=Object.assign(new EventTarget(), {postMessage: (data: unknown)=>a.postMessage(data)});
 const source=surfaceFromMirror({worker:port,file:rasterFile,maxEncodedBytes:16+64*48*4,
   decode(bytes) {
     const frame=decodeRaster(bytes);
@@ -45,7 +47,7 @@ const source=surfaceFromMirror({worker:port,file:rasterFile,maxEncodedBytes:16+6
   encodeResize:({width,height})=>Uint8Array.of(2,width,height),
 });
 let displayEnded=false;
-const alphaFrames=[];
+const alphaFrames: {serial: number; width: number; height: number; sha256: string}[]=[];
 const stopSource=source.observe({frame(frame) {
   if (alpha) for (let y=0;y<frame.height;y++) for (let x=0;x<frame.width;x++) {
     const offset=(y*frame.width+x)*4;
@@ -57,19 +59,20 @@ const stopSource=source.observe({frame(frame) {
     sha256:createHash('sha256').update(frame.rgba).digest('hex')});
   return true;
 },end:()=>{displayEnded=true;}});
-const read=p=>new Uint8Array(readFileSync(p));
+const read=(p: string)=>new Uint8Array(readFileSync(p));
 const [translator,muk,elf,busybox]=[wasm,mukFile,elfFile,busyboxFile].map(read);
-const packets=[], display=[], sh=[], errors=[], retired=[];
+const packets: Buffer[] = [], display: GuestEvent[] = [], sh: GuestEvent[] = [];
+const errors: unknown[] = [], retired: string[] = [];
 const text=()=>Buffer.concat(packets).toString();
-const input=(worker,bytes)=>worker.postMessage({type:'input',bytes});
+const input=(worker: NodeWorker,bytes: Uint8Array)=>worker.postMessage({type:'input',bytes});
 a.on('error',e=>errors.push(e)); b.on('error',e=>errors.push(e));
-a.on('message',m=>{
+a.on('message',(m: GuestEvent)=>{
   display.push(m);
   port.dispatchEvent(new MessageEvent('message',{data:m}));
   if(m.type==='retiring')retired.push('display');
   if(m.type==='error')errors.push(m);
 });
-b.on('message',m=>{
+b.on('message',(m: GuestEvent)=>{
   sh.push(m);
   if(m.type==='output'){
     packets.push(Buffer.from(m.bytes));
@@ -78,7 +81,7 @@ b.on('message',m=>{
   if(m.type==='retiring')retired.push('shell');
   if(m.type==='error')errors.push(m);
 });
-const pause=cb=>new Promise((ok,bad)=>{
+const pause=(cb: ()=>boolean)=>new Promise<void>((ok,bad)=>{
   const deadline=Date.now()+8000;
   const timer=setInterval(()=>{
     if(errors.length||Date.now()>deadline){clearInterval(timer);bad(Error(JSON.stringify(errors)+' '+text()));}
@@ -94,13 +97,14 @@ try {
   input(b,new TextEncoder().encode("printf 'shell-result=%s\\n' \"$((6*7))\"\n"));
   await pause(()=>text().includes('shell-result=42'));
   assert.equal(source.current?.serial,1);
+  assert.ok(source.resize);
   source.resize({serial:1,width:47,height:19});
   await pause(()=>source.current?.serial===2);
   assert.equal(source.current?.width,47);
   assert.equal(sh.filter(o=>o.type==='exit').length,0);
   input(a,Uint8Array.of(3,0,0));
   await pause(()=>display.some(o=>o.type==='exit'));
-  assert.equal(display.find(o=>o.type==='exit').status,37<<8);
+  assert.equal(display.find(o=>o.type==='exit')?.status,37<<8);
   assert.ok(displayEnded);
   assert.equal(source.current,null);
   a.postMessage({type:'retire'});
@@ -110,7 +114,7 @@ try {
   await pause(()=>text().includes('after-graphic=81'));
   input(b,new TextEncoder().encode('exit\n'));
   await pause(()=>sh.some(o=>o.type==='exit'));
-  assert.equal(sh.find(o=>o.type==='exit').status,0);
+  assert.equal(sh.find(o=>o.type==='exit')?.status,0);
   b.postMessage({type:'retire'});
   await pause(()=>retired.length===2);
   const actualCpuWorkers=[display.find(o=>o.type==='threads')?.apart,sh.find(o=>o.type==='threads')?.apart];

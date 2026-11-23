@@ -14,7 +14,7 @@ function files(dir: string): string[] {
 test('browser manifest requires a direct literal module Worker URL', () => {
   const work=mkdtempSync(join(tmpdir(),'ricebox-browser-edges-'));
   const stamp=join(work,'ricebox/distribution/deployment/browser-modules.json');
-  const script=fileURLToPath(new URL('../../../toolchain/package-browser-manifest.mjs',import.meta.url));
+  const script=fileURLToPath(new URL('../../../toolchain/package-browser-manifest.ts',import.meta.url));
   const root='distribution/runtime/root.js', display='everyday/src/surface.js';
   const put=(path:string,source:string)=>{
     const file=join(work,'ricebox',path);

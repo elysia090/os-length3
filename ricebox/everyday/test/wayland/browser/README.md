@@ -42,8 +42,8 @@ composited screenshot at DPR 1 and 2; this is not physical display timing.
 From the repository root with locked dependencies:
 
     stage="$(mktemp -d)/installed"
-    node ricebox/everyday/test/wayland/browser/stage-consumer.mjs "$stage"
-    node ricebox/everyday/test/wayland/browser/display-owner.integration.mjs \
+    node ricebox/everyday/test/wayland/browser/stage-consumer.ts "$stage"
+    node ricebox/everyday/test/wayland/browser/display-owner.integration.ts \
       "$stage/consumer/browser"
 
 This checks that delivered frames draw synchronously with no pending renderer

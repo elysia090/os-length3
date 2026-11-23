@@ -35,6 +35,6 @@ export function packageTypeScript(root: string, out: string, entries: readonly s
  * Only this compiler phase needs Node's experimental ESM parser enabled. */
 export function packageBrowserManifest(out: string, entry: string, display: string): void {
   const webEntry = (path: string) => path.slice('ricebox/'.length).replace(/\.ts$/, '.js');
-  const compiler = fileURLToPath(new URL('./package-browser-manifest.mjs', import.meta.url));
+  const compiler = fileURLToPath(new URL('./package-browser-manifest.ts', import.meta.url));
   execFileSync(process.execPath, ['--experimental-vm-modules', compiler, out, webEntry(entry), webEntry(display)], {stdio: 'inherit'});
 }

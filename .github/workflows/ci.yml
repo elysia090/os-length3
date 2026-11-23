@@ -588,12 +588,12 @@ jobs:
           sh "$test_dir/build.sh" scanner target/everyday-source "$build"
           sh "$test_dir/build.sh" guest target/everyday-source "$build"
           timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" inline
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" worker
           # Repeat with a separately executed guest client, not a host display path.
           timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter" "$build/wayland-socket-client"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline "$build/wayland-socket-client"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker "$build/wayland-socket-client"
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" inline "$build/wayland-socket-client"
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" worker "$build/wayland-socket-client"
 
       # This opt-in gate consumes the fixture already built above. There is no
       # binary, screenshot or app upload, and Chromium uses its own sandbox.

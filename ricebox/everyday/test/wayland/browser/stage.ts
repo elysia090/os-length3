@@ -4,11 +4,11 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
 const [output, translator, muk, elf, shell] = process.argv.slice(2);
-assert.ok(output && translator && muk && elf, 'usage: stage.mjs NEW_DIR TRANSLATOR_WASM MUK WAYLAND_TEST_ELF [STATIC_BUSYBOX]');
+assert.ok(output && translator && muk && elf, 'usage: stage.ts NEW_DIR TRANSLATOR_WASM MUK WAYLAND_TEST_ELF [STATIC_BUSYBOX]');
 await mkdir(output);
 const target = join(output, 'fixture');
 await mkdir(target);
-const manifest = {};
+const manifest: Record<string, [name: string, sha256: string]> = {};
 const files = [['translator','sods.wasm',translator],['muk','muk',muk],['elf','wayland-presenter',elf]];
 if (shell) files.push(['shell','busybox',shell]);
 const alpha = process.env.EVERYDAY_ALPHA_ELF;

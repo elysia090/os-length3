@@ -7,16 +7,16 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const output = process.argv[2] && resolve(process.argv[2]);
-if (!output) throw new Error('usage: stage-consumer.mjs NEW_WORK_DIR');
+if (!output) throw new Error('usage: stage-consumer.ts NEW_WORK_DIR');
 mkdirSync(output);
 const repo = fileURLToPath(new URL('../../../../../', import.meta.url));
 const packageRoot = join(output, 'package'), consumer = join(output, 'consumer');
-const node = (args, cwd = repo) => execFileSync(process.execPath, args, {cwd, stdio: 'inherit', timeout: 45_000});
+const node = (args: readonly string[], cwd = repo) => execFileSync(process.execPath, args, {cwd, stdio: 'inherit', timeout: 45_000});
 node([join(repo, 'ricebox/distribution/build/npm.ts'), packageRoot]);
-const npm = (args, cwd) => execFileSync('npm', args, {
+const npm = (args: readonly string[], cwd: string) => execFileSync('npm', args, {
   cwd, encoding: 'utf8', timeout: 45_000, env: {...process.env, npm_config_cache: join(output, 'npm-cache')},
 });
-const packed = JSON.parse(npm(['pack', '--offline', '--ignore-scripts', '--json', '--pack-destination', output], packageRoot));
+const packed: {filename: string}[] = JSON.parse(npm(['pack', '--offline', '--ignore-scripts', '--json', '--pack-destination', output], packageRoot));
 assert.equal(packed.length, 1);
 mkdirSync(consumer);
 writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}\n');
@@ -32,7 +32,7 @@ node(['--no-experimental-strip-types', '--input-type=module', '-e', [
 ].join('\n')], consumer);
 
 for (const dir of ['browser', 'support']) mkdirSync(join(consumer, dir));
-for (const name of ['index.html', 'camera-scrollbars.css', 'demo.mts', 'shell-page.mts', 'terminal-view.mts', 'terminal-stream.mts', 'terminal-input.mts', 'terminal-resize.mts', 'terminal-view.css', 'terminal-view-css.d.ts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.mjs']) {
+for (const name of ['index.html', 'camera-scrollbars.css', 'demo.mts', 'shell-page.mts', 'terminal-view.mts', 'terminal-stream.mts', 'terminal-input.mts', 'terminal-resize.mts', 'terminal-view.css', 'terminal-view-css.d.ts', 'camera-placement.mts', 'raster-fixture.ts', 'shell-fixture.ts', 'guest-pair.integration.ts']) {
   copyFileSync(new URL(name, import.meta.url), join(consumer, 'browser', name));
 }
 copyFileSync(new URL('../support/mirror-raster.ts', import.meta.url), join(consumer, 'support/mirror-raster.ts'));
@@ -42,7 +42,7 @@ for (const name of ['vt.ts', 'vt-view.ts']) {
 }
 writeFileSync(join(consumer, 'browser/vt-screen.ts'),
   "export {GUEST_SCREEN_LIMITS, guestScreen} from './vt.ts';\nexport {ScreenView} from './vt-view.ts';\n");
-node([join(repo, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck',
+node([join(repo, 'node_modules/typescript/bin/tsc'), '--ignoreConfig', '--noEmit', '--strict', '--skipLibCheck',
   '--allowImportingTsExtensions', '--target', 'ES2022', '--module', 'ESNext', '--moduleResolution', 'Bundler',
   '--lib', 'ES2024,DOM,DOM.Iterable', '--types', 'node', '--typeRoots', join(repo, 'node_modules/@types'),
   'browser/demo.mts'], consumer);

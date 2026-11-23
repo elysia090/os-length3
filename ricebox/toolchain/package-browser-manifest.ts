@@ -6,7 +6,7 @@ import {SourceTextModule} from 'node:vm';
 
 const [out, coreEntry, displayEntry] = process.argv.slice(2);
 
-function workerURLs(source, path) {
+function workerURLs(source: string, path: string): string[] {
   // Packaged browser code uses direct literal module Worker URLs; don't
   // silently guess a URL for qualified, bracketed, or aliased constructors.
   const direct = /\bnew\s+Worker\s*\(\s*new\s+URL\(\s*(['"])([^'"\n]+)\1\s*,\s*import\.meta\.url\s*\)\s*,\s*\{\s*type:\s*['"]module['"]\s*,?\s*\}\s*\)/g;
@@ -24,7 +24,7 @@ function workerURLs(source, path) {
   // Inert multiword diagnostic literals are not constructor references. Do
   // not strip arbitrary strings or exclude code inside template expressions.
   rest = rest.replace(/(\bnew (?:Error\(\s*|AggregateError\(\s*[\w$]+\s*,\s*)|^[\t ]*error:\s*)(['"])([^'"\n]+)\2(?=\s*[,)}])/gm,
-    (whole, context, _quote, words) => words.includes(' ') ? context : whole);
+    (whole: string, context: string, _quote: string, words: string) => words.includes(' ') ? context : whole);
   // This is a source convention, not data-flow analysis: computing a global
   // name that doesn't spell Worker (for example, from inputs) is unsupported.
   if (/\b(?:Worker|SharedWorker)\b/.test(rest)) {
@@ -33,16 +33,16 @@ function workerURLs(source, path) {
   return urls;
 }
 
-function closure(entry) {
-  const files = new Set();
-  function visit(path) {
+function closure(entry: string): string[] {
+  const files = new Set<string>();
+  function visit(path: string): void {
     if (files.has(path)) return;
     if (!/^(?:distribution\/(?:format|runtime)|sods\/runtime|everyday\/src)(?:\/[a-z0-9-]+)*\/[a-z0-9.-]+\.js$/.test(path)) {
       throw new Error(`ricebox: unexpected browser module ${path}`);
     }
     files.add(path);
     const source = readFileSync(join(out, 'ricebox', path), 'utf8');
-    const follow = specifier => {
+    const follow = (specifier: string): void => {
       if (!specifier.startsWith('./') && !specifier.startsWith('../')) throw new Error(`ricebox: non-relative browser module ${specifier} in ${path}`);
       visit(posix.join(posix.dirname(path), specifier));
     };

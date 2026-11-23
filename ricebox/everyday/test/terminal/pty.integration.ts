@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Worker as NodeWorker} from 'node:worker_threads';
-import {createRoot} from 'ricebox';
-import {shellStart} from './shell-fixture.ts';
-import {guestScreen} from './vt.ts';
-import {terminalStream} from './terminal-stream.mts';
+import type {GuestEvent} from '../wayland/support/worker-events.ts';
 
 // Run from the fresh offline npm consumer, with its exact installed Worker.
+const {createRoot} = await import(import.meta.resolve('ricebox')) as typeof import('../../../distribution/runtime/root.ts');
+const {shellStart} = await import(new URL('./shell-fixture.ts', import.meta.url).href) as typeof import('../wayland/browser/shell-fixture.ts');
+const {guestScreen} = await import(new URL('./vt.ts', import.meta.url).href) as typeof import('../../terminal/vt.ts');
+const {terminalStream} = await import(new URL('./terminal-stream.mts', import.meta.url).href) as typeof import('../wayland/browser/terminal-stream.mts');
 const args = process.argv.slice(2);
 assert.equal(args.length, 3, 'pass TRANSLATOR_WASM MUK STATIC_BUSYBOX');
 const [translator, muk, busybox] = args.map(path => new Uint8Array(readFileSync(path)));
@@ -29,20 +30,23 @@ const root = createRoot({
   message: key => key, missing: () => 'No default root', errorText: String,
 });
 const OriginalWorker = globalThis.Worker;
-globalThis.Worker = class {
-  constructor(url) {
+Object.assign(globalThis, {Worker: class {
+  constructor(url: URL) {
     assert.equal(url.href, entry);
     return new NodeWorker(bridge, {workerData: {entry, dropResizeReply}});
   }
-};
-let worker;
-try { worker = root.rootWorker(); }
+}});
+let worker: NodeWorker;
+try { worker = root.rootWorker() as unknown as NodeWorker; }
 finally { globalThis.Worker = OriginalWorker; }
 
-const messages = [], errors = [], output = [];
+type Output = Extract<GuestEvent, {type: 'output'}>;
+type Geometry = Extract<GuestEvent, {type: 'terminal-geometry'}>;
+type SizeAnswer = Extract<GuestEvent, {type: 'terminal-size'}>;
+const messages: GuestEvent[] = [], errors: unknown[] = [], output: Output[] = [];
 const screen = guestScreen(53, 12);
 const stream = terminalStream(text => screen.write(text), () => screen.discardPartial());
-function hasInk(needle, fg) {
+function hasInk(needle: string, fg: number) {
   return screen.lines.some(row => {
     // Both fixture witnesses are ASCII; indices are screen cell positions.
     const start = row.chars.join('').indexOf(needle);
@@ -50,15 +54,15 @@ function hasInk(needle, fg) {
   });
 }
 const encoder = new TextEncoder();
-const send = text => worker.postMessage({type: 'input', bytes: encoder.encode(text)});
+const send = (text: string) => worker.postMessage({type: 'input', bytes: encoder.encode(text)});
 let received = 0;
-const command = text => send(text + '\n');
-const text = (epoch, from = 0) => Buffer.concat(output.slice(from)
+const command = (text: string) => send(text + '\n');
+const text = (epoch?: number, from = 0) => Buffer.concat(output.slice(from)
   .filter(m => epoch === undefined || m.epoch === epoch).map(m => m.bytes)).toString('utf8');
-const waits = (from, reason) => messages.slice(from).some(m => m.type === 'waiting' && m.for === reason);
+const waits = (from: number, reason: 'input' | 'time') => messages.slice(from).some(m => m.type === 'waiting' && m.for === reason);
 const ICANON = 2, ECHO = 8;
 worker.on('error', e => errors.push(e));
-worker.on('message', msg => {
+worker.on('message', (msg: GuestEvent) => {
   messages.push(msg);
   if (msg.type === 'error') errors.push(new Error(msg.message));
   if (msg.type === 'output') {
@@ -77,7 +81,7 @@ worker.on('message', msg => {
     catch (error) { errors.push(error); }
   }
 });
-async function until(label, ready) {
+async function until(label: string, ready: () => boolean) {
   const deadline = performance.now() + 8000;
   while (!ready()) {
     if (errors.length) throw new AggregateError(errors, label + ': ' + text());
@@ -88,12 +92,12 @@ async function until(label, ready) {
 }
 const inputMode = () => (messages.findLast(m => m.type === 'tty')?.lflag ?? (ICANON | ECHO)) & (ICANON | ECHO);
 try {
-  const ask = (request, cols, rows) => worker.postMessage({type: 'terminal-resize', request, cols, rows});
-  const answer = request => messages.find(m => m.type === 'terminal-size' && m.request === request);
-  const geometry = request => messages.find(m => m.type === 'terminal-geometry' && m.request === request);
+  const ask = (request: number, cols: number, rows: number) => worker.postMessage({type: 'terminal-resize', request, cols, rows});
+  const answer = (request: number) => messages.find((m): m is SizeAnswer => m.type === 'terminal-size' && m.request === request);
+  const geometry = (request: number) => messages.find((m): m is Geometry => m.type === 'terminal-geometry' && m.request === request);
   ask(7, 97, 29);
   await until('resize rejected before admission', () => !!answer(7));
-  assert.equal(answer(7).error, 'inactive');
+  assert.equal(answer(7)?.error, 'inactive');
   worker.postMessage({...shellStart(translator, muk, busybox), cols: 53, rows: 12,
     ...(resizeAdmitted ? {terminalResize: true} : {})});
   await until('real interactive prompt', () => waits(0, 'input') && text().includes('everyday$'));
@@ -136,8 +140,8 @@ try {
     ask(5, 65536, 22);
     await until('same-size, stale and invalid replies', () => !!answer(4) && !!answer(3) && !!answer(5));
     assert.deepEqual(answer(4), {type: 'terminal-size', request: 4, cols: 93, rows: 31, changed: false});
-    assert.equal(answer(3).error, 'stale');
-    assert.equal(answer(5).error, 'invalid-size');
+    assert.equal(answer(3)?.error, 'stale');
+    assert.equal(answer(5)?.error, 'invalid-size');
     const beforeReadback = messages.length;
     command('count');
     await until('guest reads same geometry and exactly one signal after rejected/duplicate sets', () =>
@@ -153,13 +157,14 @@ try {
     ask(6, 53, 12);
     await until('resize signals again without discarding already queued input', () =>
       !!answer(6) && text().includes('<winch:12 53>') && text().includes('<size-after:12 53 hits:2>'));
-    assert.equal(answer(6).changed, true);
+    assert.equal(answer(6)?.changed, true);
     const beforeResize = Buffer.concat(output.map(m => m.bytes));
     const firstSignal = beforeResize.indexOf('<winch:31 93>');
     const secondSignal = beforeResize.indexOf('<winch:12 53>');
     const held = beforeResize.indexOf('<hold>');
-    assert.ok(geometry(1).sentBytes <= firstSignal);
-    assert.ok(held >= 0 && held + '<hold>'.length <= geometry(6).sentBytes && geometry(6).sentBytes <= secondSignal);
+    const firstGeometry = geometry(1), restored = geometry(6);
+    assert.ok(firstGeometry && firstGeometry.sentBytes <= firstSignal);
+    assert.ok(restored && held >= 0 && held + '<hold>'.length <= restored.sentBytes && restored.sentBytes <= secondSignal);
     assert.deepEqual(messages.filter(m => m.type === 'terminal-geometry').map(m => m.request), [1,4,6]);
     let published = 0;
     for (const message of messages) {
@@ -167,8 +172,10 @@ try {
       if (message.type === 'terminal-geometry') {
         assert.equal(message.sentBytes, published);
         if (!dropResizeReply || message.request !== 1) {
-          assert.deepEqual([message.cols, message.rows], [answer(message.request).cols, answer(message.request).rows]);
-          assert.ok(messages.indexOf(message) < messages.indexOf(answer(message.request)));
+          const size = answer(message.request);
+          assert.ok(size && 'cols' in size && 'rows' in size);
+          assert.deepEqual([message.cols, message.rows], [size.cols, size.rows]);
+          assert.ok(messages.indexOf(message) < messages.indexOf(size));
         }
       }
     }
@@ -177,7 +184,7 @@ try {
   } else {
     ask(1, 93, 31);
     await until('unadmitted screen rejects a resize', () => !!answer(1));
-    assert.equal(answer(1).error, 'inactive');
+    assert.equal(answer(1)?.error, 'inactive');
     const beforeControl = messages.length;
     command("printf '<fixed:%s>\\n' \"$(/bin/busybox stty size)\"");
     await until('old-no-resize screen kept its original terminal', () =>
@@ -229,28 +236,32 @@ try {
   if (resizeAdmitted) {
     ask(10, 53, 12);
     await until('same-size geometry cut after an actual Ctrl-C flush', () => !!geometry(10) && !!answer(10));
-    const before = messages.slice(0, messages.indexOf(geometry(10))).filter(m => m.type === 'output');
+    const marker = geometry(10);
+    assert.ok(marker);
+    const before = messages.slice(0, messages.indexOf(marker)).filter(m => m.type === 'output');
     assert.ok(before.some(m => m.epoch === 0) && before.some(m => m.epoch === 1));
-    assert.equal(geometry(10).sentBytes, before.reduce((n, m) => n + m.bytes.length, 0));
-    assert.equal(answer(10).changed, false);
+    assert.equal(marker.sentBytes, before.reduce((n, m) => n + m.bytes.length, 0));
+    assert.equal(answer(10)?.changed, false);
   }
   command('exit');
   await until('guest exit', () => messages.some(m => m.type === 'exit'));
-  assert.equal(messages.find(m => m.type === 'exit').status, 0);
+  assert.equal(messages.find(m => m.type === 'exit')?.status, 0);
   assert.equal(stream.sealed, true);
   stream.close();
   const boundary = messages.findIndex(m => m.type === 'output-boundary');
   assert.ok(boundary !== -1 && boundary < messages.findIndex(m => m.type === 'exit'));
   ask(8, 71, 22);
   await until('output-ended root rejects a late resize', () => !!answer(8));
-  assert.equal(answer(8).error, 'closed');
+  assert.equal(answer(8)?.error, 'closed');
   worker.postMessage({type: 'retire'});
   await until('root admission retirement', () => messages.some(m => m.type === 'retiring'));
-  assert.deepEqual(messages.find(m => m.type === 'retiring').failures, []);
+  assert.deepEqual(messages.find(m => m.type === 'retiring')?.failures, []);
   ask(9, 71, 22);
   await until('retired root rejects a late resize', () => !!answer(9));
-  assert.equal(answer(9).error, 'closed');
-  assert.equal(messages[boundary].sentBytes, received);
+  assert.equal(answer(9)?.error, 'closed');
+  const outputEnd = messages[boundary];
+  assert.equal(outputEnd.type, 'output-boundary');
+  assert.equal(outputEnd.sentBytes, received);
   assert.ok(!messages.slice(boundary + 1).some(m => m.type === 'output'));
   console.log(JSON.stringify({
     installedRootWorker: true, actualCpuWorker: apart, rows: 12, cols: 53,
