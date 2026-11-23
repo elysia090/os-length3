@@ -124,29 +124,40 @@ try{
   await inputFence;
   await until(()=>frames.length===3&&text().includes('WAYLAND_COMMIT seq=3'),'xdg resized commit');
   const h=shape(3,47,19);
+  const closingAt=receipt.length;
   await input(Uint8Array.of(3,0,0));
   await until(()=>receipt.some(e=>e.type==='exit'),'xdg close');
   assert.equal(receipt.find(e=>e.type==='exit').status,37<<8);
+  assert.equal(frames.length,3,'xdg close must not draw another frame');
+  assert.equal(source.current,null,'guest exit must end the surface source');
   assert.deepEqual(receipt.filter(e=>e.type==='error'),[]);
   const lines=text().trim().split('\n');
   assert.equal(lines.includes('WAYLAND_CLIENT_EXEC fd_inherited=1 cloexec_sentinel_absent=1 stdin_absent=1'), !!execClient);
   assert.equal(lines.includes('WAYLAND_SOCKET_CONSUMED close_on_exec=1'), !!execClient);
-  const initialCommit=lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=1'));
+  const lifecycle=lines.filter(x=>x.startsWith('WAYLAND_COMMIT ')||x.startsWith('WAYLAND_RELEASE '));
+  assert.equal(lifecycle.length,6,'one released buffer for each of three commits');
+  const [initialCommit, initialRelease, redrawCommit, redrawRelease, resizedCommit, resizedRelease]=lifecycle;
   assert.match(initialCommit,/^WAYLAND_COMMIT seq=1 size=32x24 configure=(\d+) pointer=0 stride=140$/);
   assert.ok(lines.includes('WAYLAND_CONTROL_REFUSED'));
-  assert.match(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')),/^WAYLAND_COMMIT seq=2 size=32x24 configure=(\d+) pointer=([1-9]\d*) stride=140$/);
+  assert.match(redrawCommit,/^WAYLAND_COMMIT seq=2 size=32x24 configure=(\d+) pointer=([1-9]\d*) stride=140$/);
+  assert.match(resizedCommit,/^WAYLAND_COMMIT seq=3 size=47x19 configure=(\d+) pointer=([1-9]\d*) stride=200$/);
+  assert.deepEqual([initialRelease,redrawRelease,resizedRelease],[
+    'WAYLAND_RELEASE seq=1 buffer=new','WAYLAND_RELEASE seq=2 buffer=reused','WAYLAND_RELEASE seq=3 buffer=new',
+  ]);
   const initial=Number(initialCommit.match(/configure=(\d+)/)[1]);
-  const pointer=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')).match(/configure=(\d+)/)[1]);
-  const expanded=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=3')).match(/configure=(\d+)/)[1]);
+  const pointer=Number(redrawCommit.match(/configure=(\d+)/)[1]);
+  const expanded=Number(resizedCommit.match(/configure=(\d+)/)[1]);
   assert.equal(pointer,initial);
   assert.ok(expanded>initial);
-  assert.ok(lines.includes('WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3'));
-  assert.equal(lines.at(-1),'WAYLAND_WINDOW_CLOSED');
+  assert.deepEqual(lines.slice(-2),['WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3','WAYLAND_WINDOW_CLOSED']);
   presenter.close();
   await send({type:'retire'});
-  const retired=receipt.find(e=>e.type==='retiring');
-  assert.ok(retired);
+  const retirements=receipt.filter(e=>e.type==='retiring');
+  assert.equal(retirements.length,1);
+  const [retired]=retirements;
   assert.deepEqual(retired.failures,[]);
+  assert.ok(!receipt.slice(closingAt).some(e=>e.type==='changes'&&e.files.some(f=>f.path===rasterFile&&f.bytes)),
+    'close and retirement must not publish another raster');
   console.log(JSON.stringify({mode,connection:execClient?'exec-inherited':'fork-direct',elf:hash(elf),frames:[f,g,h],lines,lifecycle:'admission acknowledged'}));
 }finally{
   presenter.close();

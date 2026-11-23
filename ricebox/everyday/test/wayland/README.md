@@ -12,6 +12,18 @@ xdg configure/ack resize. Both native and translated consumers verify every
 pixel and receive the same three serial stages. Frame callbacks are not
 physical presentation or browser measurements.
 
+The C control gives libwayland a sealed memfd for the SHM pool over that
+socket, closes its original descriptor, and destroys the pool proxy. The
+mapping and buffer survive. Only after that buffer's release can the client
+write the distinct pointer redraw to the same mapping and reattach the same
+buffer. The server tracks that live resource across commits, so recycling
+an object ID is not evidence of reuse. The checks require one release after
+each actual read, with new, reused, and new resources for the three frames.
+Resize replaces the backing; close drains the client and reaps it without
+another frame. The translated harness also checks Worker retirement
+acknowledgment. This static control does not establish that a dynamically
+linked client works in the guest.
+
 The native Sods CI lane stages the pinned upstream Wayland, Wayland Protocols
 and libffi trees before running this fixture. The same offline stages can be
 run with those trees in SOURCE_ROOT and the existing Linux x86-64 GNU tools:
