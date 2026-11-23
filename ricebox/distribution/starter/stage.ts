@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {constants, copyFileSync, linkSync, lstatSync, readFileSync, realpathSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, dirname, join, posix, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {browserModules} from '../deployment/assets.ts';
 import {visitDistributionAssets} from '../deployment/local.ts';
@@ -15,10 +16,11 @@ const usage = `Usage:
   ricebox-stage-shell [DECLARATION_JSON [NEW_SITE]]
   ricebox-stage-shell --preview [DECLARATION_JSON]
 
-The defaults are ./ricebox.json and ./ricebox-site. Preview serves a temporary
-site on loopback and removes it when stopped.
+The starter uses the bundled Ricebox guest and writes ./ricebox-site. Add a
+local ./ricebox.json to change terminal settings or choose another guest.
+Preview serves a temporary site on loopback and removes it when stopped.
 
-Minimal ricebox.json:
+To use your own prepared guest in ./prepared:
 {
   "guest": {
     "webrootSha256": "<trusted SHA-256 of webroot.json>",
@@ -30,12 +32,25 @@ The prepared directory defaults to ./prepared next to ricebox.json. The
 terminal starts /bin/sh -i with an 80 by 24 grid. Set guest.directory or
 terminal.argv, terminal.cols, terminal.rows, and terminal.autoStart to override.`;
 
-function readDeclaration(source: string) {
-  try { return authoredPlan(JSON.parse(readFileSync(source, 'utf8'))); }
+function readDeclaration(source: string, defaultGuest?: Parameters<typeof authoredPlan>[1]) {
+  try {
+    const plan = authoredPlan(JSON.parse(readFileSync(source, 'utf8')), defaultGuest);
+    plan.guest = {...plan.guest, directory: resolve(dirname(source), plan.guest.directory)};
+    return plan;
+  }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${source}: declaration not found. See --help for an example.`);
     throw new Error(`${source}: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function starterPlan(config?: string) {
+  const local = resolve(config ?? 'ricebox.json');
+  const bundled = fileURLToPath(new URL('default/ricebox.json', import.meta.url));
+  const supplied = lstatSync(bundled, {throwIfNoEntry: false}) && readDeclaration(bundled);
+  const plan = !config && supplied && !lstatSync(local, {throwIfNoEntry: false})
+    ? supplied : readDeclaration(local, supplied?.guest);
+  return {...plan, bundled: plan.guest.directory === supplied?.guest.directory};
 }
 
 /** Stage on the destination filesystem even when some parents are missing. */
@@ -81,9 +96,8 @@ function executable(index: Index, entry: string): string {
   throw new Error(`Guest terminal executable ${entry} is not present or executable in this prepared root. Set terminal.argv to an executable in that root.`);
 }
 
-async function stage(config: string, destination: string | AbortSignal) {
-  const source = resolve(config), plan = readDeclaration(source);
-  const root = resolve(dirname(source), plan.guest.directory);
+async function stage(config: string | undefined, destination: string | AbortSignal) {
+  const plan = starterPlan(config), root = plan.guest.directory;
   const target: {directory: string; out: string} | {directory: string; signal: AbortSignal} = typeof destination === 'string'
     ? outputLocation(resolve(destination)) : {directory: tmpdir(), signal: destination};
   if ('out' in target && lstatSync(target.out, {throwIfNoEntry: false})) throw new Error(`Output already exists: ${target.out}`);
@@ -116,7 +130,8 @@ async function stage(config: string, destination: string | AbortSignal) {
     });
     const program = executable(index, plan.terminal.argv[0]!);
     store('ricebox-starter.json', Buffer.from(JSON.stringify({
-      v: 1, generation: descriptor.sha256, makerSha256: maker.sha256, program, terminal: plan.terminal,
+      v: 1, generation: descriptor.sha256, makerSha256: maker.sha256, program,
+      writableHome: plan.bundled, terminal: plan.terminal,
     }) + '\n'));
     for (const [name, bytes] of browserModules({display: true})) store(name, bytes);
     const everyday = 'ricebox-js/everyday/src/surface.js';
@@ -160,7 +175,7 @@ try {
   }});
   if (values.help) console.log(usage);
   else {
-    const [config = 'ricebox.json', destination, ...extra] = positionals;
+    const [config, destination, ...extra] = positionals;
     if (extra.length || (values.preview && destination !== undefined)) throw new Error(usage);
     if (!values.preview) await stage(config, destination ?? 'ricebox-site');
     else {

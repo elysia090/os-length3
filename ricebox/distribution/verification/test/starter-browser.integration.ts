@@ -57,7 +57,7 @@ test('the installed Ricebox starter previews defaults and embeds its configured 
     const pkg = join(work, 'package'), consumer = join(work, 'consumer'), host = join(work, 'host');
     const npm = (cwd: string, args: string[]) => execFileSync('npm', ['--prefix', '.', ...args], {cwd, encoding: 'utf8', timeout: 30_000,
       env: {...process.env, npm_config_cache: join(work, 'npm-cache')}});
-    execFileSync(process.execPath, [build, pkg], {timeout: 30_000});
+    execFileSync(process.execPath, [build, pkg, '--runtime-only'], {timeout: 30_000});
     const [tarball] = JSON.parse(npm(pkg, ['pack', '--offline', '--ignore-scripts', '--pack-destination', work, '--json'])) as {filename: string}[];
     mkdirSync(consumer); mkdirSync(join(host, 'docs', 'example'), {recursive: true});
     npm(consumer, ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', join(work, tarball.filename)]);
@@ -116,6 +116,15 @@ test('the installed Ricebox starter previews defaults and embeds its configured 
         assert.equal(await input.evaluate(node => node.getBoundingClientRect().bottom <= innerHeight), true);
         await command("printf '\\nsecond=%s pid=%s\\n' \"$((nonce*4+2))\" \"$$\"");
         await expect(row(new RegExp('^second=94 pid=' + pid + ' *$'))).toHaveCount(1);
+        await command(`sh -c 'printf "\\njob-ready\\n"; exec sleep 30'`);
+        await expect(row(/^job-ready *$/)).toHaveCount(1);
+        await input.press('Control+z');
+        await command('jobs');
+        await expect(row(/Stopped.*sleep 30/).first()).toBeVisible();
+        await command('fg');
+        await input.press('Control+c');
+        await command("printf '\\njob-recovered=%s\\n' \"$nonce\"");
+        await expect(row(/^job-recovered=23 *$/)).toHaveCount(1);
         await expect(input).toBeFocused();
         assert.equal(page.url(), url);
         assert.equal(page.context().pages().length, 1);

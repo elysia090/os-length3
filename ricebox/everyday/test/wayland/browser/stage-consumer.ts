@@ -12,7 +12,7 @@ mkdirSync(output);
 const repo = fileURLToPath(new URL('../../../../../', import.meta.url));
 const packageRoot = join(output, 'package'), consumer = join(output, 'consumer');
 const node = (args: readonly string[], cwd = repo) => execFileSync(process.execPath, args, {cwd, stdio: 'inherit', timeout: 45_000});
-node([join(repo, 'ricebox/distribution/build/npm.ts'), packageRoot]);
+node([join(repo, 'ricebox/distribution/build/npm.ts'), packageRoot, '--runtime-only']);
 const npm = (args: readonly string[], cwd: string) => execFileSync('npm', args, {
   cwd, encoding: 'utf8', timeout: 45_000, env: {...process.env, npm_config_cache: join(output, 'npm-cache')},
 });

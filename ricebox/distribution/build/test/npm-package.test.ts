@@ -55,7 +55,7 @@ test('browser manifest requires a direct literal module Worker URL', () => {
 test('built npm package contains builder dependencies and imports public JS without a TS loader', async () => {
   const work=mkdtempSync(join(tmpdir(),'ricebox-package-')),out=join(work,'package');
   try {
-    execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
+    execFileSync(process.execPath,[builder,out,'--runtime-only'],{encoding:'utf8',timeout:30_000});
     const pkg=JSON.parse(readFileSync(join(out,'package.json'),'utf8'));
     assert.equal(pkg.private,true);
     assert.equal(pkg.version,'0.0.1');
@@ -284,7 +284,7 @@ test('built npm package contains builder dependencies and imports public JS with
     };
     const help = invokeStarter('--help');
     assert.equal(help.status, 0, help.stderr);
-    assert.match(help.stdout, /Minimal ricebox.json/);
+    assert.match(help.stdout, /uses the bundled Ricebox guest/);
     assert.match(invokeStarter().stderr, /ricebox.json: declaration not found/);
     const webPin=descriptor(pkg.version);
     for (const [value, expected] of [
@@ -334,7 +334,7 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(hash(readFileSync(join(staged,'ricebox/muk.json'))),hash(muk));
     assert.deepEqual(JSON.parse(readFileSync(join(staged,'ricebox-starter.json'),'utf8')),{
       v:1,generation:JSON.parse(stagedWebroot.toString()).index.sha256,makerSha256:maker.sha256,
-      program:'/usr/bin/selected-shell',terminal:{argv:['/bin/terminal','-i'],cols:96,rows:24,autoStart:true},
+      program:'/usr/bin/selected-shell',writableHome:false,terminal:{argv:['/bin/terminal','-i'],cols:96,rows:24,autoStart:true},
     });
     assert.deepEqual(files(join(staged,'ricebox-js/everyday')).map(file=>file.slice(staged.length)).sort(),[
       '/ricebox-js/everyday/src/mirror-surface.js','/ricebox-js/everyday/src/surface.js',
@@ -504,6 +504,30 @@ test('built npm package contains builder dependencies and imports public JS with
       assert.equal((await fetch(new URL('package.json', url))).status, 404);
     }, {...process.env, TMPDIR: previewRoot});
     assert.deepEqual(readdirSync(previewRoot), []);
+
+    const bundled = join(dirname(entry), 'default'), fresh = join(work, 'standalone');
+    mkdirSync(bundled);
+    mkdirSync(fresh);
+    symlinkSync(release, join(bundled, 'prepared'), 'junction');
+    const guest = {webrootSha256: exactWebPin, mukSha256: hash(muk)};
+    writeFileSync(join(bundled, 'ricebox.json'), JSON.stringify({guest}));
+    const fromBundle = (...args: string[]) => spawnSync(process.execPath, ['--no-experimental-strip-types', entry, ...args],
+      {cwd: fresh, encoding: 'utf8', timeout: 15_000});
+    const firstRun = fromBundle();
+    assert.equal(firstRun.status, 0, firstRun.stderr);
+    const starter = (output: string) => JSON.parse(readFileSync(join(fresh, output, 'ricebox-starter.json'), 'utf8'));
+    assert.equal(starter('ricebox-site').writableHome, true);
+    assert.deepEqual(starter('ricebox-site').terminal, {argv: ['/bin/sh', '-i'], cols: 80, rows: 24, autoStart: true});
+    writeFileSync(join(fresh, 'ricebox.json'), JSON.stringify({terminal: {cols: 104}}));
+    const changed = fromBundle('ricebox.json', 'changed');
+    assert.equal(changed.status, 0, changed.stderr);
+    assert.equal(starter('changed').writableHome, true);
+    assert.equal(starter('changed').terminal.cols, 104);
+    writeFileSync(join(fresh, 'ricebox.json'), JSON.stringify({guest: {...guest, directory: release, mukSha256: 'b'.repeat(64)}}));
+    const badOverride = fromBundle('ricebox.json', 'invalid');
+    assert.equal(badOverride.status, 1);
+    assert.match(badOverride.stderr, /muk.json does not match/);
+    assert.ok(!existsSync(join(fresh, 'invalid')));
 
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}

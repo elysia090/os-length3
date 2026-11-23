@@ -14,9 +14,8 @@ Cloudflare hosting, does not imply execution inside that host's isolates.
 
 ## Setup
 
-See [Acquisition and composition](docs/installation.md) for package-cache inputs,
-pinned tools and output ownership. To generate a local npm package, run from the
-repository root with Node 24:
+Run the following commands from the repository root with Node 24 and a built
+package cache in `target/root-packages`.
 
 ```sh
 node ricebox/distribution/build/npm.ts NEW_DIRECTORY
@@ -24,17 +23,16 @@ cd NEW_DIRECTORY
 npm pack --ignore-scripts
 ```
 
-The output directory must not exist. This creates a private local package, not a
-registry publication. Install the generated tarball with `npm install --offline
---ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes the optional Everyday
-presenter, not the conformance fixtures or Why site files. Its declared Node
-requirement is `>=22.18`; use Node 24 to generate the package. A browser app can
-stage the package's native modules or use a bundler with module-Worker support.
-Serve the distribution layers separately from those modules.
+The output directory must not exist. The build composes the standard guest and
+includes its prepared layers, the launcher, and the Everyday presenter. Use
+`--package-cache CACHE` to select another built cache or `--runtime-only` for a
+library tarball whose consumer supplies a guest. See [Acquisition and composition](docs/installation.md)
+for prerequisites and [the package build used in CI](../../.github/actions/root-packages/action.yml)
+for the source cache. The generated tarball is private and requires Node 22.18
+or newer at installation.
 
-For a standalone browser terminal with Everyday included, see [Run the Ricebox starter](docs/installation.md#run-the-ricebox-starter).
-A build-time declaration selects a trusted prepared environment, its terminal entry, and the cell geometry.
-Staging does not acquire or publish an environment.
+For offline installation and a first browser session, see [Run the Ricebox starter](docs/installation.md#run-the-ricebox-starter).
+An optional local declaration can change the terminal or pin a different prepared guest.
 
 The package exports `ricebox` (`createRoot` and its types), `ricebox/everyday`
 (the optional presenter), `ricebox/prepare` (composition), `ricebox/assets`
@@ -121,8 +119,8 @@ ordinary translator. Withdrawal retires an attached piece with its mapping.
   verifies downloads, and `lift-dependencies.sh` applies recipe-selected updates.
 - `build/assemble.sh` assembles selected packages. `package-database.ts` writes
   their inventory; `script-interpreters.ts` checks interpreters in the guest root.
-- `build/prepare.ts` composes a supplied cache with pinned tools or a source
-  toolchain, publishing the output only after successful composition.
+- `build/default-packages.ts` names the standard userland. `build/prepare.ts`
+  composes it or an explicit selection using pinned tools or a source toolchain.
 - `build/distribution.ts` produces packs, blobs and translations.
   `build/distribution.sh` builds the source translators, stages the layers
   with the box maker, and only then replaces the output. This requires Cargo,

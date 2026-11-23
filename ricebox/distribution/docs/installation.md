@@ -1,11 +1,17 @@
 # Acquisition and composition
 
-ricebox composes an explicitly selected package cache into a distribution. It
-does not resolve catalogs or download packages during composition. The caller
-may acquire packages through [otter](../../otter/), another trusted provider or
-an existing local cache. Otter’s repository entry is
-[`catalog/artifacts.ts`](../../otter/catalog/artifacts.ts); Ricebox does not
-include it in its npm package.
+Ricebox composes already-built packages from a supplied cache. The cache can
+come from the [source build](../../../.github/actions/root-packages/action.yml),
+[Otter](../../otter/) or another trusted provider. Pass `packages` to replace
+the [standard selection](../build/default-packages.ts). Acquisition belongs to
+the caller and happens before composition.
+
+The standard userland includes BusyBox and Bash, filesystem and text tools,
+terminfo, search and archive tools, JSON/YAML and SQLite, Git, editors, TLS
+certificates, time zones, and the GCC/Make C toolchain. The browser receives
+release data on demand. The list follows the existing Ricebox recipes for
+[Issue #80](https://github.com/elysia090/os-length3/issues/80). Additional runtimes,
+persistence and service integration are tracked in its successor issues.
 
 ## Local artifacts
 
@@ -52,12 +58,12 @@ remain in sods' TypeScript Vfs.
 ## Acquire, then compose
 
 ```ts
-import {prepareDistribution} from 'ricebox/prepare';
+import {defaultPackages, prepareDistribution} from 'ricebox/prepare';
 
 // acquirePackages belongs to the caller's selected acquisition provider.
 const selected = await acquirePackages({
   catalog: pinnedCatalog,
-  packages: ['app'],
+  packages: [...defaultPackages],
   cache: downloadCache,
 });
 const distribution = await prepareDistribution({
@@ -89,9 +95,29 @@ a service.
 
 ### Run the Ricebox starter
 
-Use a prepared Ricebox root with a shell. Put it in `prepared/` next to
-`ricebox.json` and copy in the two SHA-256 pins from its trusted build or
-publisher. The default guest command is `/bin/sh -i` in an 80×24 terminal.
+Use Node 22.18 or newer to install the [built tarball](../README.md#setup) in an
+empty directory and start the local preview.
+
+```sh
+npm --prefix . install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
+npm --prefix . exec --offline -- ricebox-stage-shell --preview
+```
+
+Open the printed loopback URL. The bundled guest starts `/bin/sh -i` in
+an 80×24 terminal with temporary writable `/root` and `/tmp`. The preview
+serves HTTP byte ranges and removes its verified snapshot when stopped with
+Ctrl+C.
+
+Add `ricebox.json` to change the terminal settings. This example selects Bash
+and changes the grid to 96×27.
+
+```json
+{"terminal": {"argv": ["/bin/bash", "-i"], "cols": 96, "rows": 27}}
+```
+
+To use another prepared guest, put it in `prepared/` next to `ricebox.json`
+and supply the SHA-256 pins from its trusted build or publisher. A tarball built
+with `--runtime-only` uses this same declaration.
 
 ```json
 {
@@ -101,19 +127,6 @@ publisher. The default guest command is `/bin/sh -i` in an 80×24 terminal.
   }
 }
 ```
-
-With Node 22.18 or newer and the
-[built local tarball](../README.md#setup), run these from the directory
-containing `ricebox.json`:
-
-```sh
-npm --prefix . install --offline --ignore-scripts --no-audit --no-fund /path/to/ricebox-0.0.1.tgz
-npm --prefix . exec --offline -- ricebox-stage-shell --preview
-```
-
-Open the printed loopback URL. The preview serves the verified snapshot with
-HTTP byte ranges and removes it when stopped with Ctrl+C. Run the same command
-again after editing the declaration.
 
 ### Configure and stage
 
@@ -173,6 +186,27 @@ RICEBOX_STARTER_CHROME=/path/to/installed/google-chrome \
   node --test ricebox/distribution/verification/test/starter-browser.integration.ts
 ```
 
+### Measure the default starter
+
+Run the benchmark from the Linux checkout with Node 24. Point it at a workspace
+with the standalone tarball installed and leave `ricebox.json` absent.
+
+```sh
+node ricebox/distribution/verification/test/starter-benchmark.ts /path/to/installed/workspace \
+  --chrome /path/to/installed/google-chrome --runs 5
+```
+
+Each pair uses a fresh browser process with sandboxing enabled. The second
+visit retains the first visit's origin cache and starts a fresh guest. The
+benchmark verifies a TTY command, searches 32 generated logs with 32,768
+lines, archives and compares the restored tree, commits and diffs in a local
+Git repository, builds and runs a small C program, and waits for the Workers
+to retire. Its JSON records wall time through visible terminal output, the
+bytes of completed HTTP response bodies including pack ranges, and the peak
+sum of Chrome renderer RSS sampled every 100 ms in each phase. Preview setup
+has its own process wall time and RSS. Loopback results measure local
+execution and transfer.
+
 ### Stage a static site without the Vite adapter
 
 If you already have a prepared distribution, use `ricebox/assets` from Node.
@@ -180,16 +214,16 @@ If you already have a prepared distribution, use `ricebox/assets` from Node.
 Muk. `browserModules` copies the browser JavaScript listed at package build
 time, including the module Workers, with their relative paths intact. Neither
 acquires packages, builds a distribution, starts guests, or publishes the site.
-Save this as `stage-ricebox.mjs` beside your local npm installation:
+Save the example as `stage-ricebox.mts` beside your local npm installation.
 
-```js
+```ts
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {browserModules, distributionAssets} from 'ricebox/assets';
 
 const [prepared, newSiteDirectory] = process.argv.slice(2);
 if (!prepared || !newSiteDirectory) {
-  throw new Error('Usage: node stage-ricebox.mjs PREPARED_DISTRIBUTION NEW_SITE_DIRECTORY');
+  throw new Error('Usage: node stage-ricebox.mts PREPARED_DISTRIBUTION NEW_SITE_DIRECTORY');
 }
 const assets = [...distributionAssets(prepared), ...browserModules()];
 mkdirSync(newSiteDirectory);
@@ -201,7 +235,7 @@ for (const [name, bytes] of assets) {
 ```
 
 ```sh
-node stage-ricebox.mjs /path/to/prepared-distribution ./new-site
+node stage-ricebox.mts /path/to/prepared-distribution ./new-site
 ```
 
 Put your HTML beside `new-site/ricebox/` and `new-site/ricebox-js/`. Load your

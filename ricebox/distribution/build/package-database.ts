@@ -33,7 +33,8 @@ interface Put { name: string; mode: number | null; z: string }
 const blocks: string[] = [];
 const names: string[] = [];
 for (const line of readFileSync(list, 'utf8').split('\n').filter(Boolean)) {
-  const [name, version, url, tree] = line.split(' ') as [string, string, string | undefined, string];
+  const [name, version, url, ...path] = line.split(' ') as [string, string, string | undefined, ...string[]];
+  const tree = path.join(' ');
   names.push(name);
   const byDir = new Map<string, Put[]>();
   let size = 0;

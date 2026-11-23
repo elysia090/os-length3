@@ -34,20 +34,28 @@ function terminal(value: unknown, defaultArgv?: readonly string[]) {
   return {argv: [...argv] as string[], cols, rows, autoStart};
 }
 
-export function authoredPlan(value: unknown) {
-  const {guest, terminal: requested} = object(value, ['guest', 'terminal'], 'Ricebox declaration; only guest and terminal are supported');
+function guestPlan(guest: unknown) {
   const {directory = './prepared', webrootSha256, mukSha256} =
     object(guest, ['directory', 'webrootSha256', 'mukSha256'], 'prepared guest declaration');
   if (!localText(directory)) throw new Error('guest.directory must name a local prepared directory');
   if (!pin(webrootSha256) || !pin(mukSha256)) throw new Error('guest requires trusted SHA-256 pins for webroot.json and muk.json');
-  return {guest: {directory, webrootSha256, mukSha256}, terminal: terminal(requested === undefined ? {} : requested, ['/bin/sh', '-i'])};
+  return {directory, webrootSha256, mukSha256};
+}
+
+export function authoredPlan(value: unknown, defaultGuest?: ReturnType<typeof guestPlan>) {
+  const {guest, terminal: requested} = object(value, ['guest', 'terminal'], 'Ricebox declaration; only guest and terminal are supported');
+  return {
+    guest: guest === undefined && defaultGuest ? defaultGuest : guestPlan(guest),
+    terminal: terminal(requested === undefined ? {} : requested, ['/bin/sh', '-i']),
+  };
 }
 
 export function stagedPlan(value: unknown) {
-  const {v, generation, makerSha256, program, terminal: requested} =
-    object(value, ['v', 'generation', 'makerSha256', 'program', 'terminal'], 'staged terminal declaration');
+  const {v, generation, makerSha256, program, writableHome = false, terminal: requested} =
+    object(value, ['v', 'generation', 'makerSha256', 'program', 'writableHome', 'terminal'], 'staged terminal declaration');
   if (v !== 1 || !pin(generation) || !pin(makerSha256) || !localText(program) || !program.startsWith('/')) {
     throw new Error('Invalid staged guest identity');
   }
-  return {generation, makerSha256, program, terminal: terminal(requested)};
+  if (typeof writableHome !== 'boolean') throw new Error('Invalid staged guest home');
+  return {generation, makerSha256, program, writableHome, terminal: terminal(requested)};
 }

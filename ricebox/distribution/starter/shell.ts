@@ -44,14 +44,16 @@ function phase(at: Phase, message: string) {
 }
 const detail = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-function box(argv: string[]): Box {
+function box(argv: string[], writableHome: boolean): Box {
+  const mounts = [{destination: '/tmp', type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev', 'mode=1777', 'size=16m']}];
+  if (writableHome) mounts.push({destination: '/root', type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev', 'mode=0700', 'size=16m']});
   return {
     config: JSON.stringify({
       ociVersion: '1.0.2',
-      process: {args: argv, cwd: '/', noNewPrivileges: true,
-        env: ['PATH=/usr/local/bin:/usr/bin:/bin', 'HOME=/root', 'TERM=xterm']},
+      process: {args: argv, cwd: writableHome ? '/root' : '/', noNewPrivileges: true,
+        env: ['PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin', 'HOME=/root', 'TERM=xterm']},
       root: {path: '/', readonly: true},
-      mounts: [{destination: '/tmp', type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev', 'mode=1777', 'size=16m']}],
+      mounts,
       linux: {
         namespaces: ['pid', 'network', 'ipc', 'uts', 'mount', 'user'].map(type => ({type})),
         uidMappings: [{containerID: 0, hostID: 0, size: 1}],
@@ -117,15 +119,16 @@ function terminal(current: Attempt, cols: number, rows: number) {
     if (!event.isTrusted || !live() || composing || event.isComposing || event.altKey || event.metaKey) return;
     if (event.ctrlKey) {
       const key = event.key.toLowerCase();
-      if (key === 'c') {
+      if (key === 'c' || key === 'z') {
         event.preventDefault();
+        const sig = key === 'c' ? 2 : 20;
         if (tty.lflag & ISIG) {
-          if (tty.lflag & NOFLSH) post({type: 'interrupt', sig: 2});
+          if (tty.lflag & NOFLSH) post({type: 'interrupt', sig});
           else {
             decoder = new TextDecoder(); model.discardPartial();
-            post({type: 'interrupt', sig: 2, flush: ++epoch});
+            post({type: 'interrupt', sig, flush: ++epoch});
           }
-        } else if (!(tty.lflag & ICANON)) send('\x03');
+        } else if (!(tty.lflag & ICANON)) send(key === 'c' ? '\x03' : '\x1a');
       } else if (key === 'd' || key === 'l') {
         event.preventDefault();
         send(key === 'd' ? '\x04' : '\x0c');
@@ -270,7 +273,7 @@ async function start(automatic = false) {
     worker.addEventListener('message', hear);
     worker.addEventListener('error', failed);
     worker.addEventListener('messageerror', failed);
-    worker.postMessage({type: 'start', cwd: '/', box: box(argv), screen: true, cols, rows,
+    worker.postMessage({type: 'start', cwd: '/', box: box(argv, plan.writableHome), screen: true, cols, rows,
       profile: ready.profile, generation: ready.generation, executables: root.execution.executablesNow(ready),
       translator: ready.translator, muk: ready.muk, root: {index: ready.index, url: ready.url}});
   } catch (error) {
