@@ -155,6 +155,37 @@ Wasm pieces, add `--prepared`. Set `EVERYDAY_QUICKSHELL_SCREENSHOT` to save
 Chrome's first composited frame. This check uses a loopback fixture server and
 requires Chrome's Linux namespace and seccomp sandbox.
 
+#### Offline audit of the Quickshell Debian test inputs
+
+The test-only [closure lock](qt/quickshell/debian-fixture.lock.json) freezes the
+Debian amd64 packages selected for this browser fixture, not a Ricebox release
+or another installation profile. It records the exact signed trixie and
+trixie-backports catalogs and all locked package versions, sizes and SHA-256
+values, including the five existing Quickshell .deb pins. Debian Snapshot IDs
+are immutable [transport locators](https://snapshot.debian.org/), not integrity
+or signing authorities.
+
+To verify already available files, use a trusted Debian archive keyring
+containing the [official public signers](https://ftp-master.debian.org/keys.html).
+Put `trixie.InRelease`, `trixie.Packages.xz`,
+`trixie-backports.InRelease` and `trixie-backports.Packages.xz` in
+`CATALOG_CACHE`, and the exact .deb files, by their basenames, in `DEB_CACHE`.
+Using Python 3.11 or newer and GnuPG, run:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/verify-debian-fixture.py" "$CATALOG_CACHE" "$DEB_CACHE" \
+  --keyring "$DEBIAN_ARCHIVE_KEYRING"
+python3 -B "$q/verify-debian-fixture.test.py"
+```
+
+This validates the historic freeze against the original signed validity window
+and the exact current verification keyring; it does not configure APT, fetch,
+extract, install or execute any package. Unlisted cache files are not read.
+Listener build, root assembly and auxiliary UTC verification are separate;
+the lock deliberately admits no UTC source. This audit never runs Chrome or
+the guest.
+
 #### Optional first Quickshell pointer response
 
 Use the same offline guest inputs and independently supplied index digest. Build
