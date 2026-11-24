@@ -3,12 +3,14 @@
 import type {Segment} from '../../sods/runtime/translate.ts';
 import {checkAsset, storedParts, type AssetReply, type AssetRequest} from './check-assets.ts';
 
-export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], checkSignal}: {
+export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], checkSignal, inlineCheck = false}: {
   base: string;
   usedKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
   checkSignal?: AbortSignal;
+  /** A guest Worker can check locally rather than start another checker. */
+  inlineCheck?: boolean;
 }) {
   /** Resolve the cache name lazily so importing the package does not require a browser. */
   let cacheName: string | undefined;
@@ -56,7 +58,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
     for (const r of await c.keys()) m.set(r.url, storedSize(await c.match(r)));
     return m;
   })());
-  const gone = (c: Cache, url: string) => void sizesOf(c).then((m) => m.delete(whole(url)));
+  const gone = (c: Cache, url: string): void => void sizesOf(c).then((m) => m.delete(whole(url)));
 
   /** Start the byte-check Worker on demand; the main thread is the fallback. */
   let checker: Worker | null | undefined;
@@ -90,6 +92,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], c
   }, {once: true});
   const worker = (): Worker | null => {
     checkSignal?.throwIfAborted();
+    if (inlineCheck) return null;
     if (checker !== undefined) return checker;
     try {
       const w = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});

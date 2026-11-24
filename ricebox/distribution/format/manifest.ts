@@ -1,6 +1,9 @@
+import {aotFraming, type AotFraming} from './aot-frames.ts';
+
 // Stored distribution descriptors. No execution objects or runtime dependencies.
 export interface StoredBlob { path: string; sha256: string; size: number }
 export interface Blob extends StoredBlob { bytes: number }
+export interface DeployedWasm extends Blob { framing?: AotFraming }
 export interface About {
   name: string; version: string;
   /** Digest and size of the native root archive from which these layers were built. */
@@ -18,11 +21,11 @@ export interface TranslationAssociation {
   mode: 'whole';
 }
 export interface ExecutableArtifact {
-  path: string; sha256: string; wasm: Blob;
+  path: string; sha256: string; wasm: DeployedWasm;
   /** Omitted by older trusted producers; malformed present metadata is never a legacy fallback. */
   association?: TranslationAssociation;
 }
-export interface Translation extends ExecutableArtifact { elf: Blob }
+export interface Translation extends ExecutableArtifact { elf: Blob; wasm: Blob }
 export interface WebExecution {
   maker: StoredBlob;
   programs: (ExecutableArtifact & {association: TranslationAssociation})[];
@@ -86,6 +89,7 @@ export function validateWebExecution(index: Index): void {
       throw new Error('ricebox: invalid Web program descriptor');
     }
     blobAsset(entry.wasm);
+    aotFraming(entry.wasm);
   }
 }
 

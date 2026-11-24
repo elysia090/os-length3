@@ -2,6 +2,9 @@ import {readImages} from '../../sods/runtime/linux.ts';
 import {prepare} from '../../sods/runtime/translate.ts';
 import type {ExecutableArtifact} from '../format/manifest.ts';
 import {digest} from './download.ts';
+import {compileFramedAot} from './framed-aot.ts';
+import {createAssetCache} from './asset-cache.ts';
+import {shardedAotResponse} from './aot-shards.ts';
 
 export async function compilePublished(wasm: Uint8Array, shared: boolean) {
   const image = prepare(wasm, {shared});
@@ -12,12 +15,17 @@ export async function compilePublished(wasm: Uint8Array, shared: boolean) {
 export function deployedCode(programs: ReadonlyMap<string, {program: ExecutableArtifact}>, base: string,
                              shared: boolean, ready: () => void, begin: () => {release(): void}) {
   const retiring = new AbortController();
+  const cache = createAssetCache({base, usedKey: '', checkSignal: retiring.signal, inlineCheck: true});
   const reader = readImages(origin => programs.has(origin), async origin => {
     const {program} = programs.get(origin)!;
     const operation = begin(), asset = program.wasm;
     try {
       const signal = AbortSignal.any([retiring.signal, AbortSignal.timeout(60_000)]);
-      const response = await fetch(new URL(asset.path, base), {signal});
+      const url = new URL(asset.path, base);
+      if ('framing' in asset) return await compileFramedAot(asset, shared, async signal => asset.framing?.shards
+        ? shardedAotResponse(asset, base, cache, signal)
+        : fetch(url, {signal}), signal);
+      const response = await fetch(url, {signal});
       if (!response.ok) {
         await response.body?.cancel();
         throw new Error(`HTTP ${response.status}`);
@@ -33,7 +41,9 @@ export function deployedCode(programs: ReadonlyMap<string, {program: ExecutableA
       const wasm = new Uint8Array(await new Response(stream.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
       if (wasm.byteLength !== asset.bytes) throw new Error('decoded size disagrees with the index');
       signal.throwIfAborted();
-      return await compilePublished(wasm, shared);
+      const compiled = await compilePublished(wasm, shared);
+      signal.throwIfAborted();
+      return compiled;
     } catch (cause) {
       throw new Error(`ricebox: could not load deployed Wasm for ${program.path}`, {cause});
     } finally { operation.release(); }

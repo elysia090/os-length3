@@ -28,15 +28,48 @@ const sleb32 = (b: Uint8Array, at: number): [number, number] => {
  * [{offset, bytes}], else null and the data stays in).
  */
 export function prepare(wasm: Uint8Array | ArrayBuffer, {shared = false}: {shared?: boolean} = {}): {wasm: Uint8Array<ArrayBuffer>; segments: Segment[] | null} {
+  const {parts, segments, importIndex} = split(wasm, true);
+  if (shared && importIndex >= 0) parts[importIndex] = sharedImport(parts[importIndex]!);
+  return {wasm: join(parts), segments};
+}
+
+function join(parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
+  let o = 0;
+  for (const x of parts) { out.set(x, o); o += x.length; }
+  return out;
+}
+
+/** Build-time extraction borrows the input instead of joining a second
+ * giant module. Only the small import prefix has two memory-mode variants. */
+export function deploymentParts(wasm: Uint8Array, maxHead: number): {
+  head: Uint8Array<ArrayBuffer>; sharedHead: Uint8Array<ArrayBuffer> | undefined; code: Uint8Array[]; segments: Segment[];
+} {
+  const {parts, segments, importIndex, hasData} = split(wasm, false);
+  if (hasData && !segments) throw new Error('cannot deploy opaque Wasm initialization as framed AOT');
+  const first = parts.slice(0, Math.max(1, importIndex + 1));
+  if (first.reduce((n, b) => n + b.length, 0) > maxHead) throw new Error('framed AOT import prefix is too large');
+  const head = join(first);
+  let sharedHead: Uint8Array<ArrayBuffer> | undefined;
+  if (importIndex >= 0) {
+    first[importIndex] = sharedImport(first[importIndex]!);
+    const candidate = join(first);
+    if (candidate.some((b, i) => b !== head[i])) sharedHead = candidate;
+  }
+  return {head, sharedHead, code: parts.slice(first.length), segments: segments ?? []};
+}
+
+function split(wasm: Uint8Array | ArrayBuffer, copySegments: boolean) {
   const b = wasm instanceof Uint8Array ? wasm : new Uint8Array(wasm);
   const parts = [b.subarray(0, 8)];
-  let segments: Segment[] | null = null, at = 8;
+  let segments: Segment[] | null = null, at = 8, importIndex = -1;
   const sections: {id: number; start: number; body: number; end: number}[] = [];
   while (at < b.length) {
     const id = b[at];
-    const [size, body] = leb(b, at + 1);
-    sections.push({id, start: at, body, end: body + size});
-    at = body + size;
+    const [size, body] = leb(b, at + 1), end = body + size;
+    if (!Number.isSafeInteger(end) || end > b.length) throw new Error('invalid Wasm section bounds');
+    sections.push({id, start: at, body, end});
+    at = end;
   }
   const data = sections.find((s) => s.id === 11);
   if (data) {
@@ -53,25 +86,26 @@ export function prepare(wasm: Uint8Array | ArrayBuffer, {shared = false}: {share
       if (b[p] !== 0x0b) { ok = false; break; }
       let length;
       [length, p] = leb(b, p + 1);
-      found.push({offset: offset >>> 0, bytes: b.slice(p, p + length)});
+      if (!Number.isSafeInteger(length) || length > data.end - p) { ok = false; break; }
+      const bytes = b.subarray(p, p + length);
+      found.push({offset: offset >>> 0, bytes: copySegments ? Uint8Array.from(bytes) : bytes});
       p += length;
     }
-    if (ok) segments = found;
+    if (ok && p === data.end) segments = found;
   }
   for (const s of sections) {
-    if (segments && (s.id === 11 || s.id === 12)) continue; // the data, and its count
-    if (s.id === 2 && shared) {
-      const section = b.slice(s.start, s.end);
-      shareMemoryImport(section, s.body - s.start);
-      parts.push(section);
-      continue;
-    }
+    if (segments && (s.id === 11 || s.id === 12)) continue;
+    if (s.id === 2) importIndex = parts.length;
     parts.push(b.subarray(s.start, s.end));
   }
-  const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
-  let o = 0;
-  for (const x of parts) { out.set(x, o); o += x.length; }
-  return {wasm: out, segments};
+  return {parts, importIndex, segments, hasData: !!data};
+}
+
+function sharedImport(part: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = Uint8Array.from(part);
+  const [, body] = leb(part, 1);
+  shareMemoryImport(out, body);
+  return out;
 }
 
 /** In an import section (its bytes, the body from `at`), mark each memory shared; its maximum is already there. */

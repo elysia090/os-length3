@@ -1,10 +1,12 @@
 // Node distribution readers. The lazy reader owns only open pack descriptors;
 // the deployment visitor checks the exact file snapshots it hands off.
+import {createHash} from 'node:crypto';
 import {openSync,readFileSync,readSync,closeSync,statSync,lstatSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
 import {blobAsset,releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
+import {aotFraming, orderedAotFrames} from '../format/aot-frames.ts';
 import {webExecutableSources} from '../format/executable-source.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
@@ -40,6 +42,7 @@ export function openDistribution(dir: string) {
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
   const blob = (b: Blob) => {
+    if ('framing' in b) throw new Error('framed AOT requires the execution loader');
     const asset = blobAsset(b), bytes = readFileSync(join(dir, asset.path));
     const actual = sha256(bytes);
     if (bytes.length !== asset.size || actual !== asset.sha256) throw new Error(`${asset.path}: not the stored blob its index names (sha256 ${actual})`);
@@ -85,19 +88,37 @@ export function visitDistributionAssets(directory: string, {base = 'ricebox', ma
   const descriptor = releaseIndexAsset(about);
   const index = readReleaseIndex(asset(descriptor.path, descriptor.sha256, descriptor.size), about);
   const verified = new Map<string, number>();
-  const blob = (value: unknown) => {
-    const b = blobAsset(value);
-    const size = verified.get(b.path);
-    if (size !== undefined) {
-      if (size !== b.size) throw new Error(`ricebox: conflicting sizes for ${b.path}`);
-      return;
-    }
-    asset(b.path, b.sha256, b.size);
+  const blob = (value: unknown, verify?: (bytes: Buffer) => void) => {
+    const b = blobAsset(value), previous = verified.get(b.path);
+    if (previous !== undefined && previous !== b.size) throw new Error(`ricebox: conflicting sizes for ${b.path}`);
+    if (previous !== undefined && !verify) return;
+    const bytes = read(b.path, b.sha256, b.size);
+    verify?.(bytes);
+    if (previous === undefined) take(`${base}/${b.path}`, bytes);
     verified.set(b.path, b.size);
   };
   blob(index.translator);
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
-  for (const {program} of webExecutableSources(index).values()) blob(program.wasm);
+  for (const {program} of webExecutableSources(index).values()) {
+    const asset = program.wasm, framed = aotFraming(asset);
+    if (!framed) { blob(asset); continue; }
+    const whole = createHash('sha256'), frames = orderedAotFrames(framed);
+    let n = 0;
+    for (const part of framed.shards ?? [{...asset, at: 0}]) {
+      blob(part, bytes => {
+        while (n < frames.length && frames[n]!.at < part.at + part.size) {
+          const frame = frames[n++]!, at = frame.at - part.at;
+          if (sha256(bytes.subarray(at, at + frame.size)) !== frame.sha256) {
+            throw new Error(`ricebox: wrong frame digest for ${asset.path} at ${frame.at}`);
+          }
+        }
+        whole.update(bytes);
+      });
+    }
+    // v2 separately binds the logical artifact key, even though no file has
+    // the key's path. The caller publishes nothing until the visitor returns.
+    if (n !== frames.length || whole.digest('hex') !== asset.sha256) throw new Error(`ricebox: wrong framed object digest for ${asset.path}`);
+  }
   // The pack checker asks its size before reading its ranges and finishes that
   // pack before asking for another. The size-checked buffer is the only reader.
   let current: {name: string; bytes: Buffer} | undefined, nextPack = 0;

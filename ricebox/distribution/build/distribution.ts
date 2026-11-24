@@ -1,7 +1,7 @@
 // One distribution root as content-addressed layers for any static host. This is a
 // delivery form of the same tree, not a separate product or package selection.
 // node ricebox/distribution/build/distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
-//   [--deploy [--maker FILE] | --hot PATH,…] [--name NAME] [--cache DIR]
+//   [--deploy [--maker FILE] [--framed-aot] | --hot PATH,…] [--name NAME] [--cache DIR]
 // The root's filename binds its version and digest. Each pack is checked by its
 // digest; files and deployed code are fetched only when used.
 import {createHash} from 'node:crypto';
@@ -11,12 +11,14 @@ import {fileURLToPath} from 'node:url';
 import {withCompression} from './compression-pool.ts';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../format/pack.ts';
+import {aotObjects} from '../format/aot-frames.ts';
 import {canonicalExecutableSource, canonicalPackedFileSet} from '../format/executable-source.ts';
 import {wholeTranslator} from './aot-cache.ts';
+import {FRAMED_MIN_BYTES, writeFramedAot} from './framed-aot.ts';
 import {buildMuk, writeMuk} from './muk-artifact.ts';
 import {readTarball} from '../host/node/tar.ts';
 import {sha256} from '../host/node/hash.ts';
-import type {Blob, Index, WebExecution} from '../format/manifest.ts';
+import type {Blob, DeployedWasm, Index, WebExecution} from '../format/manifest.ts';
 
 const here = fileURLToPath(new URL('../../..', import.meta.url));
 const repo = here;
@@ -36,14 +38,16 @@ const translatorWasm = flag('--translator', join(repo, 'ricebox/sods/target/wasm
 const sods = flag('--sods', join(repo, 'ricebox/sods/target/release/sods'));
 const deployment = args.includes('--deploy');
 if (deployment) args.splice(args.indexOf('--deploy'), 1);
+const framed = args.includes('--framed-aot');
+if (framed) args.splice(args.indexOf('--framed-aot'), 1);
 const makerInput = flag('--maker');
 const chosenHot = flag('--hot');
 const hot = (chosenHot || (deployment ? '' : '/usr/bin/bash,/usr/bin/busybox,/usr/bin/git')).split(',').filter(Boolean);
 const distributionName = flag('--name');
 const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
-if (args.length !== 2 || !rootFile || !out || args.some(arg => arg.startsWith('--')) || (makerInput !== null && !deployment)) {
-  console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--deploy [--maker FILE] | --hot PATH,…] [--name NAME] [--cache DIR]');
+if (args.length !== 2 || !rootFile || !out || args.some(arg => arg.startsWith('--')) || ((makerInput !== null || framed) && !deployment)) {
+  console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--deploy [--maker FILE] [--framed-aot] | --hot PATH,…] [--name NAME] [--cache DIR]');
   process.exit(2);
 }
 
@@ -82,8 +86,8 @@ if (release.VERSION_ID !== version) throw new Error(`${basename(rootFile)}: its 
 
 const wasm = deployment ? strip(readFileSync(translatorWasm)) : null;
 const compile = wasm ? wholeTranslator(sods, wasm, aotCache || null) : null;
-const deployed = new Map<string, {sha256: string; wasm: Blob}>();
-const modules = new Map<string, Blob>();
+const deployed = new Map<string, {sha256: string; wasm: DeployedWasm}>();
+const modules = new Map<string, DeployedWasm>();
 if (deployment) mkdirSync(join(out, 'blobs'), {recursive: true});
 const requested = new Set(hot);
 
@@ -105,7 +109,8 @@ const {entries,manifest,packed}=await withCompression(async compress=>{
       try {
         let wasm = modules.get(digest);
         if (!wasm) {
-          wasm = blob(compile(bytes, digest), 6);
+          const whole = compile(bytes, digest);
+          wasm = framed && whole.length >= FRAMED_MIN_BYTES ? writeFramedAot(out, whole, true) : blob(whole, 6);
           modules.set(digest, wasm);
         }
         deployed.set(path, {sha256: digest, wasm});
@@ -234,7 +239,7 @@ writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 // Artifacts a previous distribution left here, and this one does not name, go (only names this script makes).
 const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path,
   ...translations.flatMap(t => [t.elf.path, t.wasm.path]),
-  ...(execution ? [execution.maker.path, ...execution.programs.map(t => t.wasm.path)] : [])]);
+  ...(execution ? [execution.maker.path, ...execution.programs.flatMap(t => aotObjects(t.wasm).map(asset => asset.path))] : [])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));

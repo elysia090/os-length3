@@ -6,6 +6,9 @@ import {createAhead} from './pretranslate.ts';
 import {blobAsset, readReleaseIndex, releaseIndexAsset, requireStandardFileOwner, type ExecutableArtifact} from '../format/manifest.ts';
 import {download as fetchFile, Fatal, type Check} from './download.ts';
 import {createAssetCache} from './asset-cache.ts';
+import {compileFramedAot} from './framed-aot.ts';
+import {shardedAotResponse} from './aot-shards.ts';
+import {aotObjects} from '../format/aot-frames.ts';
 import {FIRST} from './startup-programs.ts';
 import {trackTransfers, type AssetProgress, type Stage} from './load-progress.ts';
 export type {Stage} from './load-progress.ts';
@@ -172,7 +175,7 @@ export function createRoot(config: RootConfig) {
     const live = new Set([
       `${BASE}${about.index.path}`, `${BASE}${index.translator.path}`, ...(mukPath ? [`${BASE}${mukPath}`] : []),
       ...index.translations.flatMap(t => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())]),
-      ...(index.execution?.programs.map(t => `${BASE}${t.wasm.path}`) ?? []),
+      ...(index.execution?.programs.flatMap(t => aotObjects(t.wasm).map(asset => `${BASE}${asset.path}`)) ?? []),
     ].map(whole));
     const packs = new Set(index.packs.map(p => p.name.replace(/\.pack$/, ''))), tag = keptTag(index);
     void forgetOthers(url => {
@@ -510,16 +513,31 @@ export function createRoot(config: RootConfig) {
       const step = quiet ? idle : atOnce;
       // Integrity and decode errors propagate. Only engine compilation has the
       // established fallback to ordinary execution of the lazy canonical file.
-      const p = await translation(t.wasm, shared, progress, step);
-      await step();
-      const compiling = WebAssembly.compile(p.wasm as BufferSource);
-      const module = index.execution ? await compiling : await compiling.catch(() => null);
+      const p = 'framing' in t.wasm ? await (async () => {
+        if (!index.execution) throw new Fatal('Framed AOT requires a deployed executable');
+        await step();
+        const limit = AbortSignal.timeout(60_000);
+        const signal = config.checkSignal ? AbortSignal.any([config.checkSignal, limit]) : limit;
+        const sharded = !!t.wasm.framing?.shards;
+        const made = await compileFramedAot(t.wasm, shared, async signal => sharded
+          ? shardedAotResponse(t.wasm, new URL(BASE, location.href).href, {open, keep, gone, used}, signal, progress,
+              {message: config.message, check: offThread})
+          : fetch(`${BASE}${t.wasm.path}`, {signal}), signal, sharded ? undefined : progress?.bytes);
+        progress?.verified();
+        return made;
+      })() : await (async () => {
+        const p = await translation(t.wasm, shared, progress, step);
+        await step();
+        const compiling = WebAssembly.compile(p.wasm as BufferSource);
+        return {...p, module: index.execution ? await compiling : await compiling.catch(() => null)};
+      })();
+      const {module, segments} = p;
       if (!module) return null;
       const url = moreURL(t, index.translator.sha256, shared);
       return {value: {generation, key, path: source.path,
         source: {origin: source.origin, sha256: source.sha256, size: source.size, binding: source.binding},
         artifact: {sha256: t.wasm.sha256, translator: index.translator.sha256, mode: 'whole' as const},
-        module, segments: p.segments, shared}, moreURL: url, reached: index.execution ? [] : await keptMore(url).catch(() => [])};
+        module, segments, shared}, moreURL: url, reached: index.execution ? [] : await keptMore(url).catch(() => [])};
     })();
     preparedJobs.set(key, job);
     void job.catch(() => { if (preparedJobs.get(key) === job) preparedJobs.delete(key); });

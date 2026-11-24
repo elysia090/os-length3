@@ -101,7 +101,8 @@ and mount decisions remain with sods.
 Retirement closes admission but does not itself prove that a Worker or host access
 has stopped. See the [runtime foundation](../../docs/runtime-foundation.md) for
 compatibility and browser-transfer constraints. Node integration results are not
-browser cold-start measurements.
+browser cold-start measurements. See the [framed AOT trial](docs/framed-aot.md)
+for the paired opt-in and remaining rollout checks.
 
 ### Prepared code for the inline dynamic VM
 

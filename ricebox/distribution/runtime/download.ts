@@ -35,6 +35,12 @@ export interface Options {
   fetch?: typeof fetch;
   /** How the bytes are checked against their sha256 (userland.ts does it off the page's thread). */
   check?: Check;
+  /** Bound untrusted response bytes before retaining them, even across retries. */
+  maxBytes?: number;
+  /** Close outstanding I/O and backoff when the owning loader is retired. */
+  signal?: AbortSignal;
+  /** Do not leave acquired but unauthenticated bytes for a future request. */
+  retainPartial?: boolean;
 }
 
 /** `bytes`' SHA-256, and the bytes (another view of them when they were lent away to be checked). */
@@ -60,7 +66,20 @@ export async function digest(bytes: Uint8Array): Promise<string> {
   return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', abort, {once: true});
+  });
+}
 const transient = (status: number) => status === 408 || status === 425 || status === 429 || status >= 500;
 
 /**
@@ -69,17 +88,26 @@ const transient = (status: number) => status === 408 || status === 425 || status
  */
 export async function download(url: string, expect: Expect = {}, progress?: Progress, options: Options = {}): Promise<Uint8Array> {
   const t = options.message ?? ((key: DownloadMessage) => key);
-  const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)), fetch: get = fetch, check = here} = options;
+  const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)),
+    fetch: get = fetch, check = here, maxBytes, signal, retainPartial = true} = options;
+  signal?.throwIfAborted();
+  if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) throw new RangeError('invalid download byte cap');
   // What a download of `url` before this one had, taken as this one's own while it runs: another of the same file
   // meanwhile (File's tree and a Prompt starting both read why's index) starts its own. The two writing into one
   // joined each other's pieces, failed the size check on every try, and gave up after some 16 s.
-  const state = partials.get(url) ?? {parts: [], got: 0, validator: null};
-  partials.delete(url);
+  const state = (retainPartial ? partials.get(url) : undefined) ?? {parts: [], got: 0, validator: null};
+  if (retainPartial) partials.delete(url);
   const reset = () => { state.parts = []; state.got = 0; state.validator = null; progress?.bytes(0); };
   let why = '';
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    if (attempt > 1) { progress?.retry(attempt, why); await sleep(backoff(attempt - 1)); }
+    signal?.throwIfAborted();
+    if (attempt > 1) {
+      progress?.retry(attempt, why);
+      await sleep(backoff(attempt - 1), signal);
+      signal?.throwIfAborted();
+    }
     const abort = new AbortController();
+    const active = signal ? AbortSignal.any([abort.signal, signal]) : abort.signal;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastByte = Date.now();
     const arm = () => { clearTimeout(timer); lastByte = Date.now(); timer = setTimeout(() => abort.abort(), stallMs); };
@@ -98,7 +126,8 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       if (state.got && state.validator) { headers.Range = `bytes=${state.got}-`; headers['If-Range'] = state.validator; }
       else if (state.got) reset();
       arm();
-      const r = await get(url, {headers, signal: abort.signal, cache: 'no-store'});
+      const r = await get(url, {headers, signal: active, cache: 'no-store'});
+      if (signal?.aborted) { await r.body?.cancel(signal.reason).catch(() => {}); signal.throwIfAborted(); }
       if (r.status === 206) {
         const start = Number(/bytes (\d+)-/.exec(r.headers.get('Content-Range') ?? '')?.[1]);
         if (start !== state.got) { reset(); why = t(messages.remainder); await r.body?.cancel(); continue; }
@@ -116,13 +145,29 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       const encoded = (r.headers.get('Content-Encoding') ?? 'identity') !== 'identity';
       state.validator = encoded ? null : etag && !etag.startsWith('W/') ? etag : r.headers.get('Last-Modified');
       const reader = r.body!.getReader();
-      for (;;) {
-        arm();
-        const {done, value} = await reader.read();
-        if (done) break;
-        state.parts.push(value);
-        state.got += value.length;
-        progress?.bytes(state.got);
+      let cancellation: Promise<unknown> | undefined, complete = false;
+      const cancel = () => { cancellation ??= reader.cancel(active.reason).catch(() => {}); };
+      active.addEventListener('abort', cancel, {once:true});
+      try {
+        for (;;) {
+          active.throwIfAborted();
+          arm();
+          const {done, value} = await reader.read();
+          active.throwIfAborted();
+          if (done) { complete = true; break; }
+          if (maxBytes !== undefined && value.byteLength > maxBytes - state.got) {
+            reset();
+            throw new Fatal(`${url}: ${t(messages.size)}`);
+          }
+          state.parts.push(value);
+          state.got += value.length;
+          progress?.bytes(state.got);
+        }
+      } finally {
+        active.removeEventListener('abort', cancel);
+        if (!complete) cancel();
+        await cancellation;
+        reader.releaseLock();
       }
       clearTimeout(timer);
       let bytes: Uint8Array = join(state.parts, state.got);
@@ -139,10 +184,12 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
         bytes = checked.bytes;
         if (checked.sha256 !== expect.sha256) { reset(); why = t(messages.content); continue; }
       }
-      partials.delete(url);
+      signal?.throwIfAborted();
+      if (retainPartial) partials.delete(url);
       return bytes;
     } catch (e) {
-      if (e instanceof Fatal) { partials.delete(url); throw e; }
+      signal?.throwIfAborted();
+      if (e instanceof Fatal) { if (retainPartial) partials.delete(url); throw e; }
       why = abort.signal.aborted ? t(messages.timeout) : t(messages.connection);
     } finally {
       // Every way out of a try (done, continue, broken) stops its clocks.
@@ -151,6 +198,6 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
     }
   }
   // What came is kept: the next try in this page continues from it.
-  partials.set(url, state);
+  if (retainPartial) partials.set(url, state);
   throw new Error(why || t(messages.load));
 }

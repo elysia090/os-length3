@@ -1,5 +1,6 @@
 /** Distribution association checks. Linux inode/revision authority stays in sods. */
 import {canonicalExecutableSource, webExecutableSources, type CanonicalExecutableSource} from '../format/executable-source.ts';
+import {aotFraming} from '../format/aot-frames.ts';
 import type {ExecutableArtifact, Index} from '../format/manifest.ts';
 import type {PreparedExecutable} from './root-types.ts';
 
@@ -22,6 +23,12 @@ export function validateExecutable(index: Index, generation: string, executable:
   // Shape validation does not prove arbitrary Module semantics or digest it again.
   for (const segment of executable.segments ?? []) {
     if (!segment || !Number.isSafeInteger(segment.offset) || segment.offset < 0 || !(segment.bytes instanceof Uint8Array)) throw new Error('Invalid prepared executable segment');
+  }
+  const framing = aotFraming(translation.wasm);
+  if (framing && (!executable.segments || executable.segments.length !== framing.data.length ||
+      framing.data.some((part, i) => executable.segments![i]!.offset !== part.address ||
+        executable.segments![i]!.bytes.byteLength !== part.bytes))) {
+    throw new Error('Prepared executable does not match its framed initial data');
   }
   return source;
 }
