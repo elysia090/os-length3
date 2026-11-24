@@ -174,7 +174,7 @@ function copyPromptSources(tree: string) {
   for (const d of ['why/prompt/roots', 'why/build', 'why/shipto', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
   // Run the downloader in a minimal checkout with its real import closure.
   for (const f of ['why/prompt/roots/pins.rs', 'why/build/fetch-webroot.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/release-pins.ts', 'why/shipto/desktop-releases.json',
-    'ricebox/distribution/format/pack.ts', 'ricebox/distribution/build/publish-tree.ts']) {
+    'ricebox/distribution/format/aot-frames.ts', 'ricebox/distribution/format/pack.ts', 'ricebox/distribution/build/publish-tree.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
   }

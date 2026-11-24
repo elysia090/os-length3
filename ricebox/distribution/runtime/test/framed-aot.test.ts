@@ -14,7 +14,6 @@ import {canonicalPackedFileSet} from '../../format/executable-source.ts';
 import type {Index} from '../../format/manifest.ts';
 import {gzipSync} from 'node:zlib';
 import {compileFramedAot} from '../framed-aot.ts';
-import {lay} from '../../../sods/runtime/translation/share.ts';
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const u = (n: number) => {
@@ -73,7 +72,8 @@ test('checked frames stream code in both import modes and keep initial data priv
       const memory = new WebAssembly.Memory({initial:1, maximum:2, shared}), dest = new Uint8Array(memory.buffer);
       const fn = () => new WebAssembly.Instance(prog.module, {env:{memory}}).exports.read as () => number;
       assert.equal(fn()(), 0, 'the engine module no longer writes initial data on instantiation');
-      lay(dest, prog.segments);
+      const lay = (into: Uint8Array) => { for (const {offset, bytes} of prog.segments) into.set(bytes, offset); };
+      lay(dest);
       assert.equal(fn()(),42);
       assert.equal(dest[4098],8);
       assert.equal(dest[4099],0);
@@ -81,7 +81,7 @@ test('checked frames stream code in both import modes and keep initial data priv
       dest[4097] = 77;
       assert.equal(fn()(),77,'thread/instance reuse does not replay the initialized bytes');
       const next = new WebAssembly.Memory({initial:1,maximum:2,shared});
-      lay(new Uint8Array(next.buffer), prog.segments);
+      lay(new Uint8Array(next.buffer));
       const again = new WebAssembly.Instance(prog.module,{env:{memory:next}}).exports.read as () => number;
       assert.equal(again(),42,'fresh guest memory still initializes');
     }
