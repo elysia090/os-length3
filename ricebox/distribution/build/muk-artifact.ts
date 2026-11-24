@@ -43,7 +43,12 @@ export function buildMuk(): string {
 
 /** muk put beside the web root at `web`, as a page reads it: its blob and muk.json. What muk.json says. */
 export function putMuk(web: string): {path: string; sha256: string; size: number} {
-  const bytes = readFileSync(buildMuk()), sha256 = createHash('sha256').update(bytes).digest('hex');
+  return writeMuk(web, readFileSync(buildMuk()));
+}
+
+/** Store either the deploy-time Wasm or, for an older web root, the original maker. */
+export function writeMuk(web: string, bytes: Uint8Array): {path: string; sha256: string; size: number} {
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
   const said = {path: `blobs/${sha256}.bin`, sha256, size: bytes.length};
   mkdirSync(join(web, 'blobs'), {recursive: true});
   if (!existsSync(join(web, said.path))) writeFileSync(join(web, said.path), bytes);

@@ -26,7 +26,7 @@ export {captureMappedLibraries, type MappedLibraries} from './linux/mapped-libra
 export {capturePreparedMappedCode, type PreparedMappedCode, type PreparedMappedInput} from './linux/exec/prepared-mapped-code.ts';
 export type {DynamicSources} from './linux/exec/dynamic-plan.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';
-export {keeper, type Kept, type Reading, type RetirableReading} from './linux/keeper.ts';
+export {keeper, readImages, type Kept, type Reading, type RetirableReading} from './linux/keeper.ts';
 export {said, type Said} from './linux/waiting.ts';
 export type {Console, Far, Outside} from './linux/parts.ts';
 

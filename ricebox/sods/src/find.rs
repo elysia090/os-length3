@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
 use std::sync::OnceLock;
 
+mod switches;
+use switches::switch_targets;
+
 /// Where a walk of the program starts and how far it goes: from `starts`, the symbols in code (with `symbols`) and
 /// `targets` (sorted pointers, each a start of its own when `pointed_start`); each function in its range (to the next
 /// start, of these or of `known`, or its symbol's size); on as `follow` says, until nothing new is found or `budget`
@@ -160,7 +163,9 @@ fn find(elf: &Elf, walk: Find, scratch: &mut DiscoveryScratch) -> Program {
         // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
         if !follow.calls { found.clear(); }
         for (s, blocks) in walked {
-            if guess && follow.tables { switch_targets(elf, &blocks, s, end(s, after(&starts, s)), &mut scratch.decoded, &mut switches); }
+            if follow.tables && (guess || follow.taken) {
+                switch_targets(elf, &blocks, s, end(s, after(&starts, s)), follow.taken, &mut scratch.decoded, &mut switches);
+            }
             if !follow.calls { found.extend(continuations(&blocks)); }
             if limited { instructions += count_instructions(&blocks); }
             done.insert(s, blocks);
@@ -175,7 +180,11 @@ fn find(elf: &Elf, walk: Find, scratch: &mut DiscoveryScratch) -> Program {
         fresh.sort_unstable();
         fresh.dedup();
         if follow.taken { found.extend(fresh.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
-        let mut tables = if !follow.tables { Vec::new() } else if guess { switches } else { references.extend_from_slice(&fresh); relative_table_targets(elf, &references) };
+        let mut tables = switches;
+        if follow.tables && !guess {
+            references.extend_from_slice(&fresh);
+            tables.extend(relative_table_targets(elf, &references));
+        }
         tables.sort_unstable();
         tables.dedup();
         tables.retain(|t| pointers.binary_search(t).is_err());
@@ -501,92 +510,4 @@ fn relative_table_targets(elf: &Elf, references: &[u64]) -> Vec<u64> {
     out.sort_unstable();
     out.dedup();
     out
-}
-
-/// The most entries a table is read for when what bounds it is not found.
-const TABLE_ENTRIES: u64 = 4096;
-
-/// The cases of the switches in `blocks` (a function's, in `start..end`) that jump through a table, found from the
-/// code that reads it, for a program whose relocations do not say where its tables are:
-///
-/// ```text
-/// cmp I, N; ja default                  the bound, in a block before
-/// lea B, [rip + table]                  (or once in the function, for every switch of a loop)
-/// movsxd T, dword [B + I*4]; add T, B; jmp T
-/// ```
-///
-/// or absolute (`jmp [table + I*8]`, or `mov T, [table + I*8]; jmp T`). N + 1 entries; where the bound is not found,
-/// those that land in the function, at most TABLE_ENTRIES.
-fn switch_targets(elf: &Elf, blocks: &[Block], start: u64, end: u64, read: &mut Vec<Instruction>, out: &mut Vec<u64>) {
-    for b in blocks.iter().filter(|b| b.exit == Exit::IndirectJump) {
-        b.decode(elf, read);
-        let Some((table, (index, base), relative)) = table_read(read) else { continue };
-        let Some(table) = table.or_else(|| only_lea(elf, blocks, base, read)) else { continue };
-        let bound = bound_of(elf, blocks, b.start, index, read);
-        for k in 0..bound.unwrap_or(TABLE_ENTRIES) {
-            let target = if relative { elf.read_i32(table + 4 * k).map(|e| table.wrapping_add(e as i64 as u64)) } else { elf.read_u64(table + 8 * k) };
-            let Some(t) = target.filter(|&t| elf.is_code(t) && (bound.is_some() || (t >= start && t < end))) else { break };
-            out.push(t);
-        }
-    }
-}
-
-/// The table a block ending in an indirect jump reads: its address (None: in the register given with the index, put
-/// there before this block), the register that indexes it and the one that holds it, and whether it is relative.
-fn table_read(code: &[Instruction]) -> Option<(Option<u64>, (Register, Register), bool)> {
-    let (jmp, before) = code.split_last()?;
-    if jmp.mnemonic() != Mnemonic::Jmp { return None; }
-    let entry = |i: &Instruction, scale: u32| (i.memory_index() != Register::None && i.memory_index_scale() == scale).then(|| i.memory_index());
-    if jmp.op0_kind() == OpKind::Memory && jmp.memory_base() == Register::None {
-        return Some((Some(jmp.memory_displacement64()), (entry(jmp, 8)?, Register::None), false));
-    }
-    if jmp.op0_kind() != OpKind::Register { return None; }
-    let target = jmp.op0_register();
-    let last = |p: &dyn Fn(&Instruction) -> bool, within: &[Instruction]| within.iter().rposition(p);
-    if let Some(k) = last(&|i| i.mnemonic() == Mnemonic::Mov && i.op0_register() == target && i.op1_kind() == OpKind::Memory, before) {
-        let i = &before[k];
-        if i.memory_base() == Register::None { return Some((Some(i.memory_displacement64()), (entry(i, 8)?, Register::None), false)); }
-    }
-    let a = last(&|i| i.mnemonic() == Mnemonic::Add && i.op0_register() == target && i.op1_kind() == OpKind::Register, before)?;
-    let base = before[a].op1_register();
-    let m = last(&|i| i.mnemonic() == Mnemonic::Movsxd && i.op0_register() == target && i.op1_kind() == OpKind::Memory
-        && i.memory_base() == base && i.memory_displacement64() == 0, &before[..a])?;
-    let index = entry(&before[m], 4)?;
-    match last(&|i| i.op0_kind() == OpKind::Register && i.op0_register() == base, &before[..m]).map(|l| &before[l]) {
-        Some(i) if i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() => Some((Some(i.ip_rel_memory_address()), (index, base), true)),
-        Some(_) => None,
-        None => Some((None, (index, base), true)),
-    }
-}
-
-/// The constant `register` holds where the function puts it in one place only (`lea register, [rip + constant]`) and
-/// writes it nowhere else (push and pop of the caller's value aside).
-fn only_lea(elf: &Elf, blocks: &[Block], register: Register, read: &mut Vec<Instruction>) -> Option<u64> {
-    let writes_it = |i: &Instruction| i.op0_kind() == OpKind::Register && i.op0_register().full_register() == register.full_register()
-        && !matches!(i.mnemonic(), Mnemonic::Push | Mnemonic::Pop | Mnemonic::Cmp | Mnemonic::Test);
-    let mut only = None;
-    for b in blocks {
-        b.decode(elf, read);
-        for i in read.iter().filter(|i| writes_it(i)) {
-            if only.is_some() { return None; }
-            only = Some(*i);
-        }
-    }
-    let i = only?;
-    (i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() && i.op0_register() == register).then(|| i.ip_rel_memory_address())
-}
-
-/// How many entries the table read at block `at` has, from `cmp I, N` then `ja` past it or `jbe` to it in a block
-/// that goes on to `at`.
-fn bound_of(elf: &Elf, blocks: &[Block], at: u64, index: Register, read: &mut Vec<Instruction>) -> Option<u64> {
-    blocks.iter().find_map(|p| {
-        let Exit::Branch { taken, fall } = p.exit else { return None };
-        if taken != at && fall != at { return None; }
-        p.decode(elf, read);
-        let [.., cmp, jcc] = read.as_slice() else { return None };
-        let to_table = (jcc.mnemonic() == Mnemonic::Ja && fall == at) || (jcc.mnemonic() == Mnemonic::Jbe && taken == at);
-        let same = cmp.op0_kind() == OpKind::Register && cmp.op0_register().full_register() == index.full_register();
-        let n = matches!(cmp.op1_kind(), OpKind::Immediate8 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32 | OpKind::Immediate32to64).then(|| cmp.immediate(1));
-        (to_table && cmp.mnemonic() == Mnemonic::Cmp && same).then_some(n?).filter(|&n| n < TABLE_ENTRIES).map(|n| n + 1)
-    })
 }

@@ -8,13 +8,16 @@ export interface PreparedTree {
   sources: ReadonlyMap<string, ExecutableSource>;
 }
 
+const makerPath = '/run/box/muk';
+
 export function prepareTree(options: {
   root?: {index: Packed; reading: Reading};
   files?: Given[];
   captureSources?: readonly {path: string; origin: string; size: number}[];
   muk: Uint8Array | null | undefined;
+  makerOrigin?: string;
 }): PreparedTree {
-  const {root, files = [], muk, captureSources} = options;
+  const {root, files = [], muk, captureSources, makerOrigin} = options;
   if (root) requireStandardFileOwner(root.index);
   if (!muk) throw new Error('The selected web root has no Muk artifact');
   const vfs = new Vfs();
@@ -32,6 +35,9 @@ export function prepareTree(options: {
       provide(vfs, file);
     }
   }
-  vfs.writeFile('/run/box/muk', muk, 0o755);
+  if (makerOrigin) {
+    mountTarget(vfs).file(makerPath, 0o755, muk.byteLength, () => muk, makerOrigin);
+    sources.set(makerOrigin, captureExecutableSource(vfs, makerPath, {origin: makerOrigin, size: muk.byteLength}));
+  } else vfs.writeFile(makerPath, muk, 0o755);
   return {vfs, sources};
 }

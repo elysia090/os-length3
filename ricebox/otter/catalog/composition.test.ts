@@ -16,7 +16,7 @@ test('otter acquires pinned closure then ricebox composes it without acquisition
     for(const [key,value] of Object.entries({version:'1',source:name+'-source',key:name+'-key'}))writeFileSync(join(dir,key),value);
   }
   const tool = (name: string) => {
-    const path=join(work,name);writeFileSync(path,name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('not-executed-fixture'));return path;
+    const path=join(work,name);writeFileSync(path,name==='sods'?Buffer.from('not-executed-fixture'):Buffer.from([0,97,115,109,1,0,0,0]));return path;
   };
   const tools = {translator: tool('translator'), sods: tool('sods'), muk: tool('muk')};
   const published=join(work,'published');

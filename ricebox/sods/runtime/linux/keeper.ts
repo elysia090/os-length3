@@ -25,30 +25,48 @@ export interface RetirableReading extends Reading { close(): void; readonly fail
  * Notifications are synchronous: returned promises are not awaited or observed.
  */
 export function keeper(kept: Kept, ready: () => void, read: (urls: string[]) => void = () => {}): RetirableReading {
-  const state = new Map<string, 'reading' | Taken | null>();
+  return readImages(
+    origin => Object.hasOwn(kept.at, origin),
+    origin => load(kept.cache, kept.at[origin]!).catch(() => null),
+    ready,
+    origin => {
+      const {main, more} = kept.at[origin]!;
+      read(more ? [main, more] : [main]);
+    },
+  );
+}
+
+/** Coalesce concurrent execs of one source while the host loads its image.
+ * A reader can report a missing optional cache entry or a failed required asset. */
+export function readImages(has: (origin: string) => boolean, read: (origin: string) => Promise<Taken | null>,
+                           ready: () => void, used = (_origin: string) => {}): RetirableReading {
+  type Result = Taken | {error: unknown} | null;
+  const state = new Map<string, 'reading' | Result>();
   const failures: unknown[] = [];
-  let callbacks: {ready: () => void; read: (urls: string[]) => void} | null = {ready, read};
+  let callbacks: {ready: () => void; used: (origin: string) => void} | null = {ready, used};
   let closed = false, pending = 0;
   return {
     failures,
     close() { closed = true; callbacks = null; state.clear(); },
-    has: (origin) => !closed && Object.hasOwn(kept.at, origin) && state.get(origin) !== null,
-    // Closing cannot cancel an already-issued Cache Storage read.
+    has: (origin) => !closed && has(origin) && state.get(origin) !== null,
     reading: () => pending,
     take(origin) {
-      if (closed) return null;
+      if (closed || !has(origin)) return null;
       const s = state.get(origin);
       if (s === 'reading') return undefined;
       if (s === null) return null;
-      if (s !== undefined) { state.delete(origin); return s; }
+      if (s !== undefined) {
+        if ('error' in s) throw s.error;
+        state.delete(origin);
+        return s;
+      }
       state.set(origin, 'reading'); pending++;
-      const urls = kept.at[origin];
-      const finish = (value: Taken | null): void => {
+      const finish = (value: Result): void => {
         pending--;
         if (closed) return;
         state.set(origin, value);
-        if (value) {
-          try { callbacks?.read([urls.main, ...(urls.more ? [urls.more] : [])]); }
+        if (value && 'module' in value) {
+          try { callbacks?.used(origin); }
           catch (failure) { failures.push(failure); }
         }
         // read may close reentrantly. A failing diagnostic must not skip wake,
@@ -56,7 +74,7 @@ export function keeper(kept: Kept, ready: () => void, read: (urls: string[]) => 
         // rejected solely because a notification callback threw.
         try { callbacks?.ready(); } catch (failure) { failures.push(failure); }
       };
-      void load(kept.cache, urls).then(finish, () => finish(null));
+      void Promise.resolve().then(() => read(origin)).then(finish, error => finish({error}));
       return undefined;
     },
   };

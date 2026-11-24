@@ -1,5 +1,5 @@
 // Pure stored-descriptor selection. No execution authority, I/O, or runtime objects.
-import type {Index, Translation} from './manifest.ts';
+import type {ExecutableArtifact, Index, Translation} from './manifest.ts';
 import {LINE} from './pack.ts';
 
 /** The canonical source named by a translation, not a prepared executable. */
@@ -72,16 +72,23 @@ export function canonicalPackedFileSet(index: Inventory, paths: readonly string[
  * authentication, source-byte verification, translator/artifact identity and runtime
  * preparation, including any generation or live-file identity checks.
  */
-export function canonicalExecutableSource(index: Inventory, translation: Translation): CanonicalExecutableSource {
+export function canonicalExecutableSource(index: Inventory, translation: ExecutableArtifact | Translation): CanonicalExecutableSource {
   function fail(why: string): never { throw new Error(`ricebox: invalid executable source: ${why}`); }
   if (!object(translation) || !canonicalPath(translation.path)) fail('translation path must be canonical and absolute');
   if (!inventory(index)) fail('missing canonical file inventory');
   const matches = index.files.filter(file => file?.path === translation.path);
   if (matches.length !== 1) fail(`${translation.path} must name exactly one canonical file`);
-  const file = matches[0], origin = packedOrigin(index, file, fail), {size} = file;
+  const file = matches[0], origin = packedOrigin(index, file, fail);
+  return describeExecutable(translation, origin, file.size, fail);
+}
+
+function describeExecutable(translation: ExecutableArtifact | Translation, origin: string, size: number,
+                            fail: (why: string) => never): CanonicalExecutableSource {
   if (!digest(translation.sha256)) fail(`${translation.path} has an invalid source digest`);
-  if (!object(translation.elf) || !natural(translation.elf.bytes) || translation.elf.bytes !== size) fail(`${translation.path} source length disagrees with its ELF descriptor`);
   const binding = 'association' in translation ? 'explicit' : 'legacy-derived';
+  if ('elf' in translation) {
+    if (!object(translation.elf) || translation.elf.bytes !== size) fail(`${translation.path} source length disagrees with its ELF descriptor`);
+  } else if (binding === 'legacy-derived') fail(`${translation.path} has no source association`);
   if (binding === 'explicit') {
     const association = translation.association;
     if (!object(association) || association.version !== 1 || association.mode !== 'whole') fail(`${translation.path} has an unsupported source association`);
@@ -90,4 +97,18 @@ export function canonicalExecutableSource(index: Inventory, translation: Transla
     if (!natural(association.sourceBytes) || association.sourceBytes !== size) fail(`${translation.path} source length disagrees with its canonical file`);
   }
   return {path: translation.path, origin, sha256: translation.sha256, size, binding};
+}
+
+/** Web deploys emit one program per canonical source. Validate them in one file inventory pass. */
+export function webExecutableSources(index: Index): Map<string, {source: CanonicalExecutableSource; program: ExecutableArtifact}> {
+  const programs = index.execution?.programs ?? [];
+  const sources = new Map<string, {source: CanonicalExecutableSource; program: ExecutableArtifact}>();
+  if (!programs.length) return sources;
+  const files = canonicalPackedFileSet(index, programs.map(program => program.path));
+  for (const [i, file] of files.entries()) {
+    const program = programs[i]!;
+    const source = describeExecutable(program, file.origin, file.size, why => { throw new Error(`ricebox: invalid executable source: ${why}`); });
+    sources.set(file.origin, {source, program});
+  }
+  return sources;
 }

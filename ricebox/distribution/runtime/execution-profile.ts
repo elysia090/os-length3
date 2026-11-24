@@ -41,6 +41,7 @@ export function createExecutionProfile(services: ExecutionServices) {
   };
   const warm = (root: PreparedRoot): Promise<void> => {
     check(root);
+    if (root.index.execution) return Promise.resolve(); // Guest exec fetches its published module on demand.
     const previous = warming.get(root.generation);
     if (previous) return previous;
     const values = later.get(root.generation) ?? new Map<string, PreparedExecutable>();

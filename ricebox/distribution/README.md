@@ -73,6 +73,13 @@ to the release’s root digest and version before using it.
 Regular guest file payloads belong to sods' TypeScript Vfs. Release and AOT
 artifacts authenticate sources and code; they do not select another file owner.
 
+The default Web distributor and `prepareDistribution` publish one Wasm
+artifact per executable ELF inode in the selected packages and a Wasm module
+for Muk. Scripts use their packaged interpreter. The browser fetches each
+published module when its guest command needs it. An executable built or
+copied into a running guest becomes runnable through a subsequent deployment
+that includes it. The guest's ELF files remain available for ordinary reads.
+
 `createRoot(config).execution` selects the `canonical-aot-v1` profile. Its
 `PreparedRoot` associates compiled artifacts with a release generation and exact
 canonical sources, rather than installing byte-bearing file overlays. The
@@ -86,9 +93,10 @@ compiled code corresponds to the declared source.
 Before overlays, `prepareTree` captures sods' canonical inode tokens. AOT admission
 uses those tokens rather than resolving a potentially replaced pathname. Hardlink
 aliases may share a source; conflicting artifacts are rejected. Canonical files
-remain lazy until their complete original bytes are needed. Engine compilation
-failure permits ordinary execution of that source; checksum or decode failure
-does not. Linux permission and mount decisions remain with sods.
+remain lazy until their complete original bytes are needed. When a deployed
+module fails to load or compile, the guest receives that failure. Older roots
+permit ordinary execution after an engine compilation failure. Linux permission
+and mount decisions remain with sods.
 
 Retirement closes admission but does not itself prove that a Worker or host access
 has stopped. See the [runtime foundation](../../docs/runtime-foundation.md) for

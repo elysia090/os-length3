@@ -21,6 +21,7 @@ const REACHED = ['/usr/bin/grep', '/usr/bin/rg', '/usr/bin/fd', '/usr/bin/jq', '
  * programs (translated in the release: BusyBox, why, git) are not among them.
  */
 export function aheadFor(index: Index): string[] {
+  if (index.execution) return [];
   const hot = new Set(index.translations.map((t) => t.path));
   const programs = new Set(index.files.filter((f) => f.mode & 0o111).map((f) => f.path));
   return REACHED.filter((p) => programs.has(p) && !hot.has(p));
@@ -100,6 +101,7 @@ export function createAhead(root: {
    * is told to every Prompt listening (hearAhead). Once at a time in a page: a call while it goes adds nothing.
    */
   async function translateAhead(webroot: RootContext, paths: readonly string[]): Promise<void> {
+    if (webroot.index.execution) return;
     if (going || typeof Worker !== 'function') return;
     going = true;
     try {

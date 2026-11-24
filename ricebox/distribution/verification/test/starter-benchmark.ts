@@ -15,7 +15,7 @@ const workloads = {
   logs: String.raw`d=$HOME/ricebox-bench; mkdir -p "$d/logs" && awk -v dir="$d/logs" 'BEGIN { for(i=0;i<32768;i++) { file=sprintf("%s/%02d.log",dir,i%32); printf "%s %05d path=/example/report.txt request=%06d\n", (i%16==0?"ERROR":"INFO"), i, i >> file } }' && test "$(grep -h '^ERROR ' "$d"/logs/*.log | wc -l)" -eq 2048`,
   archive: String.raw`tar -czf "$d/logs.tgz" -C "$d" logs && mkdir "$d/unpack" && tar -xzf "$d/logs.tgz" -C "$d/unpack" && diff -r "$d/logs" "$d/unpack/logs"`,
   git: String.raw`mkdir "$d/repo" && git -C "$d/repo" -c init.defaultBranch=main init -q && printf 'one\n' > "$d/repo/file.txt" && git -C "$d/repo" add file.txt && git -C "$d/repo" -c user.name=Ricebox -c user.email=bench@example.invalid commit -qm first && printf 'two\n' >> "$d/repo/file.txt" && git -C "$d/repo" --no-pager diff --no-ext-diff | grep -qx '+two'`,
-  make: String.raw`mkdir "$d/build" && cd "$d/build" && printf '#include <stdio.h>\nint main(void){puts("42");return 0;}\n' > main.c && printf 'all: app\napp: main.c\n\t$(CC) -O2 main.c -o app\n' > Makefile && make -s && test "$(./app)" = 42`,
+  make: String.raw`mkdir "$d/build" && cd "$d/build" && printf '#include <stdio.h>\nint main(void){puts("42");return 0;}\n' > main.c && printf 'all: app\napp: main.c\n\t$(CC) -O2 main.c -o app\n' > Makefile && make -s && test -s app && test -x app`,
 };
 
 // Playwright page requests omit dedicated Worker fetches. Observe completed

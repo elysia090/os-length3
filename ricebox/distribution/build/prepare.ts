@@ -16,7 +16,9 @@ export interface PrepareOptions {
   packages?: readonly string[]; packageCache: string; output: string;
   toolchain?: string;
   tools?: Record<'translator' | 'sods' | 'muk', PinnedTool>;
-  version?: string; cache?: string; hot?: string[];
+  version?: string; cache?: string;
+  /** Retained for callers upgrading from selected translation. Web deployment prepares every program. */
+  hot?: string[];
 }
 function verifiedTool(tool: PinnedTool, name: string) {
   if (!tool || !/^[0-9a-f]{64}$/.test(tool.sha256) || !Number.isSafeInteger(tool.size) || tool.size < 0) throw new Error(`ricebox: ${name} requires path, size and sha256`);
@@ -76,17 +78,15 @@ export async function prepareDistribution(options: PrepareOptions) {
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));
     const base = join(source, 'ricebox/distribution/build/distribution');
     const producer = verified ? (existsSync(`${base}.js`) ? `${base}.js` : `${base}.ts`) : `${base}.sh`;
-    const args = [producer, join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
-    if (verified) args.push('--translator', verified.translator.path, '--sods', verified.sods.path);
+    const args = [producer, join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox', '--deploy'];
+    if (verified) {
+      const maker = join(work, 'muk');
+      writeFileSync(maker, verified.muk.bytes);
+      args.push('--translator', verified.translator.path, '--sods', verified.sods.path, '--maker', maker);
+    }
     if (cache !== undefined) args.push('--cache', cache === '' ? '' : resolve(cache));
     if (hot.length) args.push('--hot', hot.join(','));
     await run(verified ? process.execPath : 'sh', args);
-    if (verified) {
-      const path = `blobs/${tools!.muk.sha256}.bin`;
-      mkdirSync(join(work, 'layers/blobs'), {recursive: true});
-      writeFileSync(join(work, 'layers', path), verified.muk.bytes);
-      writeFileSync(join(work, 'layers/muk.json'), JSON.stringify({path, sha256: tools!.muk.sha256, size: tools!.muk.size}) + '\n');
-    }
     // Publish only a complete successful generation, never a half-built directory.
     renameSync(join(work, 'layers'), target);
     return target;

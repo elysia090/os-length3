@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -41,3 +41,76 @@ for (const [name, flags] of [['pie', ['-static-pie', '-fPIE']], ['absolute', ['-
     assert.equal(PROFILE.modules - before, 0, 'nothing was translated as it ran');
   });
 }
+
+test('whole resolves predecessor table bases and guards of copied or loaded indices', {skip: !ready}, t => {
+  const out = mkdtempSync(join(tmpdir(), 'sods-switch-base-'));
+  t.after(() => rmSync(out, {recursive: true, force: true}));
+  const asm = join(out, 'switch.S'), elf = join(out, 'switch');
+  writeFileSync(asm, `
+    .globl _start
+    .text
+    reject:
+      mov $43, %edi
+      mov $60, %eax
+      syscall
+      ud2
+    _start:
+      xor %eax, %eax
+      test %eax, %eax
+      jz choose
+      lea other(%rip), %r15
+      mov $43, %edi
+      jmp finish
+    choose:
+      lea table(%rip), %r15
+      mov $7, %edx
+      jmp dispatch
+    dispatch:
+      and $3, %edx
+      movslq (%r15,%rdx,4), %rdx
+      add %r15, %rdx
+      jmp *%rdx
+    target:
+      mov $3, %r8d
+      cmp $3, %r8w
+      ja reject
+      movzwl %r8w, %eax
+      lea next_table(%rip), %rcx
+      movslq (%rcx,%rax,4), %rax
+      add %rcx, %rax
+      jmp *%rax
+    done:
+      sub $8, %rsp
+      movl $3, (%rsp)
+      cmpl $3, (%rsp)
+      ja reject
+      mov (%rsp), %eax
+      lea last_table(%rip), %rcx
+      movslq (%rcx,%rax,4), %rax
+      add %rcx, %rax
+      jmp *%rax
+    success:
+      xor %edi, %edi
+    finish:
+      mov $60, %eax
+      syscall
+      ud2
+    .section .rodata
+    table:
+      .long finish-table, finish-table, finish-table, target-table
+    next_table:
+      .long reject-next_table, reject-next_table, reject-next_table, done-next_table
+    last_table:
+      .long reject-last_table, reject-last_table, reject-last_table, success-last_table
+    other:
+      .long 0
+  `);
+  execFileSync('musl-gcc', ['-static-pie', '-nostdlib', '-s', asm, '-o', elf]);
+  execFileSync(nativeTranslator, ['--whole', elf, `${elf}.wasm`], {stdio: 'ignore'});
+  const vfs = new Vfs();
+  vfs.writeFile('/bin/switch', new Uint8Array(0), 0o755);
+  const kernel = new Kernel({vfs, x87: new WebAssembly.Module(readFileSync(translatorWasm)), console: {write() {}, read: () => null}});
+  kernel.prebuilt(vfs.file('/bin/switch'), new WebAssembly.Module(readFileSync(`${elf}.wasm`)));
+  kernel.start('/bin/switch', ['switch'], [], '/');
+  assert.equal(kernel.pump().status, 0);
+});

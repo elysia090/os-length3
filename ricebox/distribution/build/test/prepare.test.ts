@@ -48,7 +48,7 @@ test('orchestration invokes assemble then AOT and publishes only after success',
   writeFileSync(join(make,'distribution.sh'),'set -eu\nmkdir -p "$2"\nprintf "%s\\n" "$@" > "$2/arguments"\n');
   const output=join(at,'out');
   await prepareDistribution({packages:['base'],packageCache:cache,toolchain,output,cache:join(at,'aot'),hot:['/usr/bin/base']});
-  assert.match(readFileSync(join(output,'arguments'),'utf8'),/--cache\n.*\/aot\n--hot\n\/usr\/bin\/base/);
+  assert.match(readFileSync(join(output,'arguments'),'utf8'),/--deploy\n--cache\n.*\/aot\n--hot\n\/usr\/bin\/base/);
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output}),/already exists/);
   writeFileSync(join(make,'distribution.sh'),'exit 4\n');
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output:join(at,'failed')}),/failed/);
@@ -70,13 +70,14 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   const tools = {
     translator: artifact('translator.wasm',Buffer.from([0,97,115,109,1,0,0,0])),
     sods: artifact('sods',Buffer.from('not invoked: no executable fixture')),
-    muk: artifact('muk',Buffer.from('maker fixture')),
+    muk: artifact('muk',Buffer.from([0,97,115,109,1,0,0,0])),
   };
   t.mock.method(globalThis,'fetch',()=>{throw new Error('composition must not fetch');});
   const output=join(at,'path with spaces','layers');
   await prepareDistribution({packageCache:cache,tools,output,cache:''});
   const {index,maker}=visitDistributionAssets(output, {}, () => {});
   assert.equal(maker.sha256,tools.muk.sha256);
+  assert.deepEqual(index.execution, {maker, programs: []});
   assert.ok(index.packs.length);
   const selected = index.files.filter(file => file.path.startsWith('/usr/share/fixture/')).map(file => file.path);
   assert.deepEqual(selected.sort(), defaultPackages.map(name => `/usr/share/fixture/${name}`).sort());

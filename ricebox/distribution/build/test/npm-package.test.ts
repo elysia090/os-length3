@@ -124,7 +124,7 @@ test('built npm package contains builder dependencies and imports public JS with
       mkdirSync(join(base,'tree/usr/share'),{recursive:true});writeFileSync(join(base,'tree/usr/share/base'),'package');
       for(const [key,value] of Object.entries({version:'1',source:'fixture',key:'fixture'}))writeFileSync(join(base,key),value);
       const tools=Object.fromEntries(['translator','sods','muk'].map(name=>{
-        const path=join(work,name),bytes=name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('fixture');
+        const path=join(work,name),bytes=name==='sods'?Buffer.from('fixture'):Buffer.from([0,97,115,109,1,0,0,0]);
         writeFileSync(path,bytes);return [name,{path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];
       }));
       const output=join(work,'composed');await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});

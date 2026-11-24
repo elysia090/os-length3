@@ -617,12 +617,12 @@ export class Kernel implements Kern {
         return entry.image;
       }
     }
+    if (!this.translate) throw new FsError(E.NOEXEC);
     // A view of the file, not a copy: a later write to it changes a copy (File.share).
     let bytes: Uint8Array;
     try { bytes = node.share(); }
     finally { sourceRevision(node, revision); }
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
-    if (!this.translate) throw new FsError(E.NOEXEC);
     let t = steady();
     // What the translator says is no program it takes (an ELF cut short, of another machine, not an executable) is
     // the file's fault and the exec's failure, as a file with no ELF header's is: ENOEXEC. What else it throws is

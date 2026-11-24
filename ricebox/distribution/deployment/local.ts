@@ -5,6 +5,7 @@ import {join,resolve} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
 import {blobAsset,releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
+import {webExecutableSources} from '../format/executable-source.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
@@ -83,12 +84,20 @@ export function visitDistributionAssets(directory: string, {base = 'ricebox', ma
   const about = JSON.parse(asset('webroot.json').toString('utf8')) as About;
   const descriptor = releaseIndexAsset(about);
   const index = readReleaseIndex(asset(descriptor.path, descriptor.sha256, descriptor.size), about);
+  const verified = new Map<string, number>();
   const blob = (value: unknown) => {
     const b = blobAsset(value);
+    const size = verified.get(b.path);
+    if (size !== undefined) {
+      if (size !== b.size) throw new Error(`ricebox: conflicting sizes for ${b.path}`);
+      return;
+    }
     asset(b.path, b.sha256, b.size);
+    verified.set(b.path, b.size);
   };
   blob(index.translator);
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
+  for (const {program} of webExecutableSources(index).values()) blob(program.wasm);
   // The pack checker asks its size before reading its ranges and finishes that
   // pack before asking for another. The size-checked buffer is the only reader.
   let current: {name: string; bytes: Buffer} | undefined, nextPack = 0;
@@ -112,6 +121,10 @@ export function visitDistributionAssets(directory: string, {base = 'ricebox', ma
   takePack();
   // A root without this maker would only fail once a visitor launched it.
   const maker = blobAsset(JSON.parse(asset('muk.json').toString('utf8')));
-  asset(maker.path, maker.sha256, maker.size);
+  const deployed = index.execution?.maker;
+  if (deployed && (deployed.path !== maker.path || deployed.size !== maker.size)) {
+    throw new Error('ricebox: the box maker disagrees with the deployed Wasm index');
+  }
+  blob(maker);
   return {descriptor, index, maker};
 }
