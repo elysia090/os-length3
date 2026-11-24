@@ -2,6 +2,11 @@ name: Quickshell Debian Snapshot preflight
 
 on:
   workflow_dispatch:
+    inputs:
+      assemble_fixture:
+        description: Also assemble and compare the private fixture without running it
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -10,13 +15,49 @@ jobs:
   snapshot:
     name: Verify cold Quickshell inputs
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: ${{ inputs.assemble_fixture && 18 || 8 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Capture and audit the exact Debian Snapshot inputs
-        timeout-minutes: 7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: inputs.assemble_fixture
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Prepare the stock fixture build tools
+        if: inputs.assemble_fixture
+        timeout-minutes: 4
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools libexpat1-dev pkg-config zstd
+          rustup target add wasm32-unknown-unknown
+      # Same pinned public sources as the native Wayland lane in ci.yml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.assemble_fixture
+        with:
+          repository: wayland-mirror/wayland
+          ref: 3e673a438b0a9749e3bdf5cac4befac86333024c # 1.25.0
+          path: target/quickshell-sources/wayland
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.assemble_fixture
+        with:
+          repository: wayland-mirror/wayland-protocols
+          ref: 02e63e74a807afed95bc25a386173110afef24e3 # 1.48
+          path: target/quickshell-sources/wayland-protocols
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.assemble_fixture
+        with:
+          repository: libffi/libffi
+          ref: e2eda0cf72a0598b44278cc91860ea402273fa29 # 3.5.2
+          path: target/quickshell-sources/libffi
+          persist-credentials: false
+      - name: Audit the Debian Snapshot inputs and optionally assemble the fixture
+        timeout-minutes: ${{ inputs.assemble_fixture && 13 || 7 }}
+        env:
+          ASSEMBLE_FIXTURE: ${{ inputs.assemble_fixture }}
         shell: bash
         run: |
           set -euo pipefail
@@ -43,3 +84,6 @@ jobs:
           python3 -B "$q/verify-debian-fixture.py" "$work/inputs/catalogs" "$work/inputs/debs" --keyring "$work/keyring.gpg"
           lock=$(sha256sum "$q/debian-fixture.lock.json")
           printf 'QUICKSHELL_SNAPSHOT_COLD_AUDITED revision=%s lock_sha256=%s\n' "$GITHUB_SHA" "${lock%% *}"
+          if [ "$ASSEMBLE_FIXTURE" = true ]; then
+            bash "$q/assemble-ci-fixture.sh" "$work" target/quickshell-sources
+          fi
