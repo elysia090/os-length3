@@ -1,0 +1,45 @@
+name: Quickshell Debian Snapshot preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: Verify cold Quickshell inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Capture and audit the exact Debian Snapshot inputs
+        timeout-minutes: 7
+        shell: bash
+        run: |
+          set -euo pipefail
+          q=ricebox/everyday/test/wayland/qt/quickshell
+          work=$(mktemp -d "$RUNNER_TEMP/quickshell-snapshot.XXXXXXXX")
+          trap 'rm -rf -- "$work"' EXIT
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          # Independent trust input: Debian's published 2025.1 keyring, not from
+          # the fixture lock/capture or Ubuntu Noble's older Debian keyring.
+          # https://packages.debian.org/trixie/all/debian-archive-keyring/download
+          url=https://snapshot.debian.org/file/d9ece07d6610a9ef3b3048c302d70daffbf8c4cc/debian-archive-keyring_2025.1_all.deb
+          code=$(curl --disable --fail --silent --show-error --proto '=https' \
+            --connect-timeout 8 --max-time 15 --retry 2 --retry-delay 1 --retry-max-time 30 \
+            --max-filesize 179244 --output "$work/keyring.deb" --write-out '%{http_code}' -- "$url")
+          test "$code" = 200
+          test "$(wc -c < "$work/keyring.deb")" = 179244
+          printf '%s  %s\n' 9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac "$work/keyring.deb" | sha256sum --check --strict
+          dpkg-deb --fsys-tarfile "$work/keyring.deb" |
+            tar -xOf - ./usr/share/keyrings/debian-archive-keyring.pgp > "$work/keyring.gpg"
+          printf '%s  %s\n' 506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017 "$work/keyring.gpg" | sha256sum --check --strict
+
+          python3 -B "$q/fetch-debian-fixture.py" "$work/inputs"
+          python3 -B "$q/verify-debian-fixture.py" "$work/inputs/catalogs" "$work/inputs/debs" --keyring "$work/keyring.gpg"
+          lock=$(sha256sum "$q/debian-fixture.lock.json")
+          printf 'QUICKSHELL_SNAPSHOT_COLD_AUDITED revision=%s lock_sha256=%s\n' "$GITHUB_SHA" "${lock%% *}"

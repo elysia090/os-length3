@@ -141,8 +141,10 @@ Supply an offline fixture directory with `web/` (the packed Debian root with
 the QML above at `/etc/ricebox/shell.qml`), `sods.wasm` built with `mapped-code`,
 `muk`, `utc`, and `guest-sources.json`. The source file names the canonical
 `main`, `interpreter` and `libraries` paths in that index and the `pin` of the
-Quickshell binary. Pass the expected index SHA-256 independently of the fixture
-directory. With Node and the repository's locked dependencies, run:
+Quickshell binary. The checker does not establish fixture provenance: use
+trusted inputs and supply the expected index SHA-256 separately. For a fixture
+imported from another run, obtain the expected digest independently of the
+fixture. With Node and the repository's locked dependencies, run:
 
 ```sh
 EVERYDAY_CHROME_BIN=/opt/google/chrome/chrome \
@@ -154,3 +156,131 @@ For a root with a matching `prepared/index.json` and its content-addressed
 Wasm pieces, add `--prepared`. Set `EVERYDAY_QUICKSHELL_SCREENSHOT` to save
 Chrome's first composited frame. This check uses a loopback fixture server and
 requires Chrome's Linux namespace and seccomp sandbox.
+
+#### Offline audit of the Quickshell Debian test inputs
+
+The test-only [closure lock](qt/quickshell/debian-fixture.lock.json) freezes the
+Debian amd64 packages selected for this browser fixture, not a Ricebox release
+or another installation profile. It records the exact signed trixie and
+trixie-backports catalogs and all locked package versions, sizes and SHA-256
+values, including the five existing Quickshell .deb pins. Debian Snapshot IDs
+are immutable [transport locators](https://snapshot.debian.org/), not integrity
+or signing authorities.
+
+To verify already available files, use a trusted Debian archive keyring
+containing the [official public signers](https://ftp-master.debian.org/keys.html).
+Put `trixie.InRelease`, `trixie.Packages.xz`,
+`trixie-backports.InRelease` and `trixie-backports.Packages.xz` in
+`CATALOG_CACHE`, and the exact .deb files, by their basenames, in `DEB_CACHE`.
+Using Python 3.11 or newer and GnuPG, run:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/verify-debian-fixture.py" "$CATALOG_CACHE" "$DEB_CACHE" \
+  --keyring "$DEBIAN_ARCHIVE_KEYRING"
+python3 -B "$q/verify-debian-fixture.test.py"
+```
+
+This validates the historic freeze against the original signed validity window
+and the exact current verification keyring; it does not configure APT, fetch,
+extract, install or execute any package. Unlisted cache files are not read.
+The cache also supplies the separately pinned signed Debian tzdata package.
+The audit checks that package against the same authenticated catalog; it is
+not counted in the 206-package guest root. This audit never runs Chrome or
+the guest.
+
+#### Fetch the locked Debian Snapshot inputs
+
+If no cache is available, use Python 3.11 or newer and curl with a fresh
+run-private output path whose parent exists:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/fetch-debian-fixture.py" "$NEW_CACHE"
+CATALOG_CACHE="$NEW_CACHE/catalogs"
+DEB_CACHE="$NEW_CACHE/debs"
+python3 -B "$q/fetch-debian-fixture.test.py"
+```
+
+The helper requests only the lock's immutable HTTPS Snapshot objects: four
+catalog files, the 206 guest root packages, and the separate UTC package.
+It checks the exact size and SHA-256 before retaining each object. The capture
+has five minutes total for about 118 MiB, with at most four requests at once.
+Each attempt gets at most 30 seconds and never more than the time left;
+only transient failures are retried. The helper ignores curlrc and does not
+follow redirects or fall back to live repositories. Curl still honors the
+user's or runner's normal proxy and CA environment. The named output appears
+only when every object matches within the budget. This is byte capture, not a
+signature attestation: run the offline audit above with the trusted Debian
+keyring, or let the offline producer below perform that same audit before
+extraction. This cache is not a system APT source.
+
+For hosted cold-download evidence, use the manual **Quickshell Debian Snapshot
+preflight**. GitHub requires the workflow file on the default branch before
+it can [run manually](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+against a reviewed ref. The regular CI workflow has no cold-only selector;
+its native lane runs the guest even when its separate Chrome flag is off.
+The preflight uses a separately pinned official Debian archive keyring,
+extracted without installing a package. A successful run logs
+`QUICKSHELL_SNAPSHOT_COLD_AUDITED` with the revision and lock SHA-256 after
+verifying all objects. It discards the temporary inputs and does not assemble
+or upload a fixture, run the guest, or launch Chrome.
+
+#### Assemble the browser fixture from the audited cache
+
+With the same local inputs, Node 24, GNU tar, zstd, dpkg-deb and readelf, and
+the checkout's existing source-built mapped Sods and Muk outputs:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/stage-browser-fixture.py" "$CATALOG_CACHE" "$DEB_CACHE" \
+  "$MAPPED_SODS_WASM" "$RICEBOX_MUK_FILE" "$NEW_OUTPUT" \
+  --keyring "$DEBIAN_ARCHIVE_KEYRING" \
+  --sods-sha256 "$MAPPED_SODS_SHA256" --muk-sha256 "$RICEBOX_MUK_SHA256"
+python3 -B "$q/stage-browser-fixture.test.py"
+```
+
+Run the producer from the reviewed checkout; it takes the Debian pins from
+that checkout's lock. Record both tool digests from the trusted source build
+independently of the fixture files. The producer takes a private copy before
+verification, extracts only authenticated package payloads, and does not
+install anything or run maintainer scripts, a guest, or Chrome. It uses the
+existing distributor without executable translation. It inspects the ELF
+dependency paths without running a loader and retains the mapped library size
+limit. The UTC bytes come from the exact pinned tzdata member, not the host.
+The original packed `shell.qml` stays distinct from the checkout's optional
+pointer overlay.
+
+For this throwaway fixture, keep `NEW_OUTPUT` private to the trusted run and
+pass `NEW_OUTPUT/fixture` and the contents of `NEW_OUTPUT/index-sha256.txt` to
+the checker in that same run. The receipt separates the input pins from the
+generated index digest. Neither the digest file nor the receipt is an
+independent attestation: do not use them to trust an imported or cached
+fixture. The listener is still built through the existing Wayland fixture
+recipe below. This producer has no network acquisition or workflow changes and
+makes no runtime/interaction claim.
+
+#### Optional first Quickshell pointer response
+
+Use the same trusted offline guest inputs and expected index digest described
+above. Build the scanner with the same pinned layer-shell XML, then build the
+opt-in pointer listener and select it explicitly:
+
+```sh
+test_dir=ricebox/everyday/test/wayland
+EVERYDAY_WITH_QUICKSHELL_POINTER=1 sh "$test_dir/build.sh" guest "$SOURCE_ROOT" "$BUILD_ROOT"
+EVERYDAY_CHROME_BIN=/opt/google/chrome/chrome \
+  node "$test_dir/qt/quickshell/browser/check.ts" \
+  "$FIXTURE_INPUTS" "$BUILD_ROOT/wayland-quickshell-pointer-listener" "$EXPECTED_INDEX_SHA256" --pointer
+```
+
+The checker pins its own test QML and gives it to the guest without rebuilding
+the root. The visual-only check still uses the original QML from the root.
+Chrome clicks outside the canvas and must not forward a contact, then clicks
+once inside it through Everyday. The guest must make a second Wayland panel
+commit at the **same** size and configure serial after that pointer contact.
+Both canvas backing pixels and the Chrome composited pixels must change to
+the QML click handler's color, and the original retirement checks still apply.
+The listener accepts Qt's separate cursor surface but never mirrors it.
+This is an on-demand fixture lane, not a packaging, timing, or general input
+compatibility claim.

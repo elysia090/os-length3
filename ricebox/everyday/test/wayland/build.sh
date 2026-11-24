@@ -100,3 +100,9 @@ if [ "${EVERYDAY_WITH_QUICKSHELL:-0}" = 1 ]; then
   fixture wayland-quickshell-listener -DEVERYDAY_TEST_LAYER -DEVERYDAY_TEST_QUICKSHELL -I"$here" \
     "$here/qt/quickshell/listener.c" "$here/server.c" "$build/generated/layer-protocol.c"
 fi
+if [ "${EVERYDAY_WITH_QUICKSHELL_POINTER:-0}" = 1 ]; then
+  (cd "$build" && sha256sum -c "$here/qt/layer-generated.sha256")
+  fixture wayland-quickshell-pointer-listener -DEVERYDAY_TEST_LAYER -DEVERYDAY_TEST_QUICKSHELL \
+    -DEVERYDAY_TEST_QUICKSHELL_POINTER -I"$here" \
+    "$here/qt/quickshell/listener.c" "$here/server.c" "$build/generated/layer-protocol.c"
+fi
