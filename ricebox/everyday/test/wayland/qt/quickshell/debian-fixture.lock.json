@@ -58,7 +58,23 @@
     }
   },
   "auxiliary": {
-    "utc": null
+    "utc": {
+      "package": {
+        "Package": "tzdata",
+        "Version": "2026f-0+deb13u1",
+        "Architecture": "all",
+        "Suite": "trixie",
+        "Filename": "pool/main/t/tzdata/tzdata_2026f-0+deb13u1_all.deb",
+        "Size": 267528,
+        "SHA256": "2c1c561091402883430d0d47c57a3c0aa00b44afc8a6239265065a87211a5c11",
+        "SnapshotFileId": "9b8f6cc58caf882d3013519edabc88e1794239b6"
+      },
+      "member": {
+        "path": "usr/share/zoneinfo/Etc/UTC",
+        "bytes": 114,
+        "sha256": "8b85846791ab2c8a5463c83a5be3c043e2570d7448434d41398969ed47e3e6f2"
+      }
+    }
   },
   "packages": [
     {"Package": "base-files", "Version": "13.8+deb13u8", "Architecture": "amd64", "Suite": "trixie", "Filename": "pool/main/b/base-files/base-files_13.8+deb13u8_amd64.deb", "Size": 88324, "SHA256": "f5a0546098f38bad5843380521781fe7214e5a283d3bed63f79c505545f262af", "SnapshotFileId": "d5911fce30a3fbc7fef5f99005821c8cdfa62fc4"},

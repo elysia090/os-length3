@@ -131,10 +131,24 @@ def check_package_records(stanzas, rows, suite):
         raise ValueError(f"locked Debian package is absent from signed {suite} index: {key[0]} {key[1]}")
 
 
+def input_packages(lock):
+    utc = lock["auxiliary"]["utc"]
+    return lock["packages"] + ([utc["package"]] if utc else [])
+
+
 def check_lock(lock, five_pins):
     require(lock["schema"] == 1 and lock["architecture"] == "amd64"
             and lock["snapshotBase"] == "https://snapshot.debian.org/file/"
-            and lock["auxiliary"] == {"utc": None}, "unexpected Debian closure lock schema or auxiliary input")
+            and set(lock["auxiliary"]) == {"utc"}, "unexpected Debian closure lock schema or auxiliary input")
+    utc = lock["auxiliary"]["utc"]
+    if utc is not None:
+        require(isinstance(utc, dict) and set(utc) == {"package", "member"}
+                and utc["package"]["Package"] == "tzdata" and utc["package"]["Suite"] == "trixie"
+                and utc["package"]["Architecture"] == "all"
+                and utc["member"]["path"] == "usr/share/zoneinfo/Etc/UTC"
+                and type(utc["member"]["bytes"]) is int and 0 < utc["member"]["bytes"] <= 4096
+                and re.fullmatch(r"[0-9a-f]{64}", utc["member"]["sha256"]), "invalid UTC auxiliary pin")
+        require(all(row["Package"] != "tzdata" for row in lock["packages"]), "UTC aux package also in root closure")
     catalogs = lock["catalogs"]
     require(set(catalogs) == {"trixie", "trixie-backports"}, "unexpected Debian catalogs")
     require(all(re.fullmatch(r"[0-9A-F]{40}", fingerprint)
@@ -148,7 +162,7 @@ def check_lock(lock, five_pins):
     require(len(rows) == lock["packageCount"] and len({row["Package"] for row in rows}) == len(rows)
             and sum(row["Size"] for row in rows) == lock["packageBytes"], "inconsistent exact Debian closure")
     by_filename = {}
-    for row in rows:
+    for row in input_packages(lock):
         name = deb_name(row)
         require(row["Suite"] in catalogs and row["Architecture"] in ("amd64", "all") and name not in by_filename,
                 f"unexpected or duplicate locked Debian package: {name}")
@@ -174,12 +188,12 @@ def verify(catalog_dir, deb_dir, keyring):
             packed = sealed_bytes(catalog_dir / f"{suite}.Packages.xz", index["bytes"], index["sha256"],
                                   index["snapshotFileId"])
             with lzma.open(io.BytesIO(packed), "rt", encoding="utf-8") as stream:
-                rows = [row for row in lock["packages"] if row["Suite"] == suite]
+                rows = [row for row in input_packages(lock) if row["Suite"] == suite]
                 check_package_records(control_stanzas(stream), rows, suite)
     # Only the exact locked filenames are read. No extraction or package scripts.
-    for row in lock["packages"]:
+    for row in input_packages(lock):
         sealed_bytes(deb_dir / deb_name(row), row["Size"], row["SHA256"], row["SnapshotFileId"])
-    return lock["packageCount"], lock["packageBytes"]
+    return lock["packageCount"], lock["packageBytes"], lock["auxiliary"]["utc"] is not None
 
 
 def main():
@@ -189,10 +203,14 @@ def main():
     parser.add_argument("--keyring", required=True, type=Path, help="trusted Debian archive verification keyring")
     args = parser.parse_args()
     try:
-        count, size = verify(args.catalogs, args.debs, args.keyring)
+        count, size, utc = verify(args.catalogs, args.debs, args.keyring)
     except (ValueError, OSError, subprocess.TimeoutExpired, lzma.LZMAError) as error:
         parser.exit(1, f"Debian fixture input rejected: {error}\n")
-    print(f"Verified two signed Debian catalogs and {count} .debs ({size} bytes); UTC is not verified by this lock.")
+    print(f"Verified two signed Debian catalogs and {count} root .debs ({size} bytes).")
+    if utc:
+        print("Verified the separate signed UTC .deb; the producer checks its extracted member.")
+    else:
+        print("UTC is not verified by this lock.")
 
 
 if __name__ == "__main__":

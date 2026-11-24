@@ -141,8 +141,10 @@ Supply an offline fixture directory with `web/` (the packed Debian root with
 the QML above at `/etc/ricebox/shell.qml`), `sods.wasm` built with `mapped-code`,
 `muk`, `utc`, and `guest-sources.json`. The source file names the canonical
 `main`, `interpreter` and `libraries` paths in that index and the `pin` of the
-Quickshell binary. Pass the expected index SHA-256 independently of the fixture
-directory. With Node and the repository's locked dependencies, run:
+Quickshell binary. The checker does not establish fixture provenance: use
+trusted inputs and supply the expected index SHA-256 separately. For a fixture
+imported from another run, obtain the expected digest independently of the
+fixture. With Node and the repository's locked dependencies, run:
 
 ```sh
 EVERYDAY_CHROME_BIN=/opt/google/chrome/chrome \
@@ -182,15 +184,50 @@ python3 -B "$q/verify-debian-fixture.test.py"
 This validates the historic freeze against the original signed validity window
 and the exact current verification keyring; it does not configure APT, fetch,
 extract, install or execute any package. Unlisted cache files are not read.
-Listener build, root assembly and auxiliary UTC verification are separate;
-the lock deliberately admits no UTC source. This audit never runs Chrome or
+The cache also supplies the separately pinned signed Debian tzdata package.
+The audit checks that package against the same authenticated catalog; it is
+not counted in the 206-package guest root. This audit never runs Chrome or
 the guest.
+
+#### Assemble the browser fixture from the audited cache
+
+With the same local inputs, Node 24, GNU tar, zstd, dpkg-deb and readelf, and
+the checkout's existing source-built mapped Sods and Muk outputs:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/stage-browser-fixture.py" "$CATALOG_CACHE" "$DEB_CACHE" \
+  "$MAPPED_SODS_WASM" "$RICEBOX_MUK_FILE" "$NEW_OUTPUT" \
+  --keyring "$DEBIAN_ARCHIVE_KEYRING" \
+  --sods-sha256 "$MAPPED_SODS_SHA256" --muk-sha256 "$RICEBOX_MUK_SHA256"
+python3 -B "$q/stage-browser-fixture.test.py"
+```
+
+Run the producer from the reviewed checkout; it takes the Debian pins from
+that checkout's lock. Record both tool digests from the trusted source build
+independently of the fixture files. The producer takes a private copy before
+verification, extracts only authenticated package payloads, and does not
+install anything or run maintainer scripts, a guest, or Chrome. It uses the
+existing distributor without executable translation. It inspects the ELF
+dependency paths without running a loader and retains the mapped library size
+limit. The UTC bytes come from the exact pinned tzdata member, not the host.
+The original packed `shell.qml` stays distinct from the checkout's optional
+pointer overlay.
+
+For this throwaway fixture, keep `NEW_OUTPUT` private to the trusted run and
+pass `NEW_OUTPUT/fixture` and the contents of `NEW_OUTPUT/index-sha256.txt` to
+the checker in that same run. The receipt separates the input pins from the
+generated index digest. Neither the digest file nor the receipt is an
+independent attestation: do not use them to trust an imported or cached
+fixture. The listener is still built through the existing Wayland fixture
+recipe below. This producer has no network acquisition or workflow changes and
+makes no runtime/interaction claim.
 
 #### Optional first Quickshell pointer response
 
-Use the same offline guest inputs and independently supplied index digest. Build
-the scanner with the same pinned layer-shell XML, then build the opt-in pointer
-listener and select it explicitly:
+Use the same trusted offline guest inputs and expected index digest described
+above. Build the scanner with the same pinned layer-shell XML, then build the
+opt-in pointer listener and select it explicitly:
 
 ```sh
 test_dir=ricebox/everyday/test/wayland
