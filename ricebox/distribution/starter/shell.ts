@@ -65,8 +65,13 @@ function box(argv: string[], writableHome: boolean): Box {
 }
 
 const ICANON = 2, ISIG = 1, ICRNL = 0x100, OPOST = 1, ONLCR = 4, NOFLSH = 0x80;
-const arrows: Readonly<Record<string, string>> = {ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D'};
-const keyBytes = new Map([['Backspace', '\x7f'], ['Escape', '\x1b'], ['Delete', '\x1b[3~']]);
+const cursorKeys: Readonly<Record<string, string>> = {
+  ArrowUp: 'A', ArrowDown: 'B', ArrowRight: 'C', ArrowLeft: 'D', Home: 'H', End: 'F',
+};
+const keyBytes = new Map([
+  ['Backspace', '\x7f'], ['Escape', '\x1b'], ['Delete', '\x1b[3~'],
+  ['PageUp', '\x1b[5~'], ['PageDown', '\x1b[6~'], ['Tab', '\t'],
+]);
 function terminal(current: Attempt, cols: number, rows: number) {
   const post = (data: object) => {
     if (attempt !== current) return;
@@ -119,23 +124,26 @@ function terminal(current: Attempt, cols: number, rows: number) {
     if (!event.isTrusted || !live() || composing || event.isComposing || event.altKey || event.metaKey) return;
     if (event.ctrlKey) {
       const key = event.key.toLowerCase();
-      if (key === 'c' || key === 'z') {
-        event.preventDefault();
-        const sig = key === 'c' ? 2 : 20;
-        if (tty.lflag & ISIG) {
-          if (tty.lflag & NOFLSH) post({type: 'interrupt', sig});
-          else {
-            decoder = new TextDecoder(); model.discardPartial();
-            post({type: 'interrupt', sig, flush: ++epoch});
-          }
-        } else if (!(tty.lflag & ICANON)) send(key === 'c' ? '\x03' : '\x1a');
-      } else if (key === 'd' || key === 'l') {
-        event.preventDefault();
-        send(key === 'd' ? '\x04' : '\x0c');
+      // Clipboard paste arrives through the browser's paste event.
+      if (event.shiftKey || !/^[a-z]$/.test(key) || key === 'v') return;
+      event.preventDefault();
+      const byte = String.fromCharCode(key.charCodeAt(0) - 0x60);
+      if (key !== 'c' && key !== 'z') {
+        send(byte);
+        return;
       }
+      if (tty.lflag & ISIG) {
+        const sig = key === 'c' ? 2 : 20;
+        if (tty.lflag & NOFLSH) post({type: 'interrupt', sig});
+        else {
+          decoder = new TextDecoder(); model.discardPartial();
+          post({type: 'interrupt', sig, flush: ++epoch});
+        }
+      } else if (!(tty.lflag & ICANON)) send(byte);
       return;
     }
-    const direction = Object.hasOwn(arrows, event.key) ? arrows[event.key] : undefined;
+    if (event.key === 'Tab' && event.shiftKey) return; // Leave the terminal input by keyboard.
+    const direction = Object.hasOwn(cursorKeys, event.key) ? cursorKeys[event.key] : undefined;
     const bytes = direction ? '\x1b' + (model.appCursor ? 'O' : '[') + direction :
       event.key === 'Enter' ? (tty.lflag & ICANON || tty.iflag & ICRNL ? '\n' : '\r') : keyBytes.get(event.key);
     if (bytes !== undefined) { event.preventDefault(); send(bytes); }

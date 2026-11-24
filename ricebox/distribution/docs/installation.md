@@ -108,6 +108,9 @@ an 80×24 terminal with temporary writable `/root` and `/tmp`. The preview
 serves HTTP byte ranges and removes its verified snapshot when stopped with
 Ctrl+C.
 
+Use Tab for shell completion. Shift+Tab moves focus from the input to the
+terminal screen.
+
 Add `ricebox.json` to change the terminal settings. This example selects Bash
 and changes the grid to 96×27.
 
