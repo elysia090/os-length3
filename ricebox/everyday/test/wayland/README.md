@@ -215,6 +215,17 @@ signature attestation: run the offline audit above with the trusted Debian
 keyring, or let the offline producer below perform that same audit before
 extraction. This cache is not a system APT source.
 
+For hosted cold-download evidence, use the manual **Quickshell Debian Snapshot
+preflight**. GitHub requires the workflow file on the default branch before
+it can [run manually](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+against a reviewed ref. The regular CI workflow has no cold-only selector;
+its native lane runs the guest even when its separate Chrome flag is off.
+The preflight uses a separately pinned official Debian archive keyring,
+extracted without installing a package. A successful run logs
+`QUICKSHELL_SNAPSHOT_COLD_AUDITED` with the revision and lock SHA-256 after
+verifying all objects. It discards the temporary inputs and does not assemble
+or upload a fixture, run the guest, or launch Chrome.
+
 #### Assemble the browser fixture from the audited cache
 
 With the same local inputs, Node 24, GNU tar, zstd, dpkg-deb and readelf, and
