@@ -87,8 +87,6 @@ pub const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | Rf
 // A system call keeps the flags here (r11 is not given them), so it neither reads nor writes them.
 pub fn flags_read(i: &Instruction) -> u32 { kind(i).reads as u32 }
 pub fn flags_written(i: &Instruction) -> u32 { kind(i).writes as u32 }
-/// Whether `i` goes on to the next instruction as translation sees it (a system call returns in place; int3 traps).
-pub(crate) fn runs_on(i: &Instruction) -> bool { kinds().word(i) & 7 == go::NEXT as u32 }
 
 /// An instruction's flow as translation sees it.
 pub(crate) mod go {
@@ -155,6 +153,9 @@ pub(crate) struct Kinds { of: Vec<AtomicU32> }
 const KNOWN: u32 = 1 << 31;
 
 impl Kinds {
+    /// A system call returns in place; int3 traps.
+    pub(crate) fn runs_on(&self, i: &Instruction) -> bool { self.word(i) & 7 == go::NEXT as u32 }
+
     #[inline(always)]
     fn word(&self, i: &Instruction) -> u32 {
         let w = self.of[i.code() as usize].load(Relaxed);
@@ -256,21 +257,62 @@ pub(crate) const RBP: u32 = 5;
 pub(crate) const RSI: u32 = 6;
 pub(crate) const RDI: u32 = 7;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Part { Full, Low32, Low16, Low8, High8 }
 
-/// The general register `r` is (or is part of), by its number, and which part.
-pub(crate) fn gpr(r: Register) -> Option<(u32, Part)> {
-    let high = matches!(r, Register::AH | Register::CH | Register::DH | Register::BH);
-    if high {
-        let n = match r { Register::AH => 0, Register::CH => 1, Register::DH => 2, _ => 3 };
-        return Some((n, Part::High8));
+impl Part {
+    pub(crate) fn bytes(self) -> u8 {
+        match self { Self::Full => 8, Self::Low32 => 4, Self::Low16 => 2, Self::Low8 | Self::High8 => 1 }
     }
-    let full = r.full_register();
-    if !(Register::RAX as u32..=Register::R15 as u32).contains(&(full as u32)) { return None; }
-    let n = full as u32 - Register::RAX as u32;
-    let part = match r.size() { 8 => Part::Full, 4 => Part::Low32, 2 => Part::Low16, _ => Part::Low8 };
-    Some((n, part))
+}
+
+// The decoder's register number directly indexes the number and lane used
+// by scalar operands. The four legacy high bytes occupy their own entries.
+const GPRS: [Option<(u8, Part)>; 256] = {
+    use Register::*;
+    assert!(R15 as usize - RAX as usize == 15);
+    assert!(R15D as usize - EAX as usize == 15);
+    assert!(R15W as usize - AX as usize == 15);
+    assert!(R15L as usize - SPL as usize == 11);
+    let mut registers = [Option::None; 256];
+    let mut n = 0;
+    while n < 16 {
+        registers[RAX as usize + n] = Some((n as u8, Part::Full));
+        registers[EAX as usize + n] = Some((n as u8, Part::Low32));
+        registers[AX as usize + n] = Some((n as u8, Part::Low16));
+        if n < 4 {
+            registers[AL as usize + n] = Some((n as u8, Part::Low8));
+            registers[AH as usize + n] = Some((n as u8, Part::High8));
+        } else {
+            registers[SPL as usize + n - 4] = Some((n as u8, Part::Low8));
+        }
+        n += 1;
+    }
+    registers
+};
+
+/// The general register `r` is (or is part of), by its number, and which part.
+#[inline]
+pub(crate) fn gpr(r: Register) -> Option<(u32, Part)> {
+    GPRS[r as usize].map(|(n, part)| (u32::from(n), part))
+}
+
+#[test]
+fn scalar_register_table_agrees_with_the_decoder() {
+    for r in Register::values() {
+        let full = r.full_register() as u32;
+        let want = full.checked_sub(Register::RAX as u32).filter(|&n| n < 16).map(|n| {
+            let part = match r.size() {
+                8 => Part::Full,
+                4 => Part::Low32,
+                2 => Part::Low16,
+                _ if matches!(r, Register::AH | Register::CH | Register::DH | Register::BH) => Part::High8,
+                _ => Part::Low8,
+            };
+            (n, part)
+        });
+        assert_eq!(gpr(r), want, "{r:?}");
+    }
 }
 
 /// The vector register `r` is, by its number.

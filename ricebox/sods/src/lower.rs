@@ -12,7 +12,7 @@ use crate::elf::Elf;
 use crate::facts::{Liveness, Summary};
 use crate::flags::Flags;
 use crate::frame::*;
-use crate::layout::{has_loop, loops_into, within_of, Loop};
+use crate::layout::{has_loop, Loop, LoopRegions};
 use crate::program::*;
 use crate::sync::{sync_masks, Masks};
 use crate::wasm::*;
@@ -39,10 +39,10 @@ impl Fx<'_> {
     /// that block, or the head of the loop within this one that holds it, which sends it on in turn: a local tested
     /// every round, the rest only then.
     fn enter_loop(&mut self, l: usize) {
-        let Loop { head, last, .. } = self.loops[l];
+        let Loop { head, last, .. } = self.regions.loops[l];
         self.loop_();
         self.open(Lab::Loop(l));
-        for b in (head + 1..=last).rev() { if self.within[b] == Some(l) { self.block(); self.open(Lab::Block(b)); } }
+        for b in (head + 1..=last).rev() { if self.regions.within[b] == Some(l) { self.block(); self.open(Lab::Block(b)); } }
         if !(head + 1..=last).any(|b| self.entry[b]) { return; }
         self.depth = self.labels.len() as u32;
         // Each block's way: its label within this loop itself, or (WITHIN) the label of the head of the loop within
@@ -51,8 +51,8 @@ impl Fx<'_> {
         let (mut route, mut table) = (std::mem::take(&mut self.tables[0]), std::mem::take(&mut self.tables[1]));
         route.clear();
         route.extend((head + 1..=last).map(|b| {
-            let (mut w, mut t) = (self.within[b], b);
-            while let Some(c) = w { if c == l { break; } t = self.loops[c].head; w = self.loops[c].parent; }
+            let (mut w, mut t) = (self.regions.within[b], b);
+            while let Some(c) = w { if c == l { break; } t = self.regions.loops[c].head; w = self.regions.loops[c].parent; }
             let at = self.block_at[t].unwrap_or_default();
             if t == b { at } else { at | WITHIN }
         }));
@@ -81,7 +81,7 @@ impl Fx<'_> {
             Some(b) => {
                 if b <= self.at { self.time_slice(address); }
                 self.note(Ev::Edge);
-                let label = if b > self.at { self.block_at[b] } else { self.heads[b].and_then(|l| self.loop_at[l]) };
+                let label = if b > self.at { self.block_at[b] } else { self.regions.heads[b].and_then(|l| self.loop_at[l]) };
                 match label {
                     Some(at) => self.br(self.to(at)),
                     None => { debug_assert!(self.dispatch, "a lean function went round the dispatch"); self.c32(b as i32); self.set(L_BLK); self.br(self.depth); }
@@ -189,7 +189,8 @@ impl Fx<'_> {
         if matches!(flags, CallFlags::Returned) {
             // The nonlocal branch above keeps the callee's full published state.
             // Only the normal continuation may discard flags it surely kills.
-            self.load_flags(self.handed.handed(ret.0));
+            let entry = if ret.1 == NO { None } else { self.handed.block_entry(self.function_index, ret.1 as usize) };
+            self.load_flags(self.handed.handed_at(entry.or_else(|| self.program.entries.index(ret.0))));
         }
         self.goto(ret, next);
     }
@@ -211,93 +212,59 @@ pub struct Frame {
     syncs: Vec<(usize, bool, u32)>,
     locals: Locals,
     entry: Vec<bool>,
-    loops: Vec<Loop>,
-    within: Vec<Option<usize>>,
-    heads: Vec<Option<usize>>,
+    regions: LoopRegions,
     labels: Vec<Lab>,
     block_at: Vec<Option<u32>>,
     loop_at: Vec<Option<u32>>,
     code: Vec<Instruction>,
-    needed: Vec<bool>,
-    /// clean_loops' and sync_masks' own.
-    marks: (Vec<usize>, Vec<usize>),
-    cold: Vec<bool>,
-    entered: Vec<bool>,
+    needed: Vec<u32>,
     masks: Masks,
     /// Two lists of labels: a function's dispatch and each loop's are made in them.
     tables: [Vec<u32>; 2],
 }
 
-/// Entries the dispatch starts at only to go on after the thread went to the kernel there, or a longjmp: a call's
-/// continuation, a loop's head, a system call's or the instruction after it. A loop entered past its head at one is
-/// still a wasm loop (enter_loop routes it); one entered at others (a switch's cases, another run's code) is not.
-fn cold_entries(function: &Function, succ: &[[u32; 2]], cold: &mut Vec<bool>) {
-    cold.clear();
-    cold.resize(function.blocks.len(), false);
-    for (k, b) in function.blocks.iter().enumerate() {
-        // (A call's return is its first successor.)
-        if matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. }) && succ[k][0] != NO { cold[succ[k][0] as usize] = true; }
-        for &t in &succ[k] { if t != NO && t as usize <= k { cold[t as usize] = true; } }
-        if b.resumes {
-            if let Some(t) = function.block_index(b.end()) { cold[t] = true; }
-            if b.count == 1 { cold[k] = true; }
-        }
+const FLAG_WORD: usize = u32::BITS as usize;
+
+/// One bit per instruction, least significant first on emission. The first
+/// instruction's effects cannot change which flags are needed after it.
+#[inline]
+fn flag_word(kinds: &Kinds, code: &[Instruction], live: &mut u32) -> u32 {
+    let mut word = 0;
+    for i in code.iter().rev() {
+        word = (word << 1) | u32::from(*live != 0);
+        let k = kinds.kind(i);
+        *live = (*live & !u32::from(k.writes)) | u32::from(k.reads);
+    }
+    word
+}
+
+#[inline]
+fn emit_instructions(fx: &mut Fx, code: &[Instruction], emit: usize, mut live: u32, kinds: &Kinds, scratch: &mut Vec<u32>) {
+    if code.len() <= FLAG_WORD {
+        let word = (flag_word(kinds, &code[1..], &mut live) << 1) | u32::from(live != 0);
+        emit_word(fx, &code[..emit], word);
+    } else {
+        emit_long_block(fx, code, emit, live, kinds, scratch);
     }
 }
 
-/// Of the function's loops (into `s.loops`, with `s.within` and `s.heads`), those made wasm loops: the ones no jump
-/// from outside enters past their head and no entry but a cold one lies in past their head, each within the nearest
-/// such. Returns whether the function needs no dispatch loop beyond its entry: no jump back but a kept loop's round.
-fn clean_loops(function: &Function, s: &mut Frame) -> bool {
-    let n = function.blocks.len();
-    if !function.has_back_edge {
-        s.loops.clear();
-        s.heads.clear();
-        s.heads.resize(n, None);
-        within_of(&s.loops, n, &mut s.within);
-        return true;
+#[inline]
+fn emit_word(fx: &mut Fx, code: &[Instruction], mut word: u32) {
+    for i in code {
+        fx.instruction(i, word & 1 != 0);
+        word >>= 1;
     }
-    loops_into(&function.succ, &mut s.loops, (&mut s.marks.0, &mut s.marks.1));
-    cold_entries(function, &function.succ, &mut s.cold);
-    loop {
-        s.heads.clear();
-        s.heads.resize(n, None);
-        for (l, lp) in s.loops.iter().enumerate() { s.heads[lp.head] = Some(l); }
-        s.entered.clear();
-        s.entered.resize(s.loops.len(), false);
-        let (loops, entered, heads) = (&s.loops, &mut s.entered, &s.heads);
-        let mut rounds_only = true;
-        let mut mark = |t: usize, from: Option<usize>| for (l, lp) in loops.iter().enumerate() {
-            if t > lp.head && t <= lp.last && from.is_none_or(|k| k < lp.head || k > lp.last) { entered[l] = true; }
-        };
-        for (k, to) in function.succ.iter().enumerate() {
-            if !s.cold[k] && s.entry[k] { mark(k, None); }
-            for t in to.iter().filter(|&&t| t != NO).map(|&t| t as usize) {
-                if t > k { mark(t, Some(k)); continue; }
-                if !heads[t].is_some_and(|l| (loops[l].head..=loops[l].last).contains(&k)) { mark(t, None); rounds_only = false; }
-            }
-        }
-        if !s.entered.contains(&true) {
-            within_of(&s.loops, n, &mut s.within);
-            return rounds_only;
-        }
-        // The loops kept, in place (a loop's parent comes before it), each within the nearest kept one: their parents
-        // as they were read from `was`, the slots before a loop being written over as it is reached.
-        let (now, was) = (&mut s.marks.0, &mut s.marks.1);
-        now.clear();
-        now.resize(s.loops.len(), usize::MAX);
-        was.clear();
-        was.extend(s.loops.iter().map(|lp| lp.parent.unwrap_or(usize::MAX)));
-        let mut kept = 0;
-        for l in 0..s.loops.len() {
-            if s.entered[l] { continue; }
-            let mut p = was[l];
-            while p != usize::MAX && s.entered[p] { p = was[p]; }
-            now[l] = kept;
-            s.loops[kept] = Loop { parent: (p != usize::MAX).then(|| now[p]), ..s.loops[l] };
-            kept += 1;
-        }
-        s.loops.truncate(kept);
+}
+
+#[cold]
+fn emit_long_block(fx: &mut Fx, code: &[Instruction], emit: usize, mut live: u32, kinds: &Kinds, scratch: &mut Vec<u32>) {
+    scratch.clear();
+    for chunk in code[FLAG_WORD..].chunks(FLAG_WORD).rev() {
+        scratch.push(flag_word(kinds, chunk, &mut live));
+    }
+    let first = (flag_word(kinds, &code[1..FLAG_WORD], &mut live) << 1) | u32::from(live != 0);
+    for (chunk, word) in code[..emit].chunks(FLAG_WORD).zip(std::iter::once(first).chain(scratch.iter().rev().copied())) {
+        emit_word(fx, chunk, word);
     }
 }
 
@@ -317,14 +284,14 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
     let n = function.blocks.len();
     // Whether each block is an entry, found once here.
     frame.entry.clear();
-    frame.entry.extend((0..n).map(|k| handed.is_entry(index, k)));
-    let rounds_only = clean_loops(function, frame);
+    frame.entry.extend((0..n).map(|k| handed.block_entry(index, k).is_some()));
+    let rounds_only = frame.regions.prepare(function, &frame.entry);
     let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump) || frame.entry.iter().skip(1).any(|&e| e);
     let lean = !entered_within && rounds_only;
     let cases = handed.cases[index as usize] as u32;
     let mut s = std::mem::take(frame);
     s.loop_at.clear();
-    s.loop_at.resize(s.loops.len(), None);
+    s.loop_at.resize(s.regions.loops.len(), None);
     s.block_at.clear();
     s.block_at.resize(n, None);
     s.ev_at.clear();
@@ -334,8 +301,9 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
         locals: s.locals, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: None,
         checked_memory: resumable_syscalls, module_base: if resumable_syscalls { base } else { 0 }, replay_targets, elf,
-        entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
-        loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at, tables: s.tables,
+        entry: s.entry, dispatch: !lean, program, function, function_index: index, report, handed, at: 0,
+        budget: has_loop(function), summaries, succ: &function.succ,
+        loop_at: s.loop_at, regions: s.regions, labels: s.labels, block_at: s.block_at, tables: s.tables,
     };
     let (mut code, mut needed) = (s.code, s.needed);
     // The stack pointer it began with, only where it is read: past a call (the resume) or an indirect jump.
@@ -352,23 +320,23 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
     if resume { fx.block(); }
     if !lean { fx.loop_(); }
     // A label for each block within no loop past its head, the last block's outermost: each ends where its code starts.
-    for b in (0..n).rev() { if fx.within[b].is_none() { fx.block(); fx.open(Lab::Block(b)); } }
+    for b in (0..n).rev() { if fx.regions.within[b].is_none() { fx.block(); fx.open(Lab::Block(b)); } }
     fx.depth = fx.labels.len() as u32;
     if !lean {
         // Each entry to its label; one within a loop past its head to the head of the outermost loop it lies within,
         // with L_INTO saying where to go on. Block 0 (a call's way in) first: a br_table of n is log n compares.
         let outermost = |fx: &Fx, b: usize| {
-            let (mut l, mut t) = (fx.within[b], b);
-            while let Some(w) = l { t = fx.loops[w].head; l = fx.loops[w].parent; }
+            let (mut l, mut t) = (fx.regions.within[b], b);
+            while let Some(w) = l { t = fx.regions.loops[w].head; l = fx.regions.loops[w].parent; }
             fx.to(fx.block_at[t].unwrap_or_default())
         };
         let (mut heads, mut targets) = (std::mem::take(&mut fx.tables[0]), std::mem::take(&mut fx.tables[1]));
         heads.clear();
         heads.extend((0..n).map(|b| outermost(&fx, b)));
-        if (0..n).any(|b| fx.entry[b] && fx.within[b].is_some()) {
+        if (0..n).any(|b| fx.entry[b] && fx.regions.within[b].is_some()) {
             fx.block();
             targets.clear();
-            targets.extend((0..n).map(|b| if fx.within[b].is_some() { 0 } else { heads[b] + 1 }));
+            targets.extend((0..n).map(|b| if fx.regions.within[b].is_some() { 0 } else { heads[b] + 1 }));
             fx.get(L_BLK); fx.op(I32_EQZ); fx.br_if(targets[0]);
             fx.get(L_BLK);
             fx.br_table(&targets, 0);
@@ -384,12 +352,13 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
         fx.tables = [heads, targets];
     }
     let mut decoder = Code::new(elf, function.span().map_or(function.start, |(lo, _)| lo));
+    let kinds = kinds();
     for (k, block) in function.blocks.iter().enumerate() {
         decoder.decode(elf, block.start, block.len, block.count, &mut code);
         // Block k's label closed so its code starts here; a loop it heads is gone round from here.
         fx.end();
         fx.close(Lab::Block(k));
-        if let Some(l) = fx.heads[k] { fx.enter_loop(l); }
+        if let Some(l) = fx.regions.heads[k] { fx.enter_loop(l); }
         fx.end_run();
         fx.ev_at.push(fx.ev.len());
         fx.nest = 0;
@@ -401,18 +370,10 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
         if trace { fx.c64(block.start as i64); fx.call(F_TRACE); }
         let next = function.blocks.get(k + 1).map(|b| b.start);
         let (held, ext) = handed.live_out(index, k);
-        // The flags needed after each instruction, from the end back.
-        needed.clear();
-        let mut live = held | ext;
-        for i in code.iter().rev() {
-            needed.push(live != 0);
-            let k = kind(i);
-            live = (live & !k.writes as u32) | k.reads as u32;
-        }
         fx.report.instructions += code.len();
         let last = code.len() - 1;
         let term = code[last];
-        let mut emit = last + usize::from(runs_on(&term));
+        let mut emit = last + usize::from(kinds.runs_on(&term));
         let compare = if emit == last && last > 0 && held | ext == 0 && matches!(block.exit, Exit::Branch { .. })
             && Fx::fusable(&code[last - 1], term.condition_code()) {
             emit -= 1;
@@ -420,7 +381,7 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
         } else {
             None
         };
-        for (i, &need) in code[..emit].iter().zip(needed.iter().rev()) { fx.instruction(i, need); }
+        if emit != 0 { emit_instructions(&mut fx, &code, emit, held | ext, kinds, &mut needed); }
         if compare.is_some() { fx.fused = compare; }
         let to = fx.succ[k];
         if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags_mask(held | ext); }
@@ -544,7 +505,7 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
         }
         // The loops this is the last block of end here, the innermost first.
         while let Some(&Lab::Loop(l)) = fx.labels.last() {
-            if fx.loops[l].last != k { break; }
+            if fx.regions.loops[l].last != k { break; }
             fx.end();
             fx.close(Lab::Loop(l));
         }
@@ -552,7 +513,7 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
     if !resume {
         fx.op(UNREACHABLE);
         fx.end();
-        return finish(fx, (code, needed, s.marks, s.cold, s.entered, s.masks), frame, out);
+        return finish(fx, (code, needed, s.masks), frame, out);
     }
     if !lean { fx.end(); }
     fx.op(UNREACHABLE);
@@ -579,17 +540,17 @@ pub(crate) fn lower_with_imports(cx: &Lowering, index: u32, base: u32, replay_ta
     fx.end();
     fx.op(UNREACHABLE);
     fx.end();
-    finish(fx, (code, needed, s.marks, s.cold, s.entered, s.masks), frame, out)
+    finish(fx, (code, needed, s.masks), frame, out)
 }
 
 /// The rest of a frame, handed back with the function's own buffers.
-type Rest = (Vec<Instruction>, Vec<bool>, (Vec<usize>, Vec<usize>), Vec<bool>, Vec<bool>, Masks);
+type Rest = (Vec<Instruction>, Vec<u32>, Masks);
 
 /// Onto `out`: the function's size, its locals, then its code with each sync put in, only the registers it must move
 /// (sync_masks: one the function never touches stays in its global, where code it calls and the host find it); and
 /// every buffer back into `frame`.
 fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) -> bool {
-    let (code, needed, marks, cold, entered, mut masks) = rest;
+    let (code, needed, mut masks) = rest;
     fx.end_run();
     sync_masks(&fx, &mut masks);
     if fx.budget { fx.locals.slot(L_BUDGET); }
@@ -633,8 +594,8 @@ fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) -> bool 
     out.extend_from_slice(&fx.f[from..]);
     debug_assert_eq!(out.len() - start, body);
     *frame = Frame {
-        f: fx.f, ev: fx.ev, ev_at: fx.ev_at, syncs: fx.syncs, locals: fx.locals, entry: fx.entry, loops: fx.loops, within: fx.within,
-        heads: fx.heads, labels: fx.labels, block_at: fx.block_at, loop_at: fx.loop_at, code, needed, marks, cold, entered, masks, tables: fx.tables,
+        f: fx.f, ev: fx.ev, ev_at: fx.ev_at, syncs: fx.syncs, locals: fx.locals, entry: fx.entry, regions: fx.regions,
+        labels: fx.labels, block_at: fx.block_at, loop_at: fx.loop_at, code, needed, masks, tables: fx.tables,
     };
     xmm_imports
 }

@@ -168,7 +168,10 @@ impl Liveness {
     pub fn handed(&self, address: u64) -> u32 { self.handed_at(self.entries.binary_search(&address).ok()) }
     /// As `handed`, for the entry found already (Entries::index).
     pub fn handed_at(&self, entry: Option<usize>) -> u32 { entry.map_or(ALL_FLAGS, |e| self.reads[e] as u32) }
-    pub(crate) fn is_entry(&self, f: u32, k: usize) -> bool { self.entry[self.first[f as usize] as usize + k] != NONE }
+    pub(crate) fn block_entry(&self, f: u32, k: usize) -> Option<usize> {
+        let e = self.entry[self.first[f as usize] as usize + k];
+        (e != NONE).then_some(e as usize)
+    }
 }
 
 /// What a function may do to the registers as a call sees it: bit n for r_n, 16 + n for xmm_n (as Fx::used). A call

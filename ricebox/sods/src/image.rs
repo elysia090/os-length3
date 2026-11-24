@@ -297,22 +297,8 @@ impl Out {
     /// A function wasm-encoder made.
     fn encoded(&mut self, f: &WasmFunction) { f.encode(&mut self.wasm); }
 
-    /// The code section ends here: its size written in and the code moved up to it; then `image` and `tail`.
+    /// Fill the reserved five-byte u32 LEB128 without moving the code section.
     fn finish(mut self, image: Option<&Image>, tail: &[&dyn Section]) -> Vec<u8> {
-        let from = self.size_at + 5;
-        let mut size = Vec::new();
-        uleb(&mut size, (self.wasm.len() - from) as u64);
-        let to = self.size_at + size.len();
-        self.wasm[self.size_at..to].copy_from_slice(&size);
-        self.wasm.copy_within(from.., to);
-        self.wasm.truncate(self.wasm.len() - (from - to));
-        if let Some(i) = image { i.append_to(&mut self.wasm); }
-        for s in tail { s.append_to(&mut self.wasm); }
-        self.wasm
-    }
-
-    /// Fill the reserved u32 LEB128 in place so a mapped fragment's code stays where it was emitted.
-    fn finish_fragment(mut self, tail: &[&dyn Section]) -> Vec<u8> {
         let from = self.size_at + 5;
         let mut size = u32::try_from(self.wasm.len() - from).expect("Wasm code section fits in u32");
         for byte in &mut self.wasm[self.size_at..from - 1] {
@@ -320,6 +306,7 @@ impl Out {
             size >>= 7;
         }
         self.wasm[from - 1] = size as u8;
+        if let Some(i) = image { i.append_to(&mut self.wasm); }
         for s in tail { s.append_to(&mut self.wasm); }
         self.wasm
     }
@@ -618,7 +605,7 @@ pub(crate) fn translate_mapped_in(elf: &Elf, programs: &[Program], options: Opti
         code.wasm[start..full.len()].copy_from_slice(scalar);
         start
     };
-    let bytes = code.finish_fragment(&[&name_section, &abi]);
+    let bytes = code.finish(None, &[&name_section, &abi]);
     (OutputBytes {bytes, start}, report)
 }
 

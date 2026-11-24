@@ -28,6 +28,11 @@ impl Fx<'_> {
     /// Push a register's value, zero-extended from its width.
     pub(crate) fn read_reg(&mut self, r: Register) -> bool {
         let Some((n, part)) = gpr(r) else { return false };
+        self.read_gpr(n, part);
+        true
+    }
+
+    fn read_gpr(&mut self, n: u32, part: Part) {
         self.get(l_reg(n));
         match part {
             Part::Full => {}
@@ -36,28 +41,40 @@ impl Fx<'_> {
             Part::Low8 => { self.c64(0xff); self.e(I64_AND); }
             Part::High8 => { self.c64(8); self.e(I64_SHR_U); self.c64(0xff); self.e(I64_AND); }
         }
-        true
     }
 
     /// Pop an i64 and write it with x86 partial-register rules: 32-bit
     /// writes zero the upper half, 8/16-bit writes merge.
     pub(crate) fn write_reg(&mut self, r: Register) -> bool {
+        self.write_sized_reg(r, 8)
+    }
+
+    /// Pop an i64 known to be zero-extended from at most `bytes` bytes.
+    pub(crate) fn write_sized_reg(&mut self, r: Register, bytes: u8) -> bool {
         let Some((n, part)) = gpr(r) else { return false };
+        self.write_gpr(n, part, bytes);
+        true
+    }
+
+    fn write_gpr(&mut self, n: u32, part: Part, bytes: u8) {
         let l = l_reg(n);
         match part {
             Part::Full => self.set(l),
-            Part::Low32 => { self.zext32(); self.set(l); }
+            Part::Low32 => { if bytes > 4 { self.zext32(); } self.set(l); }
             Part::Low16 | Part::Low8 | Part::High8 => {
                 let (m, shift) = match part { Part::Low16 => (0xffffi64, 0), Part::Low8 => (0xff, 0), _ => (0xff, 8) };
-                self.c64(m); self.e(I64_AND);
+                if bytes > part.bytes() { self.c64(m); self.e(I64_AND); }
                 if shift > 0 { self.c64(shift); self.e(I64_SHL); }
                 self.get(l); self.c64(!(m << shift)); self.e(I64_AND);
                 self.e(I64_OR);
                 self.set(l);
             }
         }
+        self.after_gpr_write(n);
+    }
+
+    fn after_gpr_write(&mut self, n: u32) {
         if n == RSP && !std::mem::take(&mut self.rsp_up) { self.note_low(); }
-        true
     }
 
     /// The static pool uses the stack's deepest address to clear reused memory.
@@ -99,7 +116,7 @@ impl Fx<'_> {
         let cst = |fx: &mut Self, v: i64| if narrow { fx.c32(v as i32) } else { fx.c64(v) };
         let term = |fx: &mut Self, r: Register| {
             match gpr(r) {
-                Some((n, _)) if narrow => { fx.get(l_reg(n)); fx.e(I32_WRAP_I64); }
+                Some((n, _)) if narrow => fx.get_gpr_i32(n),
                 _ => { fx.read_reg(r); }
             }
         };
@@ -160,7 +177,16 @@ impl Fx<'_> {
 
     /// The address for a load or store of operand memory, and the offset that load or store adds.
     pub(crate) fn place(&mut self, i: &Instruction) -> u64 {
-        if self.checked_memory { self.address(i); 0 } else { self.effective_from(i, true, true, true) }
+        if self.checked_memory { self.address(i); return 0; }
+        let base = (i.memory_base() as u32).wrapping_sub(Register::RAX as u32);
+        let offset = i.memory_displacement64();
+        // A single 64-bit base and a small positive displacement already
+        // have the shape of a Wasm memory access. Reuse its immediate.
+        if base < 16 && offset < 1 << 16 && i.memory_index() == Register::None && i.segment_prefix() != Register::FS {
+            self.get_gpr_i32(base);
+            return offset;
+        }
+        self.effective_from(i, true, true, true)
     }
 
     pub(crate) fn load_sized(&mut self, size: u8) { self.load_at(size, 0) }
@@ -277,13 +303,49 @@ impl Fx<'_> {
         }
     }
 
-    /// MOV and MOVNTI take the address first for memory destinations. Their
-    /// store sources are immediates and general registers.
-    pub(crate) fn assign(&mut self, i: &Instruction, size: u8) -> bool {
+    /// Move a scalar directly in the destination's width. A load already
+    /// extends its result and a store uses only its low bytes.
+    pub(crate) fn move_scalar(&mut self, i: &Instruction) -> bool {
+        let src = i.op1_kind();
         match i.op0_kind() {
-            OpKind::Register => self.read(i, 1, size) && self.write_reg(i.op0_register()),
+            OpKind::Register => {
+                let dst = i.op0_register();
+                let Some((dst_n, dst_part)) = gpr(dst) else { return false };
+                match src {
+                    OpKind::Register => {
+                        let Some((src_n, src_part)) = gpr(i.op1_register()) else { return false };
+                        match (src_part, dst_part) {
+                            (Part::Full, Part::Full) | (Part::Low32, Part::Low32) => {
+                                self.copy_gpr(src_n, dst_n, matches!(dst_part, Part::Low32));
+                                self.after_gpr_write(dst_n);
+                            }
+                            _ => { self.read_gpr(src_n, src_part); self.write_gpr(dst_n, dst_part, src_part.bytes()); }
+                        }
+                    }
+                    OpKind::Memory => {
+                        let bytes = dst_part.bytes();
+                        let at = self.place(i);
+                        self.load_at(bytes, at);
+                        self.write_gpr(dst_n, dst_part, bytes);
+                    }
+                    OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate64
+                    | OpKind::Immediate8to16 | OpKind::Immediate8to32 | OpKind::Immediate8to64
+                    | OpKind::Immediate32to64 | OpKind::Immediate8_2nd => return self.write_reg_known(dst, i.immediate(1) as i64),
+                    _ => return false,
+                }
+                true
+            }
             OpKind::Memory => {
-                if i.op1_kind() == OpKind::Register && gpr(i.op1_register()).is_none() { return false; }
+                let size = Self::size(i, 0);
+                if src == OpKind::Register {
+                    let Some((n, part)) = gpr(i.op1_register()) else { return false };
+                    let at = self.place(i);
+                    return self.store_value(size, 0, at, |fx| {
+                        fx.get(l_reg(n));
+                        if matches!(part, Part::High8) { fx.c64(8); fx.e(I64_SHR_U); }
+                        true
+                    });
+                }
                 let at = self.place(i);
                 self.store_value(size, 0, at, |fx| fx.read(i, 1, size))
             }
@@ -325,7 +387,7 @@ impl Fx<'_> {
     pub(crate) fn read32(&mut self, i: &Instruction, n: u32, size: u8) -> bool {
         match i.op_kind(n) {
             OpKind::Register => match gpr(i.op_register(n)) {
-                Some((k, Part::Full | Part::Low32)) => { self.get(l_reg(k)); self.e(I32_WRAP_I64); true }
+                Some((k, Part::Full | Part::Low32)) => { self.get_gpr_i32(k); true }
                 Some(_) => { self.read_reg(i.op_register(n)); self.e(I32_WRAP_I64); true }
                 None => false,
             },

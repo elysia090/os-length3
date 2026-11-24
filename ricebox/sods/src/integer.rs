@@ -753,20 +753,10 @@ impl Fx<'_> {
             Cld => { self.gget(G_RF); self.c64(!RF_DF); self.e(I64_AND); self.gset(G_RF); self.backward = Some(false); true }
             Std => { self.gget(G_RF); self.c64(RF_DF); self.e(I64_OR); self.gset(G_RF); self.backward = Some(true); true }
             Shld | Shrd => self.double_shift(i, need),
-            // A register write masks to its width and a store keeps only its bytes, so values go straight in.
-            Mov => {
-                let size = Self::size(i, 0);
-                if xmm(i.op0_register()).is_some() || xmm(i.op1_register()).is_some() { false }
-                else if i.op0_kind() == OpKind::Register && matches!(i.op1_kind(), OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32
-                    | OpKind::Immediate64 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32to64) {
-                    self.write_reg_known(i.op0_register(), i.immediate(1) as i64)
-                } else {
-                    self.assign(i, size)
-                }
-            }
+            Mov | Movnti => self.move_scalar(i),
             Movzx => {
                 let src = Self::size(i, 1);
-                self.read(i, 1, src) && self.write_reg(i.op0_register())
+                self.read(i, 1, src) && self.write_sized_reg(i.op0_register(), src)
             }
             Movsx | Movsxd => {
                 let src = Self::size(i, 1);
@@ -948,7 +938,6 @@ impl Fx<'_> {
                 self.set(L_CF);
                 true
             }
-            Movnti => self.assign(i, Self::size(i, 0)),
             Clflush | Clflushopt | Clwb => true,
             Fxsave | Fxsave64 | Fxrstor | Fxrstor64 => self.fx_state(i),
             Fnstenv => self.save_x87_env(i),

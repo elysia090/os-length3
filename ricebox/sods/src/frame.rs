@@ -6,7 +6,7 @@
 use crate::abi::{fragment_global_index, MappedAccess, F_MAPPED_ADDRESS, INTERRUPT, MAX_MAPPED_OPERAND_BYTES};
 use crate::facts::{Liveness, Summary};
 use crate::flags::Flags;
-use crate::layout::Loop;
+use crate::layout::LoopRegions;
 use crate::program::*;
 use crate::wasm::*;
 use crate::x86::Instruction;
@@ -168,6 +168,7 @@ pub struct Fx<'p> {
     pub(crate) dispatch: bool,
     pub program: &'p Program,
     pub(crate) function: &'p Function,
+    pub(crate) function_index: u32,
     pub report: &'p mut Report,
     pub handed: &'p Liveness,
     /// The block being lowered; whether its budget is counted in L_BUDGET; what each function may do (summaries).
@@ -176,9 +177,7 @@ pub struct Fx<'p> {
     pub(crate) summaries: &'p [Summary],
     /// Its loops made wasm loops, the innermost each block lies within past its head, the loop each block heads,
     /// the labels open (outermost first), and where each block's and loop's label is among them while open.
-    pub(crate) loops: Vec<Loop>,
-    pub(crate) within: Vec<Option<usize>>,
-    pub(crate) heads: Vec<Option<usize>>,
+    pub(crate) regions: LoopRegions,
     pub(crate) labels: Vec<Lab>,
     pub(crate) block_at: Vec<Option<u32>>,
     pub(crate) loop_at: Vec<Option<u32>>,
@@ -221,12 +220,8 @@ impl Fx<'_> {
     fn raw_op(&mut self, o: Op) {
         if o.1 == 1 { self.f.push(o.0 as u8) } else { self.f.extend_from_slice(&o.0.to_le_bytes()[..o.1 as usize]) }
     }
-    fn imm(&mut self, o: Op, v: u32) { self.op(o); uleb(&mut self.f, v as u64); }
-    pub fn c32(&mut self, v: i32) { self.konst(0x41, v as i64) }
-    pub fn c64(&mut self, v: i64) { self.konst(0x42, v) }
-    fn konst(&mut self, opcode: u8, v: i64) {
-        if (-64..64).contains(&v) { self.f.extend_from_slice(&[opcode, v as u8 & 0x7f]) } else { self.f.push(opcode); sleb(&mut self.f, v) }
-    }
+    pub fn c32(&mut self, v: i32) { signed_op(&mut self.f, 0x41, v.into()); }
+    pub fn c64(&mut self, v: i64) { signed_op(&mut self.f, 0x42, v); }
     pub fn f64c(&mut self, v: f64) { self.f.push(0x44); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn v128c(&mut self, v: i128) { self.f.extend_from_slice(&[0xfd, 0x0c]); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn shuffle(&mut self, lanes: [u8; 16]) { self.f.extend_from_slice(&[0xfd, 0x0d]); self.f.extend_from_slice(&lanes); }
@@ -268,7 +263,7 @@ impl Fx<'_> {
 
     /// The caller supplies the applicable address check.
     pub(crate) fn raw_mem(&mut self, o: Op, align: u32, offset: u64) {
-        self.raw_op(o); uleb(&mut self.f, align as u64); uleb(&mut self.f, offset);
+        memory_op(&mut self.f, o, align, offset);
     }
     /// The FXSR import has authorized the entire image and returned this
     /// address. No host call can intervene while these lanes are moved.
@@ -296,14 +291,14 @@ impl Fx<'_> {
         if !self.checked_memory { self.op(I32_WRAP_I64); }
     }
     pub fn e(&mut self, x: impl Emit) { x.emit(self) }
-    pub fn gget(&mut self, g: u32) { self.imm(Op(0x23, 1), fragment_global_index(g, self.checked_memory)) }
-    pub fn gset(&mut self, g: u32) { self.imm(Op(0x24, 1), fragment_global_index(g, self.checked_memory)) }
-    pub fn call(&mut self, f: u32) { self.imm(Op(0x10, 1), f) }
-    pub fn return_call(&mut self, f: u32) { self.imm(Op(0x12, 1), f) }
-    pub fn br(&mut self, d: u32) { self.imm(Op(0x0c, 1), d) }
-    pub fn br_if(&mut self, d: u32) { self.imm(Op(0x0d, 1), d) }
+    pub fn gget(&mut self, g: u32) { unsigned_op(&mut self.f, 0x23, fragment_global_index(g, self.checked_memory)); }
+    pub fn gset(&mut self, g: u32) { unsigned_op(&mut self.f, 0x24, fragment_global_index(g, self.checked_memory)); }
+    pub fn call(&mut self, f: u32) { unsigned_op(&mut self.f, 0x10, f); }
+    pub fn return_call(&mut self, f: u32) { unsigned_op(&mut self.f, 0x12, f); }
+    pub fn br(&mut self, d: u32) { unsigned_op(&mut self.f, 0x0c, d); }
+    pub fn br_if(&mut self, d: u32) { unsigned_op(&mut self.f, 0x0d, d); }
     pub fn br_table(&mut self, targets: &[u32], default: u32) {
-        self.imm(Op(0x0e, 1), targets.len() as u32);
+        unsigned_op(&mut self.f, 0x0e, targets.len() as u32);
         for &t in targets { uleb(&mut self.f, t as u64); }
         uleb(&mut self.f, default as u64);
     }
@@ -319,10 +314,34 @@ impl Fx<'_> {
         let b = REG_BIT[l as usize];
         if b != NOT_REG {
             let bit = 1 << b;
-            self.used |= bit;
-            if opcode == 0x20 { self.run[0] |= bit & !self.run[1] } else { self.run[2] |= bit; if self.nest == 0 { self.run[1] |= bit } }
+            if opcode == 0x20 { self.registers(bit, 0); } else { self.registers(0, bit); }
         }
         self.raw(opcode, l);
+    }
+    #[inline]
+    fn registers(&mut self, reads: u32, writes: u32) {
+        self.used |= reads | writes;
+        self.run[0] |= reads & !self.run[1];
+        self.run[2] |= writes;
+        if self.nest == 0 { self.run[1] |= writes; }
+    }
+
+    /// Full and 32-bit scalar copies assign both slots and emit in one append.
+    pub(crate) fn copy_gpr(&mut self, src: u32, dst: u32, narrow: bool) {
+        self.registers(1 << src, 1 << dst);
+        let src = self.locals.slot(l_reg(src));
+        let dst = self.locals.slot(l_reg(dst));
+        if narrow {
+            self.f.extend_from_slice(&[0x20, src, I32_WRAP_I64.0 as u8, I64_EXTEND_I32_U.0 as u8, 0x21, dst]);
+        } else {
+            self.f.extend_from_slice(&[0x20, src, 0x21, dst]);
+        }
+    }
+
+    pub(crate) fn get_gpr_i32(&mut self, n: u32) {
+        self.registers(1 << n, 0);
+        let slot = self.locals.slot(l_reg(n));
+        self.f.extend_from_slice(&[0x20, slot, I32_WRAP_I64.0 as u8]);
     }
     pub fn get(&mut self, l: u32) { self.local(0x20, l) }
     pub fn set(&mut self, l: u32) { self.local(0x21, l) }

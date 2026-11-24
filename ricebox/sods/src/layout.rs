@@ -4,6 +4,9 @@
 
 use crate::program::*;
 
+mod regions;
+pub(crate) use regions::LoopRegions;
+
 /// A loop made of blocks `head..=last` (in the order they are lowered), gone round from its last block or any before
 /// it back to its head; `parent`: the loop it lies within.
 #[derive(Clone, Copy, Debug)]
@@ -51,7 +54,20 @@ pub(crate) fn loops_into(succ: &[[u32; 2]], loops: &mut Vec<Loop>, (last, open):
 pub(crate) fn within_of(loops: &[Loop], n: usize, within: &mut Vec<Option<usize>>) {
     within.clear();
     within.resize(n, None);
-    for (l, lp) in loops.iter().enumerate() { within[lp.head + 1..=lp.last].fill(Some(l)); }
+    if loops.is_empty() { return; }
+    let mut next = 0;
+    let mut containing: Option<usize> = None;
+    for (block, slot) in within.iter_mut().enumerate() {
+        while let Some(l) = containing {
+            if block <= loops[l].last { break; }
+            containing = loops[l].parent;
+        }
+        *slot = containing;
+        if loops.get(next).is_some_and(|lp| lp.head == block) {
+            containing = Some(next);
+            next += 1;
+        }
+    }
 }
 
 /// Whether `function` goes backward anywhere (a loop's head), within it or out to an address before a block's (a run
