@@ -18,6 +18,11 @@ struct Server {
     struct wl_resource *surface, *role, *window, *pointer, *buffer, *callback;
     struct wl_resource *last_buffer;
     struct wl_listener last_buffer_gone;
+#ifdef EVERYDAY_TEST_QUICKSHELL_POINTER
+    struct wl_resource *cursor_surface, *cursor_buffer, *cursor_callback;
+    struct wl_listener cursor_buffer_gone;
+    bool cursor_assigned;
+#endif
 #ifdef EVERYDAY_TEST_LAYER
     struct wl_resource *layer, *output;
     uint32_t anchor;
@@ -255,8 +260,75 @@ static const struct wl_surface_interface surface_impl={.destroy=destroy,.attach=
 static void surface_gone(struct wl_resource *r) {
     struct Server *s=wl_resource_get_user_data(r); s->surface=NULL; s->pointer_entered=false;
 }
+#ifdef EVERYDAY_TEST_QUICKSHELL_POINTER
+/* Qt can create an auxiliary cursor surface on wl_pointer.enter. This
+ * witness admits its lifetime, never its pixels: only the panel is mirrored. */
+static void cursor_buffer_destroyed(struct wl_listener *listener, void *data) {
+    (void)data;
+    struct Server *s=wl_container_of(listener,s,cursor_buffer_gone);
+    s->cursor_buffer=NULL;
+}
+static void cursor_callback_gone(struct wl_resource *r) {
+    ((struct Server *)wl_resource_get_user_data(r))->cursor_callback=NULL;
+}
+static void cursor_gone(struct wl_resource *r) {
+    struct Server *s=wl_resource_get_user_data(r);
+    if(s->cursor_buffer) wl_list_remove(&s->cursor_buffer_gone.link);
+    if(s->cursor_callback) wl_resource_destroy(s->cursor_callback);
+    s->cursor_surface=s->cursor_buffer=s->cursor_callback=NULL;
+    s->cursor_assigned=false;
+}
+static void cursor_attach(struct wl_client *c, struct wl_resource *r, struct wl_resource *buffer, int32_t x, int32_t y) {
+    (void)c;
+    struct Server *s=wl_resource_get_user_data(r);
+    if(x || y || s->cursor_buffer || (buffer && !s->cursor_assigned)) {
+        fail(s,"invalid fixture cursor attachment"); return;
+    }
+    if(buffer) {
+        s->cursor_buffer=buffer;
+        s->cursor_buffer_gone.notify=cursor_buffer_destroyed;
+        wl_resource_add_destroy_listener(buffer,&s->cursor_buffer_gone);
+    }
+}
+static void cursor_commit(struct wl_client *c, struct wl_resource *r) {
+    (void)c;
+    struct Server *s=wl_resource_get_user_data(r);
+    if(s->cursor_buffer) {
+        if(!wl_shm_buffer_get(s->cursor_buffer)) {fail(s,"expected a SHM cursor");return;}
+        wl_buffer_send_release(s->cursor_buffer);
+        wl_list_remove(&s->cursor_buffer_gone.link);
+        s->cursor_buffer=NULL;
+    }
+    if(s->cursor_callback) {
+        wl_callback_send_done(s->cursor_callback,s->frames);
+        wl_resource_destroy(s->cursor_callback);
+    }
+}
+static void cursor_frame(struct wl_client *c, struct wl_resource *r, uint32_t id) {
+    struct Server *s=wl_resource_get_user_data(r);
+    if(s->cursor_callback) {fail(s,"duplicate cursor callback");return;}
+    s->cursor_callback=wl_resource_create(c,&wl_callback_interface,1,id);
+    if(s->cursor_callback) wl_resource_set_implementation(s->cursor_callback,NULL,s,cursor_callback_gone);
+    else wl_client_post_no_memory(c);
+}
+static void cursor_damage(struct wl_client *c, struct wl_resource *r, int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void)c;(void)r;(void)x;(void)y;(void)w;(void)h;
+}
+static const struct wl_surface_interface cursor_surface_impl={
+    .destroy=destroy,.attach=cursor_attach,.damage=cursor_damage,.frame=cursor_frame,
+    .commit=cursor_commit,.set_opaque_region=opaque_hint
+};
+#endif
 static void create_surface(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct Server *s=wl_resource_get_user_data(r);
+#ifdef EVERYDAY_TEST_QUICKSHELL_POINTER
+    if(s->surface && s->pointer_entered && !s->cursor_surface) {
+        s->cursor_surface=wl_resource_create(c,&wl_surface_interface,1,id);
+        if(!s->cursor_surface){wl_client_post_no_memory(c);return;}
+        wl_resource_set_implementation(s->cursor_surface,&cursor_surface_impl,s,cursor_gone);
+        return;
+    }
+#endif
     if(s->surface) {fail(s,"only one window is owned"); return;}
     s->surface=wl_resource_create(c,&wl_surface_interface,1,id);
     if(!s->surface){wl_client_post_no_memory(c);return;}
@@ -392,6 +464,11 @@ static void bind_layer_shell(struct wl_client *c,void *data,uint32_t v,uint32_t 
 #endif
 
 static void cursor(struct wl_client *c, struct wl_resource *r, uint32_t seq, struct wl_resource *s, int32_t x, int32_t y) {
+#ifdef EVERYDAY_TEST_QUICKSHELL_POINTER
+    struct Server *server=wl_resource_get_user_data(r);
+    if(s && s!=server->cursor_surface) {fail(server,"wrong pointer cursor surface");return;}
+    server->cursor_assigned=s!=NULL;
+#endif
     (void)c;(void)r;(void)seq;(void)s;(void)x;(void)y;
 }
 static const struct wl_pointer_interface ptr_impl={.set_cursor=cursor};

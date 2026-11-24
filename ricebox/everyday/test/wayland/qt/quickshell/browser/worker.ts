@@ -7,7 +7,7 @@ import {rangeNow} from '../../../../../../sods/runtime/host.ts';
 import {Kernel, Mirror, captureMappedLibraries, prepareMappedInitial} from '../../../../../../sods/runtime/linux.ts';
 import {loadTranslator} from '../../../../../../sods/runtime/translate.ts';
 
-const quickshell = '/usr/bin/quickshell', qml = '/etc/ricebox/shell.qml';
+const quickshell = '/usr/bin/quickshell', qml = '/etc/ricebox/shell.qml', pointerQml = '/etc/ricebox/pointer.qml';
 const quickshellSha256 = '5f108683b0e292772cd7c0bb1ce0265e1c3257a3214ec5cb712d1fcad174779c';
 const out = '/display-out', socket = '/run/user/0/wayland-0';
 const decoder = new TextDecoder();
@@ -37,6 +37,7 @@ async function start(pins: Record<string, string>) {
   const [aboutBytes, wasm, muk, executable, utc, sourcesBytes] = await Promise.all([
     pinned('web/webroot.json'), pinned('sods.wasm'), pinned('muk'), pinned('listener'), pinned('utc'), pinned('guest-sources.json'),
   ]);
+  const pointer = Object.hasOwn(pins, 'pointer.qml') ? await pinned('pointer.qml') : undefined;
   const about = json<About>(aboutBytes), asset = releaseIndexAsset(about), indexBytes = await pinned('web/' + asset.path);
   need(indexBytes.length === asset.size && pins['web/' + asset.path] === asset.sha256, 'Quickshell fixture index witness changed');
   const index = readReleaseIndex(indexBytes, about);
@@ -66,6 +67,7 @@ async function start(pins: Record<string, string>) {
   vfs.mkdirp(out);
   vfs.writeFile('/usr/local/bin/wayland-listener', executable, 0o755);
   vfs.writeFile('/etc/localtime', utc);
+  if (pointer) vfs.writeFile(pointerQml, pointer, 0o644);
   const mirror = new Mirror(vfs, out);
   let displayLog = '', guestLog = '', input: Uint8Array = new Uint8Array(0);
   const server = new Kernel({vfs, translate, console: {
@@ -96,7 +98,7 @@ async function start(pins: Record<string, string>) {
       'QT_QPA_PLATFORM=wayland', 'WAYLAND_DISPLAY=wayland-0', 'QT_QUICK_BACKEND=software', 'QSG_INFO=1',
       'QT_WAYLAND_DISABLE_WINDOWDECORATION=1', 'QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt6/plugins',
       'QML_IMPORT_PATH=/usr/lib/x86_64-linux-gnu/qt6/qml'];
-    const held = prepareMappedInitial(client, {path: main, argv: [main, '--no-color', '--path', qml], env},
+    const held = prepareMappedInitial(client, {path: main, argv: [main, '--no-color', '--path', pointer ? pointerQml : qml], env},
       {main: app, interpreter: ld, libraries: captureMappedLibraries(vfs, deps), preparedCode}, '/root');
     try { held.checkStart(); }
     catch (error) { held.discard(); throw error; }

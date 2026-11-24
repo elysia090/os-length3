@@ -154,3 +154,28 @@ For a root with a matching `prepared/index.json` and its content-addressed
 Wasm pieces, add `--prepared`. Set `EVERYDAY_QUICKSHELL_SCREENSHOT` to save
 Chrome's first composited frame. This check uses a loopback fixture server and
 requires Chrome's Linux namespace and seccomp sandbox.
+
+#### Optional first Quickshell pointer response
+
+Use the same offline guest inputs and independently supplied index digest. Build
+the scanner with the same pinned layer-shell XML, then build the opt-in pointer
+listener and select it explicitly:
+
+```sh
+test_dir=ricebox/everyday/test/wayland
+EVERYDAY_WITH_QUICKSHELL_POINTER=1 sh "$test_dir/build.sh" guest "$SOURCE_ROOT" "$BUILD_ROOT"
+EVERYDAY_CHROME_BIN=/opt/google/chrome/chrome \
+  node "$test_dir/qt/quickshell/browser/check.ts" \
+  "$FIXTURE_INPUTS" "$BUILD_ROOT/wayland-quickshell-pointer-listener" "$EXPECTED_INDEX_SHA256" --pointer
+```
+
+The checker pins its own test QML and gives it to the guest without rebuilding
+the root. The visual-only check still uses the original QML from the root.
+Chrome clicks outside the canvas and must not forward a contact, then clicks
+once inside it through Everyday. The guest must make a second Wayland panel
+commit at the **same** size and configure serial after that pointer contact.
+Both canvas backing pixels and the Chrome composited pixels must change to
+the QML click handler's color, and the original retirement checks still apply.
+The listener accepts Qt's separate cursor surface but never mirrors it.
+This is an on-demand fixture lane, not a packaging, timing, or general input
+compatibility claim.

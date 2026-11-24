@@ -2,6 +2,7 @@ import {mountGuestSurface, surfaceFromMirror} from '../../../../../src/surface.t
 import {lendRaster, rasterFile} from '../../../support/mirror-raster.ts';
 
 const canvas = document.querySelector('canvas')!;
+const pointer = new URLSearchParams(location.search).get('pointer') === '1';
 const status = document.querySelector<HTMLElement>('#status')!;
 const receipt = document.querySelector<HTMLElement>('#receipt')!;
 const resize = document.querySelector<HTMLButtonElement>('#resize')!;
@@ -12,6 +13,10 @@ const source = surfaceFromMirror({worker, file: rasterFile, maxEncodedBytes: 16 
     const frame = lendRaster(bytes);
     return frame && {serial: frame.sequence, width: frame.width, height: frame.height, rgba: frame.pixels};
   },
+  ...(pointer && {encodePointer: ({x, y}: {x: number; y: number}) => {
+    status.dataset.pointerContacts = String(Number(status.dataset.pointerContacts ?? 0) + 1);
+    return Uint8Array.of(1, x, y);
+  }}),
   encodeResize: ({width, height}) => Uint8Array.of(2, width, height),
 });
 const surface = mountGuestSurface({canvas, source, viewport: document.querySelector<HTMLElement>('#viewport')!,
@@ -30,7 +35,7 @@ worker.addEventListener('message', ({data}) => {
     canvas.style.width = `${frame.width * 8}px`;
     canvas.style.height = `${frame.height * 8}px`;
     canvas.dataset.sequence = String(frame.serial);
-    resize.disabled = frame.serial !== 1;
+    resize.disabled = pointer || frame.serial !== 1;
     close.disabled = false;
     status.dataset.phase = 'frame';
     status.textContent = `Guest frame ${frame.serial}`;
@@ -55,4 +60,7 @@ window.addEventListener('pagehide', () => { surface.close(); worker.terminate();
 void fetch('/pins.json').then(response => {
   if (!response.ok) throw new Error('Missing Quickshell fixture pins');
   return response.json();
-}).then(pins => worker.postMessage({type: 'start', pins}), error => finish('error', String(error)));
+}).then(pins => {
+  if (pointer !== Object.hasOwn(pins, 'pointer.qml')) throw new Error('Quickshell fixture lane does not match its pins');
+  worker.postMessage({type: 'start', pins});
+}).catch(error => finish('error', String(error)));
