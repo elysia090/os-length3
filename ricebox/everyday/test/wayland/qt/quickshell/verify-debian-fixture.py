@@ -16,6 +16,7 @@ HERE = Path(__file__).resolve().parent
 LOCK = HERE / "debian-fixture.lock.json"
 TRIXIE_SIGNER = "04B54C3CDCA79751B16BC6B5225629DF75B188BD"
 INDEX_PATH = "main/binary-amd64/Packages.xz"
+SNAPSHOT_BASE = "https://snapshot.debian.org/file/"
 PACKAGE_FIELDS = ("Package", "Version", "Architecture", "Filename", "Size", "SHA256")
 
 
@@ -37,12 +38,16 @@ def sealed_bytes(path, size, sha256, locator):
     require(path.is_file() and not path.is_symlink(), f"missing regular input: {path.name}")
     with path.open("rb") as file:
         body = file.read(size + 1)
-    require(len(body) == size, f"wrong byte count: {path.name}")
-    require(hashlib.sha256(body).hexdigest() == sha256, f"SHA-256 mismatch: {path.name}")
+    check_seal(path.name, body, size, sha256, locator)
+    return body
+
+
+def check_seal(name, body, size, sha256, locator):
+    require(len(body) == size, f"wrong byte count: {name}")
+    require(hashlib.sha256(body).hexdigest() == sha256, f"SHA-256 mismatch: {name}")
     # A Snapshot SHA-1 is a transport locator, never the authenticity check.
     require(hashlib.sha1(body, usedforsecurity=False).hexdigest() == locator,
-            f"Snapshot locator mismatch: {path.name}")
-    return body
+            f"Snapshot locator mismatch: {name}")
 
 
 def control_stanzas(lines):
@@ -138,7 +143,7 @@ def input_packages(lock):
 
 def check_lock(lock, five_pins):
     require(lock["schema"] == 1 and lock["architecture"] == "amd64"
-            and lock["snapshotBase"] == "https://snapshot.debian.org/file/"
+            and lock["snapshotBase"] == SNAPSHOT_BASE
             and set(lock["auxiliary"]) == {"utc"}, "unexpected Debian closure lock schema or auxiliary input")
     utc = lock["auxiliary"]["utc"]
     if utc is not None:
@@ -171,10 +176,15 @@ def check_lock(lock, five_pins):
             "the existing Quickshell .deb pins do not match the exact closure")
 
 
-def verify(catalog_dir, deb_dir, keyring):
+def load_lock():
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     five_pins = {name: digest for digest, name in map(str.split, (HERE / "debs.sha256").read_text().splitlines())}
     check_lock(lock, five_pins)
+    return lock
+
+
+def verify(catalog_dir, deb_dir, keyring):
+    lock = load_lock()
     review = datetime.fromisoformat(lock["reviewedAt"])
     require(keyring.is_file(), "the explicit Debian archive keyring is missing")
     with TemporaryDirectory(prefix="ricebox-debian-keyring-") as home:

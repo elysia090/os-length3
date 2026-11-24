@@ -189,6 +189,32 @@ The audit checks that package against the same authenticated catalog; it is
 not counted in the 206-package guest root. This audit never runs Chrome or
 the guest.
 
+#### Fetch the locked Debian Snapshot inputs
+
+If no cache is available, use Python 3.11 or newer and curl with a fresh
+run-private output path whose parent exists:
+
+```sh
+q=ricebox/everyday/test/wayland/qt/quickshell
+python3 -B "$q/fetch-debian-fixture.py" "$NEW_CACHE"
+CATALOG_CACHE="$NEW_CACHE/catalogs"
+DEB_CACHE="$NEW_CACHE/debs"
+python3 -B "$q/fetch-debian-fixture.test.py"
+```
+
+The helper requests only the lock's immutable HTTPS Snapshot objects: four
+catalog files, the 206 guest root packages, and the separate UTC package.
+It checks the exact size and SHA-256 before retaining each object. The capture
+has five minutes total for about 118 MiB, with at most four requests at once.
+Each attempt gets at most 30 seconds and never more than the time left;
+only transient failures are retried. The helper ignores curlrc and does not
+follow redirects or fall back to live repositories. Curl still honors the
+user's or runner's normal proxy and CA environment. The named output appears
+only when every object matches within the budget. This is byte capture, not a
+signature attestation: run the offline audit above with the trusted Debian
+keyring, or let the offline producer below perform that same audit before
+extraction. This cache is not a system APT source.
+
 #### Assemble the browser fixture from the audited cache
 
 With the same local inputs, Node 24, GNU tar, zstd, dpkg-deb and readelf, and
