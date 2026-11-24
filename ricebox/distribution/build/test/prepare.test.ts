@@ -5,14 +5,14 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {selectPackages, prepareDistribution} from '../prepare.ts';
-function fixture(t: TestContext) {
+import {defaultPackages, selectPackages, prepareDistribution} from '../prepare.ts';
+function fixture(t: TestContext, packages: readonly string[] = ['base', 'extra'], location = 'usr/bin') {
   const at = mkdtempSync(join(tmpdir(), 'ricebox-selection-'));
   t.after(() => rmSync(at, {recursive: true, force: true}));
   const cache = join(at, 'cache'); mkdirSync(cache);
-  for (const n of ['base', 'extra']) {
-    const p = join(cache, n); mkdirSync(join(p, 'tree/usr/bin'), {recursive: true});
-    writeFileSync(join(p, 'tree/usr/bin', n), n);
+  for (const n of packages) {
+    const p = join(cache, n); mkdirSync(join(p, 'tree', location), {recursive: true});
+    writeFileSync(join(p, 'tree', location, n), n);
     for (const [k,v] of Object.entries({version:'1.0', source:n+'-source', key:n+'-key'})) writeFileSync(join(p,k),v);
   }
   writeFileSync(join(cache,'record'), 'do not mutate\n');
@@ -48,7 +48,7 @@ test('orchestration invokes assemble then AOT and publishes only after success',
   writeFileSync(join(make,'distribution.sh'),'set -eu\nmkdir -p "$2"\nprintf "%s\\n" "$@" > "$2/arguments"\n');
   const output=join(at,'out');
   await prepareDistribution({packages:['base'],packageCache:cache,toolchain,output,cache:join(at,'aot'),hot:['/usr/bin/base']});
-  assert.match(readFileSync(join(output,'arguments'),'utf8'),/--cache\n.*\/aot\n--hot\n\/usr\/bin\/base/);
+  assert.match(readFileSync(join(output,'arguments'),'utf8'),/--deploy\n--cache\n.*\/aot\n--hot\n\/usr\/bin\/base/);
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output}),/already exists/);
   writeFileSync(join(make,'distribution.sh'),'exit 4\n');
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output:join(at,'failed')}),/failed/);
@@ -58,8 +58,9 @@ test('orchestration invokes assemble then AOT and publishes only after success',
 
 test('pinned prebuilt tools compose real layers without cargo or a C build', async t => {
   const {createHash} = await import('node:crypto');
-  const {distributionAssets} = await import('../../deployment/assets.ts');
-  const {at, cache} = fixture(t);
+  const {visitDistributionAssets} = await import('../../deployment/local.ts');
+  const {at, cache} = fixture(t, [...defaultPackages, 'extra'], 'usr/share/fixture');
+  writeFileSync(join(cache, 'system-config/source'), '');
   const artifact = (name: string, bytes: Uint8Array) => {
     const path = join(at,name); writeFileSync(path,bytes);
     return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
@@ -69,16 +70,19 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   const tools = {
     translator: artifact('translator.wasm',Buffer.from([0,97,115,109,1,0,0,0])),
     sods: artifact('sods',Buffer.from('not invoked: no executable fixture')),
-    muk: artifact('muk',Buffer.from('maker fixture')),
+    muk: artifact('muk',Buffer.from([0,97,115,109,1,0,0,0])),
   };
   t.mock.method(globalThis,'fetch',()=>{throw new Error('composition must not fetch');});
-  const output=join(at,'layers');
-  await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
-  const assets=distributionAssets(output);
-  assert.ok(assets.has('ricebox/muk.json'));
-  assert.ok([...assets.keys()].some(n=>n.startsWith('ricebox/packs/')));
+  const output=join(at,'path with spaces','layers');
+  await prepareDistribution({packageCache:cache,tools,output,cache:''});
+  const {index,maker}=visitDistributionAssets(output, {}, () => {});
+  assert.equal(maker.sha256,tools.muk.sha256);
+  assert.deepEqual(index.execution, {maker, programs: []});
+  assert.ok(index.packs.length);
+  const selected = index.files.filter(file => file.path.startsWith('/usr/share/fixture/')).map(file => file.path);
+  assert.deepEqual(selected.sort(), defaultPackages.map(name => `/usr/share/fixture/${name}`).sort());
   tools.translator.sha256='0'.repeat(64);
-  await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
+  await assert.rejects(prepareDistribution({packages:['extra'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
   assert.equal(existsSync(join(at,'bad')),false);
 });
 test('former catalog option fails explicitly before any IO even with usable tools', async t => {

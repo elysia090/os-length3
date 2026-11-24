@@ -30,8 +30,8 @@ For an independent engine check against the same clean installed JavaScript
 package and both real CPU Worker lanes, stage a temporary consumer:
 
     WORK=$(mktemp -d)
-    node ricebox/everyday/test/wayland/browser/stage-consumer.mjs "$WORK/installed"
-    node "$WORK/installed/consumer/browser/guest-pair.integration.mjs" \
+    node ricebox/everyday/test/wayland/browser/stage-consumer.ts "$WORK/installed"
+    node "$WORK/installed/consumer/browser/guest-pair.integration.ts" \
       "$SODS_TRANSLATOR_WASM" "$RICEBOX_MUK_FILE" "$WAYLAND_ELF" "$EVERYDAY_SHELL_ELF"
 
 The Node check does not establish browser pixels, physical presentation, or

@@ -30,26 +30,37 @@ def frame(path, seq, w, h, pixel):
 with tempfile.TemporaryDirectory(prefix='wayland-proof-') as td:
     path=Path(td)/'frame.rgba'
     p=subprocess.Popen([sys.argv[1],td,*sys.argv[2:]],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0)
+    lines=[]
+    def observe(chunk):
+        print(chunk,end='')
+        lines.extend(chunk.splitlines())
     try:
         first=until(p,'WAYLAND_COMMIT seq=1')
-        print(first,end='')
+        observe(first)
         assert ('WAYLAND_CLIENT_EXEC fd_inherited=1 cloexec_sentinel_absent=1 stdin_absent=1' in first)==bool(sys.argv[2:])
         assert ('WAYLAND_SOCKET_CONSUMED close_on_exec=1' in first)==bool(sys.argv[2:])
         frame(path,1,32,24,(38,64,48,255))
         p.stdin.write(bytes([1,250,250]))
-        print(until(p,'WAYLAND_CONTROL_REFUSED'),end='')
+        observe(until(p,'WAYLAND_CONTROL_REFUSED'))
         assert struct.unpack('<I',path.read_bytes()[4:8])==(1,)
         p.stdin.write(bytes([1,10,12]))
-        print(until(p,'WAYLAND_COMMIT seq=2'),end='')
+        observe(until(p,'WAYLAND_COMMIT seq=2'))
         frame(path,2,32,24,(248,61,105,255))
         p.stdin.write(bytes([2,47,19]))
-        print(until(p,'WAYLAND_COMMIT seq=3'),end='')
-        frame(path,3,47,19,(38,64,48,255))
+        observe(until(p,'WAYLAND_COMMIT seq=3'))
+        final=frame(path,3,47,19,(38,64,48,255))
         p.stdin.write(bytes([3,0,0]))
         out,err=p.communicate(timeout=4)
-        print(out.decode(),end='')
+        observe(out.decode())
         assert p.returncode==37 and not err,(p.returncode,out,err)
-        assert 'pointer=1 configure=2 frame_done=3 releases=3' in out.decode()
+        lifecycle=[line for line in lines if line.startswith(('WAYLAND_COMMIT ', 'WAYLAND_RELEASE '))]
+        assert len(lifecycle)==6,lifecycle
+        for i,kind in enumerate(('new', 'reused', 'new')):
+            assert lifecycle[2*i].startswith(f'WAYLAND_COMMIT seq={i+1} '),lifecycle
+            assert lifecycle[2*i+1]==f'WAYLAND_RELEASE seq={i+1} buffer={kind}',lifecycle
+        assert lines[-2:]==['WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3',
+                            'WAYLAND_WINDOW_CLOSED'],lines
+        assert path.read_bytes()==final,'close must not publish another frame'
         print('NATIVE_WAYLAND_3_EXPORTED_COMMITS_OK')
     finally:
         if p.poll() is None: p.kill(); p.wait(timeout=4)

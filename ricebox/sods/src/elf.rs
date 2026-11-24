@@ -6,6 +6,9 @@
 //! placed at `PIE_BASE`, where its startup code (musl's _dlstart) finds
 //! itself and applies those relocations as on Linux.
 
+#[cfg(any(test, all(target_arch = "wasm32", feature = "dynamic-load-plan")))]
+pub(crate) mod load;
+
 use std::fmt;
 use std::sync::Arc;
 
@@ -82,6 +85,8 @@ pub struct Elf {
     pub tls: Option<Tls>,
     pub phoff: u64,
     pub phnum: u64,
+    #[cfg(feature = "mapped-code")]
+    pub(crate) mapped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -94,8 +99,8 @@ pub struct Tls {
 
 struct Reader<'a>(&'a [u8]);
 
-impl Reader<'_> {
-    fn bytes(&self, at: u64, n: u64) -> Result<&[u8], Error> {
+impl<'a> Reader<'a> {
+    fn bytes(&self, at: u64, n: u64) -> Result<&'a [u8], Error> {
         let start = usize::try_from(at).map_err(|_| Error("offset".into()))?;
         // try_from, not `as`: on wasm32 a 64-bit size must not wrap to a small one.
         let n = usize::try_from(n).map_err(|_| Error("size".into()))?;
@@ -153,11 +158,20 @@ impl Elf {
             entry: vaddr, segments: vec![Segment { offset: 0, vaddr, memsz: len as u64, data, executable: true, writable: false }],
             symbols: Vec::new(), relocation_targets: Vec::new(), data_pointers: Vec::new(), fixed: false, relative_slots: Vec::new(),
             tls: None, phoff: 0, phnum: 0,
+            #[cfg(feature = "mapped-code")]
+            mapped: false,
         }
     }
 }
 
 impl Elf {
+    pub(crate) const fn mapped(&self) -> bool {
+        #[cfg(feature = "mapped-code")]
+        { self.mapped }
+        #[cfg(not(feature = "mapped-code"))]
+        { false }
+    }
+
     pub fn parse(file: &[u8]) -> Result<Elf, Error> {
         Elf::parse_owned(file.to_vec())
     }
@@ -324,7 +338,10 @@ impl Elf {
         relocation_targets.dedup();
         relative_slots.sort_unstable();
         relative_slots.dedup();
-        let mut elf = Elf { entry, segments, symbols, relocation_targets, data_pointers, fixed: !pie, relative_slots, tls, phoff, phnum };
+        let mut elf = Elf { entry, segments, symbols, relocation_targets, data_pointers, fixed: !pie, relative_slots, tls, phoff, phnum,
+            #[cfg(feature = "mapped-code")]
+            mapped: false,
+        };
         // Slots inside code are rip-relative operands, not data tables.
         let slots = std::mem::take(&mut elf.relative_slots);
         elf.relative_slots = slots.into_iter().filter(|&p| !elf.is_code(p) && elf.read_i32(p).is_some()).collect();

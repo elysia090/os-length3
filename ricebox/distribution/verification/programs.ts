@@ -126,7 +126,10 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
   const tree = prepareTree({muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
     range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
-    decode: (b) => new Uint8Array(w.unzstd(b)),
+    decode(bytes, size) {
+      const decoded = w.unzstd(bytes, size);
+      return new Uint8Array(decoded.buffer, decoded.byteOffset, decoded.byteLength);
+    },
     sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),
   }}});
   // The child realm owns this root across the run, like the browser Worker.

@@ -5,10 +5,11 @@ import {retireRootWorker} from './retire-worker.ts';
 
 type Box = {config: string; words: string[]};
 type Reached = {list: More[]; saved: number; timer: number; url: string};
+type Preparation = {value: PreparedExecutable; moreURL: string; reached: More[]};
 export interface ExecutionServices {
   first: readonly string[];
-  load(): Promise<Omit<PreparedRoot, 'executables'>>;
-  executable(root: Omit<PreparedRoot, 'executables'>, translation: Translation, quiet: boolean): Promise<{value: PreparedExecutable; moreURL: string; reached: More[]} | null>;
+  load(): Promise<{base: Omit<PreparedRoot, 'executables'>; initial: (Preparation | null)[]}>;
+  executable(root: Omit<PreparedRoot, 'executables'>, translation: Translation): Promise<Preparation | null>;
   worker(): Worker;
   save(reached: Reached): void;
   ready?(): void;
@@ -28,10 +29,8 @@ export function createExecutionProfile(services: ExecutionServices) {
     return result.value;
   };
   const load = (): Promise<PreparedRoot> => loading ??= (async () => {
-    const base = await services.load();
-    const first = base.index.translations.filter(t => services.first.includes(t.path));
-    const values = await Promise.all(first.map(t => services.executable(base, t, false)));
-    const root: PreparedRoot = {...base, executables: [...new Map(values.filter(v => v !== null).map(value => [value.value.key, adopt(value)])).values()]};
+    const {base, initial} = await services.load();
+    const root: PreparedRoot = {...base, executables: [...new Map(initial.filter(v => v !== null).map(value => [value.value.key, adopt(value)])).values()]};
     rootOf.add(root);
     services.ready?.();
     return root;
@@ -42,6 +41,7 @@ export function createExecutionProfile(services: ExecutionServices) {
   };
   const warm = (root: PreparedRoot): Promise<void> => {
     check(root);
+    if (root.index.execution) return Promise.resolve(); // Guest exec fetches its published module on demand.
     const previous = warming.get(root.generation);
     if (previous) return previous;
     const values = later.get(root.generation) ?? new Map<string, PreparedExecutable>();
@@ -51,7 +51,7 @@ export function createExecutionProfile(services: ExecutionServices) {
         if (services.first.includes(translation.path)) continue;
         // Integrity errors remain visible through the returned diagnostic state,
         // not a compile fallback. They never publish an executable association.
-        const result = await services.executable(root, translation, true);
+        const result = await services.executable(root, translation);
         if (!result) continue;
         const value = adopt(result);
         if (root.executables.some(first => first.key === value.key) || values.has(value.key)) continue;

@@ -36,6 +36,7 @@ import {CAP, MAY, capable, may, shownIn} from './cred.ts';
 import {nrIn, type Net} from './space.ts';
 import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
 import {Wait, utf8} from './flow.ts';
+import {MAPPED_COPY_LIMIT, type MappedUserMemory} from './mapped-vm.ts';
 import type {Calls, Far, Kern, Outside, Proc} from './parts.ts';
 import {SIG, SI, send} from './signal.ts';
 import {epoch} from '../host.ts';
@@ -411,6 +412,14 @@ function kindOf(family: number, raw: number, protocol: number): number {
 
 // ---- addresses ----
 
+function unixName(raw: Uint8Array): Given {
+  if (!raw.length) fail(E.INVAL);
+  if (raw[0] === 0) return {abstract: [...raw.subarray(1)].join(','), bytes: raw};
+  const end = raw.indexOf(0);
+  const bytes = end < 0 ? raw : raw.subarray(0, end);
+  return {path: utf8(bytes), bytes};
+}
+
 /**
  * The address at `address` (`length` bytes) for socket `s`: a local name ({path} or {abstract}, and its bytes), a
  * loopback one ({ip, port}), or {unspec} (AF_UNSPEC: a datagram socket's connect undoes its connection).
@@ -426,12 +435,7 @@ function readAddress(p: Proc, s: Endpoint, address: bigint, length: bigint): Giv
   }
   if (s.family === AF.UNIX) {
     if (family !== AF.UNIX || len > 110) fail(E.INVAL);
-    const raw = p.bytes.slice(at + 2, at + len);
-    if (!raw.length) fail(E.INVAL);
-    if (raw[0] === 0) return {abstract: [...raw.subarray(1)].join(','), bytes: raw};
-    const end = raw.indexOf(0);
-    const bytes = end < 0 ? raw : raw.subarray(0, end);
-    return {path: utf8(bytes), bytes};
+    return unixName(p.bytes.slice(at + 2, at + len));
   }
   if (family === AF.INET && s.family === AF.INET) {
     if (len < 16) fail(E.INVAL);
@@ -933,30 +937,30 @@ export const pending = (d: Description): number => {
 // ---- the calls ----
 
 /** The iovecs at `address`: [[base, length]]. */
-function vectors(p: Proc, address: number, count: number): [number, number][] {
+function vectors(view: DataView, address: number, count: number, limit = 0x7ffff000): [number, number][] {
   if (count < 0 || count > 1024) fail(E.INVAL);
   const out: [number, number][] = [];
   // (As Linux takes an iovec in: a negative length is EINVAL, and together they are at most MAX_RW_COUNT.)
-  let left = 0x7ffff000;
+  let left = limit;
   for (let k = 0; k < count; k++) {
-    const length = p.view.getBigInt64(address + k * 16 + 8, true);
+    const length = view.getBigInt64(address + k * 16 + 8, true);
     if (length < 0n) fail(E.INVAL);
     const n = Math.min(Number(length), left);
     left -= n;
-    out.push([Number(p.view.getBigUint64(address + k * 16, true)), n]);
+    out.push([Number(view.getBigUint64(address + k * 16, true)), n]);
   }
   return out;
 }
 
 /** The descriptors and credentials a msghdr's control data carries (SCM_RIGHTS, SCM_CREDENTIALS). */
-function controls(p: Proc, at: number, length: number): Description[] {
+function controls(p: Proc, view: DataView, at: number, length: number): Description[] {
   const rights: Description[] = [];
   for (let off = 0; off + 16 <= length;) {
-    const len = Number(p.view.getBigUint64(at + off, true)), level = p.view.getInt32(at + off + 8, true), type = p.view.getInt32(at + off + 12, true);
+    const len = Number(view.getBigUint64(at + off, true)), level = view.getInt32(at + off + 8, true), type = view.getInt32(at + off + 12, true);
     if (len < 16 || off + len > length) fail(E.INVAL);
     if (level === SOL_SOCKET && type === SCM.RIGHTS) {
       for (let k = 16; k + 4 <= len; k += 4) {
-        const d = p.fds.get(p.view.getInt32(at + off + k, true));
+        const d = p.fds.get(view.getInt32(at + off + k, true));
         rights.push(d ?? fail(E.BADF));
       }
       if (rights.length > RIGHTS_MOST) fail(E.INVAL);
@@ -976,11 +980,11 @@ function destination(p: Proc, s: Endpoint, address: bigint, length: bigint): Giv
 function sendmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const d = socketOf(p, fd), at = N(msg), v = p.view;
   const nameAt = Number(v.getBigUint64(at, true)), nameLen = v.getUint32(at + 8, true);
-  const iov = vectors(p, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
+  const iov = vectors(v, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
   // (What is to be sent is the guest's memory, before room is made for it.)
   for (const [b, l] of iov) within(p, b, l);
   const control = Number(v.getBigUint64(at + 32, true)), controlLen = Number(v.getBigUint64(at + 40, true));
-  const rights = control && controlLen ? controls(p, control, controlLen) : [];
+  const rights = control && controlLen ? controls(p, v, control, controlLen) : [];
   const total = iov.reduce((n, [, l]) => n + l, 0), data = new Uint8Array(total);
   let off = 0;
   for (const [b, l] of iov) { data.set(p.bytes.subarray(b, b + l), off); off += l; }
@@ -1001,21 +1005,36 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const iovAt = Number(v.getBigUint64(at + 16, true)), iovCount = Number(v.getBigUint64(at + 24, true));
   if (iovCount < 0 || iovCount > 1024) fail(E.INVAL);
   within(p, iovAt, iovCount * 16);
-  const iov = vectors(p, iovAt, iovCount);
+  const iov = vectors(v, iovAt, iovCount);
   for (const [b, l] of iov) within(p, b, l);
   const nameAt = Number(v.getBigUint64(at, true)), nameRoom = nameAt ? v.getUint32(at + 8, true) : 0;
   within(p, nameAt, nameRoom);
   const control = Number(v.getBigUint64(at + 32, true)), room = control ? Number(v.getBigUint64(at + 40, true)) : 0;
   within(p, control, room);
+  return receiveMessage(p, d, f, {at, iov, nameAt, nameRoom, control, room}, {
+    bytes: (address, data) => p.bytes.set(data, address),
+    u32: (address, value) => v.setUint32(address, value, true),
+    u64: (address, value) => v.setBigUint64(address, value, true),
+  });
+}
+
+interface MessageTarget { at: number; iov: [number, number][]; nameAt: number; nameRoom: number; control: number; room: number }
+interface MessageWriter {
+  bytes(address: number, value: Uint8Array): void;
+  u32(address: number, value: number): void;
+  u64(address: number, value: bigint): void;
+}
+
+function receiveMessage(p: Proc, d: Description & {sock: Endpoint}, f: number, target: MessageTarget, writer: MessageWriter): number {
   // (Room is made for no more than a socket holds at once: what is asked for may be all the guest's memory.)
-  const total = Math.min(iov.reduce((n, [, l]) => n + l, 0), 1 << 20), buf = new Uint8Array(total);
+  const total = Math.min(target.iov.reduce((n, [, l]) => n + l, 0), MAPPED_COPY_LIMIT), buf = new Uint8Array(total);
   const r = receive(p, d, buf, 0, total, f & ~MSG.WAITALL);
   // What came is this call's to hand on or to let go, whatever happens from here: the descriptors still held for
   // the message (one looked at keeps its own), and those made this process's already.
   let held = r.peeked ? [] : r.rights;
   const made: number[] = [];
   try {
-    return received(p, d, r, at, f, iov, buf, nameAt, nameRoom, control, room, made, () => { held = []; });
+    return received(p, d, r, f, target, buf, writer, made, () => { held = []; });
   } catch (e) {
     for (const x of held) x.release();
     for (const n of made) p.fds.close(n);
@@ -1024,14 +1043,14 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
 }
 
 /** recvmsg's second half: what `receive` took (`r`) written out to the guest (`made`: the descriptors installed; `handed`: called once the message's own hold on them is let go). */
-function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: number, f: number, iov: [number, number][], buf: Uint8Array,
-  nameAt: number, nameRoom: number, control: number, room: number, made: number[], handed: () => void): number {
-  const v = p.view;
+function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, f: number, target: MessageTarget, buf: Uint8Array,
+    writer: MessageWriter, made: number[], handed: () => void): number {
+  const {at, iov, nameAt, nameRoom, control, room} = target;
   let off = 0;
-  for (const [b, l] of iov) { if (off >= r.n) break; const k = Math.min(l, r.n - off); p.bytes.set(buf.subarray(off, off + k), b); off += k; }
+  for (const [b, l] of iov) { if (off >= r.n) break; const k = Math.min(l, r.n - off); writer.bytes(b, buf.subarray(off, off + k)); off += k; }
   if (nameAt) {
-    if (r.from) p.bytes.set(r.from.subarray(0, Math.min(nameRoom, r.from.length)), nameAt);
-    v.setUint32(at + 8, r.from?.length ?? 0, true);
+    if (r.from) writer.bytes(nameAt, r.from.subarray(0, Math.min(nameRoom, r.from.length)));
+    writer.u32(at + 8, r.from?.length ?? 0);
   }
   // Control data, in Linux's order: the sender's credentials if asked, then the descriptors that came.
   let used = 0, outFlags = r.size > r.n && !d.sock.stream ? MSG.TRUNC : 0;
@@ -1042,10 +1061,10 @@ function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: n
     if (left < 16) { outFlags |= MSG.CTRUNC; return; }
     if (left < len) outFlags |= MSG.CTRUNC;
     const body = new Uint8Array(new Int32Array(words).buffer), fit = Math.min(len, left);
-    v.setBigUint64(control + used, BigInt(fit), true);
-    v.setInt32(control + used + 8, level, true);
-    v.setInt32(control + used + 12, type, true);
-    p.bytes.set(body.subarray(0, fit - 16), control + used + 16);
+    writer.u64(control + used, BigInt(fit));
+    writer.u32(control + used + 8, level);
+    writer.u32(control + used + 12, type);
+    writer.bytes(control + used + 16, body.subarray(0, fit - 16));
     used += Math.min((len + 7) & ~7, left);
   };
   const creds = r.creds;
@@ -1067,8 +1086,8 @@ function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: n
   // Over lo a packet has gone no hop: the TTL and hop limit it was sent with.
   if (d.sock.inet && !d.sock.stream && d.sock.options.recvttl && d.sock.family === AF.INET) put(IP_TTL, [HOPS], SOL.IP);
   if (d.sock.inet && !d.sock.stream && d.sock.options.recvhops) put(IPV6_HOPLIMIT, [HOPS], SOL.IPV6);
-  v.setBigUint64(at + 40, BigInt(used), true);
-  v.setInt32(at + 48, outFlags, true);
+  writer.u64(at + 40, BigInt(used));
+  writer.u32(at + 48, outFlags);
   return f & MSG.TRUNC && !d.sock.stream ? r.size : r.n;
 }
 
@@ -1351,5 +1370,79 @@ export const NET_CALLS: Calls = {
     this.bytes.set(bytes.subarray(0, Math.min(have, bytes.length)), N(value));
     v.setUint32(N(lengthAt), Math.min(have, bytes.length), true);
     return 0;
+  },
+};
+
+function mappedStream(p: Proc, fd: bigint): Description & {sock: Endpoint} {
+  const d = socketOf(p, fd);
+  if (d.sock.family !== AF.UNIX || !d.sock.stream) fail(E.OPNOTSUPP);
+  return d;
+}
+
+function socketUser(p: Proc): MappedUserMemory {
+  const vm = p.memory?.mappedVm;
+  if (!vm) throw new Error('Local stream syscall has no mapped address space');
+  return vm.userMemory(p);
+}
+
+function mappedUnixAddress(user: MappedUserMemory, address: number, size: number): Given {
+  if (size < 2 || size > 110) fail(E.INVAL);
+  const span = user.copyIn(address, size);
+  if (new DataView(span.buffer).getUint16(0, true) !== AF.UNIX) fail(E.INVAL);
+  return unixName(span.subarray(2));
+}
+
+function mappedMessage(user: MappedUserMemory, at: number): MessageTarget {
+  const header = new DataView(user.copyIn(at, 56).buffer);
+  const iovAt = Number(header.getBigUint64(16, true)), count = Number(header.getBigUint64(24, true));
+  if (count > 1024) fail(E.INVAL);
+  const table = new DataView(user.copyIn(iovAt, count * 16).buffer);
+  const iov = vectors(table, 0, count, MAPPED_COPY_LIMIT);
+  const nameAt = Number(header.getBigUint64(0, true)), control = Number(header.getBigUint64(32, true));
+  return {at, iov, nameAt, nameRoom: nameAt ? header.getUint32(8, true) : 0,
+    control, room: control ? Number(header.getBigUint64(40, true)) : 0};
+}
+
+/** Client entry points for local streams in the inline mapped VM. */
+export const MAPPED_NET_CALLS: Calls = {
+  41(domain, type, protocol) {
+    if (N(domain) !== AF.UNIX) fail(E.AFNOSUPPORT);
+    if (kindOf(AF.UNIX, N(type), N(protocol)) !== SOCK.STREAM) fail(E.OPNOTSUPP);
+    return install(this, new Endpoint(this.kernel, AF.UNIX, SOCK.STREAM, this), N(type));
+  },
+  42(fd, address, length) {
+    const d = mappedStream(this, fd);
+    return connectStream(this, d, d.sock, mappedUnixAddress(socketUser(this), N(address), N(length)));
+  },
+  46(fd, msg, flags) {
+    const d = mappedStream(this, fd), user = socketUser(this);
+    const {iov, nameAt, nameRoom, control, room} = mappedMessage(user, N(msg));
+    const data = new Uint8Array(iov.reduce((n, [, length]) => n + length, 0));
+    let off = 0;
+    for (const [address, length] of iov) {
+      user.copyInTo(address, data, off, length);
+      off += length;
+    }
+    const rights = room ? controls(this, new DataView(user.copyIn(control, room).buffer), 0, room) : [];
+    const target = nameRoom ? mappedUnixAddress(user, nameAt, nameRoom) : null;
+    return transmit(this, d, data, N(flags), target, rights);
+  },
+  47(fd, msg, flags) {
+    const d = mappedStream(this, fd), user = socketUser(this), target = mappedMessage(user, N(msg));
+    const writable = (at: number, length: number): void => {
+      if (user.prefix(at, length, 'write') !== length) fail(E.FAULT);
+    };
+    const {at, iov, nameAt, nameRoom, control, room} = target;
+    if (nameAt) writable(at + 8, 4);
+    writable(at + 40, 12);
+    for (const [address, length] of iov) writable(address, length);
+    writable(nameAt, nameRoom);
+    writable(control, room);
+    const word = new Uint8Array(8), low = word.subarray(0, 4), view = new DataView(word.buffer);
+    return receiveMessage(this, d, N(flags), target, {
+      bytes: user.copyOut,
+      u32: (address, value) => { view.setUint32(0, value, true); user.copyOut(address, low); },
+      u64: (address, value) => { view.setBigUint64(0, value, true); user.copyOut(address, word); },
+    });
   },
 };

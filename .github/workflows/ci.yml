@@ -371,12 +371,18 @@ jobs:
       # identity, and the cache that keeps translations under it.
       - name: Test sods
         if: matrix.part == 'native'
-        run: cargo test --locked --release --manifest-path ricebox/sods/Cargo.toml
+        run: cargo test --locked --release --features mapped-code --manifest-path ricebox/sods/Cargo.toml
+      - name: Build the mapped-code translator for runtime tests
+        if: matrix.part == 'native'
+        run: >-
+          cargo build --locked --release --lib --features mapped-code --target wasm32-unknown-unknown
+          --manifest-path ricebox/sods/Cargo.toml --target-dir target/sods-mapped
       - name: Test the Sods runtime with current translators
         if: matrix.part == 'native'
         env:
           SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
           SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          SODS_TEST_MAPPED_WASM: target/sods-mapped/wasm32-unknown-unknown/release/sods.wasm
           SODS_NATIVE: ricebox/sods/target/release/sods
         run: node --test --test-concurrency=3 ricebox/sods/test/runtime/*.test.ts
       # Verify the distribution against the translator binaries this job just built.
@@ -440,12 +446,12 @@ jobs:
           sh "$test_dir/build.sh" scanner target/everyday-source "$build"
           sh "$test_dir/build.sh" guest target/everyday-source "$build"
           timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" inline
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" worker
           # Repeat with a separately executed guest client, not a host display path.
           timeout --kill-after=2s 23s python3 "$test_dir/native-check.py" "$build/wayland-presenter" "$build/wayland-socket-client"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" inline "$build/wayland-socket-client"
-          timeout --kill-after=2s 23s node "$test_dir/guest.integration.mjs" "$build/wayland-presenter" worker "$build/wayland-socket-client"
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" inline "$build/wayland-socket-client"
+          timeout --kill-after=2s 23s node "$test_dir/guest.integration.ts" "$build/wayland-presenter" worker "$build/wayland-socket-client"
 
       # This opt-in gate consumes the fixture already built above. There is no
       # binary, screenshot or app upload, and Chromium uses its own sandbox.

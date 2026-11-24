@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {Kernel, Process, SHARES, type Task} from '../../runtime/linux/process.ts';
+import {Kernel, Process, type Task} from '../../runtime/linux/process.ts';
+import {SHARES} from '../../runtime/linux/thread-abi.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Vfs} from '../../runtime/linux/fs.ts';
 function kernel(vfs=new Vfs()){return new Kernel({vfs,translate(){throw Error('unused');},console:{write(){},read:()=>null}});}

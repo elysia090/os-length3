@@ -12,10 +12,20 @@
 
 import type {Cpu, Proc} from './parts.ts';
 import {began, steady} from '../host.ts';
+import {E, FsError} from './fs.ts';
 
 /** Clock ids Linux has: which clock each reads (1 the wall, 2 the steady, 3 a CPU-time one; 0 none), by id. */
 const KIND = new Uint8Array([1, 2, 3, 3, 2, 1, 2, 2, 1, 2, 0, 1]);
 const kindOf = (id: number): number => (id < 0 ? 3 : id < KIND.length ? KIND[id] : 0);
+
+/** A guest timespec in nanoseconds. Mapped callers validate a whole private copy. */
+export function readTimespec(p: Proc, at: number): bigint {
+  const bytes = p.memory?.mappedVm?.userMemory(p).copyIn(at, 16);
+  const view = bytes ? new DataView(bytes.buffer) : p.view, offset = bytes ? 0 : at;
+  const seconds = view.getBigInt64(offset, true), nanos = view.getBigInt64(offset + 8, true);
+  if (bytes && (seconds < 0n || nanos < 0n || nanos >= 1000000000n)) throw new FsError(E.INVAL);
+  return seconds * 1000000000n + nanos;
+}
 
 /** A kernel's clocks (clocks()): ns as BigInts, ms as Numbers. */
 export interface Clocks {

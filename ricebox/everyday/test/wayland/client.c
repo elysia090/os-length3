@@ -9,6 +9,14 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
+struct Backing {
+    struct wl_buffer *buffer;
+    unsigned char *data;
+    size_t length;
+    int width, height, stride;
+    bool awaiting_release;
+};
+
 struct Client {
     struct wl_compositor *compositor;
     struct wl_shm *shm;
@@ -18,27 +26,25 @@ struct Client {
     struct xdg_wm_base *wm;
     struct xdg_surface *role;
     struct xdg_toplevel *window;
+    struct wl_callback *frame;
+    struct Backing backing;
     int width, height, pending_width, pending_height;
     int px, py, marker_x, marker_y;
     bool offered, entered, closed, failed;
     unsigned pointer_events, configs, done, released, published;
 };
-struct Hold {
-    void *data;
-    size_t length;
-    struct Client *client;
-};
 static void release(void *arg, struct wl_buffer *buffer) {
-    struct Hold *hold = arg;
-    hold->client->released++;
-    wl_buffer_destroy(buffer);
-    munmap(hold->data, hold->length);
-    free(hold);
+    struct Client *c = arg;
+    if (buffer != c->backing.buffer || !c->backing.awaiting_release) { c->failed = true; return; }
+    c->backing.awaiting_release = false;
+    c->released++;
 }
 static const struct wl_buffer_listener released = { .release = release };
-static void done(void *arg, struct wl_callback *cb, uint32_t serial) {
+static void done(void *arg, struct wl_callback *cb, uint32_t time) {
+    (void)time;
     struct Client *c = arg;
-    if (!serial) c->failed = true;
+    if (cb != c->frame) { c->failed = true; return; }
+    c->frame = NULL;
     ++c->done;
     wl_callback_destroy(cb);
 }
@@ -50,17 +56,52 @@ static const uint32_t frame_format = WL_SHM_FORMAT_ARGB8888;
 static const uint32_t frame_format = WL_SHM_FORMAT_XRGB8888;
 #endif
 
-static void draw(struct Client *c) {
+static bool drop_backing(struct Backing *backing) {
+    if (!backing->buffer) return true;
+    if (backing->awaiting_release) return false;
+    wl_buffer_destroy(backing->buffer);
+    bool ok = munmap(backing->data, backing->length) == 0;
+    *backing = (struct Backing){0};
+    return ok;
+}
+
+static bool make_backing(struct Client *c) {
     // Both paths use padded rows; the opaque control also uses a non-alpha X byte.
     int stride = c->width * 4 + 12, length = stride * c->height;
     int fd = memfd_create("guest-wayland-presenter", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-    if (fd < 0) { c->failed = true; return; }
+    if (fd < 0) return false;
     if (ftruncate(fd, length) < 0 || fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL) < 0) {
-        close(fd); c->failed = true; return;
+        close(fd); return false;
     }
     unsigned char *data = mmap(NULL, (size_t)length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) { close(fd); c->failed = true; return; }
-    memset(data, 0x6a, (size_t)length);
+    if (data == MAP_FAILED) { close(fd); return false; }
+    struct wl_shm_pool *pool = wl_shm_create_pool(c->shm, fd, length);
+    close(fd);
+    if (!pool) { munmap(data, (size_t)length); return false; }
+    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, c->width, c->height, stride, frame_format);
+    wl_shm_pool_destroy(pool);
+    if (!buffer || wl_buffer_add_listener(buffer, &released, c) < 0) {
+        if (buffer) wl_buffer_destroy(buffer);
+        munmap(data, (size_t)length);
+        return false;
+    }
+    c->backing = (struct Backing){
+        .buffer = buffer, .data = data, .length = (size_t)length,
+        .width = c->width, .height = c->height, .stride = stride,
+    };
+    return true;
+}
+
+static void draw(struct Client *c) {
+    struct Backing *backing = &c->backing;
+    // Frame completion and buffer release are independent. Only release makes
+    // the old mapping writable for another commit, even after frame.done.
+    if (backing->awaiting_release || c->frame) { c->failed = true; return; }
+    if (!backing->buffer || backing->width != c->width || backing->height != c->height) {
+        if (!drop_backing(backing) || !make_backing(c)) { c->failed = true; return; }
+    }
+    unsigned char *data = backing->data;
+    memset(data, 0x6a, backing->length);
     for (int y = 0; y < c->height; ++y) {
         for (int x = 0; x < c->width; ++x) {
 #ifdef EVERYDAY_TEST_ALPHA_FIXTURE
@@ -75,26 +116,18 @@ static void draw(struct Client *c) {
             uint32_t b = mark ? 105u : (unsigned)(42 + (x ^ y));
             uint32_t pixel = (0x4du << 24) | (r << 16) | (g << 8) | b;
 #endif
-            ((uint32_t *)(data + y * stride))[x] = pixel;
+            ((uint32_t *)(data + y * backing->stride))[x] = pixel;
         }
     }
-    struct wl_shm_pool *pool = wl_shm_create_pool(c->shm, fd, length);
-    close(fd);
-    if (!pool) { munmap(data, (size_t)length); c->failed = true; return; }
-    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, c->width, c->height, stride, frame_format);
-    wl_shm_pool_destroy(pool);
-    struct Hold *hold = malloc(sizeof *hold);
-    if (!buffer || !hold) {
-        if (buffer) wl_buffer_destroy(buffer);
-        munmap(data, (size_t)length); free(hold); c->failed = true; return;
-    }
-    *hold = (struct Hold){data, (size_t)length, c};
-    if (wl_buffer_add_listener(buffer, &released, hold) < 0) {
-        wl_buffer_destroy(buffer); munmap(data, (size_t)length); free(hold); c->failed = true; return;
-    }
     struct wl_callback *request = wl_surface_frame(c->surface);
-    if (!request || wl_callback_add_listener(request, &callback, c) < 0) { c->failed = true; return; }
-    wl_surface_attach(c->surface, buffer, 0, 0);
+    if (!request || wl_callback_add_listener(request, &callback, c) < 0) {
+        if (request) wl_callback_destroy(request);
+        c->failed = true;
+        return;
+    }
+    c->frame = request;
+    backing->awaiting_release = true;
+    wl_surface_attach(c->surface, backing->buffer, 0, 0);
     wl_surface_damage(c->surface, 0, 0, c->width, c->height);
     wl_surface_commit(c->surface);
     c->published++;
@@ -195,12 +228,12 @@ static int run_client(struct wl_display *display) {
         xdg_toplevel_add_listener(c.window, &top, &c) < 0) return 23;
     wl_surface_commit(c.surface); // Map handshake first, no buffer.
     while (!c.closed && !c.failed) if (wl_display_dispatch(display) < 0) { c.failed = true; break; }
-    if (c.failed || c.done != c.published || c.released != c.published || c.configs < 1 || c.published < 1) {
+    if (c.failed || c.frame || c.backing.awaiting_release ||
+        c.done != c.published || c.released != c.published || c.configs < 1 || c.published < 1) {
         fprintf(stderr,"Wayland client failed: %u commits %u done %u released\n",c.published,c.done,c.released);
         return 24;
     }
-    printf("WAYLAND_CLIENT pointer=%u configure=%u frame_done=%u releases=%u\n", c.pointer_events, c.configs, c.done, c.released);
-    fflush(stdout);
+    if (!drop_backing(&c.backing)) return 25;
     if (c.pointer) wl_pointer_destroy(c.pointer);
     wl_seat_destroy(c.seat);
     xdg_toplevel_destroy(c.window);
@@ -210,9 +243,11 @@ static int run_client(struct wl_display *display) {
     wl_shm_destroy(c.shm);
     wl_compositor_destroy(c.compositor);
     wl_registry_destroy(r);
-    if (wl_display_roundtrip(display) < 0) return 25;
+    int drained = wl_display_roundtrip(display);
     wl_display_disconnect(display);
-    return 0;
+    if (drained < 0) return 25;
+    printf("WAYLAND_CLIENT pointer=%u configure=%u frame_done=%u releases=%u\n", c.pointer_events, c.configs, c.done, c.released);
+    return fflush(stdout) == 0 ? 0 : 25;
 }
 
 

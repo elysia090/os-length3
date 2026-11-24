@@ -8,6 +8,13 @@ publish = false
 # A unit of its own, with its own lock: not a member of the workspace above it (the OS's, at the top).
 [workspace]
 
+[features]
+# Inspect ELF load metadata for the compatibility work. It is not an
+# execution profile and is absent from the default static translator.
+dynamic-load-plan = []
+# Experimental code backend, not a Linux exec profile.
+mapped-code = ["dynamic-load-plan"]
+
 [dependencies]
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
 wasm-encoder = "0.263"

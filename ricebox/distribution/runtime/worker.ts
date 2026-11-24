@@ -92,10 +92,14 @@ import {requireStandardFileOwner} from '../format/manifest.ts';
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
 import {validateExecutable, canonicalHotSources} from './prepared-executable.ts';
+import {compilePublished, deployedCode} from './deployed-code.ts';
+import {digest} from './download.ts';
+import {webExecutableSources} from '../format/executable-source.ts';
+import {validateWebExecution} from '../format/manifest.ts';
 import type {Index, PreparedExecutable} from './root-types.ts';
 import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
-import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads, validConsoleWindow,
+import {ExecCommitError, Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads, validConsoleWindow,
   type Console, type File, type Image, type SourceBoundExecutable, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from '../format/mount.ts';
@@ -144,9 +148,15 @@ type Posted =
   | {type: 'kept'; at: Kept['at']}
   | (Ready & {type: 'ready'})
   | Start;
-/** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
-interface Readied { translate: Translate; vfs: Vfs; files: Program[]; tree: PreparedTree;
-  prepared?: {generation: string; index: Index; executables: Map<string, PreparedExecutable>}; }
+/** The tree owns installed bytes. Only legacy needs its original program list to attach path-based translations. */
+type Readied = {translate: Translate; tree: PreparedTree; deployment?: {
+  maker: SourceBoundExecutable;
+  programs: ReturnType<typeof webExecutableSources>;
+  url: string;
+}} & (
+  | {legacyFiles: Program[]; prepared?: never}
+  | {legacyFiles?: never; prepared: {generation: string; index: Index; executables: Map<string, PreparedExecutable>}}
+);
 
 /** Where the bundle is in the tree (BOX, as whoever asks for the bundle names it), under the tmpfs the box has at /run: its maker and its config.json. */
 const BOX = '/run/box';
@@ -200,11 +210,16 @@ function addExecutables(r: Readied, values: PreparedExecutable[] = []): void {
   for (const [key, value] of admitted) prepared.executables.set(key, value);
 }
 function boundExecutables(r: Readied): SourceBoundExecutable[] {
-  return [...r.prepared!.executables.values()].map(value => ({key: value.key, source: r.tree.sources.get(value.source.origin)!, module: value.module, segments: value.segments, shared: value.shared}));
+  const bound: SourceBoundExecutable[] = [];
+  if (r.deployment) bound.push(r.deployment.maker);
+  for (const value of r.prepared?.executables.values() ?? []) {
+    bound.push({key: value.key, source: r.tree.sources.get(value.source.origin)!, module: value.module, segments: value.segments, shared: value.shared});
+  }
+  return bound;
 }
 function makePreparedKernel(r: Readied, options: Parameters<typeof linux>[0]) {
   try {
-    const result = preparedLinux({...options, vfs: r.vfs, executables: boundExecutables(r)});
+    const result = preparedLinux({...options, vfs: r.tree.vfs, executables: boundExecutables(r)});
     if (!lifetime.accepting) {
       // Freeze may reenter physical/engine preparation. The retirement pass
       // could not see this newly returned owner, so explicitly retain and stop it.
@@ -277,11 +292,17 @@ function ready(data: Ready): Promise<Readied> {
     try {
       const translate = await loadTranslator(data.translator);
       lifetime.check();
+      const published = data.root && 'execution' in data.root.index ? data.root.index as Index : undefined;
+      if (published) { validateWebExecution(published); ordinaryOverlays(data.files); }
       const index = data.profile ? data.root?.index as Index | undefined : undefined;
       if (data.profile && (!index || !Array.isArray(index.translations))) throw new Error('Prepared root requires its complete canonical index');
-      const captureSources = index ? canonicalHotSources(index) : undefined;
+      const programs = published && webExecutableSources(published);
+      const maker = published?.execution?.maker;
+      const makerOrigin = maker ? 'maker:' + maker.sha256 : undefined;
+      const captureSources = programs ? [...programs.values()].map(value => value.source)
+        : index ? canonicalHotSources(index) : undefined;
       if (index) for (const executable of data.executables ?? []) validateExecutable(index, data.generation!, executable);
-      const tree = prepareTree({captureSources, muk: data.muk, files: data.files,
+      const tree = prepareTree({captureSources, muk: data.muk, makerOrigin, files: data.files,
         root: data.root ? {index: data.root.index, reading: {
           range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
           decode: translate.unzstd, sha256: translate.sha256,
@@ -289,13 +310,27 @@ function ready(data: Ready): Promise<Readied> {
       });
       // The prepared root stays reachable through this result and kernels that borrow it.
       lifetime.observe('prepared-tree', tree);
-      const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree,
-        ...(index ? {prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}} : {})};
+      let deployment: Readied['deployment'];
+      if (maker && programs && makerOrigin && data.root) {
+        if (!data.muk || data.muk.byteLength !== maker.size || await digest(data.muk) !== maker.sha256) {
+          throw new Error('The box maker disagrees with its published Wasm descriptor');
+        }
+        const shared = data.executables?.[0]?.shared ?? canRunApart();
+        const {module, segments} = await compilePublished(data.muk, shared);
+        lifetime.check();
+        deployment = {programs, url: data.root.url, maker: {key: makerOrigin, source: tree.sources.get(makerOrigin)!, module, segments, shared}};
+      }
+      const r: Readied = index
+        ? {translate, tree, deployment, prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}}
+        : {translate, tree, deployment, legacyFiles: data.files ?? []};
       if (r.prepared) addExecutables(r, data.executables);
-      if (data.rehearse) await rehearse(r, data.rehearse).catch(error => {
+      if (data.rehearse && !deployment) await rehearse(r, data.rehearse).catch(error => {
         // Rehearsal is optional for startup speed, not optional ownership
         // evidence. A later successful foreground run cannot erase its failure.
         lifetime.failures.push(error);
+        // An uncertain exec owns this very tree. It is not a failed warm-up
+        // that a foreground start may ignore and replace on the same owner.
+        if (error instanceof ExecCommitError) throw error;
       });
       return r;
     } finally { preparing.release(); }
@@ -308,11 +343,11 @@ const REHEARSAL_MS = 2000;
 
 /** `box` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
 async function rehearse(r: Readied, box: Box): Promise<void> {
-  const {translate, vfs, files} = r;
+  const {translate, tree: {vfs}} = r;
   const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
   const made = {vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed};
-  const k = r.prepared ? makePreparedKernel(r, made).kernel : linux({...made, translated: files});
+  const k = r.prepared ? makePreparedKernel(r, made).kernel : linux({...made, translated: r.legacyFiles});
   executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
   const operation = lifetime.enter('rehearsal-operation');
   let completed = false;
@@ -563,7 +598,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // This is only this private global reference, not every Image/source or
       // a Worker-stop or reference-release barrier. Do not mutate shared images.
       const inactive = (): boolean => k.current === null && k.tasks.size === 0 && k.procs.size === 0
-        && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.vfs.loaded.keepers.has(k);
+        && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.failedExecs?.size && !k.vfs.loaded.keepers.has(k);
       if (!inactive()) return;
       if (k instanceof RemoteKernel) {
         const evidence = await k.snapshotWorkerStops();
@@ -680,7 +715,14 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       return;
     }
     if (data.type === 'warm') { if (canRunApart()) { warmOwner ??= lifetime.observe('warm-pool'); warmThreads({failed}); } return; }
-    if (data.type === 'hot') { if (selection?.profile === 'canonical-aot-v1') throw new Error('Prepared root requires executable-only hot messages'); if (kernel) given(kernel, data.files); return; }
+    if (data.type === 'hot') {
+      if (selection?.profile === 'canonical-aot-v1' || (readied && (await readied).deployment)) {
+        throw new Error('Prepared root requires executable-only hot messages');
+      }
+      lifetime.check();
+      if (kernel) given(kernel, data.files);
+      return;
+    }
     if (data.type === 'executables') {
       checkSelection({profile: 'canonical-aot-v1', generation: data.generation});
       if (!readied) throw new Error('Root is not prepared');
@@ -711,16 +753,17 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // Readied before, or now: then this start's files are those readied, put before the root.
       const before = readied !== null;
       const r = await ready(data);
-      const {translate, vfs, files: early} = r;
+      const {translate, tree: {vfs}} = r;
       lifetime.check();
+      if (r.deployment) ordinaryOverlays(data.files);
       const later = before ? data.files ?? [] : [];
       for (const d of data.dirs ?? []) vfs.mkdirp(d);
       // Over the root, as over the files readied: what this start gives is what is there.
-      for (const f of later) { if (r.prepared) vfs.writeFile(f.path, f.bytes, f.mode); else provide(vfs, f); }
+      for (const f of later) { if (r.prepared || r.deployment) vfs.writeFile(f.path, f.bytes, f.mode); else provide(vfs, f); }
       if (r.prepared && before) addExecutables(r, data.executables);
       for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
       vfs.mkdirp(data.cwd);
-      const files = [...early, ...later];
+      const legacyFiles = r.prepared || r.deployment ? undefined : [...r.legacyFiles, ...later];
       const console: Console = {
         // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
         // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
@@ -741,14 +784,18 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
         pending: () => pending.reduce((n, b) => n + b.length, 0),
       };
       // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
-      keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
-      keptAt = data.kept?.at ?? null;
+      const deployment = r.deployment;
+      keep = deployment
+        ? deployedCode(deployment.programs, deployment.url, deployment.maker.shared ?? false, nudge, () => lifetime.enter('deployed-code-read'))
+        : data.kept ? keeper(data.kept, nudge, (urls) => self.postMessage({type: 'used', urls})) : null;
+      keptAt = deployment ? null : data.kept?.at ?? null;
       // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
       // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
-      const made = {vfs, translate, console, keeper: keep, onIdle: (r: Pumped) => paused(r), consolidateIdle: true};
-      const prepared = r.prepared ? makePreparedKernel(r, made) : null;
+      const made = {vfs, translate: deployment ? undefined : translate, x87: translate.module,
+        console, keeper: keep, onIdle: (r: Pumped) => paused(r), consolidateIdle: !deployment};
+      const prepared = r.prepared || deployment ? makePreparedKernel(r, made) : null;
       const firstForeground = kernel === null;
-      const k = kernel = prepared?.kernel ?? linux({...made, translated: files});
+      const k = kernel = prepared?.kernel ?? linux({...made, translated: legacyFiles});
       // A legacy replacement does not inherit a previous page's known size IDs.
       forgetTerminalResize();
       if (lifetime.accepting && !outputBoundarySent && firstForeground && data.screen && data.terminalResize === true) {
@@ -757,8 +804,8 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       foregroundReference?.release(); foregroundReference = lifetime.observe('foreground-reference', k);
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
-      if (prepared) followPrepared(r, prepared.attached);
-      else for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
+      if (prepared && r.prepared && !deployment) followPrepared(r, prepared.attached);
+      else if (legacyFiles) for (const f of legacyFiles) if (f.module) follow(k, vfs.file(f.path), f);
       if (data.mirror) {
         const preparedMirror = new Mirror(vfs, data.mirror);
         // Construction walks mappings/loaders too; retirement must not be

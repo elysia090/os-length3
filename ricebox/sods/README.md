@@ -38,6 +38,13 @@ install the `wasm32-unknown-unknown` Rust target and build with
 `node runtime/run.ts PROGRAM` is the development runner. These commands are not
 additional JavaScript package exports.
 
+The `linux.ts` entry also stages an inline dynamic guest with
+`prepareMappedInitial`. Capture the exact main and interpreter with
+`captureExecutableSource` and the dependency catalogue with
+`captureMappedLibraries`. The embedding may associate verified code through
+`capturePreparedMappedCode`. The returned handoff admits the guest through
+`checkStart()` and `publishInitial()`, or releases it with `discard()`.
+
 ## Local JavaScript package
 
 `node ricebox/sods/package/npm.ts NEW_DIRECTORY` emits a private package with four explicit

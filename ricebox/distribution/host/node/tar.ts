@@ -17,23 +17,23 @@ export async function* tarMembers(stream: Readable): AsyncGenerator<TarMember> {
   const chunks: Buffer[] = [];
   let have = 0, skip = 0, done = false;
   const it: AsyncIterator<Buffer> = stream[Symbol.asyncIterator]();
-  const take = async (n: number) => {
-    while (have < n && !done) {
+  const take = async (n: number, padded = n) => {
+    while (have < padded && !done) {
       const r = await it.next();
       if (r.done) done = true;
       else { chunks.push(r.value); have += r.value.length; }
     }
-    if (have < n) throw new Error('tar: cut short');
+    if (have < padded) throw new Error('tar: cut short');
     const out = Buffer.allocUnsafe(n);
     let at = 0;
-    while (at < n) {
+    while (at < padded) {
       const c = chunks[0];
-      const k = Math.min(c.length - skip, n - at);
-      c.copy(out, at, skip, skip + k);
+      const k = Math.min(c.length - skip, padded - at);
+      if (at < n) c.copy(out, at, skip, skip + Math.min(n - at, k));
       at += k; skip += k;
       if (skip === c.length) { chunks.shift(); skip = 0; }
     }
-    have -= n;
+    have -= padded;
     return out;
   };
   const octal = (b: Buffer) => { const t = b.toString('latin1').replace(/\0.*$/s, '').trim(); return t ? parseInt(t, 8) : 0; };
@@ -47,7 +47,7 @@ export async function* tarMembers(stream: Readable): AsyncGenerator<TarMember> {
     let name = text(block.subarray(0, 100));
     if (block.subarray(257, 262).toString('latin1') === 'ustar' && block[345]) name = `${text(block.subarray(345, 500))}/${name}`;
     const padded = Math.ceil(size / 512) * 512;
-    const body = (await take(padded)).subarray(0, size);
+    const body = await take(size, padded);
     if (kind === 'x' || kind === 'g') {
       if (kind === 'x') {
         let rest = body;
@@ -78,33 +78,43 @@ const inRoot = (name: string) => {
 
 /**
  * The root in a release tarball, as why installs it, and its manifest file:
- * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
- * (ricebox/distribution/build/distribution.ts packs them from here).
+ * {entries, manifest}. `each(entry, bytes)` sees each file once and can stop
+ * reading the next member until it has admitted the supplied body.
  */
-export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void = () => {}): Promise<Tree> {
+export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void | Promise<void> = () => {}): Promise<Tree> {
   const entries: Entry[] = [];
   const files = new Map<string, Entry>();
   let manifest = '';
-  const stream = createReadStream(file).pipe(createZstdDecompress());
-  for await (const m of tarMembers(stream)) {
-    if (m.name.replace(/^\.\//, '') === 'manifest') { manifest = m.bytes.toString('utf8'); continue; }
-    const path = inRoot(m.name);
-    if (!path) continue;
-    if (m.kind === '5') entries.push({path, type: 'dir', mode: m.mode | 0o700});
-    else if (m.kind === '2') entries.push({path, type: 'link', mode: 0o777, target: m.link});
-    else if (m.kind === '0') {
-      const e: Entry = {path, type: 'file', mode: m.mode & 0o777, size: m.size, sha256: sha256(m.bytes)};
-      files.set(path, e);
-      entries.push(e);
-      each(e, m.bytes);
-    } else if (m.kind === '1') {
-      const to = files.get(inRoot(m.link) ?? '');
-      if (!to) throw new Error(`tar: ${m.name} links to ${m.link}, which is not a file before it`);
-      // One file with two names: its mode is the file's.
-      const e: Entry = {...to, path, same: to.path};
-      entries.push(e);
-      each(e, null);
-    } else throw new Error(`tar: ${m.name}: kind ${m.kind} is not part of a root`);
+  const archive = createReadStream(file), stream = archive.pipe(createZstdDecompress());
+  archive.on('error', error => stream.destroy(error));
+  try {
+    for await (const m of tarMembers(stream)) {
+      if (m.name.replace(/^\.\//, '') === 'manifest') { manifest = m.bytes.toString('utf8'); continue; }
+      const path = inRoot(m.name);
+      if (!path) continue;
+      if (m.kind === '5') entries.push({path, type: 'dir', mode: m.mode | 0o700});
+      else if (m.kind === '2') entries.push({path, type: 'link', mode: 0o777, target: m.link});
+      else {
+        let e: Entry, body: Buffer | null;
+        if (m.kind === '0') {
+          body = m.bytes;
+          e = {path, type: 'file', mode: m.mode & 0o777, size: m.size, sha256: sha256(body)};
+          files.set(path, e);
+        } else if (m.kind === '1') {
+          const to = files.get(inRoot(m.link) ?? '');
+          if (!to) throw new Error(`tar: ${m.name} links to ${m.link}, which is not a file before it`);
+          // One file with two names: its mode is the file's.
+          body = null;
+          e = {...to, path, same: to.path};
+        } else throw new Error(`tar: ${m.name}: kind ${m.kind} is not part of a root`);
+        entries.push(e);
+        const admitted = each(e, body);
+        if (admitted) await admitted;
+      }
+    }
+  } finally {
+    archive.destroy();
+    stream.destroy();
   }
   entries.sort(byPath);
   return {entries, manifest};

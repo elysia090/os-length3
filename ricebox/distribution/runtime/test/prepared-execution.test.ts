@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {lstatSync, readFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {test} from 'node:test';
-import {preparedLinux, RemoteKernel} from '../../../sods/runtime/linux.ts';
+import {zstdCompressSync, zstdDecompressSync} from 'node:zlib';
+import {Kernel, preparedLinux, RemoteKernel} from '../../../sods/runtime/linux.ts';
 import {loadTranslator, prepare} from '../../../sods/runtime/translate.ts';
-import {packOf} from '../../format/pack.ts';
-import {canonicalExecutableSource} from '../../format/executable-source.ts';
+import {LINE, packOf} from '../../format/pack.ts';
+import {canonicalExecutableSource, canonicalPackedFileSet} from '../../format/executable-source.ts';
 import {prepareTree} from '../prepared-tree.ts';
 import {executableKey} from '../prepared-executable.ts';
 import type {Index, PreparedExecutable} from '../root-types.ts';
@@ -29,6 +31,47 @@ function root(bytes: Uint8Array, mode = 0o755) {
     translator:{name:'sods',version:'test',path:'blobs/translator.bin',sha256:'d'.repeat(64),size:8,bytes:8,wasm:'e'.repeat(64)}};
   return {index,t,source:canonicalExecutableSource(index,t),reads:()=>reads,reading:{sha256:digest,decode(){throw Error('raw');},range(_name:string,at:number,length:number){reads++;return pack.bytes.slice(at,at+length);}}};
 }
+
+const stagedRoot = process.env.SODS_TEST_DYNAMIC_ROOT, mukFile = process.env.RICEBOX_MUK_FILE;
+test('the pinned fixture file set captures lazily from one checked root without reading or rehashing warm members', {
+  skip: !stagedRoot || !mukFile ? 'requires the matched dynamic fixture and existing Muk artifact; no guest is run' : false,
+}, () => {
+  const lib = '/usr/lib/x86_64-linux-gnu/', paths = ['/usr/bin/ricebox-pie-fixture', `${lib}ld-linux-x86-64.so.2`,
+    `${lib}libc.so.6`, `${lib}libricebox-pie-fixture.so.1`];
+  // These are actual staged bytes. The app and its DSO are local fixture
+  // builds; the interpreter and libc are from the pinned Debian archive.
+  const payloads = paths.map(path => {
+    const where = join(stagedRoot!, path);
+    assert.ok(lstatSync(where).isFile());
+    return new Uint8Array(readFileSync(where));
+  });
+  assert.equal(hash(payloads[1]), '8642358c60bdf4579911381070c69cc7b1a447809b73d483ce799c4421609d21');
+  assert.equal(hash(payloads[2]), 'cc7377e8816cefadbb4ee083f5387f67a4a883d90bc273160842a6ac075af662');
+  const stored = payloads.map(bytes => zstdCompressSync(bytes)), pack = packOf(stored, digest);
+  const index = {codec: 'zstd', packs: [{name: pack.name, owner: 'fixture', bytes: pack.bytes.length}], dirs: [], links: [],
+    files: paths.map((path, i) => ({path, mode: i < 2 ? 0o755 : 0o644, size: payloads[i].length, pack: 0, at: pack.at[i], len: stored[i].length}))};
+  const reads: [number, number][] = [], hashes: number[] = [], decoded: number[] = [];
+  const tree = prepareTree({muk: readFileSync(mukFile!), captureSources: canonicalPackedFileSet(index, paths), root: {index, reading: {
+    range(name, at, length) {
+      assert.equal(name, pack.name); reads.push([at, length]); return pack.bytes.slice(at, at + length);
+    },
+    sha256(bytes) { hashes.push(bytes.length); return digest(bytes); },
+    decode(bytes, size) {
+      decoded.push(bytes.length);
+      const out = zstdDecompressSync(bytes); assert.equal(out.length, size);
+      return new Uint8Array(out);
+    },
+  }}});
+  assert.equal(tree.sources.size, paths.length);
+  assert.deepEqual([reads, hashes, decoded], [[], [], []], 'select and capture are metadata only');
+  for (const i of [0, 1]) assert.deepEqual(tree.vfs.readFile(paths[i]), payloads[i]);
+  assert.deepEqual(reads, [[pack.at[0], stored[0].length], [0, paths.length * LINE], [pack.at[1], stored[1].length]]);
+  assert.deepEqual(hashes, [paths.length * LINE, stored[0].length, stored[1].length]);
+  assert.deepEqual(decoded, [stored[0].length, stored[1].length], 'dependencies were not fetched');
+  for (const i of [0, 1, 0, 1]) assert.deepEqual(tree.vfs.readFile(paths[i]), payloads[i]);
+  assert.deepEqual([reads.length, hashes.length, decoded.length], [3, 3, 2], 'resident members keep their existing verification');
+});
+
 test('actual prepared tree captures before overlays and whole AOT preserves lazy complete ELF', {skip:!translatorPath}, async()=>{
   const bytes=elf(),r=root(bytes),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes));
   const replacement=bytes.slice();replacement[4108]=99;
@@ -96,6 +139,55 @@ test('actual Worker captures original source before an ordinary overlay and vali
   }finally{if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');}
 });
 
+for (const prepared of [false, true]) test(`ready overlays belong to the VFS at foreground start, prepared=${prepared}`, async () => {
+  const r = root(elf()), generation = 'f'.repeat(64), source = r.source;
+  const facts = new TextEncoder().encode('sods.facts'), body = new TextEncoder().encode('{}');
+  const module = new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0,0,1+facts.length+body.length,facts.length,...facts,...body));
+  const aot: PreparedExecutable = {generation, key: executableKey(generation, source, r.t, r.index.translator.sha256, false),
+    path: source.path, source, artifact: {sha256: r.t.wasm.sha256, translator: r.index.translator.sha256, mode: 'whole'},
+    module, segments: null, shared: false};
+  const files = [{path: '/replaced', bytes: Uint8Array.of(2)}, {path: '/retained', bytes: Uint8Array.of(3)},
+    ...(!prepared ? [{path: '/legacy-hot', bytes: Uint8Array.of(4), module, shared: false}] : [])];
+  const iterator = files[Symbol.iterator].bind(files);
+  let visits = 0;
+  files[Symbol.iterator] = () => { visits++; return iterator(); };
+  const messages: {type: string; message?: string}[] = [];
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>),
+    postMessage(message: typeof messages[number]) { messages.push(message); }};
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'self'), start = Kernel.prototype.start;
+  let reached = 0;
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  Kernel.prototype.start = function () {
+    assert.deepEqual(this.vfs.readFile('/replaced'), Uint8Array.of(9));
+    assert.deepEqual(this.vfs.readFile('/retained'), Uint8Array.of(3));
+    if (prepared) {
+      assert.equal(this.translated(this.vfs.file('/usr/bin/hard')), true);
+      assert.equal(this.translated(this.vfs.file(r.t.path)), false, 'late ordinary overlay does not inherit AOT');
+    } else assert.equal(this.translated(this.vfs.file('/legacy-hot')), true, 'legacy still attaches its ready image');
+    reached++;
+    throw new Error('Guest entry withheld by test');
+  };
+  try {
+    await import(new URL(`../worker.ts?ready-overlays-${prepared}`, import.meta.url).href);
+    const profile = prepared ? {profile: 'canonical-aot-v1', generation} : {};
+    await host.onmessage!({data: {type: 'ready', ...profile, translator: memoryModule, muk: Uint8Array.of(1), files,
+      ...(prepared && {root: {index: r.index, url: 'https://must-not-read-source.test/'}, executables: [aot]})}});
+    // Await preparation without starting a guest.
+    if (prepared) await host.onmessage!({data: {type: 'executables', generation, executables: []}});
+    assert.equal(messages.length, 0);
+    await host.onmessage!({data: {type: 'start', ...profile, box: {config: '{}', words: []}, cwd: '/',
+      files: [{path: '/replaced', bytes: Uint8Array.of(9)}, ...(prepared ? [{path: r.t.path, bytes: Uint8Array.of(5)}] : [])]}});
+    assert.equal(reached, 1);
+    assert.equal(messages.length, 1);
+    assert.match(messages[0]!.message ?? '', /^Error: Guest entry withheld by test/);
+    assert.equal(visits, 2, prepared ? 'validate and install only; foreground must not revisit the ready wire list' :
+      'legacy installs first, then reads its saved list to bind translations');
+  } finally {
+    try { await host.onmessage?.({data: {type: 'retire'}}); }
+    finally { Kernel.prototype.start = start; if (prior) Object.defineProperty(globalThis, 'self', prior); else Reflect.deleteProperty(globalThis, 'self'); }
+  }
+});
+
 for(const rehearsed of [false,true])test(`actual prepared Worker runs the real muk and AOT guest without any pack source demand, rehearsed=${rehearsed}`,{skip:!translatorPath||!process.env.RICEBOX_MUK_FILE,timeout:20_000},async()=>{
   const bytes=elf(),r=root(bytes),translator=await loadTranslator(readFileSync(translatorPath!)),p=prepare(translator.whole(bytes)),generation='f'.repeat(64),source=r.source;
   const executable:PreparedExecutable={generation,key:executableKey(generation,source,r.t,r.index.translator.sha256,false),path:source.path,source,
@@ -119,6 +211,40 @@ for(const rehearsed of [false,true])test(`actual prepared Worker runs the real m
     // This is a Node adapter test, not a browser network trace.
     assert.equal(sourceRequests,0);
   }finally{await host.onmessage?.({data:{type:'retire'}});if(previous)Object.defineProperty(globalThis,'self',previous);else Reflect.deleteProperty(globalThis,'self');if(previousXHR)Object.defineProperty(globalThis,'XMLHttpRequest',previousXHR);else Reflect.deleteProperty(globalThis,'XMLHttpRequest');}
+});
+
+test('actual prepared Worker cannot reuse a tree after a fatal rehearsal exec', {skip: !translatorPath, timeout: 15_000}, async () => {
+  const r = root(elf()), generation = 'f'.repeat(64), box = {config: '{}', words: []};
+  const messages: {type: string; message?: string; failures?: string[]}[] = [];
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>),
+    postMessage(message: typeof messages[number]) { messages.push(message); }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  const takeMemory = Kernel.prototype.takeMemory;
+  let attempts = 0;
+  Kernel.prototype.takeMemory = function () {
+    // Real Sods preparation has accepted the run. Fail at old-image
+    // replacement, after admission, rather than fabricating a Worker receipt.
+    attempts++;
+    throw new Error('injected irreversible exec allocation failure');
+  };
+  try {
+    await import(new URL('../worker.ts?prepared-fatal-rehearsal', import.meta.url).href);
+    const data = {type: 'start', profile: 'canonical-aot-v1', generation, translator: readFileSync(translatorPath!),
+      muk: elf(), root: {index: r.index, url: 'https://must-not-read-source.test/'}, executables: [], rehearse: box, box, cwd: '/'};
+    await host.onmessage!({data});
+    assert.equal(attempts, 1, 'no foreground allocation or new ownership follows the failed rehearsal');
+    const outcome = messages.find(m => m.type === 'error');
+    assert.match(outcome?.message ?? '', /^ExecCommitError: Exec transaction could not complete \(address-space\)/);
+    assert.ok(messages.every(m => m.type !== 'threads' && m.type !== 'exit'));
+    await host.onmessage!({data: {type: 'retire'}});
+    const retirement = messages.find(m => m.type === 'retiring');
+    assert.deepEqual(retirement?.failures, ['ExecCommitError: Exec transaction could not complete (address-space)']);
+  } finally {
+    if (!messages.some(m => m.type === 'retiring')) await host.onmessage?.({data: {type: 'retire'}});
+    Kernel.prototype.takeMemory = takeMemory;
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
 });
 
 test('prepared Worker cancellation during asynchronous preparation publishes no kernel or late source association',async()=>{

@@ -242,6 +242,9 @@ export class Description {
 const FDS = 1024;
 
 export class FdTable {
+  #revision = 0;
+  /** Changed slot identities or flags invalidate a prepared CLOEXEC copy. */
+  get revision(): number { return this.#revision; }
   declare readonly slots: Map<number, {description: Description; cloexec: boolean}>;
   declare limit: number;
   /** How many processes hold this table (one; more where clone shared it, CLONE_FILES): the last to let go closes it. */
@@ -285,6 +288,7 @@ export class FdTable {
     if (fd < 0 || fd >= this.limit) return -1;
     this.close(fd);
     this.slots.set(fd, {description: description.retain(), cloexec});
+    this.#revision++;
     this.marked(fd);
     return fd;
   }
@@ -292,11 +296,15 @@ export class FdTable {
     const slot = this.slots.get(fd);
     if (!slot) return false;
     this.slots.delete(fd);
+    this.#revision++;
     this.marked(fd);
     slot.description.release();
     return true;
   }
-  setCloexec(fd: number, on: boolean): void { const s = this.slots.get(fd); if (s) s.cloexec = on; }
+  setCloexec(fd: number, on: boolean): void {
+    const slot = this.slots.get(fd);
+    if (slot && slot.cloexec !== on) { slot.cloexec = on; this.#revision++; }
+  }
   cloexec(fd: number): boolean { return this.slots.get(fd)?.cloexec ?? false; }
   /** A child's table: the same descriptions, each retained once more. */
   fork(): FdTable {

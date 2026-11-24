@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Quickshell guest</title>
+<style>
+  #viewport { display: inline-block; background: #204060; }
+  canvas { display: block; image-rendering: pixelated; }
+</style>
+<p id="status" role="status">Starting Quickshell</p>
+<div id="viewport"><canvas aria-label="Quickshell guest output" width="0" height="0"></canvas></div>
+<p><button id="resize" disabled>Resize guest</button> <button id="close" disabled>Close guest</button></p>
+<pre id="receipt"></pre>
+<script type="module" src="./page.ts"></script>
+</html>

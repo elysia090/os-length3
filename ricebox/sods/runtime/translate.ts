@@ -11,5 +11,5 @@
 //   madeBy           what a kept translation is good for, as a name: kept under another, it is never read for this
 export {loadTranslator, NotAProgram, type Translate} from './translation/translator.ts';
 export {aheadOf, type Ahead, type Held} from './translation/ahead.ts';
-export {prepare, type Segment} from './translation/share.ts';
+export {deploymentParts, prepare, type Segment} from './translation/share.ts';
 export {MORE, madeBy, packMain, packMore, taken, unpackMore, type More, type Taken} from './translation/kept.ts';

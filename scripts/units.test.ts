@@ -45,6 +45,29 @@ test('the distribution owns native and web execution; Why owns its product adapt
   assert.equal(unitOf('why/device/storage/free.rs')?.name, 'app');
 });
 
+test('the static starter composes the distribution and terminal without a reverse dependency', () => {
+  const core = 'ricebox/distribution/runtime/root.ts';
+  const adapter = 'ricebox/distribution/starter/shell.ts';
+  const presenter = 'ricebox/everyday/terminal/vt.ts';
+  for (const file of ['plan.ts', 'shell.ts', 'stage.ts']) {
+    assert.equal(unitOf('ricebox/distribution/starter/' + file)?.name, 'starter');
+  }
+  assert.equal(unitOf(core)?.name, 'ricebox');
+  assert.equal(unitOf(presenter)?.name, 'everyday');
+  assert.deepEqual(dependencyViolations([
+    [adapter, "import '../runtime/root.ts'; import '../../everyday/terminal/vt.ts';"],
+  ]), []);
+  assert.deepEqual(dependencyViolations([
+    [core, "import '../starter/shell.ts'; import '../../everyday/terminal/vt.ts';"],
+    [presenter, "import '../../distribution/starter/shell.ts';"],
+  ]), [
+    ['ricebox', 'starter', core],
+    ['ricebox', 'everyday', core],
+    ['everyday', 'starter', presenter],
+  ]);
+  assert.deepEqual(entryViolations([[core, "import '../starter/shell.ts';"]]), [[core, adapter]]);
+});
+
 test('Muk and Sods have no internal dependency on one another', () => {
   const unit = (name: string) => UNITS.find((u) => u.name === name)!;
   assert.ok(!unit('muk').takes.includes('sods'));

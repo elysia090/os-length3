@@ -9,6 +9,7 @@ import type {Cred} from './cred.ts';
 import type {FdTable} from './fd.ts';
 import type {Dir, File, Mapping, Mount, Place, Super, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
+import type {MappedVm} from './mapped-vm.ts';
 import type {Fs, Numbers, PidNs, Spaces} from './space.ts';
 
 // ---- signals ----
@@ -103,6 +104,8 @@ export interface Slot { task: Thread; initial: [WebAssembly.Global, unknown][] }
 
 /** A process's memory, as the kernel keeps it. */
 export interface Mem extends WebAssembly.Memory {
+  /** The authoritative inline VM, only on a separately prepared memory. */
+  readonly mappedVm?: MappedVm;
   /** How many processes run on it (a vfork child and its parent, threads' processes made with CLONE_VM). */
   users: number;
   /** Where a process wrote that is not zeroed yet. */
@@ -157,6 +160,10 @@ export interface Program {
   told?: number;
   mainTold?: boolean;
   opened?(): boolean;
+}
+/** What need not be zeroed, copied or laid again when reusing image memory. */
+export function keptImageRanges({facts}: Pick<Program, 'facts'>, exact: boolean): Range[] {
+  return exact && facts.derived ? [...facts.readOnly ?? [], facts.derived] : facts.readOnly ?? [];
 }
 /** A file's translation, as the kernel keeps it: of which version, the image, when last used, and whether kept for good. */
 export interface ImageEntry { version: number; image: Program; used: number; kept: boolean }
@@ -295,6 +302,11 @@ export interface Proc {
 
 // ---- a thread ----
 
+/** Register exports of a translation: general registers, FS, and flags. */
+export type RegName = `r${number}` | 'fs' | 'fl' | 'rf';
+// 18: what a translation keeps of rflags beyond fl and of MXCSR (DF, AC, ID), when it has it.
+export const REG: readonly RegName[] = [...Array.from({length: 16}, (_, n): RegName => `r${n}`), 'fs', 'fl', 'rf'];
+
 /** A thread as the calls see it (process.ts Task; cpu.ts and remote.ts's own). */
 export interface Thread {
   readonly proc: Proc;
@@ -390,7 +402,6 @@ export interface Kern {
   readonly tasks: Map<number, Thread>;
   readonly runq: Thread[];
   readonly blocked: Set<Thread>;
-  readonly futexes: Map<WebAssembly.Memory | File, Map<number, Set<FutexWaiter>>>;
   readonly timers: Set<Timer>;
   readonly nextPid: number;
   /** The numbers of what was not made in the first pid namespace (space.ts). */
@@ -432,6 +443,7 @@ export interface Kern {
   stopProcess(p: Proc, sig: number): void;
   continueProcess(p: Proc): void;
   futexQueue(key: FutexKey): Set<FutexWaiter>;
+  futexCancel(waiter: FutexWaiter): void;
   futexWake(key: FutexKey, n: number, bitset: number): number;
   futexRequeue(key: FutexKey, to: FutexKey, n: number): number;
 }

@@ -35,10 +35,6 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
         for &k in to.iter().filter(|&&k| k != NO) { f.to[f.n as usize] = k; f.n += 1; }
         f
     }));
-    let to = |flow: &[Flow], k: usize, each: &mut dyn FnMut(usize)| {
-        let f = &flow[k];
-        if f.n == TO_ENTRIES { for &s in starts.iter() { each(s) } } else { for &s in &f.to[..f.n as usize] { each(s as usize) } }
-    };
     // The blocks one at or after them goes to: where a round may hand something to what it has gone through.
     let mut anywhere = false;
     for k in 0..n {
@@ -65,13 +61,34 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
     }
     // (Blocks gone through in order: what one hands a block after it is taken up in the same round, so another round
     // is made only where one handed something new to itself or a block before it.)
+    // Indirect jumps have the same successors. Merge their writes before
+    // propagating them to the entries, once per newly discovered bit.
+    let mut indirect_dirty = 0;
     loop {
         let mut again = false;
+        let mut dirty = indirect_dirty;
         for k in 0..n {
             let out = (flow[k].dirty & flow[k].forward.0) | flow[k].forward.1;
             let (to, count) = (flow[k].to, flow[k].n);
-            let mut go = |s: usize| if flow[s].dirty | out != flow[s].dirty { flow[s].dirty |= out; again |= s <= k; };
-            if count == TO_ENTRIES { for &s in starts.iter() { go(s) } } else { for &s in &to[..count as usize] { go(s as usize) } }
+            if count == TO_ENTRIES {
+                dirty |= out;
+            } else {
+                for &s in &to[..count as usize] {
+                    let s = s as usize;
+                    let before = flow[s].dirty;
+                    let updated = before | out;
+                    if updated != before { flow[s].dirty = updated; again |= s <= k; }
+                }
+            }
+        }
+        if dirty != indirect_dirty {
+            let added = dirty & !indirect_dirty;
+            indirect_dirty = dirty;
+            for &s in starts.iter() {
+                let before = flow[s].dirty;
+                flow[s].dirty |= added;
+                again |= flow[s].dirty != before;
+            }
         }
         if !again { break; }
     }
@@ -90,18 +107,29 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
         }
         f.backward = (p, g);
     }
-    let after = |flow: &[Flow], k: usize| { let mut a = 0; to(flow, k, &mut |s| a |= flow[s].live); a };
+    // All indirect jumps read the same union of entry liveness. Maintain
+    // it as the entries grow so each jump's transfer takes constant work.
+    let mut entry_live = 0;
+    let after = |flow: &[Flow], k: usize, entry_live| {
+        let f = &flow[k];
+        if f.n == TO_ENTRIES { return entry_live; }
+        f.to[..f.n as usize].iter().fold(0, |bits, &s| bits | flow[s as usize].live)
+    };
     // (From the last block back: another round only where a block that one at or after it goes to has grown.)
     loop {
         let mut again = false;
         for k in (0..n).rev() {
-            let l = (after(flow, k) & flow[k].backward.0) | flow[k].backward.1;
-            if flow[k].live | l != flow[k].live { flow[k].live |= l; again |= flow[k].back; }
+            let l = (after(flow, k, entry_live) & flow[k].backward.0) | flow[k].backward.1;
+            if flow[k].live | l != flow[k].live {
+                flow[k].live |= l;
+                again |= flow[k].back;
+                if anywhere && (k == 0 || fx.entry[k]) { entry_live |= l; }
+            }
         }
         if !again { break; }
     }
-    for &(m, k, p, g) in notes.iter() { mask[m] |= ((after(flow, k) & p) | g) & syncs[m].2; }
+    for &(m, k, p, g) in notes.iter() { mask[m] |= ((after(flow, k, entry_live) & p) | g) & syncs[m].2; }
     // The prologue takes in what any block it may start at reads.
-    let start = starts.iter().fold(0, |acc, &k| acc | flow[k].live);
-    for e in ev(0) { if let Ev::Sync(m, _) = *e { if !syncs[m as usize].1 { mask[m as usize] |= start; } } }
+    if !anywhere { entry_live = starts.iter().fold(0, |acc, &k| acc | flow[k].live); }
+    for e in ev(0) { if let Ev::Sync(m, _) = *e { if !syncs[m as usize].1 { mask[m as usize] |= entry_live; } } }
 }

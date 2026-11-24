@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {decodeRaster, rasterFile} from './support/mirror-raster.ts';
+import type {GuestEvent} from './support/worker-events.ts';
 import {mountGuestSurface, surfaceFromMirror} from '../../src/surface.ts';
 
 const [binary, mode, execClient] = process.argv.slice(2);
@@ -9,27 +10,29 @@ const {SODS_TRANSLATOR_WASM: translatorPath, RICEBOX_MUK_FILE: mukPath} = proces
 assert.ok(binary && translatorPath && mukPath && (mode === 'inline' || mode === 'worker'),
   'pass the presenter ELF, inline/worker and optional client ELF; supply the current SODS_TRANSLATOR_WASM and RICEBOX_MUK_FILE');
 if (mode === 'inline') process.env.SODS_INLINE = '1'; else delete process.env.SODS_INLINE;
-const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const read = (path) => new Uint8Array(readFileSync(path));
+const hash = (bytes: Uint8Array | Uint8ClampedArray) => createHash('sha256').update(bytes).digest('hex');
+const read = (path: string) => new Uint8Array(readFileSync(path));
 const translator = read(translatorPath), muk = read(mukPath), elf = read(binary);
-const receipt=[],frames=[],terminal=[];
+interface Drawn {width: number; height: number; pixels: Uint8ClampedArray}
+const receipt: GuestEvent[] = [], frames: (Drawn & {sequence: number})[] = [], terminal: Buffer[] = [];
 // Node has no browser backing store. Use a synchronous recording 2D surface;
 // the frames, pointer responses and resize below still come from the real guest.
-globalThis.ImageData=class {
-  constructor(data,width,height) { Object.assign(this,{data,width,height}); }
-};
+Object.assign(globalThis, {ImageData: class {
+  constructor(data: Uint8ClampedArray, width: number, height: number) { Object.assign(this,{data,width,height}); }
+}});
 const original={left:64,top:44,width:256,height:192};
 const clip={left:0,top:0,width:245,height:172};
-let box=original, rendered, sent, inputFence;
+let box=original, rendered: Drawn | undefined, sent: Uint8Array | undefined, inputFence: unknown;
+const lastDraw = () => rendered;
 const canvas=Object.assign(new EventTarget(), {
   width:0,height:0,getBoundingClientRect:()=>box,
-  getContext:()=>({clearRect(){},putImageData(image){
+  getContext:()=>({clearRect(){},putImageData(image: ImageData){
     rendered={width:image.width,height:image.height,pixels:new Uint8ClampedArray(image.data)};
   }}),
 });
 const viewport={clientLeft:0,clientTop:0,clientWidth:clip.width,clientHeight:clip.height,
-  getBoundingClientRect:()=>clip,contains:target=>target===canvas};
-const transport=Object.assign(new EventTarget(), {postMessage({type,bytes}) {
+  getBoundingClientRect:()=>clip,contains:(target: unknown)=>target===canvas};
+const transport=Object.assign(new EventTarget(), {postMessage({type,bytes}: {type: string; bytes: Uint8Array}) {
   assert.equal(type,'input');
   sent=bytes;
   inputFence=input(bytes);
@@ -42,23 +45,31 @@ const source=surfaceFromMirror({worker:transport,file:rasterFile,maxEncodedBytes
   encodePointer:({x,y})=>Uint8Array.of(1,x,y),
   encodeResize:({width,height})=>Uint8Array.of(2,width,height),
 });
-const presenter=mountGuestSurface({canvas,viewport,limits:{width:64,height:48,bytes:64*48*4},source});
-globalThis.self={ onmessage:undefined, postMessage(m,{transfer=[]}={}){
+const presenter=mountGuestSurface({canvas: canvas as unknown as HTMLCanvasElement, viewport: viewport as unknown as HTMLElement,
+  limits:{width:64,height:48,bytes:64*48*4},source});
+const scope = {
+  onmessage: undefined as ((event: {data: unknown}) => unknown) | undefined,
+  postMessage(m: GuestEvent, {transfer=[]}: StructuredSerializeOptions = {}){
   const event=structuredClone(m,{transfer});
   receipt.push(event);
   if(event.type==='output')terminal.push(Buffer.from(event.bytes));
   rendered=undefined;
   transport.dispatchEvent(new MessageEvent('message',{data:event}));
-  if(rendered) {
+  const drawn = lastDraw();
+  if(drawn) {
     assert.ok(source.current,'product source admitted the guest frame');
-    frames.push({sequence:source.current.serial,...rendered});
+    frames.push({sequence:source.current.serial,...drawn});
   }
 } };
+Object.assign(globalThis, {self: scope});
 await import('../../../distribution/runtime/worker.ts');
-const send=data=>self.onmessage({data:structuredClone(data)});
-const input=(bytes)=>{assert.ok(bytes);return send({type:'input',bytes});};
+const send=(data: object)=>{
+  assert.ok(scope.onmessage, 'guest Worker registered its receiver');
+  return scope.onmessage({data:structuredClone(data)});
+};
+const input=(bytes: Uint8Array)=>send({type:'input',bytes});
 const text=()=>Buffer.concat(terminal).toString();
-const until=async(cb,label)=>{
+const until=async(cb: ()=>boolean,label: string)=>{
   for(let t=performance.now()+7000;performance.now()<t;){
     if(cb())return;
     const error=receipt.find(e=>e.type==='error');
@@ -67,12 +78,14 @@ const until=async(cb,label)=>{
   }
   throw new Error(label+': timeout '+JSON.stringify(receipt.map(x=>x.type))+'\n'+text());
 };
-function expected(x,y,marker) {
+type Point = readonly [number, number];
+function expected(x: number,y: number,marker: Point | null) {
   const hit=marker && ((x-marker[0])**2+(y-marker[1])**2<=4);
   return hit ? [248,61,105,255] : [18+2*x,28+3*y,42+(x^y),255];
 }
-const shape=(seq,w,h,marker=null)=>{
+const shape=(seq: number,w: number,h: number,marker: Point | null=null)=>{
   const f=frames.at(-1);
+  assert.ok(f);
   assert.deepEqual([f.sequence,f.width,f.height],[seq,w,h]);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const at=(x+y*w)*4;
@@ -124,29 +137,40 @@ try{
   await inputFence;
   await until(()=>frames.length===3&&text().includes('WAYLAND_COMMIT seq=3'),'xdg resized commit');
   const h=shape(3,47,19);
+  const closingAt=receipt.length;
   await input(Uint8Array.of(3,0,0));
   await until(()=>receipt.some(e=>e.type==='exit'),'xdg close');
-  assert.equal(receipt.find(e=>e.type==='exit').status,37<<8);
+  assert.equal(receipt.find(e=>e.type==='exit')?.status,37<<8);
+  assert.equal(frames.length,3,'xdg close must not draw another frame');
+  assert.equal(source.current,null,'guest exit must end the surface source');
   assert.deepEqual(receipt.filter(e=>e.type==='error'),[]);
   const lines=text().trim().split('\n');
   assert.equal(lines.includes('WAYLAND_CLIENT_EXEC fd_inherited=1 cloexec_sentinel_absent=1 stdin_absent=1'), !!execClient);
   assert.equal(lines.includes('WAYLAND_SOCKET_CONSUMED close_on_exec=1'), !!execClient);
-  const initialCommit=lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=1'));
+  const lifecycle=lines.filter(x=>x.startsWith('WAYLAND_COMMIT ')||x.startsWith('WAYLAND_RELEASE '));
+  assert.equal(lifecycle.length,6,'one released buffer for each of three commits');
+  const [initialCommit, initialRelease, redrawCommit, redrawRelease, resizedCommit, resizedRelease]=lifecycle;
   assert.match(initialCommit,/^WAYLAND_COMMIT seq=1 size=32x24 configure=(\d+) pointer=0 stride=140$/);
   assert.ok(lines.includes('WAYLAND_CONTROL_REFUSED'));
-  assert.match(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')),/^WAYLAND_COMMIT seq=2 size=32x24 configure=(\d+) pointer=([1-9]\d*) stride=140$/);
-  const initial=Number(initialCommit.match(/configure=(\d+)/)[1]);
-  const pointer=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=2')).match(/configure=(\d+)/)[1]);
-  const expanded=Number(lines.find(x=>x.startsWith('WAYLAND_COMMIT seq=3')).match(/configure=(\d+)/)[1]);
+  assert.match(redrawCommit,/^WAYLAND_COMMIT seq=2 size=32x24 configure=(\d+) pointer=([1-9]\d*) stride=140$/);
+  assert.match(resizedCommit,/^WAYLAND_COMMIT seq=3 size=47x19 configure=(\d+) pointer=([1-9]\d*) stride=200$/);
+  assert.deepEqual([initialRelease,redrawRelease,resizedRelease],[
+    'WAYLAND_RELEASE seq=1 buffer=new','WAYLAND_RELEASE seq=2 buffer=reused','WAYLAND_RELEASE seq=3 buffer=new',
+  ]);
+  const initial=Number(initialCommit.match(/configure=(\d+)/)?.[1]);
+  const pointer=Number(redrawCommit.match(/configure=(\d+)/)?.[1]);
+  const expanded=Number(resizedCommit.match(/configure=(\d+)/)?.[1]);
   assert.equal(pointer,initial);
   assert.ok(expanded>initial);
-  assert.ok(lines.includes('WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3'));
-  assert.equal(lines.at(-1),'WAYLAND_WINDOW_CLOSED');
+  assert.deepEqual(lines.slice(-2),['WAYLAND_CLIENT pointer=1 configure=2 frame_done=3 releases=3','WAYLAND_WINDOW_CLOSED']);
   presenter.close();
   await send({type:'retire'});
-  const retired=receipt.find(e=>e.type==='retiring');
-  assert.ok(retired);
+  const retirements=receipt.filter(e=>e.type==='retiring');
+  assert.equal(retirements.length,1);
+  const [retired]=retirements;
   assert.deepEqual(retired.failures,[]);
+  assert.ok(!receipt.slice(closingAt).some(e=>e.type==='changes'&&e.files.some(f=>f.path===rasterFile&&f.bytes)),
+    'close and retirement must not publish another raster');
   console.log(JSON.stringify({mode,connection:execClient?'exec-inherited':'fork-direct',elf:hash(elf),frames:[f,g,h],lines,lifecycle:'admission acknowledged'}));
 }finally{
   presenter.close();

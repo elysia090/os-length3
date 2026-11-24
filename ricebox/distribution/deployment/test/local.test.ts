@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {gzipSync} from 'node:zlib';
+import {gzipSync,zstdCompressSync} from 'node:zlib';
 import {openDistribution} from '../local.ts';
 import {distributionAssets} from '../assets.ts';
 import {fixture} from './fixture.ts';
@@ -53,4 +53,15 @@ test('the local reader checks both the stored and decoded blob sizes', t => {
   assert.deepEqual(reader.blob(blob), decoded);
   assert.throws(() => reader.blob({...blob, size: blob.size + 1}), /not the stored blob/);
   assert.throws(() => reader.blob({...blob, bytes: blob.bytes + 1}), /wrong decoded size/);
+});
+
+test('a sized pack decode returns the exact member and enforces its size', t => {
+  const {root} = fixture(t), reader = openDistribution(root);
+  t.after(() => reader.close());
+  const decoded = Buffer.alloc(128 << 10, 65), stored = zstdCompressSync(decoded);
+  assert.deepEqual(reader.unzstd(stored, decoded.length), decoded);
+  assert.deepEqual(reader.unzstd(stored), decoded);
+  assert.deepEqual(reader.unzstd(zstdCompressSync(Buffer.alloc(0)), 0), Buffer.alloc(0));
+  assert.throws(() => reader.unzstd(stored, decoded.length - 1));
+  assert.throws(() => reader.unzstd(stored, decoded.length + 1), /decoded .* bytes/);
 });

@@ -65,9 +65,22 @@ async function range(url: string | URL, pack: string, at: number, len: number, r
   return status === 200 ? bytes.subarray(at, at + len) : bytes;
 }
 
+// A joined payload view holds its checked table until the idle worker consumes it.
+const JOINED_TABLE_MAX = 4 << 10;
+
 /** A file's bytes as its pack holds them, fetched, once they are what the pack's table says (table.ts). */
 export async function fetchStored({url, pack, at, len, lines, line}: Stored, sha256: Sha256, ranged: ReadRange): Promise<Uint8Array> {
-  const [table, bytes] = await Promise.all([range(url, pack, 0, lines * LINE, ranged), range(url, pack, at, len, ranged)]);
+  const width = lines * LINE, end = at + len;
+  let table: Uint8Array, bytes: Uint8Array;
+  if (at === width && at > 0 && at <= JOINED_TABLE_MAX && len > 0 &&
+      Number.isSafeInteger(lines) && Number.isSafeInteger(len) && Number.isSafeInteger(end)) {
+    const joined = await range(url, pack, 0, end, ranged);
+    if (joined.length !== end) throw new Error('root: wrong pack response length');
+    table = joined.subarray(0, at);
+    bytes = joined.subarray(at);
+  } else {
+    [table, bytes] = await Promise.all([range(url, pack, 0, width, ranged), range(url, pack, at, len, ranged)]);
+  }
   checkTable(table, pack, sha256);
   checkFile(bytes, table, line, pack, sha256);
   return bytes;

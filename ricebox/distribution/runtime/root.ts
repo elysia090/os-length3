@@ -3,9 +3,12 @@ import {createExecutionProfile} from './execution-profile.ts';
 import {executableKey, canonicalHotSources} from './prepared-executable.ts';
 import {canonicalExecutableSource} from '../format/executable-source.ts';
 import {createAhead} from './pretranslate.ts';
-import {blobAsset, readReleaseIndex, releaseIndexAsset, requireStandardFileOwner} from '../format/manifest.ts';
+import {blobAsset, readReleaseIndex, releaseIndexAsset, requireStandardFileOwner, type ExecutableArtifact} from '../format/manifest.ts';
 import {download as fetchFile, Fatal, type Check} from './download.ts';
 import {createAssetCache} from './asset-cache.ts';
+import {compileFramedAot} from './framed-aot.ts';
+import {shardedAotResponse} from './aot-shards.ts';
+import {aotObjects} from '../format/aot-frames.ts';
 import {FIRST} from './startup-programs.ts';
 import {trackTransfers, type AssetProgress, type Stage} from './load-progress.ts';
 export type {Stage} from './load-progress.ts';
@@ -22,6 +25,10 @@ export interface RootConfig {
   planKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
+  /** Close this loader’s asset-check admission with its host, not its guest Workers. */
+  checkSignal?: AbortSignal;
+  /** Let the drained asset-check Worker rest after the prepared root has loaded. */
+  restCheckerAfterLoad?: boolean;
   message: NonNullable<import('./download.ts').Options['message']>;
   missing(): string;
   errorText(error: unknown): string;
@@ -40,7 +47,7 @@ export function createRoot(config: RootConfig) {
   const startupPrograms = config.first ?? FIRST;
   const threadsApart = canRunApart;
   const BASE = config.base;
-  const {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers} =
+  const {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers, restChecker} =
     createAssetCache(config);
 
   const watchers = new Set<(s: Stage) => void>();
@@ -113,7 +120,7 @@ export function createRoot(config: RootConfig) {
   const MORE_MOST = 256;
   /** Each hot program's code reached later in this page: the modules in the order made, and how many of them are kept. */
   const more = new Map<string, {url: string; list: More[]; saved: number; timer: number}>();
-  const moreURL = (t: Translation, translator: string, shared: boolean) => `${BASE}more/${t.wasm.sha256}-${madeBy(translator, shared)}.bin`;
+  const moreURL = (t: ExecutableArtifact, translator: string, shared: boolean) => `${BASE}more/${t.wasm.sha256}-${madeBy(translator, shared)}.bin`;
   const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
   /** The modules kept at `url`, compiled; none when nothing is kept there or it is not what was kept (it goes). */
@@ -168,6 +175,7 @@ export function createRoot(config: RootConfig) {
     const live = new Set([
       `${BASE}${about.index.path}`, `${BASE}${index.translator.path}`, ...(mukPath ? [`${BASE}${mukPath}`] : []),
       ...index.translations.flatMap(t => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())]),
+      ...(index.execution?.programs.flatMap(t => aotObjects(t.wasm).map(asset => `${BASE}${asset.path}`)) ?? []),
     ].map(whole));
     const packs = new Set(index.packs.map(p => p.name.replace(/\.pack$/, ''))), tag = keptTag(index);
     void forgetOthers(url => {
@@ -358,13 +366,35 @@ export function createRoot(config: RootConfig) {
     return maker;
   }
 
+  function checkMaker(index: Index, maker: Awaited<ReturnType<typeof loadMaker>>) {
+    const deployed = index.execution?.maker;
+    if (deployed && (maker?.path !== deployed.path || maker.bytes.byteLength !== deployed.size)) {
+      throw new Fatal('webroot: the box maker disagrees with the deployed Wasm index');
+    }
+  }
+
+  // Share demand reads of exactly the same stored index while pending. Each
+  // consumer still parses it and binds it to the release it saw; cache-only
+  // speculation and later reads keep their existing policies.
+  const indexReads = new Map<string, Promise<Uint8Array>>();
+  function verifiedIndexBytes(asset: About['index']): Promise<Uint8Array> {
+    const key = `${asset.path}:${asset.sha256}:${asset.size}`;
+    const pending = indexReads.get(key);
+    if (pending) return pending;
+    const reading = Promise.resolve().then(() => bytesOf(asset.path, asset));
+    indexReads.set(key, reading);
+    const clear = () => { indexReads.delete(key); };
+    void reading.then(clear, clear);
+    return reading;
+  }
+
   /** The authenticated index for consumers that do not start a guest. */
   let indexing: Promise<Index | null> | null = null;
   const rootIndex = (): Promise<Index | null> => (indexing ??= (async () => {
     const a = await about();
     if (!a) return null;
     const asset = releaseIndexAsset(a);
-    return readReleaseIndex(await bytesOf(asset.path, asset), a);
+    return readReleaseIndex(await verifiedIndexBytes(asset), a);
   })().catch((e) => { indexing = null; throw e; }));
 
   /**
@@ -410,6 +440,7 @@ export function createRoot(config: RootConfig) {
       first: first.map(t => ({t, mode: modeOf(t.path)})),
     };
     const muk = await maker;
+    checkMaker(index, muk);
     keepReleaseFiles(a, index, muk?.path);
     let translator: WebAssembly.Module, files: Hot[];
     // The plan can accelerate reads but is not a source of release identity.
@@ -470,7 +501,7 @@ export function createRoot(config: RootConfig) {
 
   // A sibling profile: no call to hot/loadWebroot/filesNow may materialize its sources.
   const preparedJobs = new Map<string, Promise<{value: PreparedExecutable; moreURL: string; reached: More[]} | null>>();
-  function preparedHot(index: Index, generation: string, t: Translation, quiet: boolean, progress?: AssetProgress) {
+  function preparedHot(index: Index, generation: string, t: ExecutableArtifact, quiet: boolean, progress?: AssetProgress) {
     const source = canonicalExecutableSource(index, t), shared = threadsApart();
     const key = executableKey(generation, source, t, index.translator.sha256, shared);
     const existing = preparedJobs.get(key);
@@ -482,41 +513,61 @@ export function createRoot(config: RootConfig) {
       const step = quiet ? idle : atOnce;
       // Integrity and decode errors propagate. Only engine compilation has the
       // established fallback to ordinary execution of the lazy canonical file.
-      const p = await translation(t.wasm, shared, progress, step);
-      await step();
-      const module = await WebAssembly.compile(p.wasm as BufferSource).catch(() => null);
+      const p = 'framing' in t.wasm ? await (async () => {
+        if (!index.execution) throw new Fatal('Framed AOT requires a deployed executable');
+        await step();
+        const limit = AbortSignal.timeout(60_000);
+        const signal = config.checkSignal ? AbortSignal.any([config.checkSignal, limit]) : limit;
+        const sharded = !!t.wasm.framing?.shards;
+        const made = await compileFramedAot(t.wasm, shared, async signal => sharded
+          ? shardedAotResponse(t.wasm, new URL(BASE, location.href).href, {open, keep, gone, used}, signal, progress,
+              {message: config.message, check: offThread})
+          : fetch(`${BASE}${t.wasm.path}`, {signal}), signal, sharded ? undefined : progress?.bytes);
+        progress?.verified();
+        return made;
+      })() : await (async () => {
+        const p = await translation(t.wasm, shared, progress, step);
+        await step();
+        const compiling = WebAssembly.compile(p.wasm as BufferSource);
+        return {...p, module: index.execution ? await compiling : await compiling.catch(() => null)};
+      })();
+      const {module, segments} = p;
       if (!module) return null;
       const url = moreURL(t, index.translator.sha256, shared);
       return {value: {generation, key, path: source.path,
         source: {origin: source.origin, sha256: source.sha256, size: source.size, binding: source.binding},
         artifact: {sha256: t.wasm.sha256, translator: index.translator.sha256, mode: 'whole' as const},
-        module, segments: p.segments, shared}, moreURL: url, reached: await keptMore(url).catch(() => [])};
+        module, segments, shared}, moreURL: url, reached: index.execution ? [] : await keptMore(url).catch(() => [])};
     })();
     preparedJobs.set(key, job);
     void job.catch(() => { if (preparedJobs.get(key) === job) preparedJobs.delete(key); });
     return job;
   }
   const execution = createExecutionProfile({first: startupPrograms, worker: rootWorker, save,
-    ready: () => tell({at: 'ready'}), failed: error => tell({at: 'failed', message: config.errorText(error)}),
-    executable: (root, t, quiet) => preparedHot(root.index, root.generation, t, quiet),
+    ready: () => {
+      if (config.restCheckerAfterLoad) restChecker();
+      tell({at: 'ready'});
+    }, failed: error => tell({at: 'failed', message: config.errorText(error)}),
+    executable: (root, t) => preparedHot(root.index, root.generation, t, true),
     async load() {
       worker();
       const a = await loadAbout(), asset = releaseIndexAsset(a);
       const maker = loadMaker();
-      const index = readReleaseIndex(await bytesOf(asset.path, asset), a);
+      const index = readReleaseIndex(await verifiedIndexBytes(asset), a);
       // Check every hot association before source capture or asynchronous image work.
       canonicalHotSources(index);
-      const first = index.translations.filter(t => startupPrograms.includes(t.path));
+      const first = (index.execution?.programs ?? index.translations).filter(t => startupPrograms.includes(t.path));
       const progress = trackTransfers([index.translator, ...first.map(t => t.wasm)], tell);
       try {
-        const [translator, muk] = await Promise.all([
+        const [translator, muk, ...initial] = await Promise.all([
           unblob(index.translator, progress.forBlob(index.translator)).then(bytes => WebAssembly.compile(bytes as BufferSource)),
           maker,
           ...first.map(t => preparedHot(index, a.index.sha256, t, false, progress.forBlob(t.wasm))),
         ]);
+        checkMaker(index, muk);
         keepReleaseFiles(a, index, muk?.path);
-        return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
-          translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+        return {base: {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
+          translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null}, initial};
       } finally { progress.stop(); }
     },
   });

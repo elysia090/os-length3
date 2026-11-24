@@ -19,6 +19,22 @@ pub const F_MULHS: u32 = 9;
 pub const F_RESOLVE: u32 = 10;
 pub const F_DISPATCH: u32 = 11;
 pub const FIRST_GUEST: u32 = 13;
+/// The extra imports of mapped fragments after their shared helpers.
+pub const F_MAPPED_STRING: u32 = FIRST_GUEST;
+pub const F_MAPPED_FX_STATE: u32 = F_MAPPED_STRING + 1;
+pub const F_MAPPED_ADDRESS: u32 = F_MAPPED_FX_STATE + 1;
+pub const MAX_MAPPED_OPERAND_BYTES: i32 = 16;
+/// Low bits select page rights. A negative operand marks read-modify-write
+/// so the host can classify a denied read before checking the write.
+#[repr(i32)]
+pub(crate) enum MappedAccess {
+    Read = 3,
+    Write = 2,
+    Update = (-64i32) | 2,
+}
+pub const fn guest_function(index: u32, mapped: bool) -> u32 {
+    (if mapped { F_MAPPED_ADDRESS + 1 } else { FIRST_GUEST }) + index
+}
 
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, then these.
 pub const G_FS: u32 = 16;
@@ -30,15 +46,54 @@ pub const G_BUDGET: u32 = 34;
 /// Calls the thread is inside, in wasm frames: past DEPTH_LIMIT a call starts afresh from the kernel.
 pub const G_DEPTH: u32 = 35;
 pub const DEPTH_LIMIT: i32 = 400;
-/// The least rsp has been (how deep the thread's stack has gone).
+/// Static memory pooling uses the least rsp has been.
 pub const G_LOW: u32 = 36;
-/// The thread's x87 registers: their handle in the coprocessor (x87.rs).
+/// The static thread's x87 handle. The mapped dispatcher owns its handles.
 pub const G_X87: u32 = 37;
 /// What is kept of rflags beyond G_FLAGS, each bit where x86 has it: DF, set and cleared as the thread runs (std,
 /// cld, popfq) and read by its string instructions, whichever block, function or module they are in.
 pub const G_RF: u32 = 38;
 pub const RF_DF: i64 = 0x400;
 pub const GLOBALS: u32 = 39;
+/// The mapped CPU keeps MXCSR apart from the arithmetic flags and XMM contents.
+pub const G_MXCSR: u32 = GLOBALS;
+/// A mapped fragment's own table position, assigned after compilation.
+pub const G_MAPPED_BASE: u32 = G_MXCSR + 1;
+#[cfg(feature = "mapped-code")]
+pub const MAPPED_SLOTS: usize = 65536;
+pub const MXCSR_RESET: i32 = 0x1f80;
+pub const FX_LOAD_MXCSR: i32 = 4;
+pub const FX_SAVE_X87_ENV: i32 = 5;
+
+/// Logical IDs of core globals, in their Wasm index order for this profile.
+pub fn core_globals(mapped: bool) -> impl Iterator<Item = u32> {
+    (0..GLOBALS + u32::from(mapped)).filter(move |&g| !mapped || !matches!(g, G_LOW | G_X87))
+}
+
+pub const fn global_index(g: u32, mapped: bool) -> u32 {
+    if !mapped || g < G_LOW { return g; }
+    assert!(g > G_X87);
+    g - 2
+}
+
+/// Scalar imports are a fixed prefix of the mapped fragment's globals.
+/// Vector registers can therefore be omitted without rewriting any body.
+pub const MAPPED_SCALARS: [u32; 6] = [G_FLAGS, G_BUDGET, G_DEPTH, G_RF, G_MXCSR, G_MAPPED_BASE];
+const MAPPED_VECTORS: u32 = G_FS + 1 + MAPPED_SCALARS.len() as u32;
+
+pub const fn fragment_global_index(g: u32, mapped: bool) -> u32 {
+    if !mapped || g <= G_FS { return g; }
+    if g < G_FLAGS { return MAPPED_VECTORS + g - g_xmm(0); }
+    match g {
+        G_FLAGS => G_FS + 1,
+        G_BUDGET => G_FS + 2,
+        G_DEPTH => G_FS + 3,
+        G_RF => G_FS + 4,
+        G_MXCSR => G_FS + 5,
+        G_MAPPED_BASE => G_FS + 6,
+        _ => panic!("static-only global in a mapped fragment"),
+    }
+}
 /// A word below where anything may be mapped: nonzero when the kernel wants the thread to look in (a signal, another
 /// thread's turn), read at each loop's head.
 pub const INTERRUPT: u32 = 0x100;

@@ -3,9 +3,10 @@
 //! moved (sync.rs decides from it what each sync moves). What each x86 instruction means is written on it by
 //! operand.rs, flags.rs, integer.rs, sse.rs and fpu.rs; its control flow by lower.rs.
 
+use crate::abi::{fragment_global_index, MappedAccess, F_MAPPED_ADDRESS, INTERRUPT, MAX_MAPPED_OPERAND_BYTES};
 use crate::facts::{Liveness, Summary};
 use crate::flags::Flags;
-use crate::layout::Loop;
+use crate::layout::LoopRegions;
 use crate::program::*;
 use crate::wasm::*;
 use crate::x86::Instruction;
@@ -49,16 +50,69 @@ pub(crate) const L_BUDGET: u32 = 55;
 pub(crate) const L_INTO: u32 = 56;
 /// Auxiliary carry, appended to preserve every existing local index.
 pub const L_AF: u32 = 57;
-pub(crate) const LOCALS: usize = 58;
+// Mapped-only scratch; untouched by the static emitter.
+const L_STORE64: u32 = 58;
+const L_STORE32: u32 = 59;
+const L_STOREV: u32 = 60;
+pub(crate) const LOCALS: usize = 61;
+const _: () = assert!(LOCALS <= 128);
 
 /// Each local's type (a function declares only those it touches: V8's first tier zeroes them at every entry).
 const fn local_type(l: u32) -> u8 {
     match l {
-        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO | L_AF => I32,
+        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO | L_AF | L_STORE32 => I32,
+        L_STOREV => V128,
         _ if l >= l_u(0) && l < l_x(0) => I32,
         _ if l >= l_x(0) && l < l_d(0) => V128,
         _ if l >= l_d(0) && l < L_SP0 => F64,
         _ => I64,
+    }
+}
+
+/// Local numbers fit in one Wasm byte. Build the declaration runs as the
+/// slots are assigned so finishing a function need only copy them.
+pub(crate) struct Locals {
+    slots: [u8; LOCALS],
+    groups: Vec<[u8; 2]>,
+    count: u8,
+}
+
+impl Default for Locals {
+    fn default() -> Self { Self { slots: [0; LOCALS], groups: Vec::new(), count: 0 } }
+}
+
+impl Locals {
+    pub(crate) fn clear(&mut self) {
+        self.slots.fill(0);
+        self.groups.clear();
+        self.count = 0;
+    }
+
+    pub(crate) fn assigned(&self, local: u32) -> u8 { self.slots[local as usize] }
+
+    #[inline]
+    pub(crate) fn slot(&mut self, local: u32) -> u8 {
+        let slot = self.assigned(local);
+        if slot == 0 && local != L_ENTRY { self.first_touch(local) } else { slot }
+    }
+
+    #[cold]
+    fn first_touch(&mut self, local: u32) -> u8 {
+        let ty = local_type(local);
+        match self.groups.last_mut() {
+            Some([count, last]) if *last == ty => *count += 1,
+            _ => self.groups.push([1, ty]),
+        }
+        self.count += 1;
+        self.slots[local as usize] = self.count;
+        self.count
+    }
+
+    pub(crate) fn encoded_len(&self) -> usize { 1 + self.groups.len() * 2 }
+
+    pub(crate) fn encode(&self, out: &mut Vec<u8>) {
+        out.push(self.groups.len() as u8);
+        out.extend_from_slice(self.groups.as_flattened());
     }
 }
 
@@ -81,6 +135,7 @@ pub(crate) type Run = [u32; 3];
 /// A function as it is made: its code (locals and syncs put in at the end), what it noted, and where it is.
 pub struct Fx<'p> {
     pub f: Vec<u8>,
+    pub(crate) elf: &'p crate::elf::Elf,
     /// Where it syncs registers with their globals (byte offset, save, the registers it may move at most).
     pub(crate) syncs: Vec<(usize, bool, u32)>,
     /// The registers it touches (bit n for r_n, 16 + n for xmm_n), and what each part noted: [0] the prologue,
@@ -94,14 +149,15 @@ pub struct Fx<'p> {
     /// and the dispatch loop.
     pub(crate) nest: u32,
     pub depth: u32,
-    /// Each local's number in the function (0: not touched yet), numbered as first touched, and their types.
-    pub(crate) slots: [u32; LOCALS],
-    pub(crate) kinds: Vec<u8>,
+    pub(crate) locals: Locals,
     /// What the lowering of instructions keeps across them (flags.rs, integer.rs).
     pub flags: Flags,
     pub fr_pending: bool,
     pub fused: Option<Instruction>,
     pub rsp_up: bool,
+    pub(crate) checked_memory: bool,
+    pub(crate) module_base: u32,
+    pub(crate) replay_targets: Option<&'p Entries>,
     /// DF where the code before in this block says it (std, cld): elsewhere it is the thread's (G_RF), read as the
     /// string instruction runs.
     pub backward: Option<bool>,
@@ -112,6 +168,7 @@ pub struct Fx<'p> {
     pub(crate) dispatch: bool,
     pub program: &'p Program,
     pub(crate) function: &'p Function,
+    pub(crate) function_index: u32,
     pub report: &'p mut Report,
     pub handed: &'p Liveness,
     /// The block being lowered; whether its budget is counted in L_BUDGET; what each function may do (summaries).
@@ -120,9 +177,7 @@ pub struct Fx<'p> {
     pub(crate) summaries: &'p [Summary],
     /// Its loops made wasm loops, the innermost each block lies within past its head, the loop each block heads,
     /// the labels open (outermost first), and where each block's and loop's label is among them while open.
-    pub(crate) loops: Vec<Loop>,
-    pub(crate) within: Vec<Option<usize>>,
-    pub(crate) heads: Vec<Option<usize>>,
+    pub(crate) regions: LoopRegions,
     pub(crate) labels: Vec<Lab>,
     pub(crate) block_at: Vec<Option<u32>>,
     pub(crate) loop_at: Vec<Option<u32>>,
@@ -149,28 +204,101 @@ const REG_BIT: [u8; LOCALS] = {
 impl Fx<'_> {
     // ---- Emit ----
     pub fn op(&mut self, o: Op) {
+        // A new lowering must not silently emit a raw memory operator
+        // into the mapped ABI. Typed memory operators go through mem().
+        if self.checked_memory {
+            let sub = (o.0 >> 8) as u8;
+            assert!(!match o.0 as u8 {
+                0x28..=0x40 | 0xfe => true,
+                0xfc => matches!(sub, 8..=11),
+                0xfd => matches!(sub, 0..=11 | 0x54..=0x5d),
+                _ => false,
+            }, "unchecked mapped memory opcode");
+        }
+        self.raw_op(o);
+    }
+    fn raw_op(&mut self, o: Op) {
         if o.1 == 1 { self.f.push(o.0 as u8) } else { self.f.extend_from_slice(&o.0.to_le_bytes()[..o.1 as usize]) }
     }
-    fn imm(&mut self, o: Op, v: u32) { self.op(o); uleb(&mut self.f, v as u64); }
-    pub fn c32(&mut self, v: i32) { self.konst(0x41, v as i64) }
-    pub fn c64(&mut self, v: i64) { self.konst(0x42, v) }
-    fn konst(&mut self, opcode: u8, v: i64) {
-        if (-64..64).contains(&v) { self.f.extend_from_slice(&[opcode, v as u8 & 0x7f]) } else { self.f.push(opcode); sleb(&mut self.f, v) }
-    }
+    pub fn c32(&mut self, v: i32) { signed_op(&mut self.f, 0x41, v.into()); }
+    pub fn c64(&mut self, v: i64) { signed_op(&mut self.f, 0x42, v); }
     pub fn f64c(&mut self, v: f64) { self.f.push(0x44); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn v128c(&mut self, v: i128) { self.f.extend_from_slice(&[0xfd, 0x0c]); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn shuffle(&mut self, lanes: [u8; 16]) { self.f.extend_from_slice(&[0xfd, 0x0d]); self.f.extend_from_slice(&lanes); }
-    /// A load or store (its opcode) of memory 0 at `offset` past the address, aligned to 2^align.
-    pub fn mem(&mut self, o: Op, align: u32, offset: u64) { self.op(o); uleb(&mut self.f, align as u64); uleb(&mut self.f, offset); }
+    /// A load or store of guest data. Mapped lowering leaves the address
+    /// wide until its full extent has been authorized by the VM owner.
+    fn mem(&mut self, o: Op, align: u32, offset: u64) {
+        if self.checked_memory {
+            assert_eq!(offset, 0, "mapped operands supply their full effective address");
+            let (width, store) = match o {
+                I32_LOAD8_U | I64_LOAD8_U => (1, None),
+                I32_LOAD16_U | I64_LOAD16_U => (2, None),
+                I32_LOAD | I64_LOAD32_U | V128_LOAD32_ZERO => (4, None),
+                I64_LOAD | V128_LOAD64_ZERO => (8, None),
+                V128_LOAD => (MAX_MAPPED_OPERAND_BYTES, None),
+                I64_STORE8 => (1, Some(L_STORE64)),
+                I64_STORE16 => (2, Some(L_STORE64)),
+                I64_STORE32 => (4, Some(L_STORE64)),
+                I64_STORE => (8, Some(L_STORE64)),
+                I32_STORE => (4, Some(L_STORE32)),
+                V128_STORE32_LANE => (4, Some(L_STOREV)),
+                V128_STORE64_LANE => (8, Some(L_STOREV)),
+                V128_STORE => (MAX_MAPPED_OPERAND_BYTES, Some(L_STOREV)),
+                _ => panic!("unclassified mapped data operation {o:?}"),
+            };
+            if let Some(value) = store { self.set_raw(value); }
+            self.check_address(width, if store.is_some() { MappedAccess::Write } else { MappedAccess::Read });
+            if let Some(value) = store { self.get_raw(value); }
+        }
+        self.raw_mem(o, align, offset);
+    }
+    /// Narrow a mapped address after checking the complete operand.
+    pub(crate) fn check_address(&mut self, width: i32, access: MappedAccess) {
+        debug_assert!(self.checked_memory);
+        // The two low bits select rights (write also permits reading).
+        // The next four bits are the displacement of the last byte.
+        self.c32(((width - 1) << 2) | access as i32);
+        self.call(F_MAPPED_ADDRESS);
+    }
+
+    /// The caller supplies the applicable address check.
+    pub(crate) fn raw_mem(&mut self, o: Op, align: u32, offset: u64) {
+        memory_op(&mut self.f, o, align, offset);
+    }
+    /// The FXSR import has authorized the entire image and returned this
+    /// address. No host call can intervene while these lanes are moved.
+    pub(crate) fn fx_image_xmm(&mut self, restore: bool) {
+        debug_assert!(self.checked_memory);
+        self.set_raw(l_u(0));
+        for register in 0..16 {
+            self.get_raw(l_u(0));
+            let offset = crate::x87::FX87_BYTES as u64 + u64::from(register) * 16;
+            if restore {
+                self.raw_mem(V128_LOAD, 4, offset);
+                self.set(l_x(register));
+            } else {
+                self.get(l_x(register));
+                self.raw_mem(V128_STORE, 4, offset);
+            }
+        }
+    }
+    /// Scheduler-authored, fixed low word. No guest operand can use it.
+    pub(crate) fn interrupt_word(&mut self) {
+        self.c32(0); self.raw_mem(I32_LOAD, 2, INTERRUPT as u64);
+    }
+    /// Stack and other fixed-width guest addresses already present as i64.
+    pub(crate) fn guest_address(&mut self) {
+        if !self.checked_memory { self.op(I32_WRAP_I64); }
+    }
     pub fn e(&mut self, x: impl Emit) { x.emit(self) }
-    pub fn gget(&mut self, g: u32) { self.imm(Op(0x23, 1), g) }
-    pub fn gset(&mut self, g: u32) { self.imm(Op(0x24, 1), g) }
-    pub fn call(&mut self, f: u32) { self.imm(Op(0x10, 1), f) }
-    pub fn return_call(&mut self, f: u32) { self.imm(Op(0x12, 1), f) }
-    pub fn br(&mut self, d: u32) { self.imm(Op(0x0c, 1), d) }
-    pub fn br_if(&mut self, d: u32) { self.imm(Op(0x0d, 1), d) }
+    pub fn gget(&mut self, g: u32) { unsigned_op(&mut self.f, 0x23, fragment_global_index(g, self.checked_memory)); }
+    pub fn gset(&mut self, g: u32) { unsigned_op(&mut self.f, 0x24, fragment_global_index(g, self.checked_memory)); }
+    pub fn call(&mut self, f: u32) { unsigned_op(&mut self.f, 0x10, f); }
+    pub fn return_call(&mut self, f: u32) { unsigned_op(&mut self.f, 0x12, f); }
+    pub fn br(&mut self, d: u32) { unsigned_op(&mut self.f, 0x0c, d); }
+    pub fn br_if(&mut self, d: u32) { unsigned_op(&mut self.f, 0x0d, d); }
     pub fn br_table(&mut self, targets: &[u32], default: u32) {
-        self.imm(Op(0x0e, 1), targets.len() as u32);
+        unsigned_op(&mut self.f, 0x0e, targets.len() as u32);
         for &t in targets { uleb(&mut self.f, t as u64); }
         uleb(&mut self.f, default as u64);
     }
@@ -180,32 +308,41 @@ impl Fx<'_> {
     pub fn if_v128(&mut self) { self.nest += 1; self.f.extend_from_slice(&[0x04, V128]); }
     pub fn else_(&mut self) { self.f.push(0x05); }
     pub fn end(&mut self) { self.nest = self.nest.saturating_sub(1); self.f.push(0x0b); }
-    /// A local as the function numbers it: numbered as it is first touched.
-    #[inline]
-    pub(crate) fn slot(&mut self, l: u32) -> u32 {
-        let s = self.slots[l as usize];
-        if s == 0 && l != L_ENTRY { self.first_touch(l) } else { s }
-    }
-    #[cold]
-    fn first_touch(&mut self, l: u32) -> u32 {
-        self.kinds.push(local_type(l));
-        self.slots[l as usize] = self.kinds.len() as u32;
-        self.kinds.len() as u32
-    }
     /// A local moved, and the register it holds noted.
     #[inline]
     fn local(&mut self, opcode: u8, l: u32) {
         let b = REG_BIT[l as usize];
         if b != NOT_REG {
             let bit = 1 << b;
-            self.used |= bit;
-            if opcode == 0x20 { self.run[0] |= bit & !self.run[1] } else { self.run[2] |= bit; if self.nest == 0 { self.run[1] |= bit } }
+            if opcode == 0x20 { self.registers(bit, 0); } else { self.registers(0, bit); }
         }
-        let s = self.slot(l);
-        if s < 0x80 { self.f.extend_from_slice(&[opcode, s as u8]) } else { self.wide(opcode, s) }
+        self.raw(opcode, l);
     }
-    #[cold]
-    fn wide(&mut self, opcode: u8, s: u32) { self.f.push(opcode); uleb(&mut self.f, s as u64) }
+    #[inline]
+    fn registers(&mut self, reads: u32, writes: u32) {
+        self.used |= reads | writes;
+        self.run[0] |= reads & !self.run[1];
+        self.run[2] |= writes;
+        if self.nest == 0 { self.run[1] |= writes; }
+    }
+
+    /// Full and 32-bit scalar copies assign both slots and emit in one append.
+    pub(crate) fn copy_gpr(&mut self, src: u32, dst: u32, narrow: bool) {
+        self.registers(1 << src, 1 << dst);
+        let src = self.locals.slot(l_reg(src));
+        let dst = self.locals.slot(l_reg(dst));
+        if narrow {
+            self.f.extend_from_slice(&[0x20, src, I32_WRAP_I64.0 as u8, I64_EXTEND_I32_U.0 as u8, 0x21, dst]);
+        } else {
+            self.f.extend_from_slice(&[0x20, src, 0x21, dst]);
+        }
+    }
+
+    pub(crate) fn get_gpr_i32(&mut self, n: u32) {
+        self.registers(1 << n, 0);
+        let slot = self.locals.slot(l_reg(n));
+        self.f.extend_from_slice(&[0x20, slot, I32_WRAP_I64.0 as u8]);
+    }
     pub fn get(&mut self, l: u32) { self.local(0x20, l) }
     pub fn set(&mut self, l: u32) { self.local(0x21, l) }
     pub fn tee(&mut self, l: u32) { self.local(0x22, l) }
@@ -213,7 +350,10 @@ impl Fx<'_> {
     pub(crate) fn note(&mut self, e: Ev) { self.end_run(); self.ev.push(e); }
     pub(crate) fn end_run(&mut self) { if self.run != [0; 3] { self.ev.push(Ev::Run(self.run)); self.run = [0; 3]; } }
     /// A local moved with nothing noted.
-    fn raw(&mut self, opcode: u8, l: u32) { let s = self.slot(l); self.f.push(opcode); uleb(&mut self.f, s as u64); }
+    #[inline]
+    fn raw(&mut self, opcode: u8, l: u32) {
+        self.f.extend_from_slice(&[opcode, self.locals.slot(l)]);
+    }
     pub fn get_raw(&mut self, l: u32) { self.raw(0x20, l) }
     pub fn set_raw(&mut self, l: u32) { self.raw(0x21, l) }
     pub fn tee_raw(&mut self, l: u32) { self.raw(0x22, l) }

@@ -97,4 +97,6 @@ if [ "${EVERYDAY_WITH_QUICKSHELL:-0}" = 1 ]; then
   (cd "$build" && sha256sum -c "$here/qt/layer-generated.sha256")
   fixture wayland-quickshell-launch -DEVERYDAY_TEST_LAYER -DEVERYDAY_TEST_QUICKSHELL \
     "$here/qt/launch.c" "$here/server.c" "$build/generated/layer-protocol.c"
+  fixture wayland-quickshell-listener -DEVERYDAY_TEST_LAYER -DEVERYDAY_TEST_QUICKSHELL -I"$here" \
+    "$here/qt/quickshell/listener.c" "$here/server.c" "$build/generated/layer-protocol.c"
 fi

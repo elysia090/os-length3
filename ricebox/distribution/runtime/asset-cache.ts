@@ -3,11 +3,14 @@
 import type {Segment} from '../../sods/runtime/translate.ts';
 import {checkAsset, storedParts, type AssetReply, type AssetRequest} from './check-assets.ts';
 
-export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: {
+export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = [], checkSignal, inlineCheck = false}: {
   base: string;
   usedKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
+  checkSignal?: AbortSignal;
+  /** A guest Worker can check locally rather than start another checker. */
+  inlineCheck?: boolean;
 }) {
   /** Resolve the cache name lazily so importing the package does not require a browser. */
   let cacheName: string | undefined;
@@ -55,30 +58,54 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
     for (const r of await c.keys()) m.set(r.url, storedSize(await c.match(r)));
     return m;
   })());
-  const gone = (c: Cache, url: string) => void sizesOf(c).then((m) => m.delete(whole(url)));
+  const gone = (c: Cache, url: string): void => void sizesOf(c).then((m) => m.delete(whole(url)));
 
   /** Start the byte-check Worker on demand; the main thread is the fallback. */
   let checker: Worker | null | undefined;
   let asking = 0;
   const answers = new Map<number, (reply: AssetReply) => void>();
+  const IDLE_MS = 500;
+  let rest = false, idle: ReturnType<typeof setTimeout> | undefined;
+  function cancelIdle() { clearTimeout(idle); idle = undefined; }
+  function considerIdle(w: Worker | null | undefined) {
+    if (!rest || !w || checker !== w || answers.size || idle !== undefined) return;
+    idle = setTimeout(() => {
+      idle = undefined;
+      if (checker !== w || answers.size) return;
+      checker = undefined; // Later cache/check work can use a fresh checker.
+      try { w.terminate(); } catch { if (checker === undefined) checker = null; }
+    }, IDLE_MS);
+  }
+  /** An opt-in bootstrap is verified. Retire only after the last admitted response,
+   * including writes, and leave a short window for late cache operations. */
+  function restChecker() { rest = true; considerIdle(checker); }
+  function stopChecker(w: Worker, error: string) {
+    if (checker !== w) return;
+    cancelIdle();
+    checker = null;
+    for (const answer of answers.values()) answer({error});
+    answers.clear();
+    try { w.terminate(); } catch { /* termination was not confirmed */ }
+  }
+  checkSignal?.addEventListener('abort', () => {
+    if (checker) stopChecker(checker, 'Asset check admission closed');
+  }, {once: true});
   const worker = (): Worker | null => {
+    checkSignal?.throwIfAborted();
+    if (inlineCheck) return null;
     if (checker !== undefined) return checker;
     try {
       const w = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
       checker = w;
       w.addEventListener('message', e => {
+        if (checker !== w) return;
         const reply = e.data as AssetReply & {id: number};
         const answer = answers.get(reply.id);
         answers.delete(reply.id);
         answer?.(reply);
+        considerIdle(w);
       });
-      const lost = () => {
-        if (checker !== w) return;
-        checker = null;
-        for (const answer of answers.values()) answer({error: 'Worker response lost'});
-        answers.clear();
-        try { w.terminate(); } catch { /* termination was not confirmed */ }
-      };
+      const lost = () => stopChecker(w, 'Asset checker response lost');
       w.addEventListener('error', lost);
       w.addEventListener('messageerror', lost);
     } catch { checker = null; }
@@ -87,6 +114,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
 
   /** Null means sending failed before the Worker took ownership. */
   function send(to: Worker, message: AssetRequest, transfer: ArrayBuffer[]): Promise<AssetReply | null> {
+    cancelIdle();
     const id = ++asking;
     return new Promise(resolve => {
       answers.set(id, resolve);
@@ -94,6 +122,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
       catch {
         answers.delete(id);
         resolve(null);
+        considerIdle(to);
       }
     });
   }
@@ -112,6 +141,7 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
       const own = lend && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
       const buffer = own ? bytes.buffer as ArrayBuffer : new Uint8Array(bytes).buffer;
       const reply = await send(w, {bytes: buffer, unpack, ...(as ? {prepare: as} : {})}, [buffer]);
+      checkSignal?.throwIfAborted();
       if (reply?.bytes && reply.sha256) {
         return {bytes: new Uint8Array(reply.bytes), sha256: reply.sha256, ...(as ? {size: reply.size, segments: reply.segments ?? null} : {})};
       }
@@ -223,5 +253,5 @@ export function createAssetCache({base, usedKey, oldKeys = [], oldCaches = []}: 
     } catch { /* nothing remembered */ }
   }
 
-  return {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers};
+  return {cache, whole, used, open, gone, worker, checked, kept, keep, keepParts, keptWebroot, forgetOthers, restChecker};
 }

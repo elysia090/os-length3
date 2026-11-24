@@ -1,4 +1,4 @@
-// Deploy-time composition of an explicit, already-built package set. The source
+// Deploy-time composition from already-built packages. The source
 // toolchain remains explicit until independently versioned build artifacts ship.
 import {mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlinkSync, rmSync, renameSync, existsSync, lstatSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
@@ -7,13 +7,18 @@ import {createHash} from 'node:crypto';
 import {requireStandardFileOwner} from '../format/manifest.ts';
 import {fileURLToPath} from 'node:url';
 import {releaseVersion} from './version.ts';
+import {defaultPackages} from './default-packages.ts';
+
+export {defaultPackages} from './default-packages.ts';
 
 export interface PinnedTool { path: string; size: number; sha256: string }
 export interface PrepareOptions {
-  packages: string[]; packageCache: string; output: string;
+  packages?: readonly string[]; packageCache: string; output: string;
   toolchain?: string;
   tools?: Record<'translator' | 'sods' | 'muk', PinnedTool>;
-  version?: string; cache?: string; hot?: string[];
+  version?: string; cache?: string;
+  /** Retained for callers upgrading from selected translation. Web deployment prepares every program. */
+  hot?: string[];
 }
 function verifiedTool(tool: PinnedTool, name: string) {
   if (!tool || !/^[0-9a-f]{64}$/.test(tool.sha256) || !Number.isSafeInteger(tool.size) || tool.size < 0) throw new Error(`ricebox: ${name} requires path, size and sha256`);
@@ -22,7 +27,7 @@ function verifiedTool(tool: PinnedTool, name: string) {
   return {path, bytes};
 }
 
-export function selectPackages(packages: string[], packageCache: string, destination: string) {
+export function selectPackages(packages: readonly string[], packageCache: string, destination: string) {
   if (!Array.isArray(packages) || !packages.length || packages.some(n => typeof n !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(n)) || new Set(packages).size !== packages.length) {
     throw new Error('ricebox: packages must be a nonempty, unique list of package names');
   }
@@ -31,10 +36,13 @@ export function selectPackages(packages: string[], packageCache: string, destina
   // build cache's record: simultaneous sites may choose different packages.
   const selected = packages.map(name => {
     const directory = join(cache, name);
-    if (!lstatSync(join(directory, 'tree')).isDirectory()) throw new Error(`ricebox: ${name} has no package tree`);
+    if (!lstatSync(join(directory, 'tree'), {throwIfNoEntry: false})?.isDirectory()) {
+      throw new Error(`ricebox: missing package ${name} in ${cache}. Build or acquire it for this cache.`);
+    }
     const metadata = ['version', 'source', 'key'].map(file => {
       const value = readFileSync(join(directory, file), 'utf8').trim();
-      if (!value || /\s/.test(value)) throw new Error(`ricebox: invalid ${name}/${file}`);
+      // A package built from tracked repository files has no upstream source digest.
+      if ((!value && file !== 'source') || /\s/.test(value)) throw new Error(`ricebox: invalid ${name}/${file}`);
       return value;
     });
     return {name, directory, metadata};
@@ -54,7 +62,7 @@ export async function prepareDistribution(options: PrepareOptions) {
   requireStandardFileOwner(options);
   // Do not silently accept the former network-acquiring API in JavaScript callers.
   if ('catalog' in options) throw new Error('ricebox: acquire catalog packages first, then pass packages, packageCache and tools');
-  const {packages, packageCache, toolchain, tools, output, version = releaseVersion(), cache, hot = []} = options;
+  const {packages = defaultPackages, packageCache, toolchain, tools, output, version = releaseVersion(), cache, hot = []} = options;
   if (!packageCache || !output) throw new Error('ricebox: packageCache and output are required for package composition');
   if (!toolchain && !tools) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
   if (!Array.isArray(hot) || hot.some(p => typeof p !== 'string' || !p.startsWith('/') || /[\s,]/.test(p))) throw new Error('ricebox: hot must contain absolute guest program paths');
@@ -70,17 +78,15 @@ export async function prepareDistribution(options: PrepareOptions) {
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));
     const base = join(source, 'ricebox/distribution/build/distribution');
     const producer = verified ? (existsSync(`${base}.js`) ? `${base}.js` : `${base}.ts`) : `${base}.sh`;
-    const args = [producer, join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
-    if (verified) args.push('--translator', verified.translator.path, '--sods', verified.sods.path);
+    const args = [producer, join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox', '--deploy'];
+    if (verified) {
+      const maker = join(work, 'muk');
+      writeFileSync(maker, verified.muk.bytes);
+      args.push('--translator', verified.translator.path, '--sods', verified.sods.path, '--maker', maker);
+    }
     if (cache !== undefined) args.push('--cache', cache === '' ? '' : resolve(cache));
     if (hot.length) args.push('--hot', hot.join(','));
     await run(verified ? process.execPath : 'sh', args);
-    if (verified) {
-      const path = `blobs/${tools!.muk.sha256}.bin`;
-      mkdirSync(join(work, 'layers/blobs'), {recursive: true});
-      writeFileSync(join(work, 'layers', path), verified.muk.bytes);
-      writeFileSync(join(work, 'layers/muk.json'), JSON.stringify({path, sha256: tools!.muk.sha256, size: tools!.muk.size}) + '\n');
-    }
     // Publish only a complete successful generation, never a half-built directory.
     renameSync(join(work, 'layers'), target);
     return target;

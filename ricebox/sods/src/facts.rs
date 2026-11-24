@@ -35,8 +35,8 @@ const ENTRY: u32 = 1 << 31;
 const INDIRECT: u8 = 0x80;
 
 impl Liveness {
-    pub fn new(program: &Program) -> Liveness { Self::for_lowering(program, &[]) }
-    pub(crate) fn for_lowering(program: &Program, summaries: &[Summary]) -> Liveness {
+    pub fn new(program: &Program) -> Liveness { Self::for_lowering(program, &[], false) }
+    pub(crate) fn for_lowering(program: &Program, summaries: &[Summary], resumable_syscalls: bool) -> Liveness {
         let entries: Vec<u64> = program.entries.keys().copied().collect();
         let blocks: usize = program.functions.iter().map(|f| f.blocks.len()).sum();
         let mut l = Liveness {
@@ -44,14 +44,21 @@ impl Liveness {
             defined: Vec::with_capacity(blocks), to: Vec::with_capacity(blocks), fixed: Vec::with_capacity(blocks),
             entry: vec![NONE; blocks], live: vec![0; blocks], cases: vec![0; program.functions.len()], entries,
         };
+        let mut repeat = Vec::with_capacity(program.functions.len());
+        let mut has_entry_edge = false;
         for (index, f) in program.functions.iter().enumerate() {
             let preserves = summaries.get(index).is_some_and(Summary::preserves_flags);
+            let mut can_repeat = f.has_back_edge;
             l.first.push(l.used.len() as u32);
             for (b, at) in f.blocks.iter().zip(&f.succ) {
                 let (mut to, mut fixed) = ([NONE; 2], if b.exit == Exit::IndirectJump { INDIRECT } else { 0 });
+                can_repeat |= fixed & INDIRECT != 0;
                 let mut add = |a: u64, k: u32| {
                     let t = if k != NO { k } else {
-                        match program.entries.index(a) { Some(e) => e as u32 | ENTRY, None => { fixed |= ALL_FLAGS as u8; return; } }
+                        match program.entries.index(a) {
+                            Some(e) => { has_entry_edge = true; e as u32 | ENTRY }
+                            None => { fixed |= ALL_FLAGS as u8; return; }
+                        }
                     };
                     to[(to[0] != NONE) as usize] = t;
                 };
@@ -70,14 +77,27 @@ impl Liveness {
                     }
                     _ => {}
                 }
-                l.used.push(b.reads);
+                // Discovery isolates each syscall into a single-instruction
+                // block. A mapped syscall may unwind to a newly compiled
+                // continuation that needs any of the incoming flags.
+                l.used.push(if resumable_syscalls && b.resumes { ALL_FLAGS as u8 } else { b.reads });
                 l.defined.push(b.writes);
                 l.to.push(to);
                 l.fixed.push(fixed);
             }
+            repeat.push(can_repeat);
         }
         l.first.push(l.used.len() as u32);
         for (e, &(f, b)) in program.entries.values().enumerate() { l.entry[(l.first[f as usize] + b) as usize] = e as u32; }
+        // When entries have no callers inside the piece, none of their
+        // demands can trigger another function's analysis.
+        if !has_entry_edge {
+            for (f, repeats) in repeat.into_iter().enumerate() { l.solve(f, repeats); }
+            for (&e, &live) in l.entry.iter().zip(&l.live) {
+                if e != NONE { l.reads[e as usize] = live; }
+            }
+            return l;
+        }
         // The functions that go to each entry (packed), and each function once at first.
         let mut count = vec![0u32; l.entries.len() + 1];
         l.each_going(|e, _| count[e + 1] += 1);
@@ -89,7 +109,7 @@ impl Liveness {
         let mut work: VecDeque<u32> = (0..program.functions.len() as u32).collect();
         while let Some(f) = work.pop_front() {
             queued[f as usize] = false;
-            l.solve(f as usize);
+            l.solve(f as usize, repeat[f as usize]);
             for g in l.first[f as usize] as usize..l.first[f as usize + 1] as usize {
                 let e = l.entry[g];
                 if e == NONE || l.reads[e as usize] == l.live[g] { continue; }
@@ -108,11 +128,11 @@ impl Liveness {
             }
         }
     }
-    /// The flags live into each block of function `f`, from nothing, as its entries now read.
-    fn solve(&mut self, f: usize) {
+    /// The flags live into each block of function `f`. Entry demands grow
+    /// monotonically, so the previous solution is a lower bound.
+    fn solve(&mut self, f: usize, repeat: bool) {
         let (lo, hi) = (self.first[f] as usize, self.first[f + 1] as usize);
-        self.live[lo..hi].fill(0);
-        let mut cases = 0;
+        let mut cases = self.cases[f];
         loop {
             let mut changed = false;
             for g in (lo..hi).rev() {
@@ -124,7 +144,8 @@ impl Liveness {
                     changed = true;
                 }
             }
-            if !changed { break; }
+            // A forward-only graph propagates everything in one reverse pass.
+            if !repeat || !changed { break; }
         }
         self.cases[f] = cases;
     }
@@ -147,7 +168,10 @@ impl Liveness {
     pub fn handed(&self, address: u64) -> u32 { self.handed_at(self.entries.binary_search(&address).ok()) }
     /// As `handed`, for the entry found already (Entries::index).
     pub fn handed_at(&self, entry: Option<usize>) -> u32 { entry.map_or(ALL_FLAGS, |e| self.reads[e] as u32) }
-    pub(crate) fn is_entry(&self, f: u32, k: usize) -> bool { self.entry[self.first[f as usize] as usize + k] != NONE }
+    pub(crate) fn block_entry(&self, f: u32, k: usize) -> Option<usize> {
+        let e = self.entry[self.first[f as usize] as usize + k];
+        (e != NONE).then_some(e as usize)
+    }
 }
 
 /// What a function may do to the registers as a call sees it: bit n for r_n, 16 + n for xmm_n (as Fx::used). A call
@@ -172,15 +196,20 @@ const QUIET_CHAIN: u32 = 16;
 /// only there), then its callees' taken on, callees first (Kahn's order: what is never taken is on a cycle of calls).
 pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     let n = program.functions.len();
-    let mut starts: Vec<(u64, usize)> = program.functions.iter().enumerate().map(|(k, f)| (f.start, k)).collect();
-    starts.sort_unstable();
-    let (mut info, mut code) = (InstructionInfoFactory::new(), Vec::new());
+    let mut starts = Vec::new();
+    if n > 1 {
+        starts.extend(program.functions.iter().enumerate().map(|(k, f)| (f.start, k)));
+        starts.sort_unstable();
+    }
+    let (mut info, mut code) = (None, Vec::new());
     let rsp = 1 << (Register::RSP as u32 - Register::RAX as u32);
-    let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| {
+    let mut local = |f: &Function| {
         let mut s = Summary { reads: rsp, writes: rsp, exits: has_loop(f), flags: 0 };
         let mut callees = Vec::new();
         for (b, to) in f.blocks.iter().zip(&f.succ) {
             s.exits |= b.traps || match b.exit {
+                // With a single function the target is outside it or recursive.
+                Exit::Call { .. } if n == 1 => true,
                 // (A function's start is most often the entry of its first block; else it is searched for.)
                 Exit::Call { target, .. } => match program.entries.index(target).map(|e| program.entries.at(e)) {
                     Some((g, 0)) if program.functions[g as usize].start == target => { callees.push(g as usize); false }
@@ -193,12 +222,13 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
             };
         }
         if s.exits { return (s, callees); }
+        let info = info.get_or_insert_with(InstructionInfoFactory::new);
         let mut at = Code::new(elf, f.span().map_or(f.start, |(lo, _)| lo));
         for b in &f.blocks {
-            at.decode(elf, b.start, b.count, &mut code);
+            // Any read omitted by the block summary was preceded by a write.
+            s.flags |= (b.reads | b.writes) as u32;
+            at.decode(elf, b.start, b.len, b.count, &mut code);
             for i in &code {
-                let k = kind(i);
-                s.flags |= (k.reads | k.writes) as u32;
                 for u in info.info(i).used_registers() {
                     let Some(k) = bit(u.register()) else { continue };
                     // A write that keeps any of what was there reads it too (an 8- or 16-bit register's, an xmm's, a
@@ -214,7 +244,9 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
             }
         }
         (s, callees)
-    }).unzip();
+    };
+    if let [f] = program.functions.as_slice() { return vec![local(f).0]; }
+    let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(local).unzip();
     let mut waiting: Vec<usize> = callees.iter().map(|c| c.len()).collect();
     let mut callers: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (k, c) in callees.iter().enumerate() { for &g in c { callers[g].push(k); } }
@@ -319,7 +351,7 @@ mod tests {
         let summaries = summarize(&elf, &p);
         assert!(!summaries[0].exits);
         assert!(!summaries[0].preserves_flags());
-        let live = Liveness::for_lowering(&p, &summaries);
+        let live = Liveness::for_lowering(&p, &summaries, false);
         assert_eq!(live.handed(0x1000), 0);
         assert_eq!(live.handed(0x1004), ALL_FLAGS);
         assert_eq!(live.cases[0] as u32, ALL_FLAGS);
@@ -338,7 +370,7 @@ mod tests {
             let summaries = summarize(&elf, &p);
             assert!(!summaries[0].exits);
             assert!(!summaries[0].preserves_flags());
-            assert_eq!(Liveness::for_lowering(&p, &summaries).handed(0x1000), expected);
+            assert_eq!(Liveness::for_lowering(&p, &summaries, false).handed(0x1000), expected);
         }
     }
 
@@ -356,7 +388,7 @@ mod tests {
         assert!(!summaries[0].exits);
         assert!(!summaries[0].preserves_flags());
         assert!(summaries[1].preserves_flags());
-        let live = Liveness::for_lowering(&p, &summaries);
+        let live = Liveness::for_lowering(&p, &summaries, false);
         assert_eq!(live.handed(0x1005), 0);
         assert_eq!(live.handed(0x1000), ALL_FLAGS);
     }

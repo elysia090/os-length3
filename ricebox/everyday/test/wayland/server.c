@@ -16,6 +16,8 @@ struct Server {
     struct wl_client *client;
     struct wl_event_source *input;
     struct wl_resource *surface, *role, *window, *pointer, *buffer, *callback;
+    struct wl_resource *last_buffer;
+    struct wl_listener last_buffer_gone;
 #ifdef EVERYDAY_TEST_LAYER
     struct wl_resource *layer, *output;
     uint32_t anchor;
@@ -211,6 +213,11 @@ static void frame(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     s->callback=wl_resource_create(c,&wl_callback_interface,1,id);
     if(!s->callback) wl_client_post_no_memory(c);
 }
+static void last_buffer_destroyed(struct wl_listener *listener, void *data) {
+    (void)data;
+    struct Server *s=wl_container_of(listener,s,last_buffer_gone);
+    s->last_buffer=NULL;
+}
 static void commit(struct wl_client *c, struct wl_resource *r) {
     (void)c;
     struct Server *s=wl_resource_get_user_data(r);
@@ -227,7 +234,17 @@ static void commit(struct wl_client *c, struct wl_resource *r) {
     }
     wl_callback_send_done(s->callback,s->frames);
     wl_resource_destroy(s->callback); s->callback=NULL;
+    // Compare the live server resource, not an ID/address that could have been
+    // recycled after destroy. Observing it does not extend its lifetime.
+    bool reused=s->last_buffer==s->buffer;
+    if(!reused) {
+        if(s->last_buffer) wl_list_remove(&s->last_buffer_gone.link);
+        s->last_buffer=s->buffer;
+        wl_resource_add_destroy_listener(s->last_buffer,&s->last_buffer_gone);
+    }
     wl_buffer_send_release(s->buffer); s->buffer=NULL;
+    printf("WAYLAND_RELEASE seq=%u buffer=%s\n",s->frames,reused ? "reused" : "new");
+    if(fflush(stdout)!=0) fail(s,"cannot write buffer release witness");
     s->damage_height=s->damage_width=0;
     if(!s->input) {
         s->input=wl_event_loop_add_fd(wl_display_get_event_loop(s->display),STDIN_FILENO,WL_EVENT_READABLE,input_ready,s);
@@ -396,7 +413,7 @@ static void disconnected(struct wl_listener *listener, void *data) {
     struct Server *s=wl_container_of(listener,s,gone);s->client_gone=true;
 }
 int guest_wayland_server(int fd, const char *mirror) {
-    struct Server s={.gone={.notify=disconnected}};
+    struct Server s={.gone={.notify=disconnected},.last_buffer_gone={.notify=last_buffer_destroyed}};
     int n=snprintf(s.name,sizeof s.name,"%s/frame.rgba",mirror), m=snprintf(s.temporary,sizeof s.temporary,"%s/frame.new",mirror);
     if(n<0 || (size_t)n>=sizeof s.name || m<0 || (size_t)m>=sizeof s.temporary){close(fd);return 41;}
     s.display=wl_display_create();

@@ -241,29 +241,107 @@ pub const V128: u8 = 0x7b;
 #[inline]
 pub fn uleb(out: &mut Vec<u8>, v: u64) { if v < 0x80 { out.push(v as u8) } else { uleb_long(out, v) } }
 #[cold]
-fn uleb_long(out: &mut Vec<u8>, mut v: u64) {
-    let (mut bytes, mut n) = ([0u8; 10], 0);
+fn uleb_long(out: &mut Vec<u8>, v: u64) {
+    let mut bytes = [0; 10];
+    let n = write_uleb(&mut bytes, v);
+    out.extend_from_slice(&bytes[..n]);
+}
+
+fn write_uleb(bytes: &mut [u8], mut v: u64) -> usize {
+    let mut n = 0;
     while v >= 0x80 { bytes[n] = v as u8 | 0x80; n += 1; v >>= 7; }
     bytes[n] = v as u8;
-    out.extend_from_slice(&bytes[..=n]);
+    n + 1
 }
-/// (Its bytes made in a buffer of its own, then put in at once: one check of room, not one a byte.)
-pub fn sleb(out: &mut Vec<u8>, mut v: i64) {
-    let (mut bytes, mut n) = ([0u8; 10], 0);
+
+fn write_sleb(bytes: &mut [u8], mut v: i64) -> usize {
+    let mut n = 0;
     loop {
         let b = (v & 0x7f) as u8;
         v >>= 7;
-        if (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0) { bytes[n] = b; break; }
+        if (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0) { bytes[n] = b; return n + 1; }
         bytes[n] = b | 0x80;
         n += 1;
     }
-    out.extend_from_slice(&bytes[..=n]);
+}
+
+pub fn sleb(out: &mut Vec<u8>, v: i64) {
+    let mut bytes = [0; 10];
+    let n = write_sleb(&mut bytes, v);
+    out.extend_from_slice(&bytes[..n]);
+}
+
+/// One append per operator, including its immediates. The short forms
+/// need only a capacity check and a store of the two or three bytes.
+#[inline]
+pub(crate) fn unsigned_op(out: &mut Vec<u8>, op: u8, v: u32) {
+    if v < 0x80 {
+        out.extend_from_slice(&[op, v as u8]);
+    } else {
+        let mut bytes = [0; 6];
+        bytes[0] = op;
+        let n = write_uleb(&mut bytes[1..], v.into());
+        out.extend_from_slice(&bytes[..1 + n]);
+    }
+}
+
+#[inline]
+pub(crate) fn signed_op(out: &mut Vec<u8>, op: u8, v: i64) {
+    if (-64..64).contains(&v) {
+        out.extend_from_slice(&[op, v as u8 & 0x7f]);
+    } else {
+        let mut bytes = [0; 11];
+        bytes[0] = op;
+        let n = write_sleb(&mut bytes[1..], v);
+        out.extend_from_slice(&bytes[..1 + n]);
+    }
+}
+
+#[inline]
+pub(crate) fn memory_op(out: &mut Vec<u8>, op: Op, align: u32, offset: u64) {
+    if op.1 == 1 && align < 0x80 && offset < 0x80 {
+        out.extend_from_slice(&[op.0 as u8, align as u8, offset as u8]);
+    } else {
+        let mut bytes = [0; 4 + 5 + 10];
+        let op_len = op.1 as usize;
+        bytes[..op_len].copy_from_slice(&op.0.to_le_bytes()[..op_len]);
+        let n = op_len + write_uleb(&mut bytes[op_len..], align.into());
+        let end = n + write_uleb(&mut bytes[n..], offset);
+        out.extend_from_slice(&bytes[..end]);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use wasm_encoder::{Encode, Instruction as W, MemArg, MemArgTarget};
+
+    #[test]
+    fn complete_operators_match_wasm_encoder() {
+        let encoded = |w: W| {
+            let mut bytes = Vec::new();
+            w.encode(&mut bytes);
+            bytes
+        };
+        for value in [0, 127, 128, 16_383, 16_384, u32::MAX] {
+            let mut bytes = Vec::new();
+            unsigned_op(&mut bytes, 0x10, value);
+            assert_eq!(bytes, encoded(W::Call(value)));
+        }
+        for value in [i64::MIN, -65, -64, 0, 63, 64, i64::MAX] {
+            let mut bytes = Vec::new();
+            signed_op(&mut bytes, 0x42, value);
+            assert_eq!(bytes, encoded(W::I64Const(value)));
+        }
+        for offset in [0, 127, 128, u32::MAX.into(), u64::MAX] {
+            let m = MemArg { offset, align: 3, target: MemArgTarget::Memory(0), ordering: None };
+            for (op, instruction) in [(I64_LOAD, W::I64Load(m)), (V128_LOAD, W::V128Load(m))] {
+                let mut bytes = Vec::new();
+                memory_op(&mut bytes, op, m.align, offset);
+                assert_eq!(bytes, encoded(instruction));
+            }
+        }
+    }
 
     fn bytes(o: Op) -> Vec<u8> { o.0.to_le_bytes()[..o.1 as usize].to_vec() }
 

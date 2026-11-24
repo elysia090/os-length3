@@ -1,13 +1,26 @@
-// Lazy Node distribution reader. The caller owns pack descriptors and must close them.
-// Unlike assets.ts this does not eagerly collect assets or impose its symlink policy.
-import {openSync,readFileSync,readSync,closeSync,statSync} from 'node:fs';
-import {join} from 'node:path';
+// Node distribution readers. The lazy reader owns only open pack descriptors;
+// the deployment visitor checks the exact file snapshots it hands off.
+import {createHash} from 'node:crypto';
+import {openSync,readFileSync,readSync,closeSync,statSync,lstatSync} from 'node:fs';
+import {join,resolve} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
 import {blobAsset,releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
+import {aotFraming, orderedAotFrames} from '../format/aot-frames.ts';
+import {webExecutableSources} from '../format/executable-source.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
+
+/** Decode a typical pack member into one buffer, with a byte for the end
+ * check. Cap the initial allocation for larger members. */
+function unzstd(bytes: Uint8Array, size?: number): Buffer {
+  if (size === undefined) return zstdDecompressSync(bytes);
+  const chunkSize = Math.max(64, Math.min(size + 1, 32 << 20));
+  const decoded = zstdDecompressSync(bytes, {chunkSize, maxOutputLength: Math.max(1, size)});
+  if (decoded.length !== size) throw new Error(`root: decoded ${decoded.length} bytes, not ${size}`);
+  return decoded;
+}
 
 /** The web root, opened: {about (webroot.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
 export function openDistribution(dir: string) {
@@ -24,11 +37,12 @@ export function openDistribution(dir: string) {
   /** A file's stored bytes from its pack, checked against its table, and decoded. */
   const checked = checkedRange(index, range, digest);
   const read = (f: IndexFile): Buffer => {
-    const stored = Buffer.from(checked(f.pack, f.at, f.len));
-    return f.raw || !f.len ? stored : zstdDecompressSync(stored);
+    const stored = checked(f.pack, f.at, f.len);
+    return f.raw || !f.len ? Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength) : unzstd(stored, f.size);
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
   const blob = (b: Blob) => {
+    if ('framing' in b) throw new Error('framed AOT requires the execution loader');
     const asset = blobAsset(b), bytes = readFileSync(join(dir, asset.path));
     const actual = sha256(bytes);
     if (bytes.length !== asset.size || actual !== asset.sha256) throw new Error(`${asset.path}: not the stored blob its index names (sha256 ${actual})`);
@@ -36,10 +50,102 @@ export function openDistribution(dir: string) {
     if (decoded.length !== b.bytes) throw new Error(`${asset.path}: wrong decoded size`);
     return decoded;
   };
-  const unzstd = (bytes: Uint8Array) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };
   /** Every pack whole: its table, each file it stores, and nothing besides (distribution/pack.ts checkPacks). */
   const checkAll = () => checkPacks(index, range, (name) => statSync(join(dir, 'packs', name)).size, digest);
   return {about, index, dir, packs: join(dir, 'packs'), read, readRange, unzstd, blob, checkAll, close};
 }
 
+
+/** Deliver exact buffers as they are checked. The caller must not publish until the whole release passes. */
+export function visitDistributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}:
+  {base?: string; maxAssetBytes?: number}, take: (path: string, bytes: Buffer) => void) {
+  if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
+  if (!(maxAssetBytes > 0)) throw new Error('ricebox: maxAssetBytes must be positive');
+  const root = resolve(directory);
+  const read = (name: string, digest?: string, size?: number) => {
+    if (!/^(?:webroot\.json|muk\.json|index-[0-9a-f]{64}\.json|packs\/[0-9a-f]{64}\.pack|blobs\/[0-9a-f]{64}\.bin)$/.test(name)) {
+      throw new Error(`ricebox: invalid distribution asset ${name}`);
+    }
+    const parts = name.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const stat = lstatSync(join(root, ...parts.slice(0, i)));
+      if (stat.isSymbolicLink()) throw new Error(`ricebox: symbolic link in asset ${name}`);
+      if (i === parts.length && !stat.isFile()) throw new Error(`ricebox: not a file: ${name}`);
+    }
+    const bytes = readFileSync(join(root, name));
+    if (bytes.length > maxAssetBytes) throw new Error(`ricebox: ${name} is ${bytes.length} bytes, over the deployment asset limit ${maxAssetBytes}`);
+    if (size !== undefined && bytes.length !== size) throw new Error(`ricebox: wrong size for ${name}`);
+    if (digest && sha256(bytes) !== digest) throw new Error(`ricebox: wrong digest for ${name}`);
+    return bytes;
+  };
+  const asset = (name: string, digest?: string, size?: number) => {
+    const bytes = read(name, digest, size);
+    take(`${base}/${name}`, bytes);
+    return bytes;
+  };
+  const about = JSON.parse(asset('webroot.json').toString('utf8')) as About;
+  const descriptor = releaseIndexAsset(about);
+  const index = readReleaseIndex(asset(descriptor.path, descriptor.sha256, descriptor.size), about);
+  const verified = new Map<string, number>();
+  const blob = (value: unknown, verify?: (bytes: Buffer) => void) => {
+    const b = blobAsset(value), previous = verified.get(b.path);
+    if (previous !== undefined && previous !== b.size) throw new Error(`ricebox: conflicting sizes for ${b.path}`);
+    if (previous !== undefined && !verify) return;
+    const bytes = read(b.path, b.sha256, b.size);
+    verify?.(bytes);
+    if (previous === undefined) take(`${base}/${b.path}`, bytes);
+    verified.set(b.path, b.size);
+  };
+  blob(index.translator);
+  for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
+  for (const {program} of webExecutableSources(index).values()) {
+    const asset = program.wasm, framed = aotFraming(asset);
+    if (!framed) { blob(asset); continue; }
+    const whole = createHash('sha256'), frames = orderedAotFrames(framed);
+    let n = 0;
+    for (const part of framed.shards ?? [{...asset, at: 0}]) {
+      blob(part, bytes => {
+        while (n < frames.length && frames[n]!.at < part.at + part.size) {
+          const frame = frames[n++]!, at = frame.at - part.at;
+          if (sha256(bytes.subarray(at, at + frame.size)) !== frame.sha256) {
+            throw new Error(`ricebox: wrong frame digest for ${asset.path} at ${frame.at}`);
+          }
+        }
+        whole.update(bytes);
+      });
+    }
+    // v2 separately binds the logical artifact key, even though no file has
+    // the key's path. The caller publishes nothing until the visitor returns.
+    if (n !== frames.length || whole.digest('hex') !== asset.sha256) throw new Error(`ricebox: wrong framed object digest for ${asset.path}`);
+  }
+  // The pack checker asks its size before reading its ranges and finishes that
+  // pack before asking for another. The size-checked buffer is the only reader.
+  let current: {name: string; bytes: Buffer} | undefined, nextPack = 0;
+  const takePack = () => {
+    if (!current) return;
+    const {name, bytes} = current;
+    current = undefined;
+    take(`${base}/packs/${name}`, bytes);
+  };
+  checkPacks(index, (name, at, len) => {
+    if (current?.name !== name) throw new Error(`ricebox: unexpected pack read: ${name}`);
+    return current.bytes.subarray(at, at + len);
+  }, name => {
+    takePack(); // Opening the next pack means the previous one passed all checks.
+    const pack = index.packs[nextPack++];
+    if (pack?.name !== name) throw new Error(`ricebox: unexpected pack order: ${name}`);
+    const bytes = read(`packs/${name}`, undefined, pack.bytes);
+    current = {name, bytes};
+    return bytes.length;
+  }, digest);
+  takePack();
+  // A root without this maker would only fail once a visitor launched it.
+  const maker = blobAsset(JSON.parse(asset('muk.json').toString('utf8')));
+  const deployed = index.execution?.maker;
+  if (deployed && (deployed.path !== maker.path || deployed.size !== maker.size)) {
+    throw new Error('ricebox: the box maker disagrees with the deployed Wasm index');
+  }
+  blob(maker);
+  return {descriptor, index, maker};
+}

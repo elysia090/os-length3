@@ -10,7 +10,7 @@ const os = fileURLToPath(new URL('../../../..', import.meta.url));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** A release root of a few files: a program and its links (one a hard link), set-id and sticky bits, an empty file, the package db. */
-export function standIn(dir: string, version: string) {
+export function standIn(dir: string, version: string, add?: (root: string) => void) {
   const tree = join(dir, 'tree'), root = join(tree, 'root');
   for (const d of ['usr/bin', 'usr/lib/apk/db', 'etc/length3', 'tmp', 'root', 'var/empty']) mkdirSync(join(root, d), {recursive: true});
   writeFileSync(join(root, 'usr/bin/busybox'), Buffer.concat([Buffer.from('\x7fELF'), Buffer.alloc(4096, 7)]));
@@ -27,6 +27,7 @@ export function standIn(dir: string, version: string) {
   writeFileSync(join(root, 'etc/os-release'), `NAME="ricebox"\nID=ricebox\nVERSION_ID=${version}\n`);
   writeFileSync(join(root, 'usr/lib/apk/db/installed'), 'P:busybox\nV:1\nF:usr/bin\nR:busybox\nR:sh\n\n');
   writeFileSync(join(tree, 'manifest'), `version=${version}\nbase.profile=development-standard-v1\n`);
+  add?.(root);
   const tar = execFileSync('tar', ['-C', tree, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax',
     '--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime', '-cf', '-', 'manifest', 'root'], {maxBuffer: 1 << 28});
   const z = zstdCompressSync(tar);

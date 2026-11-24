@@ -36,6 +36,9 @@ export const UNITS: Unit[] = [
     holds: ['ricebox/distribution'], takes: ['toolchain', 'muk', 'sods', 'you', 'otter']},
   {name: 'everyday', says: 'Theme values; the independent Wayland display and input foundation is not implemented',
     holds: ['ricebox/everyday'], takes: []},
+  // The staged site is a consumer of the distribution and Everyday terminal view, not part of either core.
+  {name: 'starter', says: 'Stages and owns the plain browser terminal for one selected guest',
+    holds: ['ricebox/distribution/starter'], takes: ['ricebox', 'everyday'], entries: []},
   {name: 'you', says: 'Freestanding C implementations of directory history and tree search',
     holds: ['ricebox/you'], takes: ['toolchain']},
   {name: 'otter', says: 'Command help and acquisition of explicitly pinned package catalogs',
@@ -55,7 +58,7 @@ export const UNITS: Unit[] = [
 ];
 
 /** Reusable components that may not depend on the Why product. */
-export const RICEBOX_UNITS = ['toolchain', 'muk', 'sods', 'ricebox', 'everyday', 'you', 'otter', 'cowboy'];
+export const RICEBOX_UNITS = ['toolchain', 'muk', 'sods', 'ricebox', 'everyday', 'starter', 'you', 'otter', 'cowboy'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
 export const NOT_UNITS = ['scripts', 'why/test', 'ricebox/sods/test', 'ricebox/muk/test', 'ricebox/sods/examples', 'ricebox/otter/test', 'ricebox/cowboy/test', 'ricebox/cowboy/target',

@@ -9,11 +9,11 @@ fi
 tests=ricebox/everyday/test
 scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
-node "$tests/wayland/browser/stage-consumer.mjs" "$scratch/installed"
+node "$tests/wayland/browser/stage-consumer.ts" "$scratch/installed"
 browser="$scratch/installed/consumer/browser"
 cp "ricebox/everyday/terminal/vt.ts" "$browser/vt.ts"
 cp "$tests/wayland/browser/terminal-stream.mts" "$browser/terminal-stream.mts"
-cp "$tests/terminal/pty.integration.mjs" "$browser/terminal-pty.integration.mjs"
-node "$browser/terminal-pty.integration.mjs" "$@"
-cp "$tests/terminal/resize-lifecycle.integration.mjs" "$browser/terminal-resize-lifecycle.integration.mjs"
-node "$browser/terminal-resize-lifecycle.integration.mjs" "$@"
+cp "$tests/terminal/pty.integration.ts" "$browser/terminal-pty.integration.ts"
+node "$browser/terminal-pty.integration.ts" "$@"
+cp "$tests/terminal/resize-lifecycle.integration.ts" "$browser/terminal-resize-lifecycle.integration.ts"
+node "$browser/terminal-resize-lifecycle.integration.ts" "$@"

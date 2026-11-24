@@ -4,6 +4,9 @@
 
 use crate::program::*;
 
+mod regions;
+pub(crate) use regions::LoopRegions;
+
 /// A loop made of blocks `head..=last` (in the order they are lowered), gone round from its last block or any before
 /// it back to its head; `parent`: the loop it lies within.
 #[derive(Clone, Copy, Debug)]
@@ -51,14 +54,27 @@ pub(crate) fn loops_into(succ: &[[u32; 2]], loops: &mut Vec<Loop>, (last, open):
 pub(crate) fn within_of(loops: &[Loop], n: usize, within: &mut Vec<Option<usize>>) {
     within.clear();
     within.resize(n, None);
-    for (l, lp) in loops.iter().enumerate() { within[lp.head + 1..=lp.last].fill(Some(l)); }
+    if loops.is_empty() { return; }
+    let mut next = 0;
+    let mut containing: Option<usize> = None;
+    for (block, slot) in within.iter_mut().enumerate() {
+        while let Some(l) = containing {
+            if block <= loops[l].last { break; }
+            containing = loops[l].parent;
+        }
+        *slot = containing;
+        if loops.get(next).is_some_and(|lp| lp.head == block) {
+            containing = Some(next);
+            next += 1;
+        }
+    }
 }
 
 /// Whether `function` goes backward anywhere (a loop's head), within it or out to an address before a block's (a run
 /// of the same function).
 pub fn has_loop(function: &Function) -> bool {
-    function.blocks.iter().zip(&function.succ).enumerate().any(|(k, (b, to))| {
-        goes_to(b).into_iter().zip(to).any(|(a, &t)| if t != NO { t as usize <= k } else { a.is_some_and(|a| a <= b.start) })
+    function.has_back_edge || function.blocks.iter().zip(&function.succ).any(|(block, to)| {
+        goes_to(block).into_iter().zip(to).any(|(address, &t)| t == NO && address.is_some_and(|a| a <= block.start))
     })
 }
 
@@ -179,8 +195,10 @@ impl Function {
     pub fn laid_out(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> Function {
         // Successors found once, in address order; laid out, each index goes where its block went.
         let succ = successors(&blocks);
-        if !scratch.lay_out(&succ) {
-            return Function { start, name, by_address: (0..blocks.len() as u32).collect(), blocks, succ };
+        // A graph with only forward edges has no loop to lay out.
+        let has_back_edge = succ.iter().enumerate().any(|(k, &[a, b])| a as usize <= k || b as usize <= k);
+        if !has_back_edge || !scratch.lay_out(&succ) {
+            return Function { start, name, by_address: None, blocks, succ, has_back_edge };
         }
         let order = &scratch.order;
         let mut place = vec![0u32; order.len()];
@@ -188,7 +206,8 @@ impl Function {
         let moved = |t: u32| if t == NO { NO } else { place[t as usize] };
         let succ = order.iter().map(|&old| succ[old].map(moved)).collect();
         let blocks = order.iter().map(|&k| blocks[k].clone()).collect();
-        Function { start, name, blocks, succ, by_address: place }
+        // Layout only changes where DFS found a cycle, which always has a back edge.
+        Function { start, name, blocks, succ, by_address: Some(place), has_back_edge }
     }
 }
 
@@ -239,10 +258,19 @@ pub(crate) fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut L
 /// Where a run of a function cut into `runs` (the program's from `first`) goes on in another: an entry of that run.
 pub(crate) fn joined(runs: &[Function], first: usize, marks: &mut Vec<(u64, (u32, u32))>) {
     if runs.len() < 2 { return; }
-    let holder = |a: u64| runs.iter().enumerate().find_map(|(r, f)| f.block_index(a).map(|b| (r, b)));
+    // Runs partition the address-ordered blocks. Only the run starting
+    // nearest to the target from below can contain it.
     for f in runs {
-        for a in f.blocks.iter().flat_map(|b| goes_to(b).into_iter().flatten()) {
-            if f.block_index(a).is_none() { if let Some((r, k)) = holder(a) { marks.push((a, ((first + r) as u32, k as u32))); } }
+        for (block, successors) in f.blocks.iter().zip(&f.succ) {
+            for (target, &local) in goes_to(block).into_iter().zip(successors) {
+                if local != NO { continue; }
+                let Some(address) = target else { continue };
+                let after = runs.partition_point(|run| run.start <= address);
+                let Some(run) = after.checked_sub(1) else { continue };
+                if let Some(block) = runs[run].block_index(address) {
+                    marks.push((address, ((first + run) as u32, block as u32)));
+                }
+            }
         }
     }
 }

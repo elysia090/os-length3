@@ -14,9 +14,8 @@ Cloudflare hosting, does not imply execution inside that host's isolates.
 
 ## Setup
 
-See [Acquisition and composition](docs/installation.md) for package-cache inputs,
-pinned tools and output ownership. To generate a local npm package, run from the
-repository root with Node 24:
+Run the following commands from the repository root with Node 24 and a built
+package cache in `target/root-packages`.
 
 ```sh
 node ricebox/distribution/build/npm.ts NEW_DIRECTORY
@@ -24,13 +23,16 @@ cd NEW_DIRECTORY
 npm pack --ignore-scripts
 ```
 
-The output directory must not exist. This creates a private local package, not a
-registry publication. Install the generated tarball with `npm install --offline
---ignore-scripts /path/to/ricebox-0.0.1.tgz`. It includes the optional Everyday
-presenter, not the terminal preview, demos, or Why site files. Its declared Node
-requirement is `>=22.18`; use Node 24 to generate the package. A browser app can
-stage the package's native modules or use a bundler with module-Worker support.
-Serve the distribution layers separately from those modules.
+The output directory must not exist. The build composes the standard guest and
+includes its prepared layers, the launcher, and the Everyday presenter. Use
+`--package-cache CACHE` to select another built cache or `--runtime-only` for a
+library tarball whose consumer supplies a guest. See [Acquisition and composition](docs/installation.md)
+for prerequisites and [the package build used in CI](../../.github/actions/root-packages/action.yml)
+for the source cache. The generated tarball is private and requires Node 22.18
+or newer at installation.
+
+For offline installation and a first browser session, see [Run the Ricebox starter](docs/installation.md#run-the-ricebox-starter).
+An optional local declaration can change the terminal or pin a different prepared guest.
 
 The package exports `ricebox` (`createRoot` and its types), `ricebox/everyday`
 (the optional presenter), `ricebox/prepare` (composition), `ricebox/assets`
@@ -71,6 +73,13 @@ to the release’s root digest and version before using it.
 Regular guest file payloads belong to sods' TypeScript Vfs. Release and AOT
 artifacts authenticate sources and code; they do not select another file owner.
 
+The default Web distributor and `prepareDistribution` publish one Wasm
+artifact per executable ELF inode in the selected packages and a Wasm module
+for Muk. Scripts use their packaged interpreter. The browser fetches each
+published module when its guest command needs it. An executable built or
+copied into a running guest becomes runnable through a subsequent deployment
+that includes it. The guest's ELF files remain available for ordinary reads.
+
 `createRoot(config).execution` selects the `canonical-aot-v1` profile. Its
 `PreparedRoot` associates compiled artifacts with a release generation and exact
 canonical sources, rather than installing byte-bearing file overlays. The
@@ -84,14 +93,34 @@ compiled code corresponds to the declared source.
 Before overlays, `prepareTree` captures sods' canonical inode tokens. AOT admission
 uses those tokens rather than resolving a potentially replaced pathname. Hardlink
 aliases may share a source; conflicting artifacts are rejected. Canonical files
-remain lazy until their complete original bytes are needed. Engine compilation
-failure permits ordinary execution of that source; checksum or decode failure
-does not. Linux permission and mount decisions remain with sods.
+remain lazy until their complete original bytes are needed. When a deployed
+module fails to load or compile, the guest receives that failure. Older roots
+permit ordinary execution after an engine compilation failure. Linux permission
+and mount decisions remain with sods.
 
 Retirement closes admission but does not itself prove that a Worker or host access
 has stopped. See the [runtime foundation](../../docs/runtime-foundation.md) for
 compatibility and browser-transfer constraints. Node integration results are not
-browser cold-start measurements.
+browser cold-start measurements. See the [framed AOT trial](docs/framed-aot.md)
+for the paired opt-in and remaining rollout checks.
+
+### Prepared code for the inline dynamic VM
+
+`build/mapped-code.ts` uses a supplied translator loader to replay ordered
+dispatch misses for each exact RX placement in a verified root. It emits
+content-addressed Wasm and a sidecar bound to the root generation and decoded
+translator. A replay keeps earlier
+discovery fences and each part's register and flag analysis, then emits one
+module for the placement. Direct branches can target functions in that module.
+Each PC has one dispatcher record with the target from the last part that
+published it.
+
+`runtime/mapped-code.ts` binds a trusted sidecar to a prepared tree's captured
+inodes. Supply the resulting `preparedCode` to `prepareMappedInitial` with the
+ordinary main, interpreter and library grants. Make artifacts available through
+its reader. The first matching dispatch miss checks the blob digest and
+attaches the code under the VM's live RX permission. Missing code uses the
+ordinary translator. Withdrawal retires an attached piece with its mapping.
 
 ## Build, deploy and verify
 
@@ -99,8 +128,8 @@ browser cold-start measurements.
   verifies downloads, and `lift-dependencies.sh` applies recipe-selected updates.
 - `build/assemble.sh` assembles selected packages. `package-database.ts` writes
   their inventory; `script-interpreters.ts` checks interpreters in the guest root.
-- `build/prepare.ts` composes a supplied cache with pinned tools or a source
-  toolchain, publishing the output only after successful composition.
+- `build/default-packages.ts` names the standard userland. `build/prepare.ts`
+  composes it or an explicit selection using pinned tools or a source toolchain.
 - `build/distribution.ts` produces packs, blobs and translations.
   `build/distribution.sh` builds the source translators, stages the layers
   with the box maker, and only then replaces the output. This requires Cargo,
@@ -118,10 +147,14 @@ browser cold-start measurements.
 - `verification/programs.ts`, `verification/commands.ts` and `workloads/` compare
   native and sods execution. These tools are not production package exports.
 
-The compression pool owns its build Workers, rejects pending work on failure and
-awaits termination. Failed termination remains unconfirmed; it is not a browser
-Worker guarantee. Archive reads, input cloning and retained queued bytes still
-have costs. No constant-memory or syscall-count guarantee is implied.
+The web layer builder admits at most three compressions and 224 MiB of input
+bodies at once. A larger member runs alone. The archive can hold one more
+member while waiting, not a queue of bodies. Workers take ownership of complete
+disposable buffers and return them when compression saves no bytes; inputs shared
+with the allocator or kept for AOT are not moved. Archive reads, compression
+scratch and the selected stored bytes for pack assembly still have separate
+costs. This is not a process-memory limit. The pool stops admission on failure
+and awaits all build Worker terminations; failed termination remains unconfirmed.
 
 ## Tests
 

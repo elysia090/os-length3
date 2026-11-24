@@ -168,7 +168,7 @@ if(import.meta.main) {
       summary.stage='installed-exact-package';
       const node=process.execPath, packageOut=join(work,'npmpackage');
       const cacheFlag='--cache='+join(work,'npm-cache');
-      need(run('package-build',node,['ricebox/distribution/build/npm.ts',packageOut],{cwd:checkout}).ok,'EXACT_PACKAGE_BUILD_FAILED');
+      need(run('package-build',node,['ricebox/distribution/build/npm.ts',packageOut,'--runtime-only'],{cwd:checkout}).ok,'EXACT_PACKAGE_BUILD_FAILED');
       need(run('package-pack','npm',['pack','--ignore-scripts','--offline',cacheFlag],{cwd:packageOut}).ok,'PACKAGE_TARBALL_FAILED');
       const archives=readdirSync(packageOut).filter(f=>/^ricebox-[0-9.]+\.tgz$/.test(f));
       need(archives.length===1,'PACKAGE_TARBALL_AMBIGUOUS');

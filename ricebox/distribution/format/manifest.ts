@@ -1,6 +1,9 @@
+import {aotFraming, type AotFraming} from './aot-frames.ts';
+
 // Stored distribution descriptors. No execution objects or runtime dependencies.
 export interface StoredBlob { path: string; sha256: string; size: number }
 export interface Blob extends StoredBlob { bytes: number }
+export interface DeployedWasm extends Blob { framing?: AotFraming }
 export interface About {
   name: string; version: string;
   /** Digest and size of the native root archive from which these layers were built. */
@@ -17,10 +20,15 @@ export interface TranslationAssociation {
   sourceBytes: number;
   mode: 'whole';
 }
-export interface Translation {
-  path: string; sha256: string; elf: Blob; wasm: Blob;
+export interface ExecutableArtifact {
+  path: string; sha256: string; wasm: DeployedWasm;
   /** Omitted by older trusted producers; malformed present metadata is never a legacy fallback. */
   association?: TranslationAssociation;
+}
+export interface Translation extends ExecutableArtifact { elf: Blob; wasm: Blob }
+export interface WebExecution {
+  maker: StoredBlob;
+  programs: (ExecutableArtifact & {association: TranslationAssociation})[];
 }
 export interface Index {
   name: string; version: string; sha256: string; codec: string;
@@ -30,6 +38,8 @@ export interface Index {
   files: {path: string; mode: number; size: number; pack: number; at: number; len: number; raw?: boolean}[];
   translator: Blob & {name: string; version: string; wasm: string};
   translations: Translation[];
+  /** The published Wasm for the maker and each distinct executable source in the packs. */
+  execution?: WebExecution;
 }
 /**
  * An archive or API request for a different payload owner must not silently
@@ -62,9 +72,26 @@ export function readReleaseIndex(bytes: Uint8Array, about: Pick<About, 'sha256' 
       !('version' in value) || typeof value.version !== 'string' || value.version !== about.version) {
     throw new Error('ricebox: distribution and index disagree');
   }
+  if ('execution' in value) validateWebExecution(value as Index);
   return value as Index;
 }
 
+/** Also used at Worker admission, where the index arrives by structured clone. */
+export function validateWebExecution(index: Index): void {
+  const execution = index.execution;
+  if (!execution || typeof execution !== 'object' || !Array.isArray(execution.programs) ||
+      !Array.isArray(index.translations) || index.translations.length) {
+    throw new Error('ricebox: invalid Web execution inventory');
+  }
+  blobAsset(execution.maker);
+  for (const entry of execution.programs) {
+    if (!entry || typeof entry !== 'object' || !entry.association || !Number.isSafeInteger(entry.wasm?.bytes) || entry.wasm.bytes < 8) {
+      throw new Error('ricebox: invalid Web program descriptor');
+    }
+    blobAsset(entry.wasm);
+    aotFraming(entry.wasm);
+  }
+}
 
 /** A release blob's path names its stored-byte digest, independent of decompression. */
 export function blobAsset(value: unknown): StoredBlob {

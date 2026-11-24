@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ricebox guest terminal</title>
+<link rel="stylesheet" href="./shell.css">
+<main>
+  <header>
+    <h1>Ricebox guest terminal</h1>
+    <p>Input goes to a temporary Linux guest in this browser, not the server.</p>
+    <p id="status" role="status">Loading the terminal. If this stays here, check that shell.js is served as JavaScript.</p>
+    <noscript>This terminal requires JavaScript.</noscript>
+  </header>
+  <div>
+    <button id="open" type="button" disabled>Start a new guest</button>
+    <button id="end" type="button" disabled>End guest</button>
+  </div>
+  <div id="output" role="region" aria-label="Guest terminal screen" tabindex="0"></div>
+  <label>Guest terminal input
+    <input id="line" maxlength="4096" autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
+  </label>
+</main>
+<script type="module" src="./ricebox-js/distribution/starter/shell.js"></script>
+</html>

@@ -14,11 +14,13 @@
 // one at a time.
 
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
-import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {CALL_SAMPLE, Kernel, PROFILE, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {INTERRUPT, KEEP_INSTANCES} from './thread-abi.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../host.ts';
 import type {Saved} from '../translation/x87.ts';
-import type {Call, Filter, Mem, Range} from './parts.ts';
+import {REG, type Call, type Filter, type Mem, type Range} from './parts.ts';
+import {execMayRun} from './exec/commit.ts';
 import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
 import {WorkerStop} from './worker-stop.ts';
@@ -379,6 +381,7 @@ export class RemoteKernel extends Kernel {
   }
 
   handle(t: RemoteTask): void {
+    if (t.proc.execTransition) execMayRun(t.proc);
     const op = t.i32[CH.OP];
     if (op === OP.SYSCALL) return this.call(t);
     if (op === OP.MISS) {
@@ -517,6 +520,7 @@ export class RemoteKernel extends Kernel {
   /** End every Worker (threads, and spares unless they are passed on). */
   close(): void {
     this.closing = true;
+    this.invalidateExecPreparation();
     const tasks = [...this.tasks.values()].map(t => ({t, worker: t.worker}));
     const spares = this.spares.splice(0);
     let errors: unknown[] | undefined;
@@ -527,7 +531,7 @@ export class RemoteKernel extends Kernel {
     // Only healthy spares may pass on. Each captured stop request is attempted
     // even when another synchronously fails; this does not await host termination.
     for (const w of spares) {
-      try { if (this.passOn && reusable(w)) { w.kernel = undefined; w.unownedFailure = this.unownedWorkerFailure; warmed.push(w); } else w.end(); }
+      try { if (this.passOn && !this.failedExecs?.size && reusable(w)) { w.kernel = undefined; w.unownedFailure = this.unownedWorkerFailure; warmed.push(w); } else w.end(); }
       catch (error) { (errors ??= []).push(error); }
     }
     if (errors?.length === 1) throw errors[0];
