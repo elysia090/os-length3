@@ -8,7 +8,9 @@ import {expect, test} from './fixtures.ts';
 test('with no repo at all, Forge and Git offer to make the first, and that is New repo', async ({app}) => {
   for (const place of ['forge', 'git'] as const) {
     await app.rail.go(place);
-    const first = app.main.getByRole('button', {name: /^Create your first repo/});
+    if (place === 'forge') await app.main.getByRole('button', {name: 'Open Folder', exact: true}).click();
+    const where = place === 'forge' ? app.page.getByRole('dialog', {name: 'Open Folder'}) : app.main;
+    const first = where.getByRole('button', {name: /^Create your first repo/});
     await expect(first).toBeVisible();
     await first.click();
     await expect(app.rail.button('new-repo')).toHaveAttribute('aria-current', 'page');

@@ -59,6 +59,12 @@ export default {
   'Size is {size}. Forge can only save files up to {limit}. Unsaved changes remain in editor.': 'サイズは{size}です。Forge で編集・保存できるのは{limit}までです。変更はまだ保存されていません。',
   'Reduce size to save normally, or save full file: Forge will show preview only, and Prompt edits the full file.':
     'サイズを小さくすると保存できます。全体を保存した場合、Forge では先頭のみ閲覧可能となり、編集は Prompt で行います。',
+  'Edit text': 'テキストを編集',
+  'Cut': '切り取り',
+  'Copy': 'コピー',
+  'Paste': '貼り付け',
+  'Select All': 'すべて選択',
+  'Clipboard access unavailable. No text was changed.': 'クリップボードにアクセスできません。テキストは変更されていません。',
   'Edit {path}': '{path}を編集',
   'Modified externally': '外部で変更されました',
   'File was saved externally while editing here.': '編集中に外部でファイルが保存されました。',
@@ -82,6 +88,13 @@ export default {
   'Delete {name}': '{name}を削除',
   'Delete {name} and its contents': '{name}を中身ごと削除',
   'Unsaved': '未保存',
+
+  'Places': '作業場所',
+  'More Places': 'ほかの作業場所',
+  'Open Folder': 'フォルダーを開く',
+  'Available folders changed. Choose again.': '開けるフォルダーが変わりました。選び直してください。',
+  'The folder was not opened.': 'フォルダーを開けませんでした。',
+  'Opening…': 'フォルダーを開いています…',
 
   // Forge and Git: the workbench and its reference
   'Prompt input': 'プロンプト入力欄',

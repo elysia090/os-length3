@@ -154,7 +154,7 @@ export class Desk {
     // to it. Gone there by a press, it is taken once the press is let go (its click), never under the pointer.
     this.element.addEventListener('focusin', (e) => {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
-      if (key && key !== this.#held && key !== this.#pressing) this.take(key, false);
+      if (key && key !== this.#held && key !== this.#pressing) this.take(key, false, true, true);
     });
     // Written in, the piece in hand is come back to from over the Agent's work (their terminal written in).
     const writtenIn = (at: EventTarget | null) => {
@@ -220,6 +220,12 @@ export class Desk {
 
   /** The key of the piece in hand. */
   get held(): string | null { return this.#held; }
+  /** A place switch returns the keyboard without turning the file camera. */
+  focusHeld() {
+    const box = this.#held === null ? null : this.#boxes.get(this.#held);
+    if (box) box.laid.focus();
+    else this.element.focus({preventScroll: true});
+  }
   /** Whether `key` lies on the desk. */
   has(key: string): boolean { return this.#boxes.has(key); }
   /** The keys on the desk, along the row. */

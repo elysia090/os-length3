@@ -11,6 +11,7 @@ import {AGENT} from '../../../repo/agent-hands.ts';
 import {editorOn, holdBack, openingWith} from '../bench/play.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering} from './editor.ts';
 import type {Laid} from './desk.ts';
+import {documentMenu} from './document-menu.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers
@@ -55,6 +56,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const element = h('div', {class: 'desk-file', 'data-path': path}, head, sheet);
   const number = numbering(gutter);
   let editor: Editor | null = null;
+  const dropMenu = documentMenu(element, () => editor?.area ?? null);
   let wanted: number | null = null;
   let endWanted = false;
   /** The keyboard asked for before the text was read: given once it is. */
@@ -295,7 +297,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
-    drop: off,
+    drop: () => { dropMenu(); off(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
     ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
   };

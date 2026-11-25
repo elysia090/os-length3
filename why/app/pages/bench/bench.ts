@@ -2,7 +2,6 @@ import {agentCards} from '../kit/agent-cards.ts';
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
 import {mark, paneMark} from '../../ui/icons.ts';
-import type {MarkName} from '../../ui/icons.ts';
 import {Box} from './box.ts';
 import {Pane, paneWord, pluginArea} from '../kit/pane.ts';
 import type {Writing} from '../kit/context.ts';
@@ -33,6 +32,9 @@ export interface Bench {
   terminal: HTMLElement | null;
   /** The Prompt's line taken to run, the keyboard in it (an ended Prompt started again): the band's >_, Ctrl+`. */
   toPrompt(): void;
+  /** Show the existing shell and focus its line without starting or restarting a session. */
+  showPrompt(): void;
+  find(): void;
   /** On a desk: the band's tools on the top line (>_, the search), the page's own put among them; null elsewhere. */
   tools: HTMLElement | null;
 }
@@ -75,15 +77,15 @@ function intoBox(box: Box) {
  * The keys an editor's hands already know, wherever this bench is on screen (Ctrl, or ⌘ on a Mac, held with them):
  * K or P (or Shift+F) to the search (`onBand`: it lies on the band, not the pane), ` to the prompt box, G to the box editing the file in front, B to put the right pane away or bring it back.
  */
-function editorKey(event: KeyboardEvent, box: Box, pane: Pane | null, reference: Reference, searchable: boolean) {
+function editorKey(event: KeyboardEvent, box: Box, pane: Pane | null, find: () => void, take: () => void, searchable: boolean) {
   const k = event.key.toLowerCase();
   if (searchable && ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey))) {
     event.preventDefault();
     // The search on the band is always there (a desk has no pane); the pane's is brought out with it.
-    if (!pane || pane.shown || pane.narrow) reference.findNow(); else { pane.set(true); requestAnimationFrame(() => reference.findNow()); }
+    if (!pane || pane.shown || pane.narrow) find(); else { pane.set(true); requestAnimationFrame(find); }
     return;
   }
-  if (event.key === '`' && box.summon()) { event.preventDefault(); return; }
+  if (event.key === '`' && !box.prompt.disabled) { take(); event.preventDefault(); return; }
   if (k === 'g' && !event.shiftKey && box.edit()) { event.preventDefault(); return; }
   if (pane && k === 'b' && !event.shiftKey) { event.preventDefault(); pane.set(!pane.shown); }
 }
@@ -171,13 +173,6 @@ function measured(work: HTMLElement, side: HTMLElement, screen: HTMLElement, box
 }
 
 /** A bench put together round `main`, a page's content (Forge's, Git's): its box, the Prompt, the right pane, the keys. */
-/** A square tool on the band: its mark, its name said and shown on a rest. */
-function toolButton(name: MarkName, label: string, press: () => void): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label}, mark(name)) as HTMLButtonElement;
-  b.addEventListener('click', press);
-  return b;
-}
-
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
   word?(address: string): void;
@@ -196,6 +191,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   desk?: boolean;
   /** On a desk: the terminal put away, back to the piece in the hand before it; false if it is not in the hand. */
   termAway?(): boolean;
+  /** The desk reveals its terminal overlay before the existing box takes focus. */
+  promptVisible?(): boolean;
+  revealPrompt?(): void;
   /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
@@ -242,12 +240,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       };
     },
     ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
-  // On a desk the Prompt is a terminal, one piece: what it printed, and under it the line one types at. The band's >_
-  // takes its line, the keyboard in it.
+  // Forge presents this existing output and input in its separate Prompt slot.
   const terminal = parts.desk ? h('section', {class: 'desk-term stand up'}, term, box.dock) : null;
-  const termTool = toolButton('term', t('Terminal'), () => toPrompt());
-  // (Pressed with the pointer, the keyboard stays where it is till the Prompt has it.)
-  termTool.addEventListener('pointerdown', (event) => event.preventDefault());
   if (terminal) standOf(terminal, box);
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);
   if (shown) center.append(box.dock); else box.dock.prepend(box.form);
@@ -263,16 +257,18 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     const s = sessionIfAny(box.repo);
     if (!s?.ended && box.prompt === document.activeElement && parts.termAway?.()) return;
     if (s?.ended) s.restart();
+    showPrompt();
+  };
+  const showPrompt = () => {
+    if (!box.repo) return;
+    parts.revealPrompt?.();
     box.summon();
   };
   // (A run is read where it ran: the terminal's own output. Before, a line run pressed there was read again under the
   // search box, and the pane said Issue, diff, Output and Agent over its rows: each is in its own place now.)
   const reference = new Reference({reveal: parts.reveal}, {band: !!parts.desk || !!parts.paneless, searchable: !parts.plainBand});
-  // On a desk the band's tools are the top line's: >_ for the terminal, the file deeds (the page puts its own
-  // between), the search; after them, the page's own (Forge: the name of what is in hand, against the right edge).
-  // (Git is Forge's far side: its door, at the band's head, is the way to Forge and its terminal; a key of its own
-  // for the terminal would be a second icon leading where the first leads.)
-  const tools = parts.desk || parts.paneless ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, ...(parts.paneless ? [] : [termTool]), reference.search) : null;
+  // A desk's reference is summoned by its place. Other workbenches keep their own reference in the bar.
+  const tools = parts.desk || parts.paneless ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, reference.search) : null;
   // The band's search box says what it is by a lens at its left, as a short box must; what it finds drops as a sheet
   // under the band, over the desk, the words searched for heading it (dropSheet).
   if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }
@@ -280,6 +276,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     : h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, ...(parts.plainBand ? [] : [toggle]));
   // (With no pane, word from someone comes up at the page's foot, a sheet of its own.)
   work.append(bar, center, ...(tools ? [] : [side]), ...(parts.paneless && parts.word ? [paneWord(parts.word)] : []));
+  const find = () => {
+    if (parts.desk) work.classList.add('forge-searching');
+    reference.findNow();
+  };
+  if (parts.desk) bar.addEventListener('focusout', () => queueMicrotask(() => {
+    if (!bar.contains(document.activeElement)) work.classList.remove('forge-searching');
+  }));
   const pane = tools ? null : new Pane(work, side, toggle, {fixed: !!parts.plainBand});
   if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
@@ -288,11 +291,15 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     // Only while this bench is on screen, and the page is not held under something over it; never a key a terminal's
     // program reads as it comes (data-raw: every key is its, as at a terminal).
     if (!work.isConnected || work.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;
-    if ((event.target as Element | null)?.closest?.('[data-raw]')) return;
+    const at = event.target as Element | null;
+    if (event.defaultPrevented || at?.closest?.('[data-raw], .forge-menu')) return;
+    // Raw applications keep Escape; outside raw input, it puts the separate Prompt away.
+    if (event.key === 'Escape' && !event.isComposing && terminal?.contains(at) && !terminal.querySelector('[data-raw]') &&
+      parts.termAway?.()) { event.preventDefault(); return; }
     // On a desk, / on nothing to write in goes to the search on the band, as a page's / does.
-    if (tools && event.key === '/' && letter(event) && !writing()) { event.preventDefault(); reference.findNow(); }
-    else if (letter(event)) intoBox(box);
-    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, reference, !parts.plainBand);
+    if (tools && event.key === '/' && letter(event) && !writing()) { event.preventDefault(); find(); }
+    else if (letter(event) && (!parts.desk || parts.promptVisible?.())) intoBox(box);
+    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, find, parts.desk ? toPrompt : () => { box.summon(); }, !parts.plainBand);
   });
 
   // Come on screen (its page come to, the pan to it begun), the pane takes its rows back from the page left.
@@ -312,5 +319,5 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.resume();
     if (screen && screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
   };
-  return {element: work, reference, setRepo, settle, terminal, tools, toPrompt};
+  return {element: work, reference, setRepo, settle, terminal, tools, toPrompt, showPrompt, find};
 }

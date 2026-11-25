@@ -81,6 +81,7 @@ export function fileDeeds(d: Deeds): HTMLElement {
   const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': d.name});
   const entry = (label: string, name: MarkName, then: (b: HTMLButtonElement) => void, gone = false) => {
     const b = menuItem(label, name, gone);
+    b.dataset.deed = name;
     b.addEventListener('click', () => then(b));
     return b;
   };
