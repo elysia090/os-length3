@@ -12,9 +12,10 @@ import {checkPointerCommits} from './pointer-proof.ts';
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const [inputs, listener, indexSha256, mode, ...extra] = process.argv.slice(2);
 if (!inputs || !listener || !/^[a-f0-9]{64}$/.test(indexSha256 ?? '') || extra.length ||
-    (mode !== undefined && mode !== '--prepared' && mode !== '--pointer'))
-  throw new Error('usage: check.ts FIXTURE_INPUTS QUICKSHELL_LISTENER EXPECTED_INDEX_SHA256 [--prepared | --pointer]');
-const prepared = mode === '--prepared', pointer = mode === '--pointer';
+    (mode !== undefined && mode !== '--prepared' && mode !== '--pointer' && mode !== '--pointer-prepared-diagnostics'))
+  throw new Error('usage: check.ts FIXTURE_INPUTS QUICKSHELL_LISTENER EXPECTED_INDEX_SHA256 [--prepared | --pointer | --pointer-prepared-diagnostics]');
+const preparedDiagnostics = mode === '--pointer-prepared-diagnostics';
+const prepared = mode === '--prepared' || preparedDiagnostics, pointer = mode === '--pointer' || preparedDiagnostics;
 const executablePath = process.env.EVERYDAY_CHROME_BIN;
 if (!executablePath) throw new Error('Set EVERYDAY_CHROME_BIN to the installed Chrome executable');
 const publicDir = resolve(inputs), elf = readFileSync(listener), about = readFileSync(join(publicDir, 'web/webroot.json'));
@@ -103,8 +104,9 @@ try {
     const context = await browser.newContext({serviceWorkers: 'block'});
     const page = await context.newPage();
     await context.route('**/*', route => new URL(route.request().url()).origin === url ? route.continue() : route.abort());
+    let printedDiagnostics = false;
     try {
-      await page.goto(pointer ? url + '/?pointer=1' : url);
+      await page.goto(pointer ? url + '/?pointer=1' + (preparedDiagnostics ? '&prepared-diagnostics=1' : '') : url);
       await frame(page, 1, 32, 24);
       if (pointer) {
         const canvas = page.locator('canvas'), box = await canvas.boundingBox(), status = page.getByRole('status');
@@ -116,6 +118,15 @@ try {
         await page.mouse.click(box.x + 12.5 * box.width / 32, box.y + 10.5 * box.height / 24);
         assert.equal(await status.getAttribute('data-pointer-contacts'), '1', 'Expected one real canvas contact');
         await frame(page, 2, 32, 24); // Same geometry: only QML input changes the pixels.
+        if (preparedDiagnostics) {
+          const json = await page.locator('#receipt').getAttribute('data-prepared-diagnostics');
+          assert.ok(json, 'Missing first-click prepared-code receipt');
+          const report = JSON.parse(json);
+          assert.equal(report.indexSha256, indexSha256);
+          assert.deepEqual([report.end, report.fromSequence, report.toSequence], ['raster', 1, 2]);
+          console.log('CHROME_QUICKSHELL_PREPARED_DIAGNOSTICS', JSON.stringify(report));
+          printedDiagnostics = true;
+        }
       } else {
         await page.getByRole('button', {name: 'Resize guest'}).click();
         await frame(page, 2, 47, 19);
@@ -132,10 +143,16 @@ try {
       assert.match(receipt, /Loading backend software/);
       assert.match(receipt, /Configuration Loaded/);
       const preparedReads = Number(await status.getAttribute('data-prepared-reads'));
-      assert.ok(prepared ? preparedReads > 0 : preparedReads === 0);
-      console.log('CHROME_QUICKSHELL_RETIRED', {mode: prepared ? 'prepared' : pointer ? 'pointer' : 'on-demand', preparedReads});
+      assert.ok(preparedDiagnostics ? Number.isSafeInteger(preparedReads) && preparedReads >= 0 :
+        prepared ? preparedReads > 0 : preparedReads === 0);
+      console.log('CHROME_QUICKSHELL_RETIRED', {mode: mode?.slice(2) ?? 'on-demand', preparedReads});
     } catch (error) {
-      console.error(await page.locator('#receipt').textContent().catch(() => ''));
+      const receipt = page.locator('#receipt');
+      if (preparedDiagnostics && !printedDiagnostics) {
+        const partial = await receipt.getAttribute('data-prepared-diagnostics', {timeout: 1000}).catch(() => null);
+        if (partial) console.error('CHROME_QUICKSHELL_PREPARED_DIAGNOSTICS_INCOMPLETE', partial);
+      }
+      console.error(await receipt.textContent().catch(() => ''));
       throw error;
     } finally { await context.close(); }
   } finally { await browser.close(); }

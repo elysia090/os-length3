@@ -1,4 +1,4 @@
-import {capturePreparedMappedCode, type ExecutableSource, type PreparedMappedCode, type Vfs} from '../../sods/runtime/linux.ts';
+import {capturePreparedMappedCode, type ExecutableSource, type PreparedMappedCode, type PreparedMappedTrace, type Vfs} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Translate} from '../../sods/runtime/translate.ts';
 import type {MappedCodeManifest} from '../format/mapped-code.ts';
 
@@ -13,7 +13,7 @@ interface CapturedMappedRoot {
  * `read` lends one available blob at its first unresolved PC. */
 export async function loadMappedCode(root: CapturedMappedRoot, translator: Uint8Array<ArrayBuffer>, manifest: MappedCodeManifest,
     read: (sha256: string) => Uint8Array<ArrayBuffer> | undefined,
-    digest?: (bytes: Uint8Array) => string): Promise<{translate: Translate; preparedCode?: PreparedMappedCode}> {
+    digest?: (bytes: Uint8Array) => string, trace?: PreparedMappedTrace): Promise<{translate: Translate; preparedCode?: PreparedMappedCode}> {
   // Compilation is asynchronous. Check the same bytes that the engine saw.
   const translatorBytes = new Uint8Array(translator);
   const translate = await loadTranslator(translatorBytes);
@@ -34,5 +34,5 @@ export async function loadMappedCode(root: CapturedMappedRoot, translator: Uint8
       return wasm;
     }});
   }
-  return {translate, preparedCode: capturePreparedMappedCode(root.vfs, translate.mapped, pieces)};
+  return {translate, preparedCode: capturePreparedMappedCode(root.vfs, translate.mapped, pieces, trace)};
 }

@@ -23,7 +23,7 @@ export {captureExecutableSource, type ExecutableSource} from './linux/executable
 export {Mirror} from './linux/mirror.ts';
 export {ExecCommitError, Kernel, prepareMappedInitial, validConsoleWindow, type HeldMappedTask, type Image, type Pumped} from './linux/process.ts';
 export {captureMappedLibraries, type MappedLibraries} from './linux/mapped-libraries.ts';
-export {capturePreparedMappedCode, type PreparedMappedCode, type PreparedMappedInput} from './linux/exec/prepared-mapped-code.ts';
+export {capturePreparedMappedCode, PreparedMappedTrace, type PreparedMappedCode, type PreparedMappedInput} from './linux/exec/prepared-mapped-code.ts';
 export type {DynamicSources} from './linux/exec/dynamic-plan.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';
 export {keeper, readImages, type Kept, type Reading, type RetirableReading} from './linux/keeper.ts';

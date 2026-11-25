@@ -284,3 +284,21 @@ the QML click handler's color, and the original retirement checks still apply.
 The listener accepts Qt's separate cursor surface but never mirrors it.
 This is an on-demand fixture lane, not a packaging, timing, or general input
 compatibility claim.
+
+For an admission diagnostic on that same click, use a fixture with a matching
+`prepared/index.json` and its Wasm pieces, and replace `--pointer` with
+`--pointer-prepared-diagnostics`. The check prints
+`CHROME_QUICKSHELL_PREPARED_DIAGNOSTICS` separately from its pixel and retirement
+receipts. It observes unresolved code requests from the first forwarded
+contact to the next raster, not already installed dispatch hits. It retains
+at most 512 samples and counts the omitted requests. Zero pieces used is a
+valid diagnostic result; the ordinary `--prepared` check still requires reads.
+
+Each sample reports the actual prepared decision (for example `entry-mismatch`,
+`binding-started`, `byte-budget`, `unavailable` or `used`). Its ELF identity is
+an exact member coordinate and path under the independently verified index,
+not a claimed decoded ELF hash from the replay manifest. An unrecognized
+origin has `elf: null`. `relativePc` removes the ELF load bias; `fileOffset`
+locates the requested instruction in the captured file. The instrumented
+receipt is for attribution, not a latency measurement or a separate click
+proof.

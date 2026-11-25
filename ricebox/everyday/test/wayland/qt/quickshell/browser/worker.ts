@@ -6,13 +6,14 @@ import {prepareTree} from '../../../../../../distribution/runtime/prepared-tree.
 import {rangeNow} from '../../../../../../sods/runtime/host.ts';
 import {Kernel, Mirror, captureMappedLibraries, prepareMappedInitial} from '../../../../../../sods/runtime/linux.ts';
 import {loadTranslator} from '../../../../../../sods/runtime/translate.ts';
+import {PreparedClickDiagnostics} from './prepared-diagnostics.ts';
 
 const quickshell = '/usr/bin/quickshell', qml = '/etc/ricebox/shell.qml', pointerQml = '/etc/ricebox/pointer.qml';
 const quickshellSha256 = '5f108683b0e292772cd7c0bb1ce0265e1c3257a3214ec5cb712d1fcad174779c';
 const out = '/display-out', socket = '/run/user/0/wayland-0';
 const decoder = new TextDecoder();
 const send = (data: object, transfer: Transferable[] = []) => self.postMessage(data, {transfer});
-type Command = {type: 'start'; pins: Record<string, string>} | {type: 'input'; bytes: Uint8Array};
+type Command = {type: 'start'; pins: Record<string, string>; preparedDiagnostics?: boolean} | {type: 'input'; bytes: Uint8Array};
 
 function need(ok: unknown, message: string): asserts ok {
   if (!ok) throw new Error(message);
@@ -28,7 +29,7 @@ const sha256 = async (bytes: Uint8Array<ArrayBuffer>) => Array.from(
   new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
 const json = <T>(bytes: Uint8Array): T => JSON.parse(decoder.decode(bytes)) as T;
 
-async function start(pins: Record<string, string>) {
+async function start(pins: Record<string, string>, preparedDiagnostics: boolean) {
   const pinned = async (path: string) => {
     const bytes = await read(path);
     need(pins[path] && await sha256(bytes) === pins[path], `Changed Quickshell fixture ${path}`);
@@ -49,6 +50,11 @@ async function start(pins: Record<string, string>) {
     decode: (bytes, size) => translate.unzstd(bytes, size), sha256: bytes => translate.sha256(bytes),
   }}});
   const {vfs} = tree;
+  if (preparedDiagnostics) need(pointer && pins['prepared/index.json'], 'Prepared click diagnostics require pointer QML and a prepared index');
+  const diagnostic = preparedDiagnostics ? new PreparedClickDiagnostics(asset.sha256, paths) : undefined;
+  const report = (receipt: ReturnType<PreparedClickDiagnostics['finish']>): void => {
+    if (receipt) send({type: 'prepared-diagnostics', receipt});
+  };
   let preparedReads = 0;
   const mode = pins['prepared/index.json'] ? await loadMappedCode({...tree, generation: asset.sha256}, wasm,
     json(await pinned('prepared/index.json')), hash => {
@@ -59,7 +65,7 @@ async function start(pins: Record<string, string>) {
       if (request.status !== 200) return undefined;
       preparedReads++;
       return new Uint8Array(request.response as ArrayBuffer);
-    }) : {translate: await loadTranslator(wasm), preparedCode: undefined};
+    }, undefined, diagnostic?.trace) : {translate: await loadTranslator(wasm), preparedCode: undefined};
   const {translate, preparedCode} = mode;
   if (pins['prepared/index.json']) need(preparedCode, 'Prepared Quickshell code does not match this root and translator');
   need(await sha256(new Uint8Array(vfs.readFile(quickshell))) === quickshellSha256, 'Quickshell executable pin changed');
@@ -110,14 +116,18 @@ async function start(pins: Record<string, string>) {
       try {
         const guest = client.pump(), display = server.pump();
         const changes = mirror.changes();
-        if (changes) send({type: 'changes', ...changes}, changes.files.map(file => file.bytes.buffer as ArrayBuffer));
+        if (changes) {
+          if (diagnostic) report(diagnostic.frame(changes.files));
+          send({type: 'changes', ...changes}, changes.files.map(file => file.bytes.buffer as ArrayBuffer));
+        }
         if (guest.status !== undefined) need(guest.status === 0, `Quickshell returned ${guest.status}`);
         if (display.status !== undefined) need(display.status === 0, `Wayland listener returned ${display.status}`);
         if (guest.status === 0 && display.status === 0) {
           need(task!.dead && !process!.memory && memory!.users === 0 && !client.tasks.size && !server.tasks.size &&
             client.retireInitialMounts() && server.retireInitialMounts(), 'Guest owners were not fully retired');
-          if (preparedCode) need(preparedReads, 'Quickshell did not request any prepared code');
+          if (preparedCode && !diagnostic) need(preparedReads, 'Quickshell did not request any prepared code');
           retire();
+          if (diagnostic) report(diagnostic.finish('closed'));
           send({type: 'exit', display: displayLog, guest: guestLog, preparedReads});
           return;
         }
@@ -128,13 +138,17 @@ async function start(pins: Record<string, string>) {
         timer = setTimeout(pump, 5);
       } catch (error) {
         try { retire(); }
-        finally { send({type: 'error', message: String(error), display: displayLog, guest: guestLog}); }
+        finally {
+          if (diagnostic) report(diagnostic.finish('error'));
+          send({type: 'error', message: String(error), display: displayLog, guest: guestLog});
+        }
       }
     }
     self.onmessage = ({data}: MessageEvent<Command>) => {
       if (data.type !== 'input' || !(data.bytes instanceof Uint8Array) || data.bytes.length !== 3 || input.length) return;
       if (data.bytes[0] === 3) closeBy = performance.now() + 8000;
       input = data.bytes;
+      diagnostic?.input(input);
       server.inputs = (server.inputs ?? 0) + 1;
       pump();
     };
@@ -145,5 +159,5 @@ async function start(pins: Record<string, string>) {
 self.onmessage = ({data}: MessageEvent<Command>) => {
   if (data.type !== 'start') return;
   self.onmessage = null;
-  void start(data.pins).catch(error => send({type: 'error', message: String(error)}));
+  void start(data.pins, data.preparedDiagnostics === true).catch(error => send({type: 'error', message: String(error)}));
 };

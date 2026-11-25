@@ -6,7 +6,7 @@ import {withMappedOutput} from '../../translation/translator.ts';
 import {isShared} from '../../host.ts';
 import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from '../executable-source.ts';
 import {E, FsError, MNT, sameBytes, type File, type Mount, type Vfs} from '../fs.ts';
-import type {PreparedMappedLookup, PreparedMappedPiece} from './prepared-mapped-code.ts';
+import type {PreparedMappedLookup, PreparedMappedPiece, PreparedMappedTrace} from './prepared-mapped-code.ts';
 
 const LIMIT = 2 ** 32, MAX_RANGES = 256, MAX_SOURCE_BYTES = 256 << 20, PROT_RX = 5;
 
@@ -22,6 +22,7 @@ export interface ExecutableMapping {
 export interface BoundText {
   readonly text: MappedText;
   readonly prepared?: PreparedMappedPiece;
+  readonly preparedTrace?: {trace: PreparedMappedTrace; origin: string; placementMismatch: boolean};
   compile<T>(generation: object, compiler: MappedTranslate, address: bigint, known: Set<bigint>,
     consume: (code: Uint8Array<ArrayBuffer>) => T): T;
 }
@@ -167,9 +168,12 @@ export class MappedCodeSpace {
       if (generation !== this.#epoch) throw new MappedCodeChanged();
       checkSource();
     }
+    const prepared = this.#prepared?.(file, extent), observe = this.#prepared?.diagnostics;
     const bound: BoundText = Object.freeze({
       text: extent,
-      prepared: this.#prepared?.(file, extent),
+      prepared,
+      ...(observe && {preparedTrace: {trace: observe.trace, origin: captured.origin,
+        placementMismatch: !prepared && observe.hasPieceFor(file)}}),
       compile: <T>(epoch: object, compiler: MappedTranslate, pc: bigint, known: Set<bigint>,
           consume: (code: Uint8Array<ArrayBuffer>) => T): T => {
         const at = Number(pc);

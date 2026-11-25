@@ -2,10 +2,11 @@ import type {MappedTranslate} from '../../translation/mapped.ts';
 import {sameBytes} from '../fs.ts';
 import type {BoundText} from './mapped-code-space.ts';
 import {MAPPED_ENTRY_BYTES, type MappedEntries} from './mapped-entries.ts';
+import type {PreparedDecision} from './prepared-mapped-code.ts';
 
 export const MAPPED_ABI_VERSION = 17;
 const CHECKED_FRAGMENT_IMPORTS = ['mapped_string', 'mapped_fx_state'];
-const MAX_SLOTS = 65536, DEFAULT_BYTES = 64 << 20;
+const MAX_SLOTS = 65536, DEFAULT_BYTES = 64 << 20, PREPARED_SLOT_BUDGET = -2n;
 
 interface Piece {
   readonly source: BoundText;
@@ -93,19 +94,30 @@ export class MappedCodeTable {
 
   compile(source: BoundText, generation: object, pc: bigint, checkLive: () => void): bigint {
     let known = this.#starts.get(source);
-    const prepared = known ? undefined : source.prepared, requested = Number(pc);
+    const {prepared, preparedTrace} = source, requested = Number(pc);
+    const report = preparedTrace?.trace.recording ? (decision: PreparedDecision) =>
+      preparedTrace.trace.record(preparedTrace.origin, source.text, requested, decision) : undefined;
+    const started = known !== undefined;
     if (!known) this.#starts.set(source, known = new Set());
     try {
       const remaining = this.#limit - this.#bytes;
-      if (prepared?.entry === requested && prepared.bytes <= remaining) {
-        const bytes = prepared.read();
-        checkLive();
-        if (bytes) {
-          if (bytes.byteLength !== prepared.bytes) throw new Error('Prepared mapped code length changed');
-          checkPreparedSections(bytes);
-          const target = this.#install(source, requested, known, this.#compile(bytes, remaining), checkLive, true);
-          if (target !== -1n) return target;
-        }
+      if (!prepared) report?.(preparedTrace?.placementMismatch ? 'placement-mismatch' : 'no-piece');
+      else if (started) report?.('binding-started');
+      else if (prepared.entry !== requested) report?.('entry-mismatch');
+      else if (prepared.bytes > remaining) report?.('byte-budget');
+      else {
+        let target: bigint | undefined;
+        try {
+          const bytes = prepared.read();
+          checkLive();
+          if (bytes) {
+            if (bytes.byteLength !== prepared.bytes) throw new Error('Prepared mapped code length changed');
+            checkPreparedSections(bytes);
+            target = this.#install(source, requested, known, this.#compile(bytes, remaining), checkLive, true);
+          }
+        } catch (error) { report?.('prepared-error'); throw error; }
+        if (target !== undefined && target >= 0n) { report?.('used'); return target; }
+        report?.(target === undefined ? 'unavailable' : target === PREPARED_SLOT_BUDGET ? 'slot-budget' : 'artifact-entry-missing');
       }
       const compiled = source.compile(generation, this.#compiler, pc, known, code => this.#compile(code, remaining));
       return this.#install(source, requested, known, compiled, checkLive);
@@ -131,7 +143,7 @@ export class MappedCodeTable {
     const {count, starts, entries} = mappedPieceMetadata(module);
     const base = this.#slots, end = base + count;
     if (end > MAX_SLOTS) {
-      if (prepared) return -1n;
+      if (prepared) return PREPARED_SLOT_BUDGET;
       throw new Error('Mapped translation leaves its executable extent');
     }
     const first = source.text.address, last = first + source.text.length;

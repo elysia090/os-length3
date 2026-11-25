@@ -2,7 +2,9 @@ import {mountGuestSurface, surfaceFromMirror} from '../../../../../src/surface.t
 import {lendRaster, rasterFile} from '../../../support/mirror-raster.ts';
 
 const canvas = document.querySelector('canvas')!;
-const pointer = new URLSearchParams(location.search).get('pointer') === '1';
+const mode = new URLSearchParams(location.search);
+const pointer = mode.get('pointer') === '1';
+const preparedDiagnostics = pointer && mode.get('prepared-diagnostics') === '1';
 const status = document.querySelector<HTMLElement>('#status')!;
 const receipt = document.querySelector<HTMLElement>('#receipt')!;
 const resize = document.querySelector<HTMLButtonElement>('#resize')!;
@@ -30,6 +32,8 @@ function finish(phase: 'closed' | 'error', message: string) {
   status.textContent = message;
 }
 worker.addEventListener('message', ({data}) => {
+  if (preparedDiagnostics && data.type === 'prepared-diagnostics')
+    receipt.dataset.preparedDiagnostics = JSON.stringify(data.receipt);
   const frame = source.current;
   if (data.type === 'changes' && frame) {
     canvas.style.width = `${frame.width * 8}px`;
@@ -62,5 +66,5 @@ void fetch('/pins.json').then(response => {
   return response.json();
 }).then(pins => {
   if (pointer !== Object.hasOwn(pins, 'pointer.qml')) throw new Error('Quickshell fixture lane does not match its pins');
-  worker.postMessage({type: 'start', pins});
+  worker.postMessage({type: 'start', pins, ...(preparedDiagnostics && {preparedDiagnostics})});
 }).catch(error => finish('error', String(error)));
