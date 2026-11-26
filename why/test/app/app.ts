@@ -95,8 +95,10 @@ export class App {
     await this.settled();
   }
 
-  /** The first look at the Remote is done and the page drawn from it (main is busy until then). */
+  /** The actual first place is drawn and the first look at the Remote is done. */
   async settled() {
+    // The busy marker can clear as the restored place's module is still coming in.
+    await expect(this.main).toHaveAttribute('data-place', /\S/);
     await expect(this.main).not.toHaveAttribute('aria-busy', 'true');
   }
 
@@ -400,6 +402,13 @@ class Forge extends Part {
     });
   }
 
+  /** Reveal the companion when needed. An idle shell can have no visible transcript; the heading still stands. */
+  async openPrompt() {
+    const heading = this.main.getByRole('heading', {name: 'Prompt', exact: true});
+    if (!await heading.isVisible()) await this.use('Prompt');
+    await expect(heading).toBeVisible();
+  }
+
   /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
@@ -409,7 +418,7 @@ class Forge extends Part {
 
   /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
-    if (!await this.prompt.isVisible()) await this.use('Prompt');
+    await this.openPrompt();
     // Run, as chosen (the box takes up Edit by itself while a file has the keyboard).
     await this.promptBox.press('Alt+1');
     await this.promptBox.press(' ');
@@ -420,7 +429,7 @@ class Forge extends Part {
 
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
-    if (!await this.prompt.isVisible()) await this.use('Prompt');
+    await this.openPrompt();
     await this.promptBox.press('Alt+1');
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');

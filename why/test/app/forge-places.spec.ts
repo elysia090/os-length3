@@ -140,6 +140,28 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(name).toBeFocused();
 });
 
+test('an open Prompt stays open after returning to the same workspace', async ({app}) => {
+  await app.newRepo.make('pine');
+  const {forge} = app;
+  const right = app.main.getByRole('button', {name: 'Right terminal', exact: true});
+  await forge.openPrompt();
+  await right.click();
+  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  await app.rail.go('home');
+  await expect(forge.promptBox).toBeHidden();
+
+  await app.rail.go('forge');
+  await expect(forge.promptBox).toBeVisible();
+  await forge.openPrompt();
+  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  // The actual Places command still toggles the companion both ways.
+  await forge.use('Prompt');
+  await expect(forge.promptBox).toBeHidden();
+  await forge.openPrompt();
+  await expect(forge.promptBox).toBeFocused();
+  await expect(right).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('on a narrow desk, selecting a real file shows the editor and hands it the keyboard', async ({app}) => {
   const {page, forge} = app;
   await page.setViewportSize({width: 390, height: 844});

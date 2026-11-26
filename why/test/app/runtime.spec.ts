@@ -305,7 +305,7 @@ test('a repo renamed from its gear keeps its desk, what was half written for it,
   await expect(latelyA).toContainText('Continue where you left off');
   await expect(latelyA).toContainText('alpha');
   await app.rail.go('forge');
-  await app.forge.use('Prompt');
+  await app.forge.openPrompt();
   await app.forge.promptBox.press('Alt+2');
   await app.forge.promptBox.fill('Fix: the map is upside down');
   await app.forge.find('needle');
@@ -327,7 +327,7 @@ test('a repo renamed from its gear keeps its desk, what was half written for it,
   await expect(app.main.getByRole('region', {name: 'Files in gamma', exact: true})).toBeVisible();
   await expect(app.main.getByRole('region', {name: 'Files in alpha', exact: true})).toHaveCount(0);
   await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
-  await app.forge.use('Prompt');
+  await app.forge.openPrompt();
   await app.forge.promptBox.press('Alt+2');
   await expect(app.forge.promptBox).toHaveAttribute('placeholder', 'Create issue in gamma');
   await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');

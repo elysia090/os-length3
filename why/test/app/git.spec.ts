@@ -197,8 +197,8 @@ test('a summary written and not left yet is kept through a reload, and saved the
   await app.settled();
   await app.rail.go('git');
   await expect(summary).toHaveValue('On a phone, at 320 px.');
-  // Saved as it came back: kept by the repo, not only by the tab.
-  await app.page.evaluate(() => sessionStorage.clear());
+  // Seeing it restored proves only that the tab kept it. Its draft disappears after the repo acknowledges the save.
+  await expect.poll(() => app.page.evaluate(() => sessionStorage.getItem('why.git.summaries'))).toBeNull();
   await app.page.reload();
   await app.settled();
   await app.rail.go('git');

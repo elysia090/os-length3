@@ -15,6 +15,7 @@ const U = 24, F = 2 * U;
 const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 1366, height: 768}, {width: 1024, height: 768}, {width: 390, height: 844}, {width: 320, height: 568}];
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
 const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)', FRAME_EDGE = 'rgb(110, 109, 106)';
+const CORNER = {forge: 'rgb(193, 190, 176)', git: 'rgb(239, 235, 227)', inbox: 'rgb(239, 235, 227)'} as const;
 
 /** The frame as it stands now: run in the page. */
 function framed() {
@@ -114,7 +115,7 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
           expect(f.corners, `${what}: one quiet corner at rest`).toEqual([{
             key: [size.width - 56, 12, 44, 44],
             mark: [size.width - 42, 26, 16, 16],
-            expanded: 'false', color: place === 'inbox' ? 'rgb(239, 235, 227)' : INK, inked: false,
+            expanded: 'false', color: CORNER[place], inked: false,
           }]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {

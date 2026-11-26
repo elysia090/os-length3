@@ -84,7 +84,7 @@ test('a key given in Runtime: `agent` run in Prompt is asked of the Agent, on it
   await app.main.getByRole('button', {name: 'Remove', exact: true}).click();
   await expect(app.main.getByRole('textbox', {name: 'API key'})).toBeVisible();
   await app.rail.go('forge');
-  await app.forge.use('Prompt');
+  await app.forge.openPrompt();
   await box.focus();
   await box.fill('agent Again?');
   await box.press('Enter');
