@@ -9,7 +9,7 @@ export type ForgePlace = Exclude<WorkPlace, 'Git'>;
 let made = 0;
 
 /** One key and keyboard convention, with real routes supplied by the desk. */
-export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void, more: () => void) {
+export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void, more: () => void, action: (place: K) => boolean = () => false) {
   const id = `work-places-${++made}`;
   const key = h('button', {class: 'forge-places-key', type: 'button', 'aria-label': t('Places'), 'aria-haspopup': 'menu',
     'aria-controls': id, 'aria-expanded': 'false'}, mark('places')) as HTMLButtonElement;
@@ -30,10 +30,13 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     menu.append(b);
     return b;
   };
-  const tabs = places.map((place) => item(place, 'menuitemradio', () => {
-    close(place === here);
-    if (place !== here) select(place);
-  }));
+  const tabs = places.map((place) => {
+    const acts = action(place);
+    return item(place, acts ? 'menuitem' : 'menuitemradio', () => {
+      close(!acts && place === here);
+      if (acts || place !== here) select(place);
+    });
+  });
   menu.append(h('hr', {role: 'separator'}));
   const rest = item('More Places', 'menuitem', () => { close(); more(); });
   const items = () => [...tabs, rest].filter((b) => !b.disabled);
@@ -41,7 +44,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     here = place;
     tabs.forEach((b, i) => {
       const destination = places[i];
-      b.setAttribute('aria-checked', String(destination === place));
+      if (!action(destination)) b.setAttribute('aria-checked', String(destination === place));
       b.disabled = !available(destination);
     });
   };
@@ -78,6 +81,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
 
 /** Document and issue desks use the same routes. */
 export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, more: () => void) {
-  const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, more);
+  const promptIsAction = owner.classList.contains('forge-layout');
+  const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, more, (place) => promptIsAction && place === 'Prompt');
   return {...menu, set: (place: WorkPlace, hasRepo: boolean) => menu.set(place, (destination) => hasRepo || (destination !== 'Prompt' && destination !== 'Files'))};
 }

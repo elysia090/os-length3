@@ -10,7 +10,7 @@ import {answers, choosePart, SETTLE} from '../kit/common.ts';
 import {errorText} from '../../../api/errors.ts';
 import {takeOff} from '../../../device/space.ts';
 import {releaseHome} from '../../../shipto/lifecycle.ts';
-import {allSessions} from '../bench/sessions.ts';
+import {allSessions, stopPrompt} from '../bench/sessions.ts';
 import type {Context} from '../kit/context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
@@ -159,9 +159,9 @@ export class Me {
       off.addEventListener('click', () => void run(async () => {
         off.textContent = t('Removing from device…');
         // A Prompt holds its repo open: stopped first, as one leaving stops what they started.
-        for (const [, s] of allSessions()) if (s.running) s.stop();
         try {
-          const kept = await takeOff().finally(() => { off.textContent = t('Remove from device'); });
+          await Promise.all([...new Set(allSessions().map(([repo]) => repo))].map((repo) => stopPrompt(repo)));
+          const kept = await takeOff();
           if (!kept.length) { await signOut(); return true; }
           // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
           said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} retained: {why}', {what, why}))),
@@ -170,6 +170,7 @@ export class Me {
           return false;
         } finally {
           // Signed out, or staying signed in with what was kept: Home's settings are agreed again as they change.
+          off.textContent = t('Remove from device');
           releaseHome();
         }
       }));

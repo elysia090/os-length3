@@ -599,27 +599,18 @@ in green and the others slots, the name's capitals two cells tall: the band
 was heavier than the desk it stands over, and took the page's hierarchy.
 Before that: small outlined tools, a pill for each repo out, and ⊕.)
 
-**The terminal** is a sheet of ink, 14 cells wide and 18 lines tall (a cell of
-margin round them), its letters and its shadow the shell's green, lying 4°
-askew to the left about its upper left corner, which is the desk's own (the
-rail's corner, under the band's first key): the one thing on the desk not
-square to the grid. Taken in hand (pressed, or the band's `>_`) it lies
-straight and is opened out to work in, 22 cells wide and 20 lines tall, the
-files gone along the row at once to make it room; let go, it closes to its
-size at rest and lies askew again, and the files come back (a file pressed
-while it was open stays under the pointer for as long as a second press may
-come, 320 ms, and comes back after). At rest it is a thing on the desk, not
-the lead; in hand it is. (Mocked three ways, five frames each: straightened
-only, it took the hand and stayed 28 columns; never askew, the desk lost the
-one thing that is not square; opened to a terminal's own 80 by 24, it left
-the first file half off the window. Opened part of the way keeps both.) Its
-width sets its columns (28 at rest, 48 in hand); a program that takes the
-whole screen has 80, the sheet as wide as that for as long as it runs,
-straight. It scrolls inside itself. There is one terminal, the
-repo's; ended (exit, its shell stopped) it goes, and the band's `>_` lays a
-new one. (Before: the Prompt was a box at the center's foot, under the desk,
-52 px high at rest and raised over the desk to run; before that the first box
-of the desk.)
+**The terminal.** Prompt opens a companion on the right of the same
+Forge desk. It does not choose another place, cover a file, or take its
+editor and selection away. Its thin band rises above the working paper;
+the text face and document paper share their upper edge. The text face
+has a fine neutral grain with sharp mono text above it. Twenty rows fit
+at ordinary desktop size, with the history scrolled in the window. The
+two end triangles and the two parts of the band’s ruled strip switch
+between two independent shells of the same repo. Each keeps its draft
+and scrollback. The shared right-click menu’s Close puts the window
+away, not the shells. Opening Prompt again brings the same window out.
+On a narrow desk the terminal sits below the document instead of laying
+over it.
 
 **A file** is a work surface even before a line is written. The open
 documents are 576 px wide at full measure, 12 px apart and top-aligned.
@@ -646,6 +637,7 @@ pressed while fully in sight stays under the hand. The keyboard and the
 row's map can take a piece to the desk's edge; the same stops fit a narrow
 window. The wheel over a paper scrolls that paper itself, not past it into
 the desk.
+ The terminal stays in its own bay as the document row turns.
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the
@@ -654,7 +646,7 @@ change the issue's sheet, what the Agent did its own piece's; a note the box mak
 issue, a TODO) is said in the terminal as a line of its own. The plug's
 area is Home's and Git's.
 
-The Prompt is a real terminal, 80 columns by 24 rows, a colour xterm's
+The Prompt is a real terminal with an 80-column by 24-row full-screen grid, a colour xterm's
 (`TERM=xterm-256color`), drawn by a terminal of our own (vt.ts): what programs
 print comes in their colours, in sixteen of the page's own (deep and a little
 muted, "white" a grey that is seen on paper) and the rest of xterm's 256 and

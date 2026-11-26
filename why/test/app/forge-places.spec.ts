@@ -13,7 +13,7 @@ test('the empty desk has one real Open Folder chooser, from its action or deskto
   await expect(first).toBeFocused();
 
   await main.locator('.forge-empty').click({button: 'right', position: {x: 22, y: 72}});
-  const start = main.getByRole('menu', {name: 'Workspace', exact: true});
+  const start = page.getByRole('menu', {name: 'Workspace', exact: true});
   await start.getByRole('menuitem', {name: 'Open Folder', exact: true}).click();
   await expect(create).toBeVisible();
   await page.keyboard.press('Escape');
@@ -65,14 +65,31 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(page.getByRole('navigation', {name: 'Purposes', exact: true})).toBeHidden();
   await expect(forge.promptBox).toBeHidden();
   await forge.placesKey.click();
-  await expect(forge.places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
+  await expect(forge.places.getByRole('menuitem', {name: 'Prompt', exact: true})).toBeVisible();
+  await expect(forge.places.getByRole('menuitemradio')).toHaveText(['Forge', 'Files', 'Git']);
   await forge.use('Prompt');
-  // An idle Prompt has no transcript height; its input is the part that is out.
-  await expect(forge.promptBox).toBeVisible();
+  const terminal = app.main.locator('.forge-prompt-slot');
+  await expect(app.main).toHaveAccessibleName('Forge');
+  await expect(terminal.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
   await expect(forge.promptBox).toBeFocused();
   await expect.poll(position).toEqual(before);
+  await expect(terminal.getByRole('button', {name: 'Previous terminal'})).toBeDisabled();
+  await terminal.getByRole('button', {name: 'Next terminal'}).click();
+  await expect(terminal.getByRole('button', {name: 'Right terminal'})).toHaveAttribute('aria-pressed', 'true');
+  await expect(forge.promptBox).toBeFocused();
+  await terminal.getByRole('button', {name: 'Left terminal'}).press('Enter');
+  await expect(terminal.getByRole('button', {name: 'Left terminal'})).toHaveAttribute('aria-pressed', 'true');
+  await expect(forge.promptBox).toBeFocused();
 
-  await page.keyboard.press('Escape');
+  const context = page.locator('.forge-document-menu[role="menu"]');
+  await editor.press('Shift+F10');
+  await expect(context).toHaveCount(1);
+  await expect(context).toHaveAttribute('aria-label', 'Edit text');
+  await terminal.locator('.desk-term:visible').click({button: 'right', position: {x: 160, y: 90}});
+  await expect(context).toHaveCount(1);
+  await expect(context).toHaveAttribute('aria-label', 'Terminal');
+  await context.getByRole('menuitem', {name: 'Close', exact: true}).click();
+  await expect(context).toHaveCount(0);
   await expect(forge.promptBox).toBeHidden();
   await expect(editor).toBeFocused();
   await expect.poll(position).toEqual(before);

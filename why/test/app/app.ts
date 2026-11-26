@@ -312,7 +312,7 @@ class Forge extends Part {
 
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
     if (!await this.places.isVisible()) await this.placesKey.click();
-    await this.places.getByRole('menuitemradio', {name: place, exact: true}).click();
+    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: place, exact: true}).click();
   }
 
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */

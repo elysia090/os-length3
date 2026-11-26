@@ -3,7 +3,7 @@ import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
 import type {Stopped} from '../../../api/host.ts';
 import {t, tn} from '../../../text/i18n.ts';
-import {allSessions, type Prompt} from '../bench/sessions.ts';
+import {allSessions, stopPrompt, type Prompt} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
 import {button, card} from './parts.ts';
 import {wayOut} from '../../ui/way-out.ts';
@@ -20,19 +20,19 @@ const stoppedNow = new Set<string>();
  * be given a network once made, so turning it on asks, then stops the Prompt
  * (it has the network from its next start); turning it off stops it at once.
  */
-function networkSwitch(repo: string, s: Prompt, card: () => HTMLElement): HTMLElement {
+function networkSwitch(repo: string, card: () => HTMLElement): HTMLElement {
   const on = granted().includes(repo);
   const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on),
     'aria-label': on ? t('Disable network for {repo} Prompt', {repo}) : t('Enable network for {repo} Prompt', {repo})}, h('span', {class: 'knob'})) as HTMLButtonElement;
   const error = h('p', {class: 'error small', role: 'alert'});
   sw.addEventListener('click', () => {
     const el = card();
-    if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = errorText(e); }); return; }
+    if (on) { void grant(repo, false).then(() => stopPrompt(repo)).catch((e) => { error.textContent = errorText(e); }); return; }
     sw.setAttribute('aria-checked', 'true');
     const was = [...el.childNodes];
     const no = wayOut(button(t('Cancel'), 'small-button')), yes = button(t('Grant access'), 'small-button primary');
     no.addEventListener('click', () => el.replaceChildren(...was, error));
-    yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = errorText(e); }));
+    yes.addEventListener('click', () => void grant(repo, true).then(() => stopPrompt(repo)).catch((e) => { el.replaceChildren(...was, error); error.textContent = errorText(e); }));
     el.replaceChildren(h('span', {class: 'card-title'}, repo),
       h('p', {class: 'muted small'}, t('Network access applies on next launch; stopping instance now.')),
       h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes));
@@ -85,7 +85,11 @@ function stoppedCard(repo: string, st: Stopped): HTMLElement {
 /** A Prompt running: where it runs and the memory it holds, what it gave back, the root's network; Free and Stop. */
 function runningCard(repo: string, s: Prompt): HTMLElement {
   const stop = button(t('Stop'), 'small-button');
-  stop.addEventListener('click', () => { stoppedNow.add(repo); s.stop(); });
+  const error = h('p', {class: 'error small', role: 'alert'});
+  stop.addEventListener('click', () => {
+    stoppedNow.add(repo);
+    void s.stop().catch((e) => { stoppedNow.delete(repo); error.textContent = errorText(e); });
+  });
   // In a browser, what it keeps for programs it ran can go without stopping it.
   const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
   free?.addEventListener('click', () => s.free());
@@ -94,9 +98,10 @@ function runningCard(repo: string, s: Prompt): HTMLElement {
   const on = s.on !== 'root' ? 'why' : s.preparing ? `root · ${t('Provisioning (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
   const lines: (string | Node)[] = [[on, s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
   if (s.freed !== null) lines.push(t('Freed {size}', {size: bytes(s.freed)}));
+  lines.push(error);
   // Only the root's Prompt can have a network: in a browser its programs have none (their sockets are local, between themselves).
   let el: HTMLElement | null = null;
-  if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
+  if (s.on === 'root') lines.push(networkSwitch(repo, () => el!));
   // 空ける sits at the left as it does on every card (Remote's off one too); Stop at the right.
   el = card(repo, lines, null);
   el.append(h('div', {class: 'card-foot'}, free, h('span', {class: 'grow'}), stop));

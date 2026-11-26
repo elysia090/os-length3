@@ -7,7 +7,7 @@ import {Pane, paneWord, pluginArea} from '../kit/pane.ts';
 import type {Writing} from '../kit/context.ts';
 import {Reference} from './reference.ts';
 import {Screen, type Rises} from './screen.ts';
-import {sessionIfAny} from './sessions.ts';
+import {sessionIfAny, type TerminalSide} from './sessions.ts';
 import {sessionFor} from './terminal.ts';
 import {Rows} from './rows.ts';
 
@@ -30,6 +30,12 @@ export interface Bench {
   /** On a desk (Forge's): the Prompt as a terminal, for the page to lay on the desk: what it printed and, under it,
    * the line one types at, its start saying what that line does (the shell's prompt, TODO). Null on any other bench. */
   terminal: HTMLElement | null;
+  readonly terminalSide: TerminalSide;
+  terminalInput(): HTMLTextAreaElement;
+  pickTerminal(side: TerminalSide): void;
+  rememberTerminal(): void;
+  restoreTerminal(): void;
+  drop(): void;
   /** The Prompt's line taken to run, the keyboard in it (an ended Prompt started again): the band's >_, Ctrl+`. */
   toPrompt(): void;
   /** Show the existing shell and focus its line without starting or restarting a session. */
@@ -199,7 +205,6 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   frame?(keys: string[]): void;
   /** On a desk: the Agent's own terminal laid as a box of `repo`'s desk. */
   besideTerm?(repo: string, element: HTMLElement): void}): Bench {
-  const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
   const none = h('div', {class: 'pane-rows'});
@@ -224,45 +229,76 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const work = h('div', {class: `${parts.strip ? 'work bench' : 'work bench no-strip'}${parts.desk ? ' desk-bench' : ''}${parts.paneless ? ' band-bench' : ''}${parts.plainBand ? ' plain-band' : ''}`});
 
-  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
-    // What the box did that is not the shell's (a TODO, an issue): a row of the repo's flow (Git's pane shows it), and
-    // on a desk, which has no pane, a line of the terminal it was written in, where the words written go.
-    flow: (repo: string) => {
-      const rows = rowsOf(repo);
-      if (!parts.desk) return rows;
-      return {
-        note: (head, words, go) => {
+  function make(side: TerminalSide) {
+    const {termHead, term, termHome} = promptBox();
+    const box = new Box({work, main: parts.main, center, term, termHead, side, back: !!parts.back, went: parts.went,
+      reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
+      flow: (repo: string) => {
+        const rows = rowsOf(repo);
+        if (!parts.desk) return rows;
+        return {note: (head, words, go) => {
           rows.note(head, words, go);
-          sessionFor(repo).noted(head, words);
-          return terminal?.querySelector<HTMLElement>('.term-out') ?? rows.element;
-        },
-        answer: (row) => rows.answer(row),
-      };
-    },
-    ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
-  // Forge presents this existing output and input in its separate Prompt slot.
-  const terminal = parts.desk ? h('section', {class: 'desk-term stand up'}, term, box.dock) : null;
-  if (terminal) standOf(terminal, box);
-  const shown = parts.desk ? null : screenOf(work, box, term, termHome);
-  if (shown) center.append(box.dock); else box.dock.prepend(box.form);
-  // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.
-  if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
+          const session = sessionFor(repo, side);
+          session.noted(head, words);
+          return session.element.querySelector<HTMLElement>('.term-out') ?? rows.element;
+        }, answer: (row) => rows.answer(row)};
+      },
+      ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}),
+      ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
+    const sheet = parts.desk ? h('section', {class:'desk-term stand up', 'data-terminal-side':side}, term, box.dock) : null;
+    if (sheet) {
+      standOf(sheet,box);
+      box.dock.prepend(box.form);
+      // Fixed mode choices belong to the bench, not its paper/scrollport.
+      for(const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
+    }
+    return {box,term,termHome,sheet};
+  }
+
+  const left = make('left');
+  const {box,term,termHome} = left;
+  let right: ReturnType<typeof make> | null = null;
+  let sideInHand: TerminalSide = 'left';
+  const sideFor = new Map<string,TerminalSide>();
+  // Keep each edit field in this tree. Moving it out would lose its undo and selection.
+  const terminal = left.sheet ? h('div', {class:'forge-terminal-deck'}, left.sheet) : null;
+  const here = () => sideInHand === 'right' && right ? right : left;
+  const offsets = new WeakMap<HTMLElement,{top:number; tail:boolean}>();
+  const output = () => here().sheet?.querySelector<HTMLElement>('.term-out');
+  const rememberTerminal = () => {
+    const view=output();
+    if(view?.getClientRects().length)offsets.set(view,{top:view.scrollTop,tail:view.scrollHeight-view.clientHeight-view.scrollTop<=1});
+  };
+  const restoreTerminal = () => {
+    const view=output(), where=view&&offsets.get(view);
+    if(view?.getClientRects().length&&where) view.scrollTop=where.tail?view.scrollHeight:where.top;
+  };
+  const pickTerminal = (side: TerminalSide) => {
+    if(!terminal || side===sideInHand || !box.repo)return;
+    rememberTerminal();
+    if(side==='right'&&!right){right=make('right');right.sheet!.hidden=true;terminal.append(right.sheet!);}
+    here().sheet!.hidden=true;
+    sideInHand=side;sideFor.set(box.repo,side);
+    const next=here();
+    if(next.box.repo!==box.repo)next.box.setRepo(box.repo);
+    next.sheet!.hidden=false;
+    restoreTerminal();
+  };
+  const shown = parts.desk ? null : screenOf(work,box,term,termHome);
+  if (shown) center.append(box.dock);
   const screen = shown?.screen ?? null;
-  // The band's >_ takes the terminal out and puts it away: pressed with the terminal in the hand and the keyboard in its
-  // line, the piece in the hand before it is taken up again (a key that only ever brought it out left a second press
-  // with nothing to answer it). Its shell ended, or the keyboard out of it, the press is what brings it back: a new
-  // shell, or its line.
   const toPrompt = () => {
-    if (!box.repo) return;
-    const s = sessionIfAny(box.repo);
-    if (!s?.ended && box.prompt === document.activeElement && parts.termAway?.()) return;
-    if (s?.ended) s.restart();
+    const current=here().box;
+    if(!current.repo)return;
+    const session=sessionIfAny(current.repo,current.side);
+    if(!session?.ended&&current.prompt===document.activeElement&&parts.termAway?.())return;
+    if(session?.ended)session.restart();
     showPrompt();
   };
   const showPrompt = () => {
     if (!box.repo) return;
     parts.revealPrompt?.();
-    box.summon();
+    here().box.summon();
   };
   // (A run is read where it ran: the terminal's own output. Before, a line run pressed there was read again under the
   // search box, and the pane said Issue, diff, Output and Agent over its rows: each is in its own place now.)
@@ -289,6 +325,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
+  const keys = new AbortController();
   document.addEventListener('keydown', (event) => {
     // Only while this bench is on screen, and the page is not held under something over it; never a key a terminal's
     // program reads as it comes (data-raw: every key is its, as at a terminal).
@@ -300,26 +337,36 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       parts.termAway?.()) { event.preventDefault(); return; }
     // On a desk, / on nothing to write in goes to the search on the band, as a page's / does.
     if (tools && event.key === '/' && letter(event) && !writing()) { event.preventDefault(); find(); }
-    else if (letter(event) && (!parts.desk || parts.promptVisible?.())) intoBox(box);
-    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, find, parts.desk ? toPrompt : () => { box.summon(); }, !parts.plainBand);
-  });
+    else if (letter(event) && (!parts.desk || parts.promptVisible?.())) intoBox(here().box);
+    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, here().box, pane, find, parts.desk ? toPrompt : () => { box.summon(); }, !parts.plainBand);
+  }, {signal:keys.signal});
 
   // Come on screen (its page come to, the pan to it begun), the pane takes its rows back from the page left.
   new ResizeObserver(() => { if (onScreen(room)) showRows(rowsOfRepo); }).observe(room);
   const setRepo = (name: string | null) => {
     showRows(name);
-    if (name === box.repo && name) { box.attach(); return; }
+    if (name === box.repo && name) { here().box.attach(); return; }
+    rememberTerminal();
     reference.setRepo(name);
     box.setRepo(name);
+    right?.box.setRepo(null);
+    if(terminal) {
+      if(right)right.sheet!.hidden=true;
+      sideInHand='left';left.sheet!.hidden=false;
+      if(name)pickTerminal(sideFor.get(name)??'left');
+    }
   };
   setRepo(null);
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
     showRows(rowsOfRepo ?? box.repo);
-    box.attach();
-    box.room();
+    here().box.attach();
+    here().box.room();
+    restoreTerminal();
     reference.resume();
     if (screen && screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
   };
-  return {element: work, reference, setRepo, settle, terminal, tools, toPrompt, showPrompt, find};
+  return {element: work, reference, setRepo, settle, terminal, tools, toPrompt, showPrompt,find,
+    get terminalSide(){return sideInHand;}, terminalInput:()=>here().box.prompt,pickTerminal,rememberTerminal,restoreTerminal,
+    drop:()=>{keys.abort();box.drop();right?.box.drop();}};
 }
