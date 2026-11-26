@@ -535,3 +535,35 @@ test('one grained paper holds Talk and TODO; switching topics restores the actua
   await composer.press('Control+Enter');
   await expect(talk.getByText('A reply not yet posted.', {exact: true})).toBeInViewport();
 });
+
+test('the held topic has one quiet upper rule on its own measure, independent of its face', async ({signedIn: app}) => {
+  const {page, server} = app;
+  await server.makeBoard('Release notes');
+  const head = server.paper.locator('.board-head');
+  const over = server.view.locator('.server-overline');
+  const footer = server.paper.locator('.dock');
+  const bounds = async () => head.evaluate((el) => {
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+    return {x: r.x, y: r.bottom, w: r.width, px: s.borderBottomWidth, color: s.borderBottomColor};
+  });
+  for (const size of [{width: 1440, height: 960}, {width: 768, height: 864}, {width: 390, height: 844}]) {
+    await page.setViewportSize(size);
+    const paper = await box(server.paper);
+    expect(Math.abs(paper.x + paper.width / 2 - size.width / 2)).toBeLessThan(1);
+    const inset = Math.max(24, Math.min(40, size.width * .04));
+    expect(paper.width).toBeCloseTo(size.width === 1440 ? 768 : size.width - 2 * inset, 1);
+    const rule = await bounds(), talk = await box(server.talk('Release notes')), reply = await box(footer);
+    expect([rule.px, rule.color]).toEqual(['1px', 'rgb(169, 164, 155)']);
+    expect([rule.x, rule.w]).toEqual([reply.x, reply.width]);
+    expect(talk.x).toBe(rule.x);
+    expect(talk.y - rule.y).toBe(size.width > 999 ? 20 : 12);
+    await expect(over).toHaveCSS('border-bottom-width', '0px');
+    await expect(footer).toHaveCSS('border-top-width', '1px');
+    await server.face('TODO').click();
+    expect(await bounds()).toEqual(rule);
+    await server.face('Talk').click();
+    expect(await box(footer)).toEqual(reply);
+  }
+  await server.newBoard();
+  await expect(head).toHaveCSS('border-bottom-width', '0px');
+});

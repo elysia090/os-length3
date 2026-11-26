@@ -44,6 +44,8 @@ test('a hue says a kind and nothing else: each clearly a hue, each kind its own'
 
 // Three sizes, one, two and four times (DESIGN §3, after Vignelli): every word at one size, a name at twice it, the
 // shot's one large thing at four; what says less is said quieter or in the other weight, never smaller. One bold.
+const SERVER_MEASURES = ['control', 'meta', 'time', 'word', 'title'] as const;
+const SERVER_SIZE = new Set<string>(SERVER_MEASURES.map((role) => `var(--t-server-${role})`));
 const NOTE_WRITING = 'var(--note-writing)', REPO_NAME = 'var(--repo-name-size, calc(.7 * var(--t-head)))';
 test('a place uses the common type scale or its scoped writing measure, and every weight is one of three', async () => {
   const {readdirSync} = await import('node:fs');
@@ -52,7 +54,9 @@ test('a place uses the common type scale or its scoped writing measure, and ever
   const SIZES = /^(var\(--t-(word|head|voice)\)|var\(--size\)|inherit|0)$/;
   const INBOX = /^var\(--t-inbox-(time|meta|write|words|compact-title|title)\)$/;
   const allowed = (file: string, size: string) => SIZES.test(size)
-    || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME].includes(size);
+    || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME].includes(size)
+    || file === 'server-desk.css' && SERVER_SIZE.has(size) && size !== 'var(--t-server-time)'
+    || file === 'talk.css' && size === 'var(--t-server-time)';
   for (const [f, s] of sheets) {
     for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.ok(allowed(f, m[1]!.trim()), `${f}: font-size ${m[1]}`);
     for (const m of s.matchAll(/(?<![-\w])font:\s*([^;}]+)/g)) {
@@ -90,5 +94,24 @@ test('Home keeps its note and repo-name measures on their own surfaces', () => {
     ['', '.home-own .todo-detail', 'font', '400 var(--note-writing)/calc(var(--u) + var(--s1)) var(--sans)'],
     ['', '.home-repos > .gear-card > .card-open > .card-title', 'font', `900 ${REPO_NAME}/var(--u) var(--display)`],
     ['@media(max-width:600px)', '.home-repos', '--repo-name-size', 'var(--t-word)'],
+  ]);
+});
+
+test('Server keeps its already chosen letter measure on its own desk', () => {
+  const sheet = readFileSync(new URL('../styles/server-desk.css', import.meta.url), 'utf8');
+  const measure = leavesOf(readSheet(sheet).nodes).flatMap(({node, parents}) => {
+    if (node.kind !== 'rule') return [];
+    return declarations(node.body).filter(({prop}) => prop.startsWith('--t-server-'))
+      .map(({prop, value}) => [parents.length > 0, node.selector.trim(), prop, value]);
+  });
+  const work = ".page[data-place='server'] > .server-work";
+  assert.deepEqual(measure, [
+    [false, work, '--t-server-control', '16px'],
+    [false, work, '--t-server-meta', '14px'],
+    [false, work, '--t-server-time', '13px'],
+    [false, work, '--t-server-word', '18px'],
+    [false, work, '--t-server-title', '36px'],
+    [true, work, '--t-server-word', 'var(--t-word)'],
+    [true, work, '--t-server-title', 'min(34px, 9vw)'],
   ]);
 });

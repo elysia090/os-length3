@@ -18,14 +18,17 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   --server-paper-top: calc((100dvh - var(--server-paper-h)) / 2);
   --server-paper-left: calc((100% - var(--server-paper-w)) / 2);
   --server-inset: calc(2 * var(--u));
-  --server-words: 18px;
+  --server-head-gap: 27px; --server-after-rule: 20px;
+  /* The desk's established measure: index, metadata, words and the one title. */
+  --t-server-control: 16px; --t-server-meta: 14px; --t-server-time: 13px;
+  --t-server-word: 18px; --t-server-title: 36px;
   --places-down: var(--nighthawks-shadow);
   display: block; position: relative; width: 100%; max-width: none; height: 100%; overflow: visible;
 }
 .server-masthead { position: absolute; inset: 0 0 auto; height: calc(2 * var(--u)); }
 .server-masthead > h1 {
   position: absolute; inset: 24px auto auto var(--server-edge); margin: 0; color: var(--nighthawks-paper);
-  font: 700 16px/var(--u) var(--sans); background: var(--nighthawks-ground);
+  font: 700 var(--t-server-control)/var(--u) var(--sans); background: var(--nighthawks-ground);
 }
 .server-masthead :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
 .server-masthead :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
@@ -41,7 +44,7 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 }
 .server-sidebar :focus-visible { outline-color: var(--nighthawks-paper); }
 .server-sidebar .server-held { padding-bottom: 0; }
-.server-sidebar .server-held > :is(.server-display-name, .server-display-label, .server-display-edit) { font-size: 16px; }
+.server-sidebar .server-held > :is(.server-display-name, .server-display-label, .server-display-edit) { font-size: var(--t-server-control); }
 .server-sidebar .server-chooser { --server-choices-fit: 100%; }
 .server-sidebar .server-top:has(.server-chooser:not([hidden])) { margin-bottom: 16px; }
 .server-sidebar .server-top:has(.server-disclosure[aria-expanded='true']) ~ .server-index { visibility: hidden; }
@@ -50,11 +53,11 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   min-width: 0; padding-inline-start: 12px; margin-inline-start: -12px;
   max-height: calc(var(--server-paper-h) - 2 * var(--u)); overflow: auto; scrollbar-width: thin;
 }
-.server-index > h2 { margin: 0; color: var(--sub); font: 700 14px/var(--u) var(--sans); background: var(--ground); }
+.server-index > h2 { margin: 0; color: var(--sub); font: 700 var(--t-server-meta)/var(--u) var(--sans); background: var(--ground); }
 .server-topics { display: grid; margin: 0; padding: 0; list-style: none; min-width: 0; }
 .topic-key {
   position: relative; display: block; min-height: var(--u); width: 100%; min-width: 0; padding: 0; border: 0;
-  background: var(--ground); color: var(--sub); font: 400 16px/var(--u) var(--sans);
+  background: var(--ground); color: var(--sub); font: 400 var(--t-server-control)/var(--u) var(--sans);
   text-align: start; cursor: var(--cursor-hand); overflow-wrap: anywhere;
 }
 .topic-key > span { display: inline; padding: 0 var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
@@ -75,11 +78,11 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 .server-overline {
   position: absolute; inset: auto 0 100%; margin-bottom: 6px; height: 27px;
   display: flex; align-items: center; justify-content: space-between; background: var(--nighthawks-ground);
-  color: var(--nighthawks-desk-quiet); font: 400 16px/var(--u) var(--mono);
+  color: var(--nighthawks-desk-quiet); font: 400 var(--t-server-control)/var(--u) var(--mono);
 }
 .topic-face-key {
   min-height: 27px; padding: 0; border: 0; border-radius: 0; background: none; color: inherit;
-  font: 700 16px/var(--u) var(--sans); cursor: var(--cursor-hand); white-space: nowrap;
+  font: 700 var(--t-server-control)/var(--u) var(--sans); cursor: var(--cursor-hand); white-space: nowrap;
 }
 .topic-face-key:is(:hover, :focus-visible):not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
 .topic-face-key:disabled { color: var(--nighthawks-paper-sub); cursor: var(--cursor-arrow); }
@@ -108,16 +111,23 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; min-width: 0;
   margin: 0; background: none;
 }
-.server-paper .board-head { margin: 32px var(--server-inset) 27px; min-width: 0; }
+.server-paper .board-head { margin: 32px var(--server-inset) var(--server-head-gap); min-width: 0; }
+/* As on an Inbox letter, the heading ends in one quiet rule on the text's measure.
+   Use the existing gap so neither the reading area nor the reply moves. Both faces share this heading. */
+.server-paper[data-material='topic'] > .board-card > .board-head {
+  margin-block-end: var(--server-after-rule);
+  padding-block-end: calc(var(--server-head-gap) - var(--server-after-rule) - 1px);
+  border-bottom: 1px solid var(--rule);
+}
 .server-paper .board-head > h2 {
   margin: 0; color: var(--ink); text-transform: uppercase;
-  font: 900 36px/48px var(--display); letter-spacing: -.018em; overflow-wrap: anywhere;
+  font: 900 var(--t-server-title)/48px var(--display); letter-spacing: -.018em; overflow-wrap: anywhere;
 }
-.topic-source { color: var(--sub); font: 400 14px/var(--u) var(--mono); }
+.topic-source { color: var(--sub); font: 400 var(--t-server-meta)/var(--u) var(--mono); }
 .server-paper :is(.board-talk, .board-todo) {
   min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
   margin-inline: var(--server-inset) calc(var(--server-inset) - 8px);
-  padding: 0 8px 0 0; font: 400 var(--server-words)/var(--u) var(--sans);
+  padding: 0 8px 0 0; font: 400 var(--t-server-word)/var(--u) var(--sans);
 }
 .server-paper :is(.board-talk, .board-todo):is(:hover, :focus-visible, .scrolling) { scrollbar-color: var(--edge) transparent; }
 .server-paper .board-talk:focus-visible { outline-offset: -2px; }
@@ -157,15 +167,15 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 }
 .server-paper .prompt-in {
   flex: 1; min-height: var(--u); max-height: calc(3 * var(--u)); resize: none; padding: 0;
-  overflow-y: auto; scrollbar-width: thin; font: 400 var(--server-words)/var(--u) var(--sans);
+  overflow-y: auto; scrollbar-width: thin; font: 400 var(--t-server-word)/var(--u) var(--sans);
 }
-.server-paper .server-post { font-size: var(--server-words); }
+.server-paper .server-post { font-size: var(--t-server-word); }
 .server-paper .prompt-note:empty, .board-create > .error:empty { display: none; }
 .server-paper .board-new { grid-template-rows: auto minmax(0, 1fr) auto; }
 .board-create { display: grid; align-content: start; gap: var(--s3); margin-inline: var(--server-inset); }
 .board-name-in {
   width: min(100%, 24ch); min-height: calc(1.5 * var(--u)); border: 0; border-bottom: 1px solid var(--rule); padding: 0;
-  background: transparent; font: 400 var(--server-words)/var(--u) var(--sans);
+  background: transparent; font: 400 var(--t-server-word)/var(--u) var(--sans);
 }
 .board-create-foot {
   margin: var(--u) var(--server-inset) 36px; padding-top: 9px; border-top: 1px solid var(--rule);
@@ -178,7 +188,9 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 @media (max-width: 999px), (max-height: 683px) {
   .page[data-place='server'] > .server-work {
     --server-edge: clamp(24px, 4vw, 40px); --server-inset: clamp(20px, 4vw, 36px);
-    --server-words: 17px; display: grid; grid-template-rows: 62px minmax(0, 1fr);
+    --server-head-gap: var(--s4); --server-after-rule: var(--s3);
+    --t-server-word: var(--t-word); --t-server-title: min(34px, 9vw);
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 62px minmax(0, 1fr);
   }
   .server-masthead { grid-row: 1; position: relative; }
   .server-masthead > h1 { top: 20px; }
@@ -190,8 +202,8 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   .server-sidebar .server-top:has(.server-chooser:not([hidden])) { margin-bottom: 4px; }
   .server-index { max-height: calc(6 * var(--u)); }
   .server-focus { position: relative; inset: auto; flex: 1; width: 100%; height: auto; min-height: 360px; }
-  .server-paper .board-head { margin-block: var(--u) var(--s4); }
-  .server-paper .board-head > h2 { font-size: min(34px, 9vw); line-height: 1.1; }
+  .server-paper .board-head { margin-block-start: var(--u); }
+  .server-paper .board-head > h2 { line-height: 1.1; }
   .server-paper > .dock { margin-top: var(--s3); padding-bottom: var(--s4); }
   .board-create-foot { margin-bottom: var(--s4); }
 }

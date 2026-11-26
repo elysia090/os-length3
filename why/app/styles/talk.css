@@ -11,7 +11,7 @@
   gap: 0 var(--s3); min-width: 0; min-height: var(--u); line-height: var(--u);
 }
 .tl-who > b { min-width: 0; overflow-wrap: anywhere; }
-.tl-who > time { flex: none; margin-inline-start: auto; color: var(--sub); font: 400 13px/var(--u) var(--mono); }
+.tl-who > time { flex: none; margin-inline-start: auto; color: var(--sub); font: 400 var(--t-server-time)/var(--u) var(--mono); }
 .tl-body { margin: 0; max-width: 66ch; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-acts { position: absolute; top: 0; right: 0; background: var(--paper); visibility: hidden; }
 .tl-acts:empty { display: none; }
