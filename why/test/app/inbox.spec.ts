@@ -258,7 +258,7 @@ test('a first letter waits for the actual thread, then uses the ordinary writing
   const letter = inbox.thread(bo.handle);
   await expect(inbox.message).toBeFocused();
   await expect(inbox.message).toHaveAttribute('placeholder', `Write to ${bo.handle}`);
-  await expect(letter.locator('.inbox-top')).toHaveCSS('border-bottom-width', '0px');
+  await expect(letter.locator('.inbox-top')).toHaveCSS('border-bottom', '1px solid rgb(169, 164, 155)');
   const write = letter.locator('.inbox-write');
   await expect(write).toHaveCSS('border-top', '1px solid rgb(169, 164, 155)');
   await expect(letter).toHaveCSS('background-size', '4px 4px');

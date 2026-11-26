@@ -85,7 +85,7 @@ body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display
 .inbox-thread:focus-visible { outline-offset: -1px; outline-width: 1px; }
 .inbox-thread ::selection { color: var(--ink); background: var(--slot); }
 .inbox-top { position: relative; min-height: 113px; padding-block: 28px var(--s3); border-bottom: 1px solid var(--rule); }
-.inbox-thread:is([data-kind=recipient], [data-kind=letter][data-first-letter]) > .inbox-top { border-bottom: 0; }
+.inbox-thread[data-kind=recipient] > .inbox-top { border-bottom: 0; }
 .inbox-top h2 {
   margin: 0; color: var(--ink); font: 900 var(--t-inbox-title)/48px var(--display);
   letter-spacing: -.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
