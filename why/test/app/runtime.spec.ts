@@ -285,7 +285,7 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await expect(app.main.getByRole('button', {name: /^Create your first repo/})).toBeVisible();
 });
 
-test('a repo renamed from its gear keeps its place on the band, worked on, with what was half written for it, its search, where one left off and its chip in Git', async ({app}) => {
+test('a repo renamed from its gear keeps its place on the band, worked on, with what was half written for it, its search, where one left off and its name in Git', async ({app}) => {
   await app.newRepo.make('alpha');
   await app.newRepo.make('beta');
   await app.forge.open('alpha');
@@ -324,8 +324,10 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');
   await expect(app.forge.search).toHaveValue('needle');
   await app.rail.go('git');
-  await expect(app.git.repos.getByRole('radio', {name: 'gamma', exact: true})).toBeVisible();
-  await expect(app.git.repos.getByRole('radio', {name: 'alpha', exact: true})).toHaveCount(0);
+  await app.page.getByRole('button', {name: 'Git folder: gamma', exact: true}).click();
+  const gitFolders = app.page.getByRole('menu', {name: 'Git folders', exact: true});
+  await expect(gitFolders.getByRole('menuitemradio', {name: 'gamma', exact: true})).toHaveAttribute('aria-checked', 'true');
+  await expect(gitFolders.getByRole('menuitemradio', {name: 'alpha', exact: true})).toHaveCount(0);
 });
 
 test('signed in, a repo on the Remote is deleted from its gear as turning it off asks: it goes from here, and the Remote keeps it off', async ({signedIn: app}) => {

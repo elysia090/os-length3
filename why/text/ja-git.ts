@@ -30,6 +30,8 @@ export default {
   'All': 'すべて',
   'No issues yet': 'Issue はまだありません',
   'Issues': 'Issue',
+  'Git folders': 'Git フォルダ',
+  'Git folder: {name}': 'Git フォルダ：{name}',
   'Resume here': 'ここで作業を続ける',
   'Awaiting your action': 'あなたの対応待ち',
   'From your agent': 'エージェントからの提案',

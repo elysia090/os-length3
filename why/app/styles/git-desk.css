@@ -1,20 +1,4 @@
-/* Git, all desk as Forge is (no pane beside it). Its band has a desk's keys (>_ and the search), then its repos, and
-   against the right edge the repo the desk is of, said large (the issue's number is its sheet's own, said once).
-
-   At the desk's edge, main's sheet: a sheet of ink lying askew as Forge's terminal does, its shadow the line's green,
-   eight cells wide and as tall as its four lines. It holds the switch and nothing else: the steps of the issue in
-   full (Start, Commit, Submit, Merge), a line a step, set against the sheet's right margin in the terminal's green;
-   the one to take next is on a band of that green cut across the sheet from edge to edge, its word in ink and heavy.
-   Under the sheet, on the desk itself with no box about it, askew with it and against its right edge: Create issue.
-
-   Beside it, the row of issues: the one in full is the page's one sheet (paper, its name over its corner, its shadow
-   a cell of ink). Its head: the title in the display face at the left, the number against the right margin, their
-   tops on one line. Under the head the work leads: a size larger than a sheet's at rest (16.5 on a cell and a half),
-   from the sheet's fourteenth cell to its right edge, what was added in heavy ink on the line's green, what was taken
-   away in ink on the diff's pale rose, a line about them out of focus. Its words are much smaller, the work's margin
-   note, set against the work's left edge. At the foot's left, as large as the title, how much the work is.
-   (Before: a column of bordered cards under a row of repo pills, the steps as buttons down the card's right edge,
-   and a pane of what was run beside the page.) */
+/* Git: the issue is the paper in hand. The folder name and main's steps stand quietly beside it. */
 /* (The desk's dotted ground, and nothing of the page cut at the rail's edge: its keys and main's sheet start left of it.) */
 .page.page-work[data-place='git'] { overflow: visible; }
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
@@ -23,31 +7,19 @@
 /* (The Prompt's box hides nothing under it here: the desk's ground is the window's own, to its foot. Its strip of
    plain ground, half a window to either side, made the page that much wider than the window.) */
 .work.band-bench .dock::after { display: none; }
-.git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
-/* Which repo: not one of the window's instruments but a choice on this desk, so it stands on the desk, on the cell
-   under the band where a piece's name stands, and the band is the bar it is everywhere. */
-.git-band > .chips { position: absolute; left: 0; top: calc(2 * var(--u) - var(--outer-top)); height: var(--u); align-items: center; gap: var(--s2); margin: 0; padding: 0; }
-.git-band > .chips .chip { min-height: 0; height: var(--u); padding: 0 var(--s2); border-radius: var(--r-key); font: 700 var(--t-word)/var(--u) var(--mono); }
-.git-band > .chips.lone { display: none; }
-
 /* Git's desk: from the desk's edge, its pieces' tops a cell under the band as on any desk. Set as words are in a
    line (as Home's are): first main's own sheet, eight cells wide, where the repo's work is switched; two cells on,
    the issues, a row of sheets; where the issues have not a piece's width beside main's sheet, they go under it, at
    the desk's edge. (Before: by the window's width, under 1100 px.) */
 .git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
-.git-desk > .git-side { flex: none; width: calc(8 * var(--u)); padding-bottom: var(--to-grid, 0px); }
-/* Main's sheet is one sheet, drawn in line on the ground (the issue is the piece in hand): a cell of paper round its
-   lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; and
-   nothing else (a new issue is the row's last piece). Its name, the repo, in the cell over its corner, as a
-   piece's is (§5) and level with the issue's beside it: the cell over it is never left empty while the issue's has
-   its name. Nothing of it floats on the ground beside it. */
-.git-desk > .git-side:not(.none) { position: relative; display: grid; align-content: start; align-self: flex-start; box-sizing: border-box; padding: var(--u) 0;
-  border-radius: var(--r-sheet); background: var(--ground); outline: 1px solid var(--edge); outline-offset: -1px; }
-.git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
+/* Only the steps have their own rule: the folder key and main's file names are outside it. */
+.git-desk > .git-side { position: relative; display: grid; align-content: start; flex: none; width: calc(8 * var(--u));
+  padding-bottom: var(--to-grid, 0px); }
 .git-desk > .git-side.none { display: none; }
-/* (It is not the piece in hand, the issue is: drawn in line on the ground, its steps a step quieter than ink, and the
-   step that is next the one row of ink on it.) */
-.git-switch { padding: 0; }
+.git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; margin-top: 0; }
+.git-desk > .git-side > .main-part { min-width: 0; margin: var(--u) 0 0; }
+.git-switch { padding: var(--u) 0; border-radius: var(--r-sheet); background: var(--ground);
+  outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
 .switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
@@ -68,11 +40,24 @@
 .git-switch .switch-line:has(> button:focus) > button { font-weight: 700; color: var(--ground); }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
-/* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it
-   is, quiet (the issue in hand is the master; the band says the repo large). */
-.git-side > .side-name { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
-  white-space: nowrap; }
-.git-side > .side-name:empty { display: none; }
+/* A key's own menu, not a new piece of paper. No effect on the issue's geometry, fill or shadow. */
+.git-repo-picker { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%;
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
+.git-repo-name, .git-repo-key, .git-repo-option-name { display: block; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-repo-key { max-width: 100%; height: var(--u); padding: 0; border: 0; background: none; color: inherit; text-align: left;
+  font: inherit; cursor: var(--cursor-hand); }
+.git-repo-key:hover, .git-repo-key[aria-expanded='true'] { color: var(--ink); }
+.git-repo-key:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+.git-repo-menu { position: absolute; box-sizing: border-box; z-index: 5; width: min(calc(7 * var(--u)), calc(100vw - 12px));
+  max-height: min(calc(10 * var(--u)), 60vh); overflow: auto; overscroll-behavior: contain; padding-block: var(--s1);
+  border: 1px solid var(--edge); border-radius: var(--r-key); background: var(--raised); color: var(--ink); }
+.git-repo-option { display: grid; grid-template-columns: 1.5ch minmax(0, 1fr); gap: 1ch; align-items: center; width: 100%;
+  min-height: var(--u); padding-inline: var(--s2); border: 0; border-radius: 0; background: none; color: inherit;
+  text-align: left; font: inherit; cursor: var(--cursor-hand); }
+.git-repo-option:is(:focus, :hover) { outline: none; background: var(--slot); }
+.git-repo-tick { color: var(--sub); }
+.git-repo-status { display: block; white-space: normal; color: var(--sub); }
 /* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: its edge
    dashed (not made yet); beside the one in full drawn in line on the ground as every piece not in the hand is, its
    edge with its + and its name, quiet; in the hand paper, its ink edge and its shadow, as the piece in hand is (a sheet
@@ -94,7 +79,6 @@
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.git-desk > .section, .git-desk > .main-part + .section { margin-top: 0; }
 /* The next shows two cells of itself, two cells off: room for its number at the words' size (#123). With the box in
    full at the row's edge, the room ahead of it is the two peeks and the shadow's cell (52 + 2 × peek), the room behind
    it the side and its gap (240): ahead the larger at every width (DESIGN §2, look room). */
