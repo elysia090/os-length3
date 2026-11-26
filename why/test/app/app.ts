@@ -821,7 +821,7 @@ class Server extends Part {
     await this.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
     await this.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(handle);
     await this.view.getByRole('button', {name: 'Create', exact: true}).click();
-    await expect(this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
+    await expect(this.room(name)).toHaveAttribute('aria-current', 'true');
   }
 
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
@@ -853,8 +853,19 @@ class Server extends Part {
   /** Its TODO, the part beside its talk (in front once its part is pressed). */
   get todo() { return this.view.getByRole('region', {name: 'TODO', exact: true}); }
 
-  /** A server's chip on the top line (its name says so while a board in it has posts not seen). */
-  chip(name: string) { return this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
+  /** The server in hand (its name says so while a board in it has posts not seen). */
+  room(name: string) { return this.view.getByRole('group', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}); }
+  get roomKey() { return this.view.getByRole('button', {name: 'Server menu', exact: true}); }
+  get roomChoices() { return this.view.getByRole('menu', {name: 'Servers', exact: true}); }
+  async chooseRoom(name: string) {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitemradio', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}).click();
+    await expect(this.room(name)).toHaveAttribute('aria-current', 'true');
+  }
+  async manage() {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitem', {name: 'Manage…', exact: true}).click();
+  }
 
   /** The box at the board's foot that writes in it. */
   box(board: string) { return this.view.getByRole('textbox', {name: `Post in #${board}`, exact: true}); }
@@ -864,7 +875,7 @@ class Server extends Part {
    * Add contact). What the card then says is returned, to be checked by the caller.
    */
   async addSomeone(who: string) {
-    await this.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
+    await this.manage();
     await this.view.getByRole('tab', {name: /^Members/}).click();
     await this.view.getByRole('button', {name: 'Add contact'}).click();
     const typed = this.view.getByRole('textbox', {name: 'Enter username or invite code'});

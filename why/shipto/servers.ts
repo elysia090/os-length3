@@ -80,6 +80,8 @@ export const lastServers = (): Server[] | null => {
   return c && lastGiven?.session === c.session ? structuredClone(lastGiven.list) : null;
 };
 export const makeServer = (name: string, address: string) => call<Server>('/v1/servers', send('POST', {name, address}));
+/** The display name only, on the existing owner-gated route. The address and board identities do not change. */
+export const renameServer = (id: string, name: string) => call<{id: string; name: string}>(`/v1/servers/${encodeURIComponent(id)}`, send('PATCH', {name}));
 /** Servers this person removed or left last, still held for them, and until when. */
 export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
 export const bringBack = (id: string) => call<{id: string; name: string; address: string}>(`/v1/servers/${id}/back`, send('POST'));

@@ -24,7 +24,7 @@ import {Side} from './side.ts';
 import {cameTo, seenNow} from './talk.ts';
 import {SPRING} from '../../ui/law.ts';
 
-// What is on the Server page (page.ts): the band of servers on the top line
+// What is on the Server page (page.ts): the room and its server chooser on the top line
 // (band.ts), under it the boards of the one chosen as a row of boxes (row.ts, board.ts), or a step away in their
 // place what is behind its gear (gear.ts) or a repo shown (repo.ts), the box at the foot for the board on screen
 // (dock.ts), and at the right its people and repos (side.ts). This keeps what is chosen and on screen, and tells
@@ -47,6 +47,8 @@ export class ServerView {
   private readonly here: Here;
   /** Where one was when Server was last on screen: its server and board (or led here to make one). */
   private readonly at = remembered();
+  /** The board last held in each server while this desk is open, by its stable identity. */
+  private readonly lastBoards = new Map<string, string>();
   private readonly band: Band;
   private readonly row: Row;
   /** Behind the gear, or a repo shown: in the boards' place, a step away from them. */
@@ -64,11 +66,31 @@ export class ServerView {
     const signedIn = connection() !== null;
     this.here = {signedIn, list: [], shown: [], serverId: null, alone: null, naming: null};
     this.band = new Band(this.here, {
-      // (The server already on screen pressed: to the row's start, where its own sheet is.)
-      show: (id) => { if (id === this.here.serverId && this.showing === 'boards') this.row.toStart(); else this.switchTo(id); },
+      // The checked room is where we are: choosing it only puts the menu away.
+      show: (id) => { if (id !== this.here.serverId) this.switchTo(id); },
       showAlone: (b) => this.showAlone(b),
       make: () => this.makeAnew(),
-      gear: () => { if (this.showing === 'settings') this.place('boards'); else this.settings(); },
+      manage: () => {
+        if (this.showing !== 'settings') this.settings();
+        this.sheet.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({preventScroll: true});
+      },
+      paperEdge: (after) => this.showing === 'boards'
+        ? [...this.row.track.querySelectorAll('.slide')].map((slide) => slide.getBoundingClientRect().left).find((x) => x >= after)
+        : this.sheet.getBoundingClientRect().left,
+      rename: async (id, name) => {
+        const named = await servers.renameServer(id, name);
+        const room = this.here.list.find((s) => s.id === id);
+        if (!this.work.isConnected || !room) return;
+        room.name = named.name;
+        if (this.here.serverId === id) {
+          for (const b of this.here.shown) b.server = named.name;
+          const title = this.sheet.querySelector('.sheet-title h2');
+          if (this.showing === 'settings' && title) title.textContent = named.name;
+          const field = this.dock.querySelector<HTMLTextAreaElement>('textarea');
+          if (field) field.placeholder = t('To members of {server}', {server: named.name});
+        }
+        this.band.paint();
+      },
     });
     const center = h('div', {class: 'center server-center'});
     this.side = new Side({isMe: (a) => this.isMe(a), seeRepo: (r) => this.seeRepo(r), write: (a) => this.write(a)});
@@ -76,7 +98,7 @@ export class ServerView {
     // board is at that board's foot, in the hand with it. Signed out, whose a board is is not told: no such sheet.
     this.row = new Row({box: (j, now) => this.box(j, now), landed: (k, pressed) => this.landed(k, pressed)}, this.dock, signedIn ? this.side.element : null);
     center.append(this.band.element, this.row.element, this.sheet);
-    this.work = h('div', {class: 'work no-strip no-side'}, center, h('div', {class: 'server-bar'}, this.band.gear));
+    this.work = h('div', {class: 'work no-strip no-side'}, center);
     this.myself = signedIn ? me().catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
@@ -89,6 +111,7 @@ export class ServerView {
    * in the name is kept, as it is anyway); or nothing to go back from (false).
    */
   back(): boolean {
+    if (this.band.close(true)) return true;
     const from = this.before;
     if (this.showing === 'boards' && this.here.naming?.isConnected && from && this.here.list.some((s) => s.id === from)) {
       this.show(from);
@@ -246,7 +269,7 @@ export class ServerView {
     this.place('boards');
     this.band.paint();
     this.here.shown = s.boards.filter((b) => !b.gone).map((b) => ({id: b.id, name: b.name, member: true, guests: b.guests, server: s.name}));
-    const want = board ?? (this.at.server === id ? this.at.board : undefined);
+    const want = board ?? this.lastBoards.get(id) ?? (this.at.server === id ? this.at.board : undefined);
     const i = this.here.shown.findIndex((b) => b.id === want);
     // Its boards, and after them the last box, a new board.
     this.side.paint(this.here.serverId);
@@ -343,7 +366,10 @@ export class ServerView {
    */
   private landed(k: number, pressed: boolean) {
     const b = this.here.shown[k];
-    if (b) remember({server: this.here.serverId ?? undefined, board: b.id});
+    if (b) {
+      if (this.here.serverId) this.lastBoards.set(this.here.serverId, b.id);
+      remember({server: this.here.serverId ?? undefined, board: b.id});
+    }
     this.paintDock(b ?? null);
     this.index();
     if (!b && pressed) this.row.track.querySelector<HTMLInputElement>('.slide[aria-current="true"] .board-name-in')?.focus({preventScroll: true});
@@ -393,7 +419,6 @@ export class ServerView {
     this.sheet.hidden = now === 'boards';
     if (now === 'boards') this.sheet.replaceChildren();
     if (now !== 'repo') this.side.seen(null);
-    this.band.gear.setAttribute('aria-expanded', String(now === 'settings'));
   }
 
   /** Back to the boards from behind the gear or a repo shown: built again if a board went meanwhile. */
@@ -406,7 +431,7 @@ export class ServerView {
     const had = this.sheet.contains(document.activeElement);
     const fromGear = this.showing === 'settings';
     this.toBoards();
-    if (had && fromGear) this.band.gear.focus({preventScroll: true});
+    if (had && fromGear) this.band.key.focus({preventScroll: true});
   }
 
   /** Behind the gear: what changes the server for everyone (gear.ts). */

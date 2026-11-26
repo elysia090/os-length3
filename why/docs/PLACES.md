@@ -187,8 +187,8 @@ nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is 
 not made yet. The board in the hand is a sheet: its name in the display
 face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
 fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
-servers are chips on the band's row after the door; the chip of the server on screen, pressed, turns the desk to the
-row's start.
+room is named on the band's row after the door. The triangle beside the name brings the server choices down from
+its own edge. The checked server is the one in hand; putting the choices away does not move the board.
 
 ### Inbox: Server's far side, what was said to one
 
@@ -304,7 +304,7 @@ breaks; none is a decision to leave it.
 | Git | under 1100 px wide the sheet's work goes under its words and its number into its title's line: by the window's width | §1, a narrow window has the same rules |
 | Server | a board not in the hand is its name only: what it holds is read when it is taken up | §5, a piece not in the hand is read, a step quieter |
 | Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
-| Server's chips, a sheet's parts | a line of them longer than its room slides, cut at its end (the parts' › standing there) | §6, what does not fit goes under |
+| A sheet's parts | a line of them longer than its room slides, cut at its end (the parts' › standing there) | §6, what does not fit goes under |
 | the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
 | the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's and the Remote's the door alone; Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
@@ -2150,16 +2150,16 @@ the servers drawn from the list this session was given last (Home names
 them as it opens), so only what the board holds is read as it comes, the
 list read again under it. Its pieces, from §3:
 
-- **The band**: + first at the top line's left end, to make a server, then
-  the servers one is in, one row however many there are, sliding sideways
-  as Git's repos do (never more rows pushing the boards down), its ends
-  fading where there is more along it and the one chosen, or being named,
-  slid into view; another chip pressed, the ink goes along the band to
-  it and the boards pan in from its side, as Git's repos do along its band
-  (what was there going off the other way), the pane's people coming in
-  over a moment with them; the gear at the right end (kept in its place,
-  unpressable, while none is chosen), in ink while one is behind it, as a
-  chip chosen is, turning a tooth's step as it is pressed either way. A server is made where it will
+- **The band**: + makes a server, then the name of the one in hand and
+  its triangle. A press lowers this key; on release the same mark turns
+  and the first choice stands just beneath its line. Other servers and
+  guest boards are named here, the current one checked; Manage follows
+  the choices when a server is held. Choosing the checked one, pressing
+  the key again, Escape, or pressing outside puts the choices away
+  without changing the board. Another chosen server comes in from its
+  side, at the board last held there. The owner's name is written in
+  place (Enter or leaving keeps it; Escape puts it back while editing).
+  It does not change the server's Remote address. A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
   others (dashed until it has a name; empty, it says a name none of one's
   servers has, Trip, else Book club, Family or Band, so it is not read as
@@ -2237,14 +2237,12 @@ list read again under it. Its pieces, from §3:
   (15 s) while it is on screen, so someone asked in who accepts on their own
   device comes in there then, standing as Forge's pane does: its
   line at its edge from the top line to the foot, its first heading on the
-  line Forge's Prompt is on, and at the top line's right end, where
-  Forge's pane switch is, the gear (the same quiet circle), over the people
-  and repos it changes. The board's top is where Forge's first box's is.
+  line Forge's Prompt is on. The board's top is where Forge's first box's is.
   A repo pressed takes the boards' place
   with the page head (its name, whose, Forge when one's own, Back) and one
   box in two panes: its files, the one chosen (its README first), as it
   was last pushed; its row in the pane stays lit while it is shown.
-- **Behind the gear**, in the boards' place: the page head (the server's
+- **Manage**, from the server chooser, in the boards' place: the page head (the server's
   name, its name on the Remote and code; Done at the sheet's bottom right),
   then **parts** (their counts as the pane last drew them, at once, so the
   parts' names do not step sideways when the reading comes; its cards come
@@ -2275,14 +2273,14 @@ list read again under it. Its pieces, from §3:
   brought back (30 days; a day when its maker is alone in it). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 
-Escape from behind the gear, or from a repo shown, goes back to the boards
+Escape from Manage, or from a repo shown, goes back to the boards
 first. No Prompt is in Server: Server is for people, the Prompt for a
 repo. Signed out, it shows the open boards (and no right pane, since whose
 they are is not told). Where a board takes guests the box at the foot says
 that its people invite them; opened by an invitation's link, Server comes
 out at that board (signed in or not), and the box asks only the name to
 write as, then is the guest's box (ゲストの…として). Signed in, the boards one
-writes in as a guest are chips after one's servers (#board ゲスト), each
+writes in as a guest are named after one's servers in the chooser (#board ゲスト), each
 shown alone. A guest removed, or whose lease ran out, is told so in the box.
 
 The talk reads as a conversation: oldest above and newest at the foot. No

@@ -18,6 +18,10 @@ export default {
   'A board groups discussions and shared tasks around a topic:': 'ボードは1つのテーマに関する対話と共有 TODO をまとめる場所です：',
   'e.g. trips, releases, or study groups.': '旅行計画、リリース作業、読書会など。',
   'Public boards': '公開ボード',
+  'Server menu': 'サーバーメニュー',
+  'Server name': 'サーバー名',
+  'Rename {name}': '{name}の名前を変更',
+  'Manage…': '管理…',
   'Create server': 'サーバーを作成',
   // Share with no server to show a repo in: the way to make one.
   'Create server…': 'サーバーを作成…',
@@ -124,7 +128,6 @@ export default {
   'Guest posting enabled': 'ゲスト投稿可能',
   'Leave': '退出',
   'Delete': '削除',
-  'Manage members, boards, and repos': 'メンバー・ボード・repo の設定',
   'Add contact': '連絡先メンバーを追加',
   'Export local copy': 'ローカルに保存',
   'Members only': 'メンバー限定',

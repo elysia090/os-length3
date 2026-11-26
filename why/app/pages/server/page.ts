@@ -2,12 +2,12 @@ import type {Context} from '../kit/context.ts';
 import {ServerView} from './view.ts';
 import {seenNow} from './talk.ts';
 
-// Server as a place, gone to by pressing it on the rail: its servers on its top line, its boards side by side, the box at its foot, its people at the right.
+// The room and its chooser above its working board, reached from the rail.
 
 /** The Server page, built for who is here now; `again` draws it anew (the Remote answered, one signed in). */
 export function serverPage(ctx: Context, again: () => void): Node[] {
   const view = new ServerView({ctx, again});
-  // Escape from behind the gear, a repo shown, or a server being named: a step back to the boards.
+  // Escape puts away the chooser or comes back to the boards.
   view.work.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !event.defaultPrevented && view.back()) event.preventDefault();
   });

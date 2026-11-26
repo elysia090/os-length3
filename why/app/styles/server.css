@@ -1,13 +1,4 @@
-/* Server: its chips on the top line, its boards side by side, its people and repos at the right, what is behind its
-   gear. */
-/* Server: servers as chips on the top line (the gear at its right end), then
-   the boards as boxes side by side, slid as the issues are (one in full, the
-   neighbours' edges showing), with the box at the foot. A board's TODO is
-   pinned at the top of its box, its talk under it. On the right, who is in
-   it and the repos they show. Behind the gear, and a repo shown, take the
-   boards' place: a step away from them. */
-/* On the skeleton every page has (tokens.css): its chips on the top line a step from the rail's line, and its boards,
-   what is behind its gear and the box at its foot a place further in, where every page's own things start. */
+/* The room is the band's name. Its boards and their foot keep the usual grid. */
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 0; }
 /* The band's row, and under it the board's top on the rail's first row: its head is that row, and what it holds
    starts on the second. Under the band's row, while one is named, what the Remote said no to (server/band.ts). */
@@ -20,25 +11,56 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* (Its row goes to the window's right edge and foot, past the page's own: nothing of it is cut at the page's.) */
 .page.page-work[data-place='server'] { overflow: visible; }
 .page.page-work[data-place='server'] > .work { position: relative; height: 100%; grid-template-columns: minmax(0, 1fr); }
-.server-bar { position: absolute; top: 0; right: var(--s5); display: flex; }
-/* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; where
-   there is more along it its end cuts what goes on past it, as the frame's edge does the world's (no fade: DESIGN §1),
-   and a chip slid into view is kept --clear of the ends. */
-.server-chips { --clear: var(--s5); position: relative; isolation: isolate; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-  margin: calc(-1 * var(--s1)); padding: var(--s1); }
-.server-chips::-webkit-scrollbar { display: none; }
-.server-chips > * { flex: none; }
-/* The servers on the band's row are the frame's (DESIGN §4): quiet at rest, and the one on screen is chosen as the
-   rail's place one is in is, with the slot colour under it, not filled with ink. */
-.server-chips .chip { color: var(--frame); }
-.server-chips .chip[aria-checked='true'] { background: var(--slot); color: var(--ink); border-color: var(--frame-edge); }
-.server-chips .chip:is(:hover, :focus-visible) { color: var(--ink); }
+/* The chooser occupies just the room's place on the band. Its local cut does not reflow the desk. */
+.server-band-content { flex: 1; min-width: 0; min-height: var(--h-control); }
+.server-room-status { display: inline-block; line-height: var(--h-control); }
+.server-chooser { --hinge: calc(var(--s4) + 2px); --seam: calc((var(--h-control) + var(--hinge)) / 2 - 1px);
+  position: relative; z-index: 2; width: fit-content; max-width: 100%; }
+.server-held { display: flex; align-items: center; min-width: 0; min-height: var(--h-control); }
+.server-held > :is(.server-display-name, .server-display-label, .server-display-edit) {
+  min-width: 0; max-width: calc(7 * var(--u)); padding: 0; border: 0; border-radius: 0; background: var(--ground);
+  color: var(--ink); font: 700 var(--t-word)/var(--u) var(--sans); white-space: nowrap;
+}
+.server-held > :is(.server-display-name, .server-display-label) { overflow: hidden; text-overflow: ellipsis; text-align: start; }
+.server-display-name { cursor: var(--cursor-hand); }
+.server-held > .server-display-edit { field-sizing: content; min-width: 4ch; border-bottom: 1px solid var(--ink); }
+.server-display-edit:focus { outline: none; }
+.server-display-error { position: absolute; inset-block-start: 100%; inset-inline-start: 0; width: max-content;
+  max-width: min(calc(9 * var(--u)), var(--server-choices-fit, 100vw)); padding: var(--s1); background: var(--ground); color: var(--off); }
+.server-display-error:empty, .server-chooser:has(.server-disclosure[aria-expanded='true']) > .server-display-error { display: none; }
+.server-disclosure { width: var(--h-control); height: var(--h-control); flex: none; display: grid; place-items: center;
+  padding: 0; border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--frame); cursor: var(--cursor-hand); }
+.server-disclosure > .server-hinge { display: grid; place-items: center; width: var(--hinge); height: var(--hinge); border-radius: var(--r-key); }
+.server-hinge > svg { width: var(--s4); height: var(--s4); }
+.server-disclosure[aria-expanded='true'] > .server-hinge { background: var(--slot); color: var(--ink); }
+.server-disclosure[aria-expanded='true'] svg { transform: rotate(180deg); }
+.server-disclosure:active > .server-hinge { background: var(--ink); color: var(--ground); }
+.server-choices { position: absolute; inset-block-start: var(--seam); inset-inline-start: 0;
+  width: min(calc(8 * var(--u)), var(--server-choices-fit, 100vw)); max-height: calc(100dvh - 4 * var(--u)); overflow: auto;
+  overscroll-behavior: contain; display: grid; align-content: start; padding-block: var(--s1);
+  background: var(--ground); }
+.server-chooser:has(.server-disclosure[aria-expanded='true'])::after {
+  position: absolute; content: ''; inset-block-start: var(--seam); inset-inline-start: 0;
+  width: calc(100% - (var(--h-control) - var(--hinge)) / 2); height: 1px; background: var(--edge); pointer-events: none;
+}
+.server-choice { position: relative; display: grid; grid-template-columns: var(--s4) minmax(0, 1fr); align-items: center;
+  min-height: var(--u); padding: 0 var(--s1) 0 0; border: 0; background: var(--ground); color: var(--sub);
+  font: var(--t-word)/var(--u) var(--sans); text-align: start; cursor: var(--cursor-hand); }
+.server-choice[role='menuitem'] { margin-block-start: var(--s3); }
+.server-choice[aria-checked='true'] { color: var(--ink); font-weight: 700; }
+.server-choice:is(:focus-visible, :hover) { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; outline-offset: -1px; }
+.server-choice-name { overflow-wrap: anywhere; }
+:is(.server-held, .server-choice).news { position: relative; }
+:is(.server-held, .server-choice).news::before { content: ''; position: absolute; width: var(--s1); height: var(--s1); border-radius: 50%;
+  background: var(--ink); inset-inline-start: calc(-1 * var(--s2)); inset-block-start: calc(50% - var(--s1) / 2); }
+.server-choice.news::before { inset-inline-start: var(--s1); }
+.server-choice.news[aria-checked='true']::before { inset-inline-start: auto; inset-inline-end: var(--s1); }
 .server-said { flex-basis: 100%; padding-left: calc(var(--h-row) + var(--s2)); }
 .server-said:empty, .server-said:has(> .server-ask:empty) { display: none; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
    one name; Make beside it. Wider than the row (a phone's width, its address written), Make goes under it. */
 .server-making { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
-.server-chips > .server-making { max-width: 100%; }
+.server-making-at > .server-making { max-width: 100%; }
 .chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: var(--cursor-text); }
 .chip.server-naming.named, .chip.server-naming:focus-within { border-style: solid; border-color: var(--ink); }
 .server-name-in, .server-handle-in { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
@@ -84,20 +106,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* What the side will hold, quiet (never see-through): its words and lines the quiet ones. */
 .side-ghost { color: var(--quiet); }
 .side-ghost * { color: inherit; border-color: var(--rule); }
-/* A gear with nothing chosen keeps its place, so nothing beside it moves. */
-.server-gear.unseen { visibility: hidden; }
-.server-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
-.server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
-.server-bar > .server-gear { border-color: var(--frame-edge); color: var(--frame); } /* at the corner, the switch's quiet circle */
-.server-bar > .server-gear:hover { color: var(--ink); }
-/* Behind it, it is in ink, as a chip chosen is: what is in the boards' place is its. The ink comes at once (fading
-   it, the mark and its ground were one grey midway and the gear was gone for a frame); pressed either way it turns an
-   eighth, a tooth's step, so it comes to rest looking as it did. */
-.server-bar > .server-gear[aria-expanded='true'] { border-color: var(--ink); background: var(--ink); color: var(--ground); }
-.server-gear svg { width: 18px; height: 18px; transition: none; }
-/* (Its mark is the one every thing's menu is called by, pointing down; out, it points back up.) */
-.server-gear[aria-expanded='true'] svg { rotate: 180deg; }
-@media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
 /* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
    the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */
 .server-signed-out { margin: var(--top-line) var(--s5) 0 var(--body-left); }
@@ -286,8 +294,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .guest-link { display: grid; gap: var(--s1); }
 .guest-link:empty { display: none; }
 .guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
-.guest-chip { display: inline-flex; align-items: center; gap: var(--s1); }
-.guest-chip[aria-checked='true'] .muted { color: inherit; }
 .small-card > .small-button { align-self: flex-start; }
 .small-card.new { justify-content: center; align-items: flex-start; }
 /* Add someone you know: its word where its neighbours' names start, at the card's own padding. */

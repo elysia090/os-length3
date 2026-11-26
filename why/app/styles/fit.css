@@ -10,7 +10,7 @@
    ground has the ground's fill. */
 .clearing { background-color: var(--ground); padding-right: var(--to-cell, 0px); margin-right: calc(-1 * var(--to-cell, 0px)); }
 .home-repos-sec > h2, .git-side > .side-name { width: fit-content; }
-.server-chips .chip:not([aria-checked='true']), .band-add, .server-bar > .server-gear:not([aria-expanded='true']) { background-color: var(--ground); }
+.band-add { background-color: var(--ground); }
 
 /* A sheet is as tall as what is on it. Only the piece in the hand reaches the window's foot (it is worked in, and
    what is under its foot is scrolled to inside it); a sheet not in the hand that stood as tall was a frame round

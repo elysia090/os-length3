@@ -6,7 +6,7 @@ import {expect, test} from './fixtures.ts';
 test('a guest come back to the app is led back to their board from Home', async ({app, another}) => {
   const ada = await another('Ada');
   await ada.server.make('Trip', `${ada.handle}-trip`);
-  await ada.server.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
+  await ada.server.manage();
   await ada.server.view.getByRole('tab', {name: /^Boards/}).click();
   const boards = ada.server.view.getByRole('tabpanel', {name: /^Boards/});
   await boards.getByRole('switch', {name: 'Guest posting enabled'}).click();

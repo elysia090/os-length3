@@ -65,11 +65,6 @@ export class Row {
     this.element.append(this.desk.map.element);
   }
 
-  /** The desk turned to the row's start, where the room's own sheet is. */
-  toStart() {
-    this.desk.turn(0);
-  }
-
   /** The slots, one a box. */
   private slots(): HTMLElement[] {
     return [...this.track.children].filter((el) => el.classList.contains('slide')) as HTMLElement[];
