@@ -97,14 +97,20 @@ test('switching keeps Git, leaves the old paper while it reads, and returns to t
       field.focus();
       field.setSelectionRange(1, 6, 'forward');
     });
-    await page.evaluate(() => window.gitFoldersFixture.holdAtlas());
+    await page.evaluate(() => {
+      window.gitFoldersFixture.holdAtlas();
+      // Even fixture data can leave this far down the visible desk.
+      document.body.style.minHeight = '1200px';
+      window.scrollTo(0, 18);
+    });
+    assert.equal(await page.evaluate(() => window.scrollY), 18);
     await folder(page, 'hello').click();
     await item(page, 'atlas').click();
     await expect(paper(page)).toContainText('Record frame timings');
     await expect(folder(page, 'hello')).toBeVisible();
     await page.evaluate(() => window.gitFoldersFixture.releaseAtlas());
     await expect(folder(page, 'atlas')).toBeVisible();
-    await expect(paper(page)).toContainText('No issues yet');
+    await expect(page.getByRole('region', {name: 'Issues', exact: true})).toContainText('No issues yet');
     assert.deepEqual(await page.evaluate(() => window.gitFoldersFixture.requests
       .filter(r => r.name === 'repo_tree' && r.repo === 'third')), [], 'not every other repo was read');
     await folder(page, 'atlas').press('ArrowUp');
@@ -113,6 +119,7 @@ test('switching keeps Git, leaves the old paper while it reads, and returns to t
     await expect(folder(page, 'hello')).toBeVisible();
     await expect(paper(page)).toContainText('Record frame timings');
     await expect(summary).toBeFocused();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(18);
     assert.deepEqual(await summary.evaluate(e => [(e as HTMLTextAreaElement).selectionStart, (e as HTMLTextAreaElement).selectionEnd]), [1, 6]);
     assert.equal(await page.evaluate(() => window.gitFoldersFixture.here()), 'hello');
   } finally { await close(); }
