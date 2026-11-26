@@ -37,7 +37,7 @@ pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
             id: s("id"), issue: Some(s("issue")).filter(|i| !i.is_empty()), kind: Some(s("kind")).filter(|k| !k.is_empty()),
             title: s("title"), note: s("note"), time: c["time"].as_u64().unwrap_or(0), folders, files,
             added: c["added"].as_u64().unwrap_or(0), removed: c["removed"].as_u64().unwrap_or(0),
-            merged: c["merged"].as_str().map(String::from), handed: None,
+            merged: c["merged"].as_str().map(String::from),
         }
     }).collect())
 }
@@ -64,10 +64,7 @@ pub struct Cut {
     pub removed: u64,
     /// For a merge: the line's commit main took.
     pub merged: Option<String>,
-    /// On an issue's work: the version of its change it was handed in as, by itself (none when that did not go:
-    /// the next commit hands it in).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub handed: Option<i64>,
+
 }
 
 /// How many commits the work on line `l` has made since it began, and how many of them are not pushed yet.

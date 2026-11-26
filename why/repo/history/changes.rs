@@ -24,15 +24,18 @@ pub(super) fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
             for (i, (k, t)) in ops.iter().enumerate() {
                 let at = match k { Kind::Del => { old += 1; old } Kind::Add => { new += 1; new } Kind::Same => { old += 1; new += 1; new } };
                 if !keep[i] { continue; }
-                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into(), at: None }); }
-                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string(), at: Some(at) });
+                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into(), at: None, old: None, new: None }); }
+                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string(), at: Some(at),
+                    old: (*k != Kind::Add).then_some(old), new: (*k != Kind::Del).then_some(new) });
             }
         }
+        let added = lines.iter().filter(|l| l.kind == "add").count();
+        let removed = lines.iter().filter(|l| l.kind == "del").count();
         let keep = lines.len().min(left);
         let more = lines.len() - keep;
         lines.truncate(keep);
         left -= keep;
-        out.push(FileDiff { path: p.path, status: p.status, binary: p.binary, lines, more });
+        out.push(FileDiff { path: p.path, status: p.status, binary: p.binary, added, removed, lines, more });
     }
     Ok(out)
 }
@@ -261,6 +264,9 @@ pub struct FileDiff {
     pub status: &'static str,
     pub binary: bool,
     pub lines: Vec<DiffLine>,
+    /// Counts before display truncation.
+    pub added: usize,
+    pub removed: usize,
     /// Lines left out past the limit.
     pub more: usize,
 }
@@ -273,6 +279,10 @@ pub struct DiffLine {
     /// Which line it is: in the new text for "add" and "same", in the old for "del".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub at: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new: Option<usize>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]

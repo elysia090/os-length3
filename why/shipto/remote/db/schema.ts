@@ -365,7 +365,7 @@ export const review = pgTable('review', {
   check('review_marks', sql`jsonb_typeof(${t.marks}) = 'array' and jsonb_array_length(${t.marks}) <= 200 and octet_length(${t.marks}::text) <= 40000`)]);
 
 /** A review as clients read it, newest first in its change. */
-export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
+export interface Review { id?: string; version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
 
 // ---- Inbox (inbox.ts) ----
 

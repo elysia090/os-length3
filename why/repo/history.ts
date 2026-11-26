@@ -10,25 +10,27 @@ import {core, failure} from '../api/host.ts';
 import type {Answer} from '../api/client.ts';
 import {restore} from './putback.ts';
 import {store} from './repos.ts';
+import type {ReviewLine, Revision} from './review-lines.ts';
+export type {ReviewLine, Revision} from './review-lines.ts';
 import type {DiffLine} from './linediff.ts';
 
 export interface FileChange { path: string; status: 'added' | 'modified' | 'removed'; added: number; removed: number; binary: boolean }
 export interface Folder { folder: string; files: FileChange[]; added: number; removed: number }
 export interface Changes { connected: boolean; folders: Folder[]; files: number; added: number; removed: number }
-export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null;
-  /** On an issue's work: the version of its change it was handed in as, by itself. */
-  handed?: number }
+export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null }
 export type {DiffLine} from './linediff.ts';
-export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
+export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number; added?: number; removed?: number }
 
 export const changes = (repo: string) => core<Changes>('history_changes', {repo});
 /** How many files `changes` would list, none of them read for their lines. */
+export const mainChanges = (repo: string) => core<Changes>('history_main_changes', {repo});
+export const logOf = (repo: string, on: string) => core<Cut[]>('history_line_log', {repo, on});
 export const changed = (repo: string) => core<number>('history_changed', {repo});
 export const diff = (repo: string) => core<FileDiff[]>('history_diff', {repo});
 export const log = (repo: string) => core<Cut[]>('history_log', {repo});
 
 /** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
-export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> => core<Cut>('history_cut', {repo, issue, line, note});
+export const cut = (repo: string, issue: string | null, line: string, note: string, on?: string): Promise<Cut> => core<Cut>('history_cut', {repo, issue, line, note, on});
 
 /**
  * Put a file back as it was at the last commit: its text again, a removed
@@ -39,7 +41,7 @@ export const putBack = async (repo: string, path: string): Promise<void> =>
 
 // ---- the work on an issue, and what it hands to main ----
 
-export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
+export interface Review { id?: string; version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
 export interface Change {
   id: string; repo: string; line: string; issue: string; kind: string; title: string; version: number;
   base: string | null; head: string; state: 'open' | 'merged' | 'rejected' | 'reset'; note: string;
@@ -78,6 +80,9 @@ export async function standings(repos: readonly string[]): Promise<(Standing | E
 export const push = async (repo: string): Promise<void> => { await core('history_push', {repo}); };
 /** Change: what the work pushed is handed to main (again: its next version). */
 export const submit = (repo: string, note = ''): Promise<Change> => core<Change>('history_submit', {repo, note});
+/** Publish the exact recorded head as a single offer, leaving neither half on refusal. */
+export const submitAt = (repo: string, on: string, head: string, note = ''): Promise<Change> =>
+  core<Change>('history_submit_at', {repo, on, head, note});
 /** Reset: take back the change this work handed in. */
 export const reset = (repo: string): Promise<Change> => core<Change>('history_reset', {repo});
 
@@ -88,4 +93,14 @@ export const merge = (repo: string, c: Change): Promise<Change> => core<Change>(
 export const reject = (repo: string, c: Change, note = ''): Promise<Change> => core<Change>('change_reject', {repo, id: c.id, note});
 
 /** A change's diff against where it began. */
-export const changeDiff = (repo: string, c: Change): Promise<FileDiff[]> => core<FileDiff[]>('change_diff', {repo, id: c.id});
+export const changeDiff = (repo: string, c: Change): Promise<FileDiff[]> => changeDiffAt(repo, c.id, c);
+
+const revisionOf = ({version, head}: Revision): Revision => ({version, head});
+export const reviewAt = (repo: string, c: Change, verdict: 'approve' | 'comment', request: string, note = '', lines: ReviewLine[] = []): Promise<Change> =>
+  core<Change>('change_review_at', {repo, id: c.id, expected: revisionOf(c), verdict, note, lines, request});
+export const mergeAt = (repo: string, c: Change): Promise<Change> =>
+  core<Change>('change_merge_at', {repo, id: c.id, expected: revisionOf(c)});
+export const changeDiffAt = (repo: string, id: string, expected: Revision): Promise<FileDiff[]> =>
+  core<FileDiff[]>('change_diff_at', {repo, id, expected: revisionOf(expected)});
+export const lineSource = (repo: string, id: string, expected: Revision, line: ReviewLine): Promise<string> =>
+  core<string>('change_line_source', {repo, id, expected: revisionOf(expected), line});
