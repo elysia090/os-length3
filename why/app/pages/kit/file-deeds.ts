@@ -51,7 +51,7 @@ export async function untitled(repo: string, into: string, like?: string): Promi
   return joined(into, n);
 }
 
-interface Deeds {
+export interface Deeds {
   repo: string;
   /** Its path in the repo ('' for the repo itself), the name it is shown by, and whether it is a folder. */
   path: string;
@@ -69,10 +69,43 @@ interface Deeds {
   move(to: string): Promise<void>;
   /** Deleted from the store. */
   removed(): Promise<void> | void;
+  /** A named row can hold its own confirmation instead of borrowing the menu's space. */
+  askDelete?(): void;
   /** Put back as it was at the last commit (Revert): the menu's work is done. */
   reverted(): void;
   /** Not now: put back as it was; the keyboard goes back to what had it. */
   back(): void;
+}
+
+type Removal = Pick<Deeds, 'repo' | 'path' | 'name' | 'dir' | 'removed'>;
+
+/** The final deletion is the only red step, and never the initial focus. */
+export function fileDeleteAsk(d: Removal, back: () => void, foot: (no: HTMLElement, yes: HTMLElement) => HTMLElement = answers,
+  inline = false) {
+  const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+  const yes = h('button', {type: 'button', class: 'button small-button file-delete-confirm'}, t('Delete')) as HTMLButtonElement;
+  const question = d.dir ? t('Delete {name} and its contents?', {name: d.name}) : t('Delete {name}?', {name: d.name});
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const label = h('span', {}, question);
+  const element = h('div', {class: inline ? 'tree-file-ask' : 'pop-ask', role: 'group', 'aria-label': question},
+    ...(inline ? [label, yes, no, error] : [label, error, foot(no, yes)]));
+  const shown = performance.now();
+  no.addEventListener('click', back);
+  yes.addEventListener('click', async () => {
+    if (yes.disabled || !element.isConnected || performance.now() - shown < SETTLE) return;
+    yes.disabled = no.disabled = true;
+    element.setAttribute('aria-busy', 'true');
+    error.textContent = '';
+    try {
+      await store.remove(d.repo, d.path);
+      await d.removed();
+    } catch (err) {
+      yes.disabled = no.disabled = false;
+      error.textContent = errorText(err);
+      no.focus();
+    } finally { element.removeAttribute('aria-busy'); }
+  });
+  return {element, focus: () => no.focus({preventScroll: true})};
 }
 
 /** The menu of `d`, to be laid where its caller lays it (the first deed is for the keyboard to go to). */
@@ -150,27 +183,11 @@ export function fileDeeds(d: Deeds): HTMLElement {
     // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
     rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true)));
     rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
-      // Asked in its place: the deed on the side it was pressed, Not now on the other.
-      const foot = askFoot(b, pop);
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
-      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Delete')) as HTMLButtonElement;
-      const error = h('p', {class: 'error small', role: 'alert'});
-      const ask = h('div', {class: 'pop-ask'},
-        h('p', {class: 'muted small'}, d.dir ? t('Delete {name} and its contents', {name: d.name}) : t('Delete {name}', {name: d.name})),
-        error, foot(no, yes));
-      no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); d.back(); });
-      const shown = performance.now();
-      yes.addEventListener('click', async () => {
-        if (performance.now() - shown < SETTLE) return;
-        yes.disabled = true;
-        try {
-          await store.remove(repo, path);
-          await d.removed();
-        } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
-      });
-      b.replaceWith(ask);
-      yes.focus();
-    }, true));
+      if (d.askDelete) { d.askDelete(); return; }
+      const ask = fileDeleteAsk(d, () => { ask.element.replaceWith(b); b.focus(); d.back(); }, askFoot(b, pop));
+      b.replaceWith(ask.element);
+      ask.focus();
+    }));
   }
   pop.append(h('div', {class: 'pop-head muted small'}, d.head ?? d.name), ...rows);
   // A file changed since the repo's last commit can be put back as it was there: Revert, last, after the deeds that

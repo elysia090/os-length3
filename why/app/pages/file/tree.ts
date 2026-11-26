@@ -10,7 +10,7 @@ import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import {onChange, store} from '../../../repo/repos.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../../prompt/system.ts';
-import {fileDeeds, joined, split} from '../kit/file-deeds.ts';
+import {fileDeeds, fileDeleteAsk, joined, split, type Deeds} from '../kit/file-deeds.ts';
 import type {Writing} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 
@@ -81,7 +81,7 @@ export class FileTree {
   private deskRepo: string | null = null;
   private building = 0;
   /** The menu of one row, while it is out, and the row's name to go back to. */
-  private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement} | null = null;
+  private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement; inline?: () => void} | null = null;
   /** Each folder's way to be read again, open, by its row. */
   private folders = new WeakMap<HTMLElement, () => Promise<void>>();
   /** A row being carried by the pointer, to be let go on a folder of its repo. */
@@ -127,7 +127,11 @@ export class FileTree {
       event.preventDefault();
       event.stopPropagation();
       // The topmost first: a row's menu goes, and the keyboard back to its row.
-      if (this.pop) { const back = this.pop.name; this.unpop(); back.focus(); return; }
+      if (this.pop) {
+        if (this.pop.element.hasAttribute('aria-busy')) return;
+        const back = this.pop.name;
+        this.unpop(); back.focus(); return;
+      }
       const at = document.activeElement;
       const back = !!at && (this.element.contains(at) || at === this.trigger);
       this.close();
@@ -565,9 +569,10 @@ export class FileTree {
   private unpop() {
     if (!this.pop) return;
     this.pop.more.setAttribute('aria-expanded', 'false');
-    const gone = this.pop.element;
-    putAway(gone, () => gone.remove());
+    const {element: gone, inline} = this.pop;
     this.pop = null;
+    if (inline) { inline(); gone.remove(); }
+    else putAway(gone, () => gone.remove());
   }
 
   /**
@@ -615,7 +620,19 @@ export class FileTree {
     const parent = item.parentElement?.closest('li') as HTMLElement | null;
     /** A folder of the repo as the tree knows it (its absolute path) and its row. */
     const abs = (folder: string) => `/root/${at.repo}${folder ? `/${folder}` : ''}`;
-    const pop = fileDeeds({repo: at.repo, path: at.path, name: e.name, dir,
+    let pop: HTMLElement;
+    const askDelete = () => {
+      const ask = fileDeleteAsk(deeds, () => { this.unpop(); name.focus({preventScroll: true}); }, undefined, true);
+      this.unpop();
+      pop = ask.element;
+      row.classList.add('tree-row-asking');
+      row.append(pop);
+      more.setAttribute('aria-expanded', 'true');
+      this.pop = {element: pop, name, more, inline: () => row.classList.remove('tree-row-asking')};
+      ask.focus();
+    };
+    const deeds: Deeds = {repo: at.repo, path: at.path, name: e.name, dir,
+      ...(this.onDesk ? {askDelete} : {}),
       // Made in a folder: the folder open from now, not once it is written (a row drawn meanwhile is drawn open).
       opening: (folder) => expandedPaths.add(abs(folder)),
       made: async (made, file) => {
@@ -634,13 +651,20 @@ export class FileTree {
         for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
         // The rows under it come up into its place, from where they stood.
         const gap = item.getBoundingClientRect().height;
-        const place = [...item.parentElement?.children ?? []].indexOf(item);
+        const siblings = [...item.parentElement?.children ?? []];
+        const place = siblings.indexOf(item);
+        const neighbor = (siblings[place + 1] ?? siblings[place - 1])
+          ?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.dataset.path;
         this.unpop();
         await this.again(parent);
+        if (this.deskRepo !== presented) return;
         closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
-        this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
+        this.settle((presented && neighbor ? this.nameAt(neighbor) : null)
+          ?? parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
       },
-      back: () => {}});
+      back: () => {}};
+    if (this.onDesk && deed === 'trash') { askDelete(); return; }
+    pop = fileDeeds(deeds);
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
     // Two cells from the tree's edge (one past its shadow), its top the row's: a sheet as the tree is, the row's name

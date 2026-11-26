@@ -109,6 +109,16 @@ body.forge-routes .forge-route-tools { display: grid; border-top: 1px solid var(
 .file-tree.on-forge-desk .tree-more { visibility: hidden; }
 .file-tree.on-forge-desk .tree-more[aria-expanded='true'] { visibility: visible; }
 body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tree.on-forge-desk { background: var(--ground); outline-color: var(--edge); }
+/* A Files deed asks in the row whose file it will affect, not in a second place. */
+.file-tree.on-forge-desk .tree-row-asking > :not(.tree-file-ask) { display: none; }
+.file-tree.on-forge-desk .tree-file-ask { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;
+  padding-inline-start: var(--in, 0px); font: 400 16px/19px var(--mono); color: var(--ink); }
+.file-tree.on-forge-desk .tree-file-ask > span { overflow-wrap: anywhere; }
+.file-tree.on-forge-desk .tree-file-ask > .error { flex-basis: 100%; margin: 0; font: inherit; }
+.file-tree.on-forge-desk .tree-file-ask > .button { border: 0; min-height: 24px; padding: 0; font: inherit;
+  text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.button.file-delete-confirm:not(:disabled) { color: var(--off); }
+.button.file-delete-confirm:not(:disabled):is(:hover, :focus-visible) { color: var(--off); border-color: var(--off); }
 .file-tree.on-forge-desk > .tree-pop { box-shadow: none; }
 @media (hover: none) {
   .file-tree.on-forge-desk .tree-quick:not(.tree-quick-root) { display: none; }
@@ -118,3 +128,4 @@ body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tr
   body.forge-place { --forge-origin: 24px; --forge-slot: 24px; --forge-slot-width: calc(100vw - 48px); }
   .forge-layout .desk-room:is([data-place='Prompt'], [data-place='Files']) > :is(.desk, .row-map) { visibility: hidden; }
 }
+.file-tree.on-forge-desk:has(.tree-row-asking) :is(.tree-quick-root, .tree-desk-close) { visibility: hidden; }

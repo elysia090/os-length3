@@ -86,6 +86,8 @@ export default {
   'Leave out {name}': '「{name}」を作らない',
   'folder': 'folder',
   'Delete {name}': '{name}を削除',
+  'Delete {name}?': '「{name}」を削除しますか？',
+  'Delete {name} and its contents?': '「{name}」を中身ごと削除しますか？',
   'Delete {name} and its contents': '{name}を中身ごと削除',
   'Unsaved': '未保存',
 
