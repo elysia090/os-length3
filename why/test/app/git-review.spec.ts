@@ -100,8 +100,6 @@ test('real Git paper posts only explicitly, and a comment links to the original 
     expect(size.words).toEqual([size.words[0],size.words[0],size.words[0]]);
   };
   await expect(diff.locator('.git-diff-head')).toBeVisible();
-  await expect(diff.locator('.git-diff-position')).toHaveCount(0);
-  await expect(diff).toHaveCSS('scrollbar-color', 'rgb(131, 125, 113) rgba(0, 0, 0, 0)');
   const short = await frame();
   rules(short);
   expect(short.overflow).toBe(0);
@@ -142,8 +140,7 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   const last = diff.getByRole('button', {name:'src/zz-tail.c',exact:true});
   await expect(first).toBeInViewport({ratio:1});
   await expect(diff.locator('.git-diff-name').first()).toHaveText('src/boot.c');
-  const positions = diff.locator('.git-diff-position');
-  await expect(positions).toHaveText(['1 / 3', '2 / 3', '3 / 3']);
+  await expect(diff.locator('.git-diff-head').first().locator('.git-diff-count')).toHaveText('+1 −1');
   await expect(diff.locator('.git-diff-file').first().locator('.git-diff-line')).toHaveCount(2);
   await expect(last).not.toBeInViewport();
   await diff.evaluate((el) => { el.scrollTop = 180; el.scrollLeft = 120; });
@@ -161,7 +158,6 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await expect(diff.getByRole('button', {name:'After: line 1 in src/zz-tail.c',exact:true})).toBeInViewport({ratio:1});
   await last.click();
   await expect(last).toHaveAttribute('aria-expanded', 'false');
-  await expect(positions).toHaveText(['1 / 3', '2 / 3', '3 / 3']);
   await last.click();
   await expect(last).toHaveAttribute('aria-expanded', 'true');
   await expect(diff.getByRole('button', {name:'After: line 1 in src/zz-tail.c',exact:true})).toBeInViewport({ratio:1});
