@@ -40,11 +40,9 @@ export async function clipboardEdit(edit: Exclude<Edit, 'Select All'>, selection
 
 interface Menu {
   close(back?: boolean): void;
-  fit(): void;
   enabled(): boolean;
   signal: AbortSignal;
   item(name: string, run: () => void, options?: {disabled?: boolean; checked?: boolean}): HTMLButtonElement;
-  divide(): void;
   say(message: string): void;
 }
 
@@ -52,11 +50,12 @@ let closeActive: (() => void) | undefined;
 
 /** One contextual menu on the desk. The object under the pointer supplies actions, not its own popup. */
 export function pointerMenu(at: Point, label: string, owns: () => boolean, restore: () => void,
-  items: (menu: Menu) => void, firstFocus = false) {
+  items: (menu: Menu) => void, {firstFocus = false, onDocument = false}: {firstFocus?: boolean; onDocument?: boolean} = {}) {
   closeActive?.();
   const layer = new AbortController();
   const options = {signal: layer.signal};
-  const menu = h('div', {class: 'forge-menu forge-document-menu', role: 'menu', 'aria-label': label, tabindex: '-1'});
+  const menu = h('div', {class: 'forge-menu forge-document-menu', role: 'menu', 'aria-label': label, tabindex: '-1',
+    ...(onDocument ? {'data-context': 'document'} : {})});
   const status = h('span', {class: 'forge-menu-status', role: 'status'});
   const buttons: HTMLButtonElement[] = [];
   const enabled = () => !layer.signal.aborted && owns();
@@ -78,7 +77,7 @@ export function pointerMenu(at: Point, label: string, owns: () => boolean, resto
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
   }
-  items({close, fit, enabled, signal: layer.signal, item(name, run, opts) {
+  items({close, enabled, signal: layer.signal, item(name, run, opts) {
     const check = opts?.checked;
     const b = h('button', {class: 'forge-menu-item', type: 'button', role: check === undefined ? 'menuitem' : 'menuitemcheckbox',
       ...(check === undefined ? {} : {'aria-checked': String(check)})}, name) as HTMLButtonElement;
@@ -87,7 +86,7 @@ export function pointerMenu(at: Point, label: string, owns: () => boolean, resto
     buttons.push(b);
     menu.append(b);
     return b;
-  }, divide() { menu.append(h('hr', {role: 'separator'})); }, say(message) { status.textContent = message; fit(); }});
+  }, say(message) { status.textContent = message; fit(); }});
   menu.append(status);
   document.body.append(menu);
   fit();
@@ -128,8 +127,7 @@ const paper = (at: EventTarget | null) => at instanceof HTMLElement
   && !at.closest('button, a, input, select, [contenteditable], [data-raw], [data-hushed]');
 const menuKey = (e: KeyboardEvent) => !e.isComposing && (e.key === 'ContextMenu' || e.shiftKey && e.key === 'F10');
 
-interface EditActions {beside?: () => BesideOption | null; close?: () => void}
-function editableItems(menu: Menu, area: HTMLTextAreaElement, selected: Selection, owns: () => boolean, actions: EditActions) {
+function editableItems(menu: Menu, area: HTMLTextAreaElement, selected: Selection, owns: () => boolean, beside?: () => BesideOption | null) {
   let busy = false;
   const run = async (edit: Edit) => {
     if (busy || !menu.enabled()) return;
@@ -157,7 +155,7 @@ function editableItems(menu: Menu, area: HTMLTextAreaElement, selected: Selectio
       || (area.readOnly && (edit === 'Cut' || edit === 'Paste')) || (edit === 'Select All' && !selected.value);
     menu.item(t(edit), () => { void run(edit); }, {disabled});
   }
-  const view = actions.beside?.();
+  const view = beside?.();
   if (view) {
     const toggle = menu.item(t('Beside'), async () => {
       if (busy || !menu.enabled()) return;
@@ -170,20 +168,16 @@ function editableItems(menu: Menu, area: HTMLTextAreaElement, selected: Selectio
       toggle.focus({preventScroll: true});
     }, {checked: view.checked});
   }
-  if (actions.close) {
-    menu.divide();
-    menu.item(t('Close'), () => { menu.close(); actions.close?.(); });
-  }
   area.addEventListener('input', () => menu.close(), {signal: menu.signal});
 }
 
-function editMenu(at: Point, label: string, area: HTMLTextAreaElement, current: () => HTMLTextAreaElement | null, actions: EditActions) {
+function editMenu(at: Point, area: HTMLTextAreaElement, current: () => HTMLTextAreaElement | null, beside?: () => BesideOption | null) {
   const selected = selectionOf(area);
   const owns = () => current() === area && showable(area) && !area.disabled && sameSelection(area, selected);
-  return pointerMenu(at, label, owns, () => {
+  return pointerMenu(at, t('Edit text'), owns, () => {
     area.focus({preventScroll: true});
     area.setSelectionRange(selected.selectionStart, selected.selectionEnd, selected.selectionDirection);
-  }, (menu) => editableItems(menu, area, selected, owns, actions));
+  }, (menu) => editableItems(menu, area, selected, owns, beside), {onDocument: true});
 }
 
 /** The file's actual editor, not a directory row, terminal, loading text, or a stale textarea. */
@@ -201,14 +195,14 @@ export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElem
     const area = current();
     if (!paper(event.target) || !eligible(area)) return;
     event.preventDefault(); event.stopPropagation();
-    putAway = editMenu({x: event.clientX, y: event.clientY}, t('Edit text'), area, current, {beside});
+    putAway = editMenu({x: event.clientX, y: event.clientY}, area, current, beside);
   }, options);
   owner.addEventListener('keydown', (event) => {
     const area = current();
     if (event.target !== area || !eligible(area) || !paper(area) || !menuKey(event)) return;
     event.preventDefault(); event.stopPropagation();
     const r = area.getBoundingClientRect();
-    putAway = editMenu({x: r.left, y: r.top + 24}, t('Edit text'), area, current, {beside});
+    putAway = editMenu({x: r.left, y: r.top + 24}, area, current, beside);
   }, options);
   return () => { putAway?.(); listening.abort(); };
 }
@@ -217,49 +211,35 @@ export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElem
 export function terminalMenu(owner: HTMLElement, current: () => HTMLTextAreaElement, hide: () => void) {
   const life = new AbortController();
   let dismiss: (() => void) | undefined;
-  const open = (at: Point, from: HTMLElement) => {
+  const open = (at: Point) => {
     const area = current();
-    if (from === area) {
-      dismiss = editMenu(at, t('Terminal'), area, current, {close: hide});
-      return;
-    }
+    const draft = paper(area) ? selectionOf(area) : null;
     const restore = document.activeElement instanceof HTMLElement && owner.contains(document.activeElement) ? document.activeElement : area;
     const selection = getSelection(), range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-    const selected = range && from.closest('.term-out')?.contains(range.commonAncestorContainer) ? range.toString() : '';
     dismiss = pointerMenu(at, t('Terminal'), () => showable(owner) && current() === area, () => {
       restore.focus({preventScroll: true});
-      if (!selected || !range?.commonAncestorContainer.isConnected) return;
-      selection?.removeAllRanges(); selection?.addRange(range);
-    }, (menu) => {
-      if (selected) {
-        const copy = menu.item(t('Copy'), async () => {
-          copy.disabled = true;
-          try { await navigator.clipboard.writeText(selected); menu.close(true); }
-          catch {
-            if (menu.enabled()) {
-              copy.disabled = false;
-              menu.say(t('Clipboard access unavailable. No text was changed.'));
-            }
-          }
-        });
-        menu.divide();
+      if (restore === area && draft && area.value === draft.value) {
+        area.setSelectionRange(draft.selectionStart, draft.selectionEnd, draft.selectionDirection);
+      } else if (range && owner.contains(range.commonAncestorContainer)) {
+        selection?.removeAllRanges(); selection?.addRange(range);
       }
-      menu.item(t('Close'), () => { menu.close(); hide(); });
-    });
+    }, (menu) => { menu.item(t('Close'), () => { menu.close(); hide(); }); });
   };
   const options = {signal: life.signal};
+  // Pointer Close is also available over masked input; its text is never taken for menu actions.
+  const pointerTarget = (at: EventTarget | null) => at === current() || paper(at);
   owner.addEventListener('pointerdown', (e) => {
-    if (e.button === 2 && showable(owner) && paper(e.target)) e.preventDefault();
+    if (e.button === 2 && showable(owner) && pointerTarget(e.target)) e.preventDefault();
   }, {...options, capture: true});
   owner.addEventListener('contextmenu', (e) => {
-    if (!showable(owner) || !paper(e.target) || !(e.target instanceof HTMLElement)) return;
+    if (!showable(owner) || !pointerTarget(e.target)) return;
     e.preventDefault(); e.stopPropagation();
-    open({x: e.clientX, y: e.clientY}, e.target);
+    open({x: e.clientX, y: e.clientY});
   }, options);
   owner.addEventListener('keydown', (e) => {
     if (!showable(owner) || !paper(e.target) || !(e.target instanceof HTMLElement) || !menuKey(e)) return;
     e.preventDefault(); e.stopPropagation();
-    const r = e.target.getBoundingClientRect(); open({x: r.left, y: r.top + 24}, e.target);
+    const r = e.target.getBoundingClientRect(); open({x: r.left, y: r.top + 24});
   }, options);
   return {dismiss: () => dismiss?.(), drop: () => { dismiss?.(); life.abort(); }};
 }

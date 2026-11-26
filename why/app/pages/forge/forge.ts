@@ -136,6 +136,7 @@ class Forge {
   private get prompt() { return this.promptPaper.element; }
   private lastEditor: HTMLTextAreaElement | null = null;
   private paperReturn: PaperReturn | null = null;
+  private paperMoved = false;
   private readonly placeHeading: HTMLElement;
   private placeInHand: ForgePlace = 'Forge';
   private folderOut: (() => void) | null = null;
@@ -193,9 +194,23 @@ class Forge {
         if (e.target instanceof HTMLTextAreaElement) this.lastEditor = e.target;
       }
     });
+    // A body-mounted menu can borrow and return focus without changing a document's place.
+    // Only actually working in a paper updates where the tool returns.
+    const moved = (event: Event) => {
+      if (!this.prompt.hidden && event.target instanceof Element && event.target.closest('.desk-file'))
+        this.paperMoved = true;
+    };
+    this.center.addEventListener('input', moved);
+    this.center.addEventListener('wheel', moved, {passive: true});
+    this.center.addEventListener('pointerdown', (e) => { if (e.button === 0) moved(e); });
+    this.center.addEventListener('keydown', (e) => {
+      if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) moved(e);
+    });
     this.center.addEventListener('focusout', (e) => {
-      if (!this.prompt.hidden && e.target instanceof HTMLTextAreaElement && e.target.closest('.desk-file'))
-        this.paperReturn=returnTo(e.target);
+      if (this.paperMoved && !this.prompt.hidden && e.target instanceof HTMLTextAreaElement && e.target.closest('.desk-file')) {
+        this.paperReturn = returnTo(e.target);
+        this.paperMoved = false;
+      }
     });
     const drag = new Drag(this.center);
     this.termLinks();
@@ -380,6 +395,7 @@ class Forge {
         if(this.placeInHand==='Files')this.selectPlace('Forge',false);
         const field=this.lastEditor;
         this.paperReturn=field?.isConnected&&!field.closest('[hidden]')?returnTo(field):null;
+        this.paperMoved=false;
         this.promptPaper.show();
       }
       this.hand('Prompt');
@@ -390,8 +406,9 @@ class Forge {
       return;
     }
     if(this.prompt.hidden)return;
-    const saved=this.paperReturn;
-    this.paperReturn=null;this.promptPaper.hide();this.hand(this.placeInHand);
+    const active = document.activeElement;
+    const saved = this.paperMoved && active instanceof HTMLTextAreaElement && active.closest('.desk-file') ? returnTo(active) : this.paperReturn;
+    this.paperReturn=null;this.paperMoved=false;this.promptPaper.hide();this.hand(this.placeInHand);
     if(!focus)return;
     if(saved?.editor.isConnected && !saved.editor.closest('[hidden]')) {
       const {editor}=saved;
@@ -684,7 +701,7 @@ class Forge {
       this.startOut = pointerMenu({x: left, y: top}, t('Workspace'), () => !this.now.repo && empty.isConnected && this.visible(),
         () => first.focus({preventScroll: true}), (menu) => {
           menu.item(t('Open Folder'), () => { this.closeStart(); this.folders(first); });
-        }, true);
+        }, {firstFocus: true});
     };
     empty.addEventListener('contextmenu', (e) => { e.preventDefault(); start(e.clientX, e.clientY); });
     first.addEventListener('keydown', (e) => {

@@ -636,8 +636,7 @@ the sheet after its edits are saved.
 pressed while fully in sight stays under the hand. The keyboard and the
 row's map can take a piece to the desk's edge; the same stops fit a narrow
 window. The wheel over a paper scrolls that paper itself, not past it into
-the desk.
- The terminal stays in its own bay as the document row turns.
+the desk. The terminal stays in its own bay as the document row turns.
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the

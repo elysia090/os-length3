@@ -73,7 +73,7 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
   background-size: var(--s1) var(--s1);
 }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) :is(.desk-label, .gutter) { color: var(--forge-desk-text); }
-body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] > .desk .desk-box.held:not([data-kind]) {
+body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] > .desk .desk-box.held:not([data-kind]) {
   --paper-base: var(--paper);
   --paper-check: var(--forge-paper-grain);
   --file-thumb: var(--forge-paper-thumb);
@@ -81,12 +81,12 @@ body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'
   box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
   color: var(--ink);
 }
-body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
-body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }
+body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
+body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) .desk-dir { color: var(--forge-desk-text); }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .scroll-mark.down { display: none; }
-body:has(.forge-document-menu) .forge-layout .desk .desk-box > .desk-label { font-weight: 400; }
-body:has(.forge-document-menu) .forge-layout .desk .desk-close { display: none; }
+body:has(.forge-document-menu[data-context='document']) .forge-layout .desk .desk-box > .desk-label { font-weight: 400; }
+body:has(.forge-document-menu[data-context='document']) .forge-layout .desk .desk-close { display: none; }
 
 /* Where the written paper ends, its × sits outside the upper right, in the same row as the file name. */
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .desk-close,
