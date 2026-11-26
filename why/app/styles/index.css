@@ -25,6 +25,7 @@
 @import './pane-rows.css';
 @import './bench-2.css';
 @import './search.css';
+@import './search-screen.css';
 @import './diff.css';
 @import './file-tree.css';
 @import './terminal.css';

@@ -199,7 +199,16 @@ class GitPage {
       if (place === 'Git') return;
       if (this.at) ctx.remember(this.at);
       if (ctx.forgePlace) void ctx.forgePlace(place); else void ctx.go('forge');
-    }, () => ctx.placeCommands?.(['forge']) ?? []);
+    }, () => ctx.placeCommands?.(['forge']) ?? [], (origin) => {
+      if (!this.at) return;
+      const before = bookmark(this.element, origin instanceof HTMLElement ? origin : null);
+      ctx.searchRepo?.(this.at, origin, () => {
+        // A result opens Forge. When Back rebuilds Git, use its existing focus bookmark, not a detached element.
+        const work = document.querySelector<HTMLElement>('#page > .git-layout');
+        const control = before && work?.querySelectorAll<HTMLElement>(before.selector)[before.ordinal];
+        return control ?? work?.querySelector<HTMLElement>('.git-desk') ?? null;
+      });
+    });
     this.places.set('Git', false);
     this.drawKnown();
     this.load();

@@ -1,0 +1,61 @@
+/* Keep the working surfaces laid out, but out of sight and interaction while Search is in hand. */
+[data-search-away] { visibility: hidden; }
+
+/* An independent Search destination; the old desk remains behind it, neither moved nor used. */
+.search-screen {
+  position: fixed; inset: 0 auto 0 0; width: 100vw; z-index: 40; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable both-edges;
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
+  color: var(--nighthawks-paper);
+}
+.search-screen-content {
+  max-width: min(760px, calc(100% - 4 * var(--u)));
+  margin: min(20dvh, calc(7 * var(--u))) auto var(--u);
+  animation: search-arrival calc(140ms * var(--pace)) var(--spring) backwards;
+}
+@keyframes search-arrival { from { transform: translateY(var(--s2)); } }
+@media (prefers-reduced-motion: reduce) { .search-screen-content { animation: none; } }
+.search-screen-head { display: flex; min-height: var(--h-row); align-items: baseline; justify-content: center; gap: var(--s3); margin: 0 0 var(--s4); }
+.search-screen-head h1 { margin: 0; font: 700 var(--t-head)/1 var(--display); }
+.search-screen-repo { min-width: 0; overflow-wrap: anywhere; font: var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); }
+.search-screen-back {
+  position: absolute; top: var(--s3); left: var(--s4);
+  display: inline-flex; align-items: center; gap: var(--s1); min-height: var(--h-row); padding: 0 var(--s2);
+  border: 0; border-radius: var(--r-key); background: transparent; color: var(--nighthawks-desk-quiet); cursor: var(--cursor-hand);
+  font: var(--t-word)/var(--u) var(--sans);
+}
+.search-screen-back:is(:hover, :focus-visible) { color: var(--nighthawks-paper); outline-color: currentColor; }
+.search-screen-paper {
+  --ground: var(--nighthawks-paper); --paper: var(--nighthawks-paper);
+  --sub: var(--nighthawks-paper-sub); --rule: var(--nighthawks-rule);
+  --quiet: var(--sub); --slot: var(--nighthawks-paper-selected);
+  background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-key);
+  box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
+}
+.search-screen-form .search-in {
+  display: block; min-height: calc(2 * var(--u)); padding: 0 var(--s3);
+  border: 0; background: transparent; border-radius: var(--r-key);
+  font: var(--t-word)/var(--u) var(--sans);
+}
+.search-screen-form .search-in:is(:focus, :focus-visible) { outline-color: var(--rule); }
+.search-screen-results:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty)) {
+  border-top: 1px solid var(--rule); margin: 0; padding: var(--s2);
+}
+.search-screen-status:empty, .search-screen-results:not(:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty))) { display: none; }
+.search-screen-status { font: var(--t-word)/var(--u) var(--sans); color: var(--sub); }
+.search-screen .found-secs { display: block; }
+.search-screen .found-sec { width: 100%; max-width: none; padding: 0; outline: none; box-shadow: none; }
+.search-screen .found-sec-head { position: static; padding-inline: var(--s2); color: var(--sub); font-weight: 400; }
+.search-screen .found-sec-rows { max-height: none; overflow: visible; }
+.search-screen .choice { margin: 0; padding-inline: var(--s2); }
+.search-screen .choice:is(:hover, :focus-visible),
+.search-screen:has(.search-in:focus) .choice.first { background: var(--slot); color: var(--ink); }
+.search-screen .search-suggestion {
+  display: block; min-height: var(--u); width: 100%; border: 0; border-radius: var(--r-key);
+  font: var(--t-word)/var(--u) var(--mono); text-align: left; color: var(--ink);
+  background: transparent; overflow-wrap: anywhere; cursor: var(--cursor-hand);
+}
+.search-screen .sheet-line { color: var(--sub); }
+.search-screen .sheet-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .search-screen-content { max-width: calc(100% - 2 * var(--u)); }
+}

@@ -98,8 +98,19 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
 }
 
 /** Document and issue desks use the same routes. */
-export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, extra: () => readonly PlaceCommand[]) {
+export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, extra: () => readonly PlaceCommand[], find: (origin?: Element | null) => void) {
   const promptIsAction = owner.classList.contains('forge-layout');
   const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, extra, (place) => promptIsAction && place === 'Prompt');
-  return {...menu, set: (place: WorkPlace, hasRepo: boolean) => menu.set(place, (destination) => hasRepo || (destination !== 'Prompt' && destination !== 'Files'))};
+  const search = h('button', {class: 'forge-search-key', type: 'button', 'aria-label': t('Search'), hidden: ''}, mark('search'));
+  let pressed: Element | null = null;
+  search.addEventListener('pointerdown', (event) => { if (event.isPrimary && event.button === 0) pressed = document.activeElement; });
+  search.addEventListener('pointercancel', () => { pressed = null; });
+  search.addEventListener('click', (event) => {
+    menu.close(); find(event.detail !== 0 ? pressed : document.activeElement); pressed = null;
+  });
+  owner.insertBefore(search, menu.key);
+  return {...menu, set: (place: WorkPlace, hasRepo: boolean) => {
+    search.hidden = !hasRepo;
+    menu.set(place, (destination) => hasRepo || (destination !== 'Prompt' && destination !== 'Files'));
+  }};
 }

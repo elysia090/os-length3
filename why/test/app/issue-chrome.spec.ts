@@ -44,7 +44,8 @@ test('Git summons a real search by its shortcut; Escape puts it away and Forge d
   const gitSearch = main.locator('.git-layout .band-tools');
   await expect(gitSearch).toHaveCSS('opacity', '0');
   const rail = page.getByRole('navigation', {name: 'Purposes', exact: true});
-  await page.keyboard.press('Control+k');
+  await expect(main.getByRole('button', {name: 'Search', exact: true})).toBeVisible();
+  await main.getByRole('region', {name: 'Git', exact: true}).press('Control+k');
   await expect(forge.search).toBeFocused();
   await expect(rail).toBeHidden();
   await expect(gitSearch).toHaveCSS('opacity', '1');

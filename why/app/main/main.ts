@@ -34,6 +34,7 @@ import {drawing} from '../ui/whole.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
+import {SearchTrail} from './search-trail.ts';
 
 const PURPOSE_KEY = 'why.os.purpose';
 const REPO_KEY = 'why.os.repo';
@@ -95,13 +96,24 @@ function brought(id: PurposeId): Promise<void> | null {
 let openRepo = load(REPO_KEY);
 /** The file Forge's center is reading. */
 let readingPath: string | null = null;
+const searchTrail = new SearchTrail({
+  surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
+  files: repo => forgeOf?.searchPaths(repo) ?? [],
+  open(repo, path, line) {
+    searchTrail.leave(false);
+    // Even in Forge, opening a match is a new step. Back can read this same search again.
+    if (current === 'forge') history.pushState({place: 'forge'}, '');
+    openRepoFrom(document.activeElement, repo, path, true, undefined, line, undefined, true);
+  },
+  name: () => named(),
+});
 /**
  * `name` opened in Forge (see Context.openRepo), `keyboard` where the keyboard was when it was asked: read then, not
  * once Forge's code has come, so a keyboard put elsewhere meanwhile is not taken back (forge.ts revealNext).
  */
-function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined) {
+function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined, quiet = false) {
   const bringing = brought('forge');
-  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried)); return; }
+  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried, quiet)); return; }
   const f = forgeOf!;
   if (current === 'forge' && f.showInForge(name, path, write, line)) return;
   ctx.remember(name);
@@ -110,7 +122,7 @@ function openRepoFrom(keyboard: Element | null, name: string, path: string, writ
   const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
     : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
   pressedOn = null;
-  select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
+  select('forge', quiet || !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
     340, '', 40, grownFrom?.isConnected ? carried : undefined));
 }
 
@@ -123,6 +135,11 @@ const ctx: Context = {
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
+  searchRepo(repo, origin, rejoin) {
+    if (!isWorkPage(current)) return;
+    ++asked;
+    searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
+  },
   placeCommands(omit) {
     return [
       ...RAIL.filter(p => p.id !== 'file' && !omit.includes(p.id)).map(({id, label}) => ({
@@ -264,6 +281,7 @@ let asked = 0;
 function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlace): Promise<void> {
   const bringing = brought(id), mine = ++asked;
   if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped, place); });
+  searchTrail.leave(false);
   me.leavePlaces();
   if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
@@ -282,10 +300,17 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
  * page to send to another, and what the address carries is asked once (an invitation, a key) and taken out.
  */
 window.addEventListener('popstate', (event) => {
-  const was = (event.state as {place?: unknown} | null)?.place;
-  if (typeof was !== 'string' || !opened) return;
-  const id = restorePurpose(was);
-  if (id !== current) void select(id, false, true);
+  const state = event.state as {place?: unknown; search?: unknown} | null;
+  if (typeof state?.place !== 'string' || !opened) return;
+  const id = restorePurpose(state.place), search = searchTrail.step(state.search);
+  if (search === null) searchTrail.leave(id === current);
+  if (id === current) {
+    if (search !== null) searchTrail.enter(search);
+  } else {
+    void select(id, search !== null, true).then(() => {
+      if (search !== null && current === id && history.state?.search === search) searchTrail.enter(search);
+    });
+  }
 });
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
@@ -330,7 +355,11 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   document.body.classList.toggle('work-places', isWorkPage(id));
   // A step in the window's history: the first place the OS opens on is the step it is at (read again after a reload,
   // it is that one still); every other place gone to, a step on from it (unless Back or Forward came to it).
-  if (first) history.replaceState({...(history.state as object | null), place: id}, '');
+  if (first) {
+    const state = {...(history.state as {search?: unknown} | null), place: id};
+    delete state.search; // Searches are private to this live window.
+    history.replaceState(state, '');
+  }
   else if (from !== id && !stepped) history.pushState({place: id}, '');
   for (const [tabId, tab] of tabs) {
     // (A place's far side is in that place: its icon is the one lit.)
@@ -362,7 +391,7 @@ function railOpening() { document.documentElement.classList.remove('opening'); }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
 const named = () => {
-  document.title = `${t(purpose(current).label)} · why*`;
+  document.title = `${t(searchTrail.open ? 'Search' : purpose(current).label)} · why*`;
   // The app's window is named the same in the host's window list (a browser's tab already is); not renamed, it keeps the OS's name.
   void setWindowTitle(document.title).catch(() => {});
 };
@@ -491,6 +520,7 @@ onReach(() => {
 onConnection(() => {
   void look();
   const now = whoIsIn(), same = now !== null && now === wasIn && !!connection()?.user;
+  if (wasIn !== now) searchTrail.forget();
   wasIn = now;
   if (current === 'remote') me.paint(); else if (opened && !same) void render();
 });

@@ -103,18 +103,20 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
 }
 
 /* The Places key belongs to the corner, outside the working planes. */
-.forge-places-key {
+:is(.forge-places-key, .forge-search-key) {
   position: fixed; top: 12px; right: 12px; z-index: 19; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-key); padding: 0; background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
-.forge-places-key > .mark { width: 18px; height: 18px; }
-:is(.forge-layout, .git-layout) .forge-places-key:not([aria-expanded='true']):focus-visible {
+:is(.forge-places-key, .forge-search-key) > .mark { width: 18px; height: 18px; }
+.forge-search-key { right: 56px; }
+.forge-search-key[hidden] { display: none; }
+:is(.forge-layout, .git-layout) :is(.forge-search-key, .forge-places-key:not([aria-expanded='true'])):focus-visible {
   outline: 1px solid currentColor; outline-offset: -7px;
 }
-body.forge-place:has(.desk-room[data-place='Forge']) .forge-places-key[aria-expanded='false'],
-.git-layout .forge-places-key[aria-expanded='false'] { color: var(--nighthawks-desk-quiet); }
-body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout .forge-places-key[aria-expanded='false']:is(:hover, :focus-visible),
-.git-layout .forge-places-key[aria-expanded='false']:is(:hover, :focus-visible) { color: var(--paper); }
+body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-search-key, .forge-places-key[aria-expanded='false']),
+.git-layout :is(.forge-search-key, .forge-places-key[aria-expanded='false']) { color: var(--nighthawks-desk-quiet); }
+body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout :is(.forge-search-key, .forge-places-key[aria-expanded='false']):is(:hover, :focus-visible),
+.git-layout :is(.forge-search-key, .forge-places-key[aria-expanded='false']):is(:hover, :focus-visible) { color: var(--paper); }
 /* The menu is the paper in hand. Its key is down in the desk, not a second sheet. */
 :is(.forge-layout, .git-layout, .inbox-shell) .forge-places-key[aria-haspopup='menu'][aria-expanded='true'] {
   background: transparent; outline: none; color: var(--places-ink, var(--ink));

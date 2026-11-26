@@ -83,6 +83,8 @@ export function forge(ctx: Context): Node[] {
 export function closeFiles() { made?.filesClosed(); }
 export function takeFilesPane() { made?.filesTaken(); }
 export function leaveForge() { made?.away(); }
+/** Files already opened in this workspace, with the one in hand first. */
+export function searchPaths(repo: string): string[] { return made?.searchPaths(repo) ?? []; }
 
 /** What a repo's desk is kept as, while the app is away: its files along the row (each a column of one: kept so since
  * the desk had columns), and the one in hand. */
@@ -183,7 +185,9 @@ class Forge {
       if (place === 'Git') void ctx.go('git');
       else if (place === 'Prompt') this.promptWindow(!!this.prompt.hidden,true);
       else this.selectPlace(place);
-    }, () => ctx.placeCommands?.(['forge']) ?? []);
+    }, () => ctx.placeCommands?.(['forge']) ?? [], (origin) => {
+      if (this.now.repo) ctx.searchRepo?.(this.now.repo, origin);
+    });
     this.switcher.set('Forge', false);
     this.promptPaper = new PromptPaper(this.center,this.work,()=>this.promptWindow(false,true));
     this.prompt.addEventListener('focusin', () => this.hand('Prompt'));
@@ -377,6 +381,14 @@ class Forge {
     d.files.get(from)?.drop();
     d.files.delete(from);
     return f;
+  }
+
+  searchPaths(repo: string): string[] {
+    const laid = this.desks.get(repo);
+    if (!laid) return [];
+    const {desk, beside, files} = laid;
+    const held = desk.held === BESIDE ? beside?.path : desk.held;
+    return [...new Set([...(held ? [held] : []), ...desk.row])].filter(path => files.has(path));
   }
 
   private visible() { return this.element.isConnected && !this.element.closest('[hidden]'); }

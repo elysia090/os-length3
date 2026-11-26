@@ -581,8 +581,8 @@ The row runs on past the window's right edge, and the piece cut by that edge
 says so: there is more that way. Nothing is under a piece and nothing over
 it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
-**At the corner.** At 12 px from the upper and right edges is the
-44 px Places key. Its mark is 18 px.
+**At the corner.** Two 44 px keys, 12 px from the upper and right edges:
+Places at the edge and a lens beside it. Each mark is 18 px.
 The two windows in the Places mark do not change when pressed; the key
 sinks into 28 px of the desk and the menu is the paper. Prompt, Forge,
 Files, Git, Home, Server, Runtime, Plugin, New repo and Account are on one
@@ -592,8 +592,14 @@ focused line into view, and Escape puts the list away. Files is the current
 repo's tree, with actions on its rows. The whole filesystem is still File
 on Home's rail. With no repo, Open Folder is the empty desk's own first move.
 
-Search still opens on request by its keyboard shortcuts; it does not take a
-standing strip of the desk.
+The lens opens a dedicated Search screen. The query has the keyboard as
+it comes in. The editor shortcuts still open the quick in-place search;
+neither puts a permanent search strip on the working desk. One centered paper holds real file suggestions, from the desk
+first; as soon as one writes, it holds only the paths, lines and excerpts
+found for those words. Back or Escape gives the work its keyboard and selection back.
+Enter or a press on a match goes to the saved line in Forge; browser Back
+then revisits the search, with its query. The entry moves only its own
+contents a small step in 140 ms, or no motion when the system asks for less.
 
 **The terminal.** Prompt opens a companion on the right of the same
 Forge desk. It does not choose another place, cover a file, or take its
@@ -708,27 +714,13 @@ its README, the README in hand.
 
 File deeds belong to their rows in Files, not to the places at the corner.
 A new file is made at once, as Shift+N makes it, its name written over first;
-one renamed or moved is shown where it went. What the search finds appears as a
-sheet across the desk, inked and shadowed as a box is, only once
-something is typed and what is found for it is ready: it comes down with it
-already in it, never let down empty and filled a frame later, and what is in it
-stays until what is found for the next key is ready (pressed with nothing
-typed, nothing drops; ↓ lets down what was searched and read): the words
-searched for large at its head, then what was found a kind at a time, two
-kinds to a row, each its name and how many rows at its left and its rows at
-its right, as the mock has them: a row a thing found, read across, a file's
-name, the line's number and its words in the sheet's own letters (a name that
-holds the query a row of its own, marked), the words found marked and steady
-as one types on (never stroked in again at each key), nothing else beside a
-row. Typed, the sheet's lip (its shadow) shows under the band at once, where
-it comes down from once what is found is ready. It is as tall as what it holds:
-let down further at once, taken up a little over a few frames as fewer are
-found (from where it is shown, never cut short mid-way); while it is down the
-desk is gone from under it. Pressed, it stays as it is until it goes up, never
-gone for a frame between. The box has no clearing × of its own: Escape clears it. A row pressed: the camera is put on its file meanwhile, unseen,
-and the desk comes back already there as the sheet goes up, the line chosen.
-The
-pills scroll when there are many, and ⊕ comes right after the last
+one renamed or moved is shown where it went. Search reads the current
+repo's files on its own screen from the lens, or in place from a shortcut
+(see At the corner). A row is an actual file
+or line, with its path, number and text, and the words found are marked.
+A line moved since it was found is located again before it is opened.
+
+The pills scroll when there are many, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched);
