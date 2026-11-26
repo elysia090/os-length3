@@ -1,10 +1,10 @@
 import {expect, test} from './fixtures.ts';
 
 // Git: an issue written, started (it gets its own copy of the repo), the
-// change made in Forge, then Commit (it hands itself in), Approve and Merge; merged, the
+// change made in Forge, then Commit, Submit, Approve and Merge; merged, the
 // issue is done and listed under Merged. What main itself has not committed
 // is committed from main's card, named by its line. One that will not be
-// done is closed and can be reopened; a reviewer can ask for changes.
+// done is closed and can be reopened; a reviewer can comment with marked lines.
 
 test("on an issue's work, Forge's files come at once however long the Remote takes to say how the work stands", async ({signedIn: app}) => {
   await app.newRepo.make('hello');
@@ -39,28 +39,17 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.rail.go('git');
   await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed, it is on one's own Remote, and on one's own repo that hands it in by itself: Commit is done (its line
-  // held, the keyboard can go along it and pressed it says no), there is no Push (a push is to a server or another's
-  // Remote), the Submitted switch is on, and the change waits for review, said by the Review under the box (not by a
-  // version beside the steps).
   await expect(app.main.locator('.git-switch [data-step="commit"]')).toHaveClass(/done/);
   await expect(app.git.step('Commit')).toBeDisabled();
-  // (The steps are the lines of main's sheet at the desk's edge: Start, Commit and Submit done, Merge the one next.)
+  await expect(app.main.locator('.git-switch .switch-line.done')).toHaveCount(2);
+  await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Submit');
+  await expect(app.git.review).toBeHidden();
+  await app.git.step('Submit').click();
   await expect(app.main.locator('.git-switch .switch-line.done')).toHaveCount(3);
   await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Merge');
-  await expect(app.main.locator('.git-switch')).not.toContainText('Push');
-  await expect(app.main.locator('.git-switch')).not.toContainText('v1');
-  const submitted = app.main.getByRole('switch', {name: 'Submitted'});
-  await expect(submitted).toHaveAttribute('aria-checked', 'true');
-  await expect(app.git.review).toBeVisible();
-  // Switched off, the change is taken back; on again, the same commit is handed in anew, as the next version.
-  await submitted.click();
-  await expect(submitted).toHaveAttribute('aria-checked', 'false');
-  await expect(app.git.review).toBeHidden();
-  await submitted.click();
-  await expect(submitted).toHaveAttribute('aria-checked', 'true');
-  await expect(app.git.review).toBeVisible();
-  await expect(app.git.review.getByText('HELLO.')).toBeVisible();
+  await expect(app.git.review.getByText('HELLO.', {exact: true})).toBeVisible();
+  await expect(app.main.getByRole('button', {name: 'Version 1', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('button', {name: 'Request changes', exact: true})).toHaveCount(0);
 
   await expect(app.git.step('Merge')).toBeDisabled();
   await app.git.review.getByRole('button', {name: 'Approve'}).click();

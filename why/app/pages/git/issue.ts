@@ -1,14 +1,13 @@
 import {kindWords} from '../kit/todo-list.ts';
 import {h} from '../../ui/dom.ts';
-import {ago, day} from '../../../text/format.ts';
 import {arrive, cut, LAND, lift, type Lifted, morph, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../../repo/history.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../../repo/issues.ts';
 import {connection, myName} from '../../../shipto/connection.ts';
 import {changeFor, type Standing} from '../../../repo/git-state.ts';
-import {named} from '../../../repo/text.ts';
-import {diffFiles} from '../kit/diff-view.ts';
+import {diffPaper} from './diff-paper.ts';
+import {gitTotals, hasApproval, issueReview, readingLatest} from './review.ts';
 import {beingChanged, retitle} from './issue-form.ts';
 import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -16,18 +15,8 @@ import {busy, held} from './held.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 
-// An issue on the Git page, as one large box (issue #17). Its branch and
-// worktree are never named: Start gives the issue its own copy of the repo,
-// which File, Forge and the Prompt then show. The box offers only what can
-// be done next, one primary action at a time, in the order of the work:
-//
-//   Start (Continue here) · Changes · Commit · Push (Reset)
-//
-// and Back to main (under the box at its left, out of it, as what leaves always is: backToMain). Under that, the
-// Review in a box of its own (Comment,
-// and Approve as a ○), and under that, Merge with Reject at its left. A change received from someone
-// else shows Commit and Push done already.
-
+// The issue is the paper in hand. Work is at its right, verdicts at its foot,
+// and commits and conversation remain on the ground below it.
 export interface IssueEvents {
   open(repo: string, path: string): void;
   /** The repo now shows another copy (or main moved): the shell reads it again. */
@@ -87,8 +76,6 @@ function summary(issue: Issue, after: () => void): HTMLElement {
   return h('div', {class: 'issue-summary-wrap'}, field, error);
 }
 
-const STATE = (s: git.Change['state']) => ({open: t('Pending'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Withdrawn')})[s];
-
 /** Run `f` with `b` held down (busy), then `after`; a failure is said in `error`, and `b` can be pressed again. */
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
   if (held(b)) return;
@@ -113,21 +100,6 @@ const closeIssue = async (issue: Issue) => setClosed(issueStore, issue, closeMar
 export const reopenIssue = (issue: Issue) => setClosed(issueStore, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
 
-/** Where the issue stands, quietly, in a few words. */
-function standing(s: RepoState | undefined, issue: Issue): string {
-  const path = issuePath(issue);
-  const c = changeFor(s, issue);
-  const w = s?.work;
-  // Worked on here: who and when; the boxes under it say the rest.
-  if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
-  // An open change says where it stands in its Push row; one decided, what came of it (never its version: a count the
-  // Remote keeps of hand-ins, not a thing the person holds in mind).
-  if (c) return c.state === 'open' ? '' : STATE(c.state);
-  const line = s?.lines.find((l) => l.issue === path);
-  if (line) return t('{who} · started {when}', {who: line.startedBy || '—', when: ago(line.startedAt)});
-  return '';
-}
-
 /**
  * The head of an issue's box: its number and title. A neighbour's (`peek`)
  * is its number alone, at the edge that shows, never a title cut short.
@@ -139,33 +111,29 @@ export function issueHead(issue: Issue, peek = false): HTMLElement {
     h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, ...kindWords(issue.kind)) : null, issue.title));
 }
 
-/** The box: the issue's words, where it stands, and the way into its work (or back out). */
-export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement {
+/** One paper in the hand, with its history kept outside on the desk. */
+export function issuePaper(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void) {
   const error = h('p', {class: 'error', role: 'alert'});
   const here = hereOf(s, issue);
   const change = connection() ? changeFor(s, issue) : null;
-  // Nothing is offered until where it stands is known; nor while it is worked on here, or its change is in.
   const offered = connection() && !s?.error && !here && change?.state !== 'open';
-  // One that will not be done is closed, at the foot's left as what goes against the box: it goes
-  // under Closed, where Reopen brings it back. Whatever work the repo shows: an issue is main's.
   const leave = offered ? closeDeed(issue, error, events, after) : null;
-  // Its title is changed where it is read: pressed, it is written over in its place (issue-form.ts retitle). Its
-  // summary is written right under it, the work's margin note.
   const head = issueHead(issue);
   const words = h('button', {type: 'button', class: 'issue-words'}, head);
-  // Its work, the sheet's lead, beside its words: what is not committed, or the change handed in.
-  const work = workOf(issue, s, events);
+  const totals = h('div', {class: 'git-totals'});
+  const review = change && change.state !== 'reset' ? issueReview(issue.repo, change, totals, after) : null;
+  const work = review?.work ?? workOf(issue, s, totals);
   if (work) unfolding(work, issuePath(issue));
-  // Its name over the sheet's corner, as every sheet has one: its number and kind, and that it is under way here.
-  const name = h('p', {class: 'issue-name', 'aria-hidden': 'true'}, [issueName(issue), issue.kind].filter(Boolean).join(' '), here ? ' ' : null, here ? h('i', {}, t('under way')) : null);
-  const box = h('div', {class: work ? 'issue-box' : 'issue-box no-work'},
-    name, words, summary(issue, after), agentLine(issue), ...(work ? [work] : []), foot(issue, s, leave, []), error);
-  // Written over with the summary as it now stands (written there and not yet left, it is what is kept).
+  const name = h('p', {class: 'issue-name', 'aria-hidden': 'true'}, ['Issue', issueName(issue), issue.kind ? '/ ' + issue.kind : ''].filter(Boolean).join(' '));
+  const box = h('div', {class: work ? 'issue-box git-paper' : 'issue-box git-paper no-work'}, name, words, summary(issue, after),
+    work, work ? totals : null, review?.foot ?? null, foot(s, leave), error);
   const detail = () => box.querySelector<HTMLTextAreaElement>('.issue-summary')?.value ?? issue.detail;
   words.addEventListener('click', () => retitle(issue, words, head, detail, error, after));
-  // Its title half written over when the box was left: the box opens with it so, as it was, the keyboard not taken.
   if (beingChanged(issue)) retitle(issue, words, head, detail, error, after, false);
-  return box;
+  const history = review?.history ?? workspaceHistory(issue, s);
+  const hands = agentLine(issue);
+  if (hands && history) history.append(hands);
+  return {box, history: history ?? hands};
 }
 
 /**
@@ -191,29 +159,31 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   if (w && !(!dirty && w.commits > 0)) {
     const commit = button(t('Commit'));
     if (!dirty) commit.setAttribute('aria-disabled', 'true');
-    commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
+    commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', '', w.line), after));
     lines.push({done: false, el: commit});
   } else lines.push({done: !!w || open, el: said(t('Commit'))});
-  // Submit: a commit hands itself in on one's own repo; the switch says whether the change is in, and takes it back.
-  if (w && w.commits > 0 && !(w.change?.state === 'merged' && !w.unpushed)) {
-    const inNow = !w.unpushed && w.change?.state === 'open';
-    const power = h('button', {type: 'button', class: 'switch-power', role: 'switch', 'aria-checked': String(inNow), 'aria-label': t('Submitted')}, t('Submit')) as HTMLButtonElement;
-    if (!inNow && dirty > 0) power.setAttribute('aria-disabled', 'true');
-    const was = String(inNow);
-    const turn = doing(power, error, () => (inNow ? git.reset(at) : git.push(at).then(() => git.submit(at)))
-      .catch((e: unknown) => { power.setAttribute('aria-checked', was); throw e; }), after);
-    power.addEventListener('click', () => { if (held(power)) return; power.setAttribute('aria-checked', String(!inNow)); void turn(); });
-    lines.push({done: inNow, el: power});
-  } else lines.push({done: open, el: said(t('Submit'))});
+  // One press offers the exact recorded work head. No visual switch flips while Remote is still answering.
+  const local = s?.lines.find((l) => l.issue === issuePath(issue));
+  const inNow = !!w && !!local?.head && local.head === change?.head && open;
+  const pending = !!w && !!local?.head && local.head !== local.base && !inNow && change?.state !== 'merged';
+  if (w && local?.head && pending && !dirty) {
+    const head = local.head;
+    const send = button(t('Submit'));
+    send.addEventListener('click', doing(send, error, () => git.submitAt(at, w.line, head), after));
+    lines.push({done: false, el: send});
+  } else lines.push({done: inNow || (!w && open), el: said(t('Submit'))});
   // Merge: once the version is approved.
   lines.push(open && change ? {done: false, el: mergeDeed(issue, s, change, error, events, after)} : {done: false, el: said(t('Merge'))});
   const next = lines.findIndex((l) => !l.done);
+  const standing = open && change ? (pending ? t('Not submitted') : dirty ? t('Not committed') :
+    hasApproval(change) ? t('Ready to merge') : t('Needs approval')) : '';
   const names = ['start', 'commit', 'submit', 'merge'];
   const keys = lines.map((l) => l.el);
   // One of them is where Tab comes in: the step to take next (or the first).
   keys.forEach((k, j) => k.tabIndex = j === Math.max(0, next) ? 0 : -1);
   const element = h('div', {class: 'switch-lines', role: 'group', 'aria-label': t('Steps')},
-    ...lines.map((l, k) => h('div', {class: l.done ? 'switch-line done' : k === next ? 'switch-line next' : 'switch-line', 'data-step': names[k]}, l.el)), error);
+    ...lines.map((l, k) => h('div', {class: l.done ? 'switch-line done' : k === next ? 'switch-line next' : 'switch-line', 'data-step': names[k]}, l.el)),
+    standing ? h('p', {class:'git-ledger-status'}, standing) : null, error);
   // ↑ ↓ go along the four, Home and End to the first and the last; Enter or a press takes the step, at once, and a
   // step that cannot be taken now says no where it is (the nudge), so every press is answered in its own frame.
   element.addEventListener('keydown', (event) => {
@@ -235,72 +205,48 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   return element;
 }
 
-/** Each change's diff as last read (by repo, change and version), and each copy's not committed: see diffsRead, uncommittedRead. */
-/**
- * An issue's work, in its sheet beside its words: what is not committed in the copy shown (named for a screen reader
- * by how many files), else the change handed in; before the first edit, where the work is done. None where there is
- * no work yet. Only what changed is in focus: a line either side of it stays, out of focus, and the rest is left out.
- */
-function workOf(issue: Issue, s: RepoState | undefined, events: IssueEvents): HTMLElement | null {
-  const at = issue.repo;
-  const here = hereOf(s, issue), w = here ? s?.work ?? null : null;
-  const change = connection() ? changeFor(s, issue) : null;
+/** The work not submitted yet. An already submitted revision keeps the paper, even while more work is made. */
+function workOf(issue: Issue, s: RepoState | undefined, totals: HTMLElement): HTMLElement | null {
+  const repo = issue.repo;
+  const w = hereOf(s, issue) ? s?.work ?? null : null;
+  const line = s?.lines.find((l) => l.issue === issuePath(issue));
   const dirty = w ? s?.uncommitted ?? 0 : 0;
-  const draw = (list: git.FileDiff[]) => workFiles(list, (p) => events.open(at, p));
-  const fill = (box: HTMLElement, was: git.FileDiff[] | undefined, read: Promise<git.FileDiff[]>, keep: (list: git.FileDiff[]) => git.FileDiff[]) => {
-    box.append(...(was ? draw(was) : [quiet(t('Loading…'))]));
-    // Read for the first time, the files come in under "Loading…" and the box grows to hold them, never a jump.
-    const show = (...nodes: Node[]) => { const from = box.isConnected ? box.getBoundingClientRect().height : 0; box.replaceChildren(...nodes); resize(box, from); };
-    void read.then((list) => { const now = keep(list); if (!was || JSON.stringify(now) !== JSON.stringify(was)) show(...draw(now)); },
-      (e) => show(h('p', {class: 'error'}, errorText(e))));
-    return box;
+  const committed = line?.head && line.head !== line.base ? line.head : null;
+  if (!w || (!dirty && !committed)) return null;
+  const signed = connection();
+  const copy = JSON.stringify([signed?.user ?? signed?.session, repo, w.line, dirty ? 'draft' : committed]);
+  const work = h('div', {class: 'git-work', role: 'region', 'aria-label': dirty ?
+    tn('{n} uncommitted file', '{n} uncommitted files', dirty) : t('Diff')});
+  const show = (files: git.FileDiff[]) => {
+    gitTotals(totals, files);
+    work.replaceChildren(files.length ? diffPaper(files, {key: copy}).element : quiet(t('No changes')));
   };
-  if (w && dirty) {
-    const copy = `${at}\0${w.line}`;
-    return fill(h('div', {class: 'issue-work changes', role: 'region', 'aria-label': tn('{n} uncommitted file', '{n} uncommitted files', dirty)}),
-      uncommittedRead.get(copy), git.diff(at), (list) => { uncommittedRead.set(copy, list); return list; });
-  }
-  if (change && change.state !== 'reset') {
-    const read = `${at}\0${change.id}\0${change.version}`;
-    return fill(h('div', {class: 'issue-work', role: 'region', 'aria-label': t('Diff')}), diffsRead.get(read), git.changeDiff(at, change),
-      (list) => { diffsRead.set(read, list); return list; });
-  }
-  // Before the first edit there is no work, and nothing stands for it: a line saying where edits would appear was the
-  // sheet explaining itself (DESIGN §1), and the column it took moved the summary just written across the sheet the
-  // moment Start was pressed. The work comes in when there is some.
-  return null;
+  const known = uncommittedRead.get(copy);
+  if (known) show(known); else work.append(quiet(t('Loading…')));
+  void (dirty ? git.diff(repo,w.line) : git.workDiffAt(repo, w.line, committed!)).then((list) => {
+    uncommittedRead.delete(copy);
+    uncommittedRead.set(copy, list);
+    if (uncommittedRead.size > 16) uncommittedRead.delete(uncommittedRead.keys().next().value!);
+    show(list);
+  }, (e) => work.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+  return work;
 }
 
-/** How many lines either side of a change stay in an issue's work, out of focus. */
-const ABOUT = 1;
-
-/**
- * Files changed, as an issue's sheet shows them: a file's name (pressed, it opens in Forge) and how much was added and
- * taken away, then its lines: what was added and what was taken away in focus on their bands, a line about them out
- * of focus (`far`), the rest of the file left out. The work's sum after them, large, where the sheet turns.
- */
-function workFiles(files: git.FileDiff[], reveal: (path: string) => void): HTMLElement[] {
-  let plus = 0, minus = 0;
-  const out = files.map((f) => {
-    const lines = f.lines.filter((l) => l.kind !== 'hunk');
-    const near = lines.map((_, i) => lines.some((x, j) => x.kind !== 'same' && Math.abs(i - j) <= ABOUT));
-    const shown = lines.filter((l, i) => l.kind !== 'same' || near[i]);
-    // (A line about a change that says nothing, at either end, is not a row.)
-    while (shown.length && shown[0]!.kind === 'same' && !shown[0]!.text.trim()) shown.shift();
-    while (shown.length && shown.at(-1)!.kind === 'same' && !shown.at(-1)!.text.trim()) shown.pop();
-    const indent = Math.min(...shown.filter((l) => l.text.trim()).map((l) => l.text.length - l.text.trimStart().length), Infinity);
-    const add = lines.filter((l) => l.kind === 'add').length, del = lines.filter((l) => l.kind === 'del').length;
-    plus += add; minus += del;
-    const name = h('button', {type: 'button', class: 'work-name'}, f.path);
-    name.addEventListener('click', () => reveal(f.path));
-    return h('div', {class: 'work-file'},
-      h('div', {class: 'work-head'}, name, h('span', {class: 'work-count'}, add ? h('span', {class: 'diff-add'}, `+${add}`) : null, del ? h('span', {class: 'diff-del'}, `−${del}`) : null)),
-      f.binary ? quiet(t('Binary')) : h('div', {class: 'work-lines'}, ...shown.map((l) => h('div', {class: l.kind === 'add' ? 'work-line add' : l.kind === 'del' ? 'work-line del' : 'work-line far'},
-        h('span', {class: 'work-sign', 'aria-hidden': 'true'}, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''),
-        h('span', {class: 'work-text'}, Number.isFinite(indent) ? l.text.slice(indent) : l.text)))));
-  });
-  if (plus || minus) out.push(h('p', {class: 'work-sum', 'aria-hidden': 'true'}, plus ? h('span', {class: 'diff-add'}, `+${plus}`) : null, minus ? h('span', {class: 'diff-del'}, `−${minus}`) : null));
-  return out;
+function workspaceHistory(issue: Issue, s: RepoState | undefined): HTMLElement | null {
+  const line = s?.lines.find((l) => l.issue === issuePath(issue));
+  if (!hereOf(s, issue) || !line?.head || line.head === line.base) return null;
+  const history = h('section', {class: 'git-history', 'aria-label': t('Commits')});
+  const note = h('p', {class: 'git-history-who'}, t('Not submitted'));
+  const list = h('ol', {class: 'git-events'});
+  history.append(note, list);
+  void git.logOf(issue.repo, line.line).then((got) => {
+    const at = got.findIndex((c) => c.id === line.head);
+    if (at < 0) return;
+    const base = got.findIndex((c) => c.id === line.base);
+    list.replaceChildren(...got.slice(at, base < 0 ? undefined : base).map((c) =>
+      h('li', {class: 'git-history-version-row'}, h('div', {class: 'git-history-commit'}, h('code', {title: c.id}, c.id.slice(0, 8)), c.title))));
+  }, (e) => history.append(h('p', {class: 'error'}, errorText(e))));
+  return history;
 }
 
 /** Start, or Continue here where it was started before: the issue's own copy of the repo is the one shown. */
@@ -346,55 +292,15 @@ function unfolding(steps: HTMLElement, path: string) {
   if (started?.path === path) arrive(steps, -1, 'y', 10, 280, performance.now() - started.at);
 }
 
-/** At the box's foot, opposite its action: its repo and, quietly, who started it and when; Close at its left. */
-function foot(issue: Issue, s: RepoState | undefined, leave: HTMLElement | null, acts: Node[]): HTMLElement {
-  const say = !connection() ? t('History is stored on Remote. Sign in to work on issues and commit.') : s?.error ?? standing(s, issue);
-  // Commits made here and not handed in (signed out as they were made, a change taken back): said with where it stands.
-  const w = hereOf(s, issue) ? s?.work ?? null : null;
-  const waits = w?.unpushed ? tn('{n} commit not submitted', '{n} commits not submitted', w.unpushed) : '';
-  return h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo),
-    say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null, waits ? h('span', {class: 'muted small'}, waits) : null), ...acts);
+/** Only an actual error, offline state, or Close is said on the sheet. The repo and phase are on main's ledger. */
+function foot(s: RepoState | undefined, leave: HTMLElement | null): HTMLElement | null {
+  const say = !connection() ? t('History is stored on Remote. Sign in to work on issues and commit.') : s?.error;
+  return say || leave ? h('div', {class: 'issue-foot'}, leave, say ? h('p', {class: 'muted small'}, say) : null) : null;
 }
-
-/**
- * Each copy's diff not committed, as last read, by repo and the line it shows (main, or an issue's work): drawn again,
- * it is there at once (as diffsRead keeps a change's). By the line too: just started, an issue's Commit row is not
- * drawn from main's files (they flashed there, and the folds opened for them were kept open).
- */
 const uncommittedRead = new Map<string, git.FileDiff[]>();
 
-/** What each issue is about ("Fix：title"), by repo and its file's path, as Git last read them (knowIssues). */
-const aboutIssue = new Map<string, string>();
-/** The issues read (every repo's, open or done with): an issue's own file in a diff is then named by what it is about. */
-export function knowIssues(issues: readonly Issue[]) {
-  aboutIssue.clear();
-  for (const i of issues) aboutIssue.set(`${i.repo}\0${issuePath(i)}`, named(i.kind, i.title));
-}
-
-/**
- * What is not committed in the copy `at` shows (on `line`): its diff, there from the start (named for a screen reader
- * by how many files: "5 files not committed"); a file's name opens it in Forge.
- */
-export function notCommitted(at: string, line: string, n: number, events: IssueEvents): HTMLElement {
-  // Straight on what it is in (main's card, the issue's box), not a box of its own inside it: each file a fold, its
-  // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines";
-  // an issue's own file (written, its words changed, closed) shut to its line, "#3 Fix：title".
-  const copy = `${at}\0${line}`;
-  // On main, an issue's own file is not the person's to commit: it is committed by itself as it is written
-  // (repo/issue-store.ts), so one on its way there is not shown waiting here.
-  const theirs = (list: git.FileDiff[]) => (line === 'main' ? list.filter((f) => !f.path.startsWith('issue/')) : list);
-  const files = (list: git.FileDiff[]) => diffFiles(theirs(list), {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
-    issue: (p) => aboutIssue.get(`${at}\0${p}`) ?? null});
-  const was = uncommittedRead.get(copy);
-  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} uncommitted file', '{n} uncommitted files', n)}, ...(was ? files(was) : [quiet(t('Loading…'))]));
-  // Read for the first time, the files come in under "Loading…" and the box grows to hold them, never a jump.
-  const show = (...nodes: Node[]) => { const from = box.isConnected ? box.getBoundingClientRect().height : 0; box.replaceChildren(...nodes); resize(box, from); };
-  void git.diff(at).then((list) => {
-    uncommittedRead.set(copy, list);
-    if (!was || JSON.stringify(list) !== JSON.stringify(was)) show(...files(list));
-  }, (e) => show(h('p', {class: 'error'}, errorText(e))));
-  return box;
-}
+/** Issues are read by the page; the active paper no longer keeps a shadow index of their paths. */
+export function knowIssues(_issues: readonly Issue[]) {}
 
 /**
  * `el`'s height goes from what it was (`from`) to what it now holds (a line asked for is shorter than the files it
@@ -521,16 +427,18 @@ export const justMerged = (id: string) => Date.now() - (mergedNow.get(id) ?? 0) 
 function mergeDeed(issue: Issue, s: RepoState | undefined, change: git.Change, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
   const at = issue.repo;
   const here = hereOf(s, issue);
-  const approvals = change.reviews.filter((r) => r.version === change.version && r.verdict === 'approve');
-  const merge = button(t('Merge'), approvals.length > 0);
-  if (!approvals.length) merge.setAttribute('aria-disabled', 'true');
+  const local = s?.lines.find((line) => line.issue === issuePath(issue));
+  const ready = hasApproval(change) && (!local || local.head === change.head) && (!here || !s?.uncommitted);
+  const merge = button(t('Merge'), ready);
+  if (!ready) merge.setAttribute('aria-disabled', 'true');
   // Merged, the work is done: the repo shows main again.
   // Merged, the issue's box goes down into its line under Merged, which lands lit: the issue is done.
   let from: DOMRect | null = null;
   let words: Lifted | null = null;
   let rest: HTMLElement | null = null;
   merge.addEventListener('click', doing(merge, error, async () => {
-    await git.merge(at, change);
+    if (!readingLatest(at, change)) throw new Error(t('Read the latest version before merging'));
+    await git.mergeAt(at, change);
     mergedNow.set(change.id, Date.now());
     const slotEl = document.querySelector<HTMLElement>('.issue-slot[aria-current="true"]');
     const card = slotEl?.querySelector<HTMLElement>('.issue-card');
@@ -545,8 +453,9 @@ function mergeDeed(issue: Issue, s: RepoState | undefined, change: git.Change, e
       rest = card.cloneNode(true) as HTMLElement;
       rest.querySelector<HTMLElement>('h2')?.style.setProperty('visibility', 'hidden');
     }
-    if (here) await git.switchWork(at, 'main');
-    events.moved(at);
+    // The Remote has already merged. The standing refresh will finish a copy still shown here;
+    // failure to refresh or to bring main to this device cannot turn that write into a rejected Merge.
+    if (here) events.moved(at);
   }, () => {
     after();
     if (from) morph(from, () => document.querySelector<HTMLElement>(`.done-row[data-change="${CSS.escape(change.id)}"]`), 460, '', 150,
@@ -562,141 +471,9 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, after: () => vo
   const at = issue.repo;
   const error = h('p', {class: 'error', role: 'alert'});
   const reject = button(t('Reject'));
-  reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
+  reject.addEventListener('click', doing(reject, error, () => {
+    if (!readingLatest(at, change)) throw new Error(t('Read the latest version first'));
+    return git.rejectAt(at, change);
+  }, after));
   return h('div', {class: 'steps merge-row'}, reject, error);
 }
-
-/** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
-function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null, kept: string): HTMLElement[] {
-  // Each file a fold as main's card and the Commit row have them, its lines from the box's own edge (not set off to
-  // the right of its name), what is opened or shut kept so as the Review is drawn again.
-  return diffFiles(files, {kept, line: (row, key) => {
-    if (marked.has(key)) row.classList.add('marked');
-    if (!pending) return;
-    row.classList.add('markable');
-    // The line's words are what is marked: heard as a toggle named by them, pressed while marked.
-    const words = row.querySelector<HTMLElement>('.diff-words');
-    words?.setAttribute('role', 'button');
-    words?.setAttribute('aria-pressed', String(marked.has(key)));
-    row.addEventListener('click', () => {
-      if (marked.has(key)) return;
-      if (pending.has(key)) pending.delete(key); else pending.add(key);
-      row.classList.toggle('marking', pending.has(key));
-      words?.setAttribute('aria-pressed', String(pending.has(key)));
-    });
-  }});
-}
-
-/**
- * The change's Review, inside the issue's box under Commit and Push: its
- * diff (marked where reviewers marked it, scrolling in place), what was said
- * as a conversation, and room to say more. A change is reviewed the same way
- * without being worked on here.
- */
-/**
- * Each change's diff as last read (by repo, change and version): the Review drawn again as the page is read again is
- * as tall as it was at once, not "Loading…" a moment, which closed the page up under the person reading it.
- */
-const diffsRead = new Map<string, git.FileDiff[]>();
-
-export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => void): HTMLElement | null {
-  const at = issue.repo;
-  const change = changeFor(s, issue);
-  if (!connection() || !change || change.state === 'reset') return null;
-
-  // Review: the change's diff, marked where reviewers marked it, what was said, and room to say more.
-  const error = h('p', {class: 'error', role: 'alert'});
-  const current = change.reviews.filter((r) => r.version === change.version);
-  const pending = change.state === 'open' ? new Set<string>() : null;
-  const read = `${at}\0${change.id}\0${change.version}`;
-  const was = diffsRead.get(read);
-  // What is read at the right is the change as it stands, not a history: the history is down the line at its left
-  // (below), and the one pressed there says whose marks and words the change is read with (`shown`: at first the
-  // version it stands at; an earlier one, what was asked of it when it was sent back).
-  let shown = change.version, files = was;
-  const diff = h('div', {class: 'review-diff'}, h('p', {class: 'muted small'}, t('Loading…')));
-  const drawDiff = () => {
-    if (!files) return;
-    const marked = new Set(change.reviews.filter((r) => r.version === shown).flatMap((r) => r.marks ?? []));
-    diff.replaceChildren(...markedDiff(files, marked, shown === change.version ? pending : null, read));
-  };
-  drawDiff();
-  void git.changeDiff(at, change).then((now) => {
-    diffsRead.set(read, now);
-    if (!files || JSON.stringify(now) !== JSON.stringify(files)) { files = now; drawDiff(); }
-  }, (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
-  // What was said of the version shown, the newest first: a verdict with its note, or a comment alone. An approval
-  // is said over the sheet's corner, not in the conversation (its note, if any, still shows).
-  const said = h('div', {class: 'review-chat'});
-  const drawSaid = () => {
-    const told = change.reviews.filter((r) => r.version === shown && (r.verdict !== 'approve' || r.note));
-    said.replaceChildren(...told.slice().reverse().map((r) => h('div', {class: 'bubble'},
-      h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}`),
-      r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Changes requested')) : null,
-      r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
-    said.hidden = !told.length;
-  };
-  drawSaid();
-  const body: Node[] = [said];
-  /** What is written with (the field, its keys): only of the version the change stands at. */
-  const writes: HTMLElement[] = [];
-  if (change.state === 'open') {
-    // Under what was said, a comment more, written in a roomy field and sent
-    // with the lines marked (Ctrl+Enter, or Comment); under it, Approve as a
-    // ○. Merge and Reject follow under the box.
-    const text = h('textarea', {class: 'line-in review-in', rows: '7', placeholder: t('Add a comment…'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
-    // A comment, or asking for changes, says something: with nothing written or marked, the field is where to say it.
-    const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
-      if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Specify requested changes or select target lines') : ''); }
-      await git.review(at, change, verdict, text.value, [...pending!]);
-    }, after);
-    // Approve is a ○: pressed, it turns green (the done mark) and stays so.
-    let approve: HTMLElement;
-    if (current.some((r) => r.verdict === 'approve')) approve = h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), t('Approve'));
-    else {
-      const b = h('button', {type: 'button', class: 'approve-mark'}, h('span', {class: 'ring', 'aria-hidden': 'true'}), t('Approve')) as HTMLButtonElement;
-      // What is written and marked goes with it; only a written note shows in the conversation.
-      b.addEventListener('click', doing(b, error, async () => {
-        await git.review(at, change, 'approve', text.value, [...pending!]);
-      }, after));
-      approve = b;
-    }
-    const comment = button(t('Comment'));
-    comment.addEventListener('click', send('comment', comment));
-    // Asking for changes: what is written and marked goes with it, and the conversation says it was asked.
-    const changes = button(t('Request changes'));
-    changes.addEventListener('click', send('changes', changes));
-    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); comment.click(); } });
-    writes.push(text, h('div', {class: 'review-verdict'}, approve, h('span', {class: 'grow'}), changes, comment));
-    body.push(...writes);
-  }
-  body.push(error);
-  // The change's history, down the line: each time it was handed in, said large by when (under it, small, what it
-  // says, or that changes were asked of it). Pressed, the change is read with what was marked and said of it then.
-  const versions = [...new Set([...change.reviews.map((r) => r.version), change.version])].sort((a, b) => a - b);
-  const history = h('ol', {class: 'issue-history', 'aria-label': t('Commits')}, ...versions.map((v) => {
-    const of = change.reviews.filter((r) => r.version === v), sent = of.filter((r) => r.verdict === 'changes').pop();
-    const when = v === change.version ? change.updatedAt : (sent ?? of[of.length - 1]).time;
-    const b = h('button', {type: 'button', class: 'history-at', 'aria-pressed': String(v === shown)},
-      h('time', {datetime: new Date(when).toISOString()}, clock(when)), h('span', {}, sent ? t('Changes requested') : change.note || `v${v}`)) as HTMLButtonElement;
-    b.addEventListener('click', () => {
-      shown = v;
-      for (const o of history.querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
-      drawDiff();
-      drawSaid();
-      for (const el of writes) el.hidden = v !== change.version;
-    });
-    return h('li', {}, b);
-  }));
-  const approvals = current.filter((r) => r.verdict === 'approve');
-  const by = change.state !== 'open' ? null
-    : quiet(approvals.length ? t('Approved by {who}', {who: [...new Set(approvals.map((r) => r.by))].join(', ')}) : t('Not approved yet'));
-  return h('section', {class: 'review-box', 'aria-label': t('Review')}, history, diff,
-    h('div', {class: 'review-sheet'}, h('header', {class: 'stage-head'}, h('h3', {}, t('Review')), by), ...body));
-}
-
-/** When, as a clock says it within a day (14:32); earlier, the day. */
-const clock = (ms: number) => {
-  const d = new Date(ms);
-  return Date.now() - ms < 86_400_000 ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : day(ms);
-};

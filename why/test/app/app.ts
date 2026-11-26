@@ -568,11 +568,11 @@ class FileTree extends Part {
   }
 }
 
-/** Git: the issues, each a box with Start, Commit, Push; under it Review and Merge. */
+/** Git: a paper with the work and review, a history below, and Start, Commit, Submit, Merge beside it. */
 class Git extends Part {
   /** The issue's box, by its name as it is shown (#1 Fix：title); its neighbours show only their heads. */
   issue(name: string) { return this.main.getByRole('heading', {name, exact: true, level: 2}); }
-  get review() { return this.main.getByRole('region', {name: 'Review'}); }
+  get review() { return this.main.locator('.git-paper:has(.git-paper-review:visible)'); }
 
   /**
    * An issue made in `repo`: its first line, named like a TODO ("Fix: title"), written on the issue not written yet (the
@@ -629,7 +629,7 @@ class Git extends Part {
 
   /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
   section(name: 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
-  /** Start the issue on screen, make the change in Forge, then Commit it: it hands itself in for review. */
+  /** Start the issue, write in Forge, record the commit and explicitly Submit it for review. */
   async handIn(edit: {path: string; text: string}) {
     await this.step('Start').click();
     await expect(this.step('Back to main')).toBeVisible();
@@ -638,6 +638,7 @@ class Git extends Part {
     await this.app.forge.editFile(edit.path, edit.text);
     await this.app.rail.go('git');
     await this.step('Commit').click();
+    await this.step('Submit').click();
     await expect(this.review).toBeVisible();
   }
 }

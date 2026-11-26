@@ -24,32 +24,62 @@
 /* Review, inside the issue's box: its diff scrolling in place, marked lines as with a highlighter,
    and what was said as a conversation in the middle. */
 /* The Review: a box of its own under the issue's card, in the same column. */
-/* Given room: it starts well under the issue's box and the line under it, and reads large, as the next thing to do. */
-/* The issue's sheet as the card is one: paper, a rule edge, and the edge in ink while it is in hand (a line being marked,
-   a comment being written). */
-.review-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); margin-top: var(--s6); padding: var(--s5) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: none; }
-.review-box:focus-within, .review-box:has(.marking) { border-color: var(--ink); }
-.review-box > .stage-head h3 { font-size: var(--t-word); }
-/* On raised, an added line is drawn on ground, so it still stands out. */
-.review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
-.review-chat .bubble { max-width: min(560px, 85%); background: var(--raised); } /* said on the review's paper as one's own is in the Inbox */
-/* Said just now: it comes down out of the field under it into the conversation (issue.ts reviewBox), the field left empty. */
-@media (prefers-reduced-motion: reduce) { .review-chat .bubble.fresh { animation: none; } }
-.review-chat .state-chip { justify-self: start; }
-.review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }
-/* A mark is a highlighter's: drawn over the words only, each wrapped line its
-   own stroke with softened ends, so two marked lines read as two; its number
-   in ink. The pointer on a line shows the stroke it would make, paler. */
-.diff-line.markable { cursor: var(--cursor-hand); }
-.diff-line.marked .diff-words, .diff-line.marking .diff-words,
-.diff-line.markable:hover .diff-words {
-  padding: 1px 3px; margin: 0 -3px; border-radius: 0;
-  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+/* The issue alone is paper. Its review is written in the timeline at the same left edge. */
+.git-desk .issue-slot > .issue-after { margin-top: var(--u); }
+.git-desk .issue-after .issue-run { position: static; min-height: 0; padding: 0 var(--u); }
+.git-desk .issue-after .issue-run::before { display: none; }
+.git-history { max-inline-size: 58ch; min-inline-size: 0; color: var(--ink); }
+.git-events, .git-history-review-list {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
-.diff-line.marked .diff-words, .diff-line.marking .diff-words { background: var(--marker); color: var(--ink); }
-.diff-line.markable:hover:not(.marked, .marking) .diff-words { background: var(--marker-soft); }
-/* The pale stroke the pointer shows comes quickly and goes slowly, as a row's fill under the pointer does (shared.css):
-   a pass across the lines leaves a short trail rather than blinking. */
-.diff-line.markable .diff-words { transition: none; }
-.diff-line.markable:hover .diff-words { transition-duration: var(--motion); }
-.diff-line.marked .diff-no, .diff-line.marking .diff-no { color: var(--ink); font-weight: 700; }
+.git-events { position: relative; padding-inline-start: var(--u); }
+.git-events::before {
+  content: '';
+  position: absolute;
+  inset-block: calc(var(--u) / 2) 0;
+  inset-inline-start: 10px;
+  inline-size: 1px;
+  background: repeating-linear-gradient(to bottom, var(--edge) 0 2px, transparent 2px 6px);
+}
+.git-history-version-row { position: relative; display: grid; row-gap: 0; }
+.git-history-version-row + .git-history-version-row { margin-block-start: calc(var(--u) / 2); }
+.git-history-version-row::before, .git-history-comment::before {
+  content: '';
+  position: absolute;
+  inset-block-start: calc(var(--u) / 2 - 4px);
+  inset-inline-start: calc(6px - var(--u));
+  inline-size: 7px; block-size: 7px;
+  box-sizing: content-box; border: 1px solid var(--edge); border-radius: 50%;
+  background: var(--ground);
+}
+.git-history-version-row:has(> [aria-current='true'])::before { background: var(--ink); border-color: var(--ink); }
+.git-history-key, .git-history-version, .git-history-ref, .git-review-key {
+  appearance: none; width: fit-content; background: none; padding: 0; border: 0;
+  font: 400 var(--t-word)/var(--u) var(--sans); color: var(--ink);
+  text-align: left; cursor: var(--cursor-hand);
+}
+.git-history-version[aria-current='true'] { font-weight: 700; }
+.git-history-version:focus-visible, .git-history-ref:focus-visible, .git-review-key:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
+.git-history-comment { position: relative; padding-block: 0 calc(var(--u) / 2); }
+.git-history-review-list { margin-block-start: calc(var(--u) / 2); }
+.git-history-who, .git-history-words, .git-history-commit { width: fit-content; margin: 0; background: var(--ground); line-height: var(--u); overflow-wrap: anywhere; }
+.git-history-who, .git-history-commit { color: var(--sub); }
+.git-history-words { white-space: pre-wrap; }
+.git-history-ref { display: block; max-inline-size: 100%; text-decoration: underline; text-underline-offset: .12em; overflow-wrap: anywhere; background: var(--ground); }
+.git-history-commit { display: flex; gap: var(--u); }
+.git-history-commit code { flex: none; }
+.git-history-return { margin-block-start: calc(var(--u) / 2); color: var(--sub); text-decoration: underline; }
+.git-compose { margin: calc(var(--u) / 2) 0 0 var(--u); }
+.git-compose[hidden], .git-paper-review[hidden], .git-review-error:empty { display: none; }
+.git-compose label { display: block; font-weight: 700; line-height: var(--u); }
+.git-review-text {
+  display: block; min-height: calc(2.5 * var(--u)); width: 100%; padding: 4px 7px;
+  margin: 0; border: 1px solid var(--ink); border-radius: var(--r-key); background: var(--ground); color: var(--ink);
+  resize: vertical; font: 400 var(--t-word)/var(--u) var(--sans);
+}
+.git-comment-refs { min-inline-size: 0; color: var(--sub); overflow-wrap: anywhere; }
+.git-comment-refs span { display: block; }
+.git-review-error { margin: var(--u) 0 0 var(--u); }

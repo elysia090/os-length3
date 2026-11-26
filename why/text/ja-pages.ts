@@ -1,5 +1,37 @@
 // Japanese for the pages part of the OS (English text -> Japanese).
 export default {
+  // Git review and its main ledger
+  'Not committed': '未コミット',
+  'Not submitted': '未提出',
+  'Ready to merge': 'Merge できます',
+  'Needs approval': '承認待ち',
+  'Read main before opening its uncommitted file': '未コミットのファイルを開くには main を表示してください',
+  'Commit title': 'コミットの件名',
+  'Version {n}': '第{n}版',
+  'Before': '変更前',
+  'Back': '戻る',
+  'This marked line is not in the visible diff': '表示できる差分の範囲に指定行がありません',
+  'Some line positions are unavailable in this comparison': 'この比較では一部の行の位置を確定できません',
+  'Read the latest version first': '先に最新の版を確認してください',
+  'Read the latest version before merging': '最新の版を確認してから Merge してください',
+  '{n} file changed': '{n}ファイル変更',
+  '{n} files changed': '{n}ファイル変更',
+
+  'Submit requires the work head': '提出する作業のコミットが必要です',
+  'The work changed; read it before submitting': '作業が変わりました。読み直してから提出してください',
+  'Review requires the displayed version and a request id': 'レビューには表示中の版とリクエスト ID が必要です',
+  'This request id already belongs to a different review': 'このリクエスト ID は別のレビューに使われています',
+  'Invalid or too many marked lines': '指定行が無効か、上限を超えています',
+  'Comment requires text; approving does not post comments or marks': 'コメントには本文が必要です。承認では本文や指定行を投稿しません',
+  'A marked line is not present in this review': '指定行がこのレビューにありません',
+  'The marked source could not be read': '指定行の元ファイルを読み出せませんでした',
+  'Too much marked source to verify at once': '指定行の元ファイルが一度に確認できる上限を超えています',
+  'Duplicate marked lines': '指定行が重複しています',
+  'Marked lines exceed the review limit': 'レビューに記録できる指定行の上限を超えています',
+  'Submit the latest work before merging': '最新の作業を提出してから Merge してください',
+  'Commit and submit the remaining work before merging': '残りの作業をコミットして提出してから Merge してください',
+  'Approve this version before merging': 'Merge の前にこの版を承認してください',
+
   // Home
   'No posts yet': '投稿はまだありません',
   'Handle': 'ハンドル名',
