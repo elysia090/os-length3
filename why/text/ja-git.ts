@@ -58,6 +58,8 @@ export default {
   '{n} uncommitted file': '未コミット：{n}ファイル',
   '{n} uncommitted files': '未コミット：{n}ファイル',
   'Diff': '差分 (Diff)',
+  'Before: line {n} in {path}': '{path}の変更前{n}行目',
+  'After: line {n} in {path}': '{path}の変更後{n}行目',
   'Changes requested': '変更要求あり',
   'Add a comment…': 'コメントを入力…',
   '{n} commit not submitted': '未提出のコミット：{n}件',
