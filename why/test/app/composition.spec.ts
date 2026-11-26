@@ -187,7 +187,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
   // The frame over what is called up: the available controls, not a hidden band's old bounding box.
-  const frameControl = all.find((el) => el.matches('body > .rail'));
+  const frameControl = all.find((el) => el.matches('body > .rail, #page[data-place="home"] > .home-portrait > .forge-places-key'));
   const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
   const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
     const {left, top, right, bottom} = el.getBoundingClientRect();
@@ -209,7 +209,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = place === 'home' || place === 'forge' && !called ? 4 : place === 'inbox' ? 6 : U / 2;
+    const shade = (place === 'home' || place === 'forge') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
     expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual(place === 'server' && !called ? [2, 4, 0] : [shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
@@ -233,6 +233,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
         expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
       }
     } else {
+      if (place === 'home') expect(focused[0]!.name, `${what}: File is the subject, not the note`).toMatch(/(?:^| )file-tree(?: |$)/);
       expect(f.frameOver, `${what}: the frame control over the veil, in focus`).toBe(true);
     }
     const compactHome = size.width <= 600, homeCap = compactHome ? 2.25 : 3;
