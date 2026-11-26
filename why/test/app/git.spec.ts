@@ -129,6 +129,31 @@ test('the named way to a new issue is outside the paper and Escape goes back to 
   await expect(app.git.step('Back to main')).toHaveCount(0);
 });
 
+test('Git uses desk ink outside the issue and paper ink inside it, without recolouring Forge', async ({app}) => {
+  await app.newRepo.make('hello');
+  const body = app.page.locator('body');
+  const forge = await body.evaluate((node) => getComputedStyle(node).backgroundColor);
+  await app.rail.go('git');
+  await expect(body).toHaveCSS('background-color', 'rgb(58, 61, 54)');
+  await expect(app.main.getByRole('heading', {name: 'Git', exact: true, level: 1})).toHaveCSS('color', 'rgb(240, 235, 223)');
+  const card = app.main.locator('.issue-slot[aria-current="true"] > .issue-card');
+  await expect(card).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(app.git.firstLine).toHaveCSS('color', 'rgb(23, 22, 21)');
+  await app.git.firstLine.fill('Fix: Output');
+  await app.git.firstLine.press('Enter');
+  await expect(app.git.issue('#1 Fix：Output')).toBeVisible();
+  await expect(app.git.newIssue).toHaveCSS('color', 'rgb(193, 190, 176)');
+
+  await app.forge.placesKey.click();
+  const menu = app.forge.places;
+  await expect(menu).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(menu).toHaveCSS('color', 'rgb(23, 22, 21)');
+  await app.forge.use('Forge');
+  await expect(app.forge.editor('README.md')).toBeVisible();
+  await expect(body).toHaveCSS('background-color', forge);
+  await expect(app.main).toHaveCSS('--git-paper-ink', '');
+});
+
 test('a draft belongs to its own folder; Enter creates explicitly and keeps its detail', async ({app}) => {
   for (const r of ['notes', 'tide-tables']) await app.newRepo.make(r);
   await app.rail.go('git');
