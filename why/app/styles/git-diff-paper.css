@@ -81,7 +81,7 @@ button.git-diff-name, button.git-diff-number {
 /* Keep ordinary file names whole on a phone; move the counts down before breaking a file name. */
 @container (inline-size <= 280px) {
   .git-diff-head { flex-wrap: wrap; gap: 0 var(--s1); padding-inline: var(--s2); }
-  .git-diff-count { margin-inline-start: auto; font-size: 13px; line-height: 1; }
+  .git-diff-count { margin-inline-start: auto; }
 }
 .git-diff-lines {
   display: grid;

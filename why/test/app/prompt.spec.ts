@@ -320,7 +320,9 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // (Git is all desk too: no pane there lists what was run.)
     await app.rail.go('git');
     await expect(app.main.locator('.band-bench > .side')).toHaveCount(0);
-    await app.forge.use('Prompt');
+    await expect(app.main.locator('.forge-prompt-slot')).toBeHidden();
+    await app.rail.go('forge');
+    // Return to the same open companion; the Places action now toggles it instead of reopening the workbench.
     await expect(out.getByText('first-run', {exact: true})).toBeVisible();
   });
 
@@ -329,8 +331,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt).toContainText(/^kept-here$/m);
     for (const place of ['git', 'home'] as const) {
       await app.rail.go(place);
-      if (place === 'home') await app.rail.go('forge');
-      await app.forge.use('Prompt');
+      await expect(app.main.locator('.forge-prompt-slot')).toBeHidden();
+      await app.rail.go('forge');
       await expect(app.forge.prompt).toContainText(/^kept-here$/m);
     }
   });
