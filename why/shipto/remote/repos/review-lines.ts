@@ -1,5 +1,5 @@
 import {sql, inArray, and, eq} from 'drizzle-orm';
-import type {Basis, ReviewLine} from '../../../repo/review-lines.ts';
+import type {Basis, ReviewLine} from '../../../api/review-lines.ts';
 import {blobKey, NO_FILES, type Bucket} from '../bytes/bucket.ts';
 import {sha256} from '../bytes/digest.ts';
 import {blob} from '../db/schema.ts';

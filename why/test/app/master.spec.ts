@@ -16,7 +16,7 @@ function channels(sel: string) {
     all: pieces.length,
     filled: pieces.filter((p) => has(p, (c) => c.backgroundColor !== GROUND && c.backgroundColor !== 'rgba(0, 0, 0, 0)')).map(name),
     inked: pieces.filter((p) => has(p, (c) => c.outlineColor === INK && c.outlineStyle !== 'none')).map(name),
-    shadowed: pieces.filter((p) => has(p, (c) => /12px 12px/.test(c.boxShadow))).map(name),
+    shadowed: pieces.filter((p) => has(p, (c) => c.boxShadow !== 'none')).map(name),
     keyboard: pieces.filter((p) => p.contains(document.activeElement)).map(name),
   };
 }
@@ -34,6 +34,7 @@ test('one master holds every channel\'s top, and what is written goes to it alon
     for (const [channel, holders] of Object.entries({fill: c.filled, edge: c.inked, shadow: c.shadowed, keyboard: c.keyboard})) {
       expect(holders, `${key} in hand: the ${channel}`).toEqual([key]);
     }
+    await expect(app.forge.piece(key)).toHaveCSS('box-shadow', 'rgb(23, 22, 21) 4px 4px 0px 0px');
     // What is written goes to the master alone: every servant's text is as it was.
     const before = await app.page.evaluate(() => [...document.querySelectorAll<HTMLTextAreaElement>('section.desk:not([hidden]) .desk-box:not(.held) textarea')].map((t) => t.value));
     await app.page.keyboard.press('Control+End');

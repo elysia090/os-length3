@@ -3,7 +3,7 @@ import {errorText} from '../../../api/errors.ts';
 import {ago} from '../../../text/format.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import * as git from '../../../repo/history.ts';
-import {lineKey, markBasis, ranges} from '../../../repo/review-lines.ts';
+import {lineKey, markBasis} from '../../../api/review-lines.ts';
 import {diffPaper} from './diff-paper.ts';
 import {busy, held} from './held.ts';
 
@@ -49,6 +49,19 @@ function getDraft(repo: string, id: string, at: Revision): Editor {
     }
   }
   return next;
+}
+
+/** Join contiguous marks into one link, never implying that lines between sparse marks are selected. */
+function ranges(lines: readonly ReviewLine[]): {first: ReviewLine; last: number}[] {
+  const ordered = [...new Map(lines.map((l) => [lineKey(l), l])).values()]
+    .sort((a, b) => a.path.localeCompare(b.path) || Number(a.side === 'old') - Number(b.side === 'old') || a.line - b.line);
+  const out: {first: ReviewLine; last: number}[] = [];
+  for (const line of ordered) {
+    const tail = out.at(-1);
+    if (tail?.first.path === line.path && tail.first.side === line.side && tail.last + 1 === line.line) tail.last = line.line;
+    else out.push({first: line, last: line.line});
+  }
+  return out;
 }
 
 const labelRef = ({first, last}: ReturnType<typeof ranges>[number]) =>
@@ -204,7 +217,7 @@ export function issueReview(repo: string, change: git.Change, totals: HTMLElemen
       const shown = base < 0 ? own : own.slice(0, base);
       return h('li', {class: 'git-history-version-row'}, heading,
         words.length ? h('ol', {class: 'git-history-review-list'}, ...words) : null,
-        ...shown.map((c) => h('div', {class: 'git-history-commit'}, h('code', {title: c.id}, c.id.slice(0, 8)), c.title)));
+        ...shown.map((c) => h('div', {class: 'git-history-commit'}, h('code', {}, c.id.slice(0, 8)), c.title)));
     }));
     if (back) {
       const go = key(t('Back'), 'git-history-version git-history-return');

@@ -47,7 +47,7 @@ import {passkeyJustNow} from '../people/auth.ts';
 import type {Plans} from '../plan/plan.ts';
 import {ago, body, fits as fitsIn, fitting, LIMIT, lock, ms, qualified, refuse, rows, usedBy, UUID, type Db, type Vars} from '../serve/request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, type Modes, type Review} from '../db/schema.ts';
-import {isReviewLine, lineKey, markBasis, PIN, stableMarks} from '../../../repo/review-lines.ts';
+import {isReviewLine, lineKey, markBasis, PIN, stableMarks} from '../../../api/review-lines.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 import {above as foldersAbove, build, changes, edit, flatBytes, merge, nodeId, type Node, type Three} from '../bytes/trees.ts';
 

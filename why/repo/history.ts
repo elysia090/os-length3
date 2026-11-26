@@ -10,8 +10,8 @@ import {core, failure} from '../api/host.ts';
 import type {Answer} from '../api/client.ts';
 import {restore} from './putback.ts';
 import {store} from './repos.ts';
-import type {ReviewLine, Revision} from './review-lines.ts';
-export type {ReviewLine, Revision} from './review-lines.ts';
+import type {ReviewLine, Revision} from '../api/review-lines.ts';
+export type {ReviewLine, Revision} from '../api/review-lines.ts';
 import type {DiffLine} from './linediff.ts';
 
 export interface FileChange { path: string; status: 'added' | 'modified' | 'removed'; added: number; removed: number; binary: boolean }

@@ -19,6 +19,10 @@ test('the hosted Remote depends on shared contracts, not product adapters', () =
     assert.equal(unitOf(`why/shipto/${name}.ts`)?.name, 'app');
   }
   assert.deepEqual(dependencyViolations([[server, "import {SCOPES} from '../../../api/ssh-scope.ts';"]]), []);
+  assert.equal(unitOf('why/api/review-lines.ts')?.name, 'remote-contracts');
+  assert.deepEqual(dependencyViolations([[server, "import {markBasis} from '../../../api/review-lines.ts';"]]), []);
+  assert.deepEqual(dependencyViolations([['why/api/review-lines.ts', "import type {FileDiff} from '../repo/history.ts';"]]),
+    [['remote-contracts', 'app', 'why/api/review-lines.ts']]);
   assert.deepEqual(dependencyViolations([[server, "import pins from '../../desktop-releases.json' with {type: 'json'};"]]), []);
   assert.deepEqual(dependencyViolations([[server, "import {api} from '../../connection.ts';"]]), [['remote', 'app', server]]);
   assert.deepEqual(dependencyViolations([['why/api/ssh-scope.ts', "import {core} from './host.ts';"]]),

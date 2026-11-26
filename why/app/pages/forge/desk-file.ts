@@ -13,7 +13,7 @@ import {Editor, fileState, lineHeight, lineStart, numbering} from './editor.ts';
 import type {Laid} from './desk.ts';
 import {documentMenu, type BesideOption} from './document-menu.ts';
 import {Draft} from './draft.ts';
-import {openDrafts} from './open-drafts.ts';
+import {openDrafts} from '../kit/open-drafts.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers

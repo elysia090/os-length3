@@ -1,4 +1,5 @@
-/** A line in an immutable review diff: old for a removal, new for a new or context line. */
+// The pinned review wire contract, shared without loading either Why's UI or the Remote.
+/** A line in an immutable review diff, addressed on its old or new side. */
 export interface ReviewLine { path: string; side: 'old' | 'new'; line: number }
 export interface Revision { version: number; head: string }
 export interface Basis extends Revision { base: string | null }
@@ -26,17 +27,4 @@ export function markBasis(version: number, marks: readonly string[]): { basis: B
   return n === version && (base === null || (typeof base === 'string' && digest.test(base))) &&
     typeof head === 'string' && digest.test(head) && Array.isArray(lines) && lines.every(isReviewLine)
     ? {basis: {version, base, head}, lines} : null;
-}
-
-/** Separate the old text from the new, and make contiguous runs, never a false span over sparse selections. */
-export function ranges(lines: readonly ReviewLine[]): { first: ReviewLine; last: number }[] {
-  const ordered = [...new Map(lines.map((l) => [lineKey(l), l])).values()]
-    .sort((a, b) => a.path.localeCompare(b.path) || Number(a.side === 'old') - Number(b.side === 'old') || a.line - b.line);
-  const out: {first: ReviewLine; last: number}[] = [];
-  for (const line of ordered) {
-    const tail = out.at(-1);
-    if (tail?.first.path === line.path && tail.first.side === line.side && tail.last + 1 === line.line) tail.last = line.line;
-    else out.push({first: line, last: line.line});
-  }
-  return out;
 }

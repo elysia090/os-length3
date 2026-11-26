@@ -24,16 +24,16 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
 .forge-layout.work.bench.forge-searching > .bar { display: flex; position: absolute; top: 12px; left: var(--forge-origin); width: min(576px, calc(100% - var(--forge-origin) - 60px)); height: 36px; z-index: 12; }
 .forge-layout .band-tools .search-results { left: 0; top: 52px; }
 .forge-title, .git-title { position: absolute; z-index: 1; margin: 0; padding-inline-end: 8px;
-  background: var(--ground); color: var(--ink); font: 700 17px/24px var(--sans); pointer-events: none; }
+  background: var(--ground); color: var(--ink); font: 700 var(--t-word)/24px var(--sans); pointer-events: none; }
 .forge-title { top: 24px; left: var(--forge-origin); }
 .git-title { top: calc(var(--u) - var(--outer-top)); left: 0; }
-.forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: 16px; padding-block: var(--sheet-inset-y); box-shadow: none; }
-.forge-layout .desk :is(.gutter, .code) { font-size: 16px; }
+.forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: var(--t-word); padding-block: var(--sheet-inset-y); box-shadow: none; }
+.forge-layout .desk :is(.gutter, .code) { font-size: var(--t-word); }
 .forge-layout .desk-file { max-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
 .forge-layout .desk-file.long { height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
 .forge-layout .desk-file-head > .file-read-notice:not(:empty) { align-self: flex-start; min-height: var(--line); line-height: var(--line); }
 .forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
-.forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: 16px; }
+.forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: var(--t-word); }
 .forge-layout .desk-close { margin-block-end: 6px; }
 .forge-layout .desk-room:not([data-place='Forge']) .desk-box[data-beside] { visibility: hidden; }
 .forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) { box-shadow: 4px 4px 0 var(--ink); }
@@ -50,11 +50,11 @@ body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: va
 .forge-places-key > :is(svg, .mark) { width: 16px; height: 16px; }
 .forge-places-key[aria-expanded='true'] { background: var(--paper); outline: 1px solid var(--ink); outline-offset: -7px; }
 .forge-menu { position: fixed; z-index: 24; display: grid; min-width: 112px; max-width: calc(100vw - 12px); padding: 4px;
-  max-height: calc(100dvh - 12px); overflow: auto; border: 1px solid var(--ink); border-radius: 6px; color: var(--ink); background: var(--paper);
-  font: 400 16px/19px var(--mono); }
+  max-height: calc(100dvh - 12px); overflow: auto; border: 1px solid var(--ink); border-radius: var(--r-field); color: var(--ink); background: var(--paper);
+  font: 400 var(--t-word)/19px var(--mono); }
 .forge-places { right: 12px; top: 58px; }
 .forge-menu hr { margin: 3px 5px; border: 0; border-top: 1px solid var(--rule); }
-.forge-menu-item { width: 100%; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 4px; text-align: left; background: transparent;
+.forge-menu-item { width: 100%; min-height: 28px; padding: 3px 8px; border: 0; border-radius: var(--r-key); text-align: left; background: transparent;
   font: inherit; color: inherit; cursor: var(--cursor-hand); }
 .forge-menu-item:is(:hover, :focus-visible):not(:disabled) { background: var(--slot); outline-offset: -2px; }
 .forge-menu-item:disabled { color: var(--sub); cursor: var(--cursor-arrow); }
@@ -66,13 +66,13 @@ body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: va
 .forge-folder-status:empty, .forge-menu-status:empty { display: none; }
 .forge-empty { position: fixed; inset: 0; }
 .forge-open-folder { padding: 3px 6px; border: 0; color: var(--ink); background: var(--ground); cursor: var(--cursor-hand);
-  font: 400 16px/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; }
+  font: 400 var(--t-word)/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; }
 
 /* The app's existing routes and tools still exist. They are visible only when requested on a work desk. */
 .forge-route-tools { display: none; }
 body.work-places.forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
   height: auto; max-height: calc(100dvh - 74px); padding: 5px; flex-direction: column; gap: 0; background: var(--paper);
-  border: 1px solid var(--ink); border-radius: 6px; font: 400 16px/19px var(--mono); }
+  border: 1px solid var(--ink); border-radius: var(--r-field); font: 400 var(--t-word)/19px var(--mono); }
 body.forge-routes .rail-tabs { display: grid; gap: 0; padding: 0; }
 body.forge-routes .rail-item { width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 8px; min-height: 28px; flex: none; }
 body.forge-routes .rail-item .rail-tag { position: static; opacity: 1; translate: none; padding: 0; background: transparent; color: inherit; font: inherit; }
@@ -102,14 +102,14 @@ body.forge-routes .forge-route-tools:not(:empty) { display: grid; border-top: 1p
 .file-tree.on-forge-desk .tree-desk-root > .tree-row > .tree-name { flex: 0 1 auto; min-width: 0; }
 .file-tree.on-forge-desk .tree-row { --in: calc(max(0, var(--depth, 0)) * 15px); min-height: 24px; margin: 0; }
 .file-tree.on-forge-desk .tree-row:not(:has(> .tree-more[aria-expanded='true'])) { color: var(--ink); background: transparent; }
-.file-tree.on-forge-desk .tree-name { font: 400 16px/19px var(--mono); min-height: 24px; }
+.file-tree.on-forge-desk .tree-name { font: 400 var(--t-word)/19px var(--mono); min-height: 24px; }
 .file-tree.on-forge-desk .tree-desk-root > .tree-row .tree-name { font-weight: 700; }
 .file-tree.on-forge-desk .tree-toggle { width: max(var(--in), 1px); }
 .file-tree.on-forge-desk .tree-quick { display: flex; flex: none; gap: 8px; padding: 0 4px; visibility: hidden; }
 .file-tree.on-forge-desk .tree-quick-root, .file-tree.on-forge-desk .tree-row:hover .tree-quick,
 .file-tree.on-forge-desk .tree-quick:focus-within { visibility: visible; }
 .file-tree.on-forge-desk .tree-quick-item, .tree-desk-close { padding: 0; min-height: 24px; border: 0; color: inherit; background: transparent;
-  font: 400 16px/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: var(--cursor-hand); }
+  font: 400 var(--t-word)/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: var(--cursor-hand); }
 .tree-desk-close { position: absolute; bottom: 100%; right: 6px; }
 .file-tree.on-forge-desk .tree-more { visibility: hidden; }
 .file-tree.on-forge-desk .tree-more[aria-expanded='true'] { visibility: visible; }
@@ -117,7 +117,7 @@ body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tr
 /* A Files deed asks in the row whose file it will affect, not in a second place. */
 .file-tree.on-forge-desk .tree-row-asking > :not(.tree-file-ask) { display: none; }
 .file-tree.on-forge-desk .tree-file-ask { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;
-  padding-inline-start: var(--in, 0px); font: 400 16px/19px var(--mono); color: var(--ink); }
+  padding-inline-start: var(--in, 0px); font: 400 var(--t-word)/19px var(--mono); color: var(--ink); }
 .file-tree.on-forge-desk .tree-file-ask > span { overflow-wrap: anywhere; }
 .file-tree.on-forge-desk .tree-file-ask > .error { flex-basis: 100%; margin: 0; font: inherit; }
 .file-tree.on-forge-desk .tree-file-ask > .button { border: 0; min-height: 24px; padding: 0; font: inherit;

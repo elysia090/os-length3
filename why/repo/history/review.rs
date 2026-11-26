@@ -111,15 +111,25 @@ pub fn change_line_source(repo: &str, id: &str, expected: &Revision, line: &Revi
     Ok(source)
 }
 
+/// What a person records against one displayed version, with an id for safe retry.
+pub struct PinnedReview {
+    pub expected: Revision,
+    pub verdict: String,
+    pub note: String,
+    pub lines: Vec<ReviewLine>,
+    pub request: String,
+}
+
 /// A review of the displayed version. A mark must be present in that diff, as shown in the product.
-pub fn review_at(repo: &str, id: &str, expected: &Revision, verdict: &str, note: &str, lines: &[ReviewLine], request: &str, limit: usize) -> Result<Change> {
-    if !["approve", "comment"].contains(&verdict) || lines.len() > 200 || note.chars().count() > 2000 {
+pub fn review_at(repo: &str, id: &str, review: PinnedReview, limit: usize) -> Result<Change> {
+    let PinnedReview { expected, verdict, note, lines, request } = review;
+    if !matches!(verdict.as_str(), "approve" | "comment") || lines.len() > 200 || note.chars().count() > 2000 {
         return Err(crate::tr!("Invalid review", "レビューが無効です"));
     }
     if !lines.is_empty() {
         let client = Client::open()?;
         let c = change_raw(&client, repo, id)?;
-        let base = stored_base(&c, expected)?;
+        let base = stored_base(&c, &expected)?;
         let files = pinned_diff(&client, repo, base.as_deref(), &expected.head, limit)?;
         if !lines.iter().all(|m| files.iter().any(|f| f.path == m.path && !f.binary && f.lines.iter().any(|l| {
             !l.text.trim().is_empty() && match m.side {

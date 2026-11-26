@@ -280,9 +280,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (parts.desk) work.classList.add('forge-searching');
     reference.findNow();
   };
-  if (parts.desk) bar.addEventListener('focusout', () => queueMicrotask(() => {
-    if (!bar.contains(document.activeElement)) work.classList.remove('forge-searching');
-  }));
+  if (parts.desk) bar.addEventListener('focusout', (event) => {
+    // Chromium can run the microtask between blur and focus. Keep the bar when going from its field to a result.
+    if (event.relatedTarget instanceof Node && bar.contains(event.relatedTarget)) return;
+    queueMicrotask(() => { if (!bar.contains(document.activeElement)) work.classList.remove('forge-searching'); });
+  });
   const pane = tools ? null : new Pane(work, side, toggle, {fixed: !!parts.plainBand});
   if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });

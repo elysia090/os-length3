@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {Draft} from './draft.ts';
-import {DraftMoveError, OpenDrafts} from './open-drafts.ts';
+import {DraftMoveError, OpenDrafts} from '../kit/open-drafts.ts';
 
 test('folder moves wait for open descendants, freeze both views of the same draft, and never conflate prefixes', async () => {
   const docs = new OpenDrafts();

@@ -2,7 +2,7 @@
 
 import {h} from '../../ui/dom.ts';
 import type {DiffLine, FileDiff} from '../../../repo/history.ts';
-import {lineKey, type ReviewLine} from '../../../repo/review-lines.ts';
+import {lineKey, type ReviewLine} from '../../../api/review-lines.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import '../../styles/git-diff-paper.css';
 

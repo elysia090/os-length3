@@ -368,13 +368,16 @@ test("Home's band: one bar from the desk's edge on the row of the rail's first p
   expect([term!.x, term!.width, files!.x, files!.width]).toEqual([96, 48, 144, 48]);
   expect(Math.abs(search!.x - 192)).toBeLessThan(1);
   expect(Math.abs(search!.x + search!.width - (48 + 24 * 24))).toBeLessThan(1);
-  // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
-  // hand there, that file's deeds).
+  // Home's Files key opens the last repo's Forge and puts the document's actions under its Places key.
+  // It does not open a global Files panel or bring back a permanent Forge band.
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
   const menu = app.page.getByRole('menu', {name: 'README.md', exact: true});
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
-  const under = (await app.forge.tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox())!;
+  await expect(app.forge.desk).toHaveAttribute('data-repo', 'notes');
+  await expect(app.forge.placesKey).toHaveAttribute('aria-expanded', 'true');
+  await expect(app.forge.tools).toBeHidden();
+  const under = (await app.forge.placesKey.boundingBox())!;
   expect((await menu.boundingBox())!.y).toBeGreaterThan(under.y + under.height - 1);
 });
 

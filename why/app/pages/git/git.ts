@@ -6,7 +6,7 @@ import {issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
 import {onChange, onRenamed, rekey, store} from '../../../repo/repos.ts';
-import {workPlaces} from '../forge/places.ts';
+import {workPlaces} from '../kit/places.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import {icon} from '../../ui/icons.ts';

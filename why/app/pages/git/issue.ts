@@ -244,7 +244,7 @@ function workspaceHistory(issue: Issue, s: RepoState | undefined): HTMLElement |
     if (at < 0) return;
     const base = got.findIndex((c) => c.id === line.base);
     list.replaceChildren(...got.slice(at, base < 0 ? undefined : base).map((c) =>
-      h('li', {class: 'git-history-version-row'}, h('div', {class: 'git-history-commit'}, h('code', {title: c.id}, c.id.slice(0, 8)), c.title))));
+      h('li', {class: 'git-history-version-row'}, h('div', {class: 'git-history-commit'}, h('code', {}, c.id.slice(0, 8)), c.title))));
   }, (e) => history.append(h('p', {class: 'error'}, errorText(e))));
   return history;
 }

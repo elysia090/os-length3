@@ -15,7 +15,7 @@ import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, moveFile, renaming, split, untitled} from '../kit/file-deeds.ts';
 import {openFolder} from './open-folder.ts';
-import {workPlaces, type ForgePlace} from './places.ts';
+import {workPlaces, type ForgePlace} from '../kit/places.ts';
 import type {BesideOption} from './document-menu.ts';
 
 /**
@@ -113,7 +113,7 @@ class Forge {
   private now: {repo: string | null} = {repo: null};
   private readonly switcher: ReturnType<typeof workPlaces>;
   private readonly prompt: HTMLElement;
-  private readonly title: HTMLElement;
+  private readonly placeHeading: HTMLElement;
   private placeInHand: ForgePlace = 'Forge';
   private folderOut: (() => void) | null = null;
   private startOut: HTMLElement | null = null;
@@ -223,8 +223,8 @@ class Forge {
     document.addEventListener('keydown', keys, true);
     this.offKeys = () => document.removeEventListener('keydown', keys, true);
     this.known = ctx.repo;
-    this.title = h('h1', {class: 'forge-title'}, t('Forge'));
-    this.element.prepend(this.title);
+    this.placeHeading = h('h1', {class: 'forge-title'}, t('Forge'));
+    this.element.prepend(this.placeHeading);
   }
 
   /**
@@ -353,7 +353,7 @@ class Forge {
     const repo = this.now.repo;
     if (!repo) return;
     this.placeInHand = place;
-    this.title.textContent = t(place);
+    this.placeHeading.textContent = t(place);
     this.center.dataset.place = place;
     this.prompt.hidden = place !== 'Prompt';
     this.switcher.set(place, true);
@@ -600,7 +600,7 @@ class Forge {
   /** No selected repo: a visible first move and the same action from the bare desk. */
   private none() {
     this.now.repo = null;
-    this.title.textContent = t('Forge');
+    this.placeHeading.textContent = t('Forge');
     this.work.setRepo(null);
     this.prompt.hidden = true;
     this.center.dataset.place = 'Forge';

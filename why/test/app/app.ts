@@ -774,9 +774,9 @@ class Server extends Part {
   /** The right: who is in it, then the repos they show in it. */
   get side() { return this.view.getByRole('complementary', {name: 'Members and shared repos'}); }
 
-  /** To its page, pressed on the rail. */
+  /** To its page, by the rail (summoned through More Places on a work desk). */
   async open() {
-    await this.app.rail.button('server').click();
+    await this.app.rail.go('server');
     await expect(this.view).toBeVisible();
   }
 

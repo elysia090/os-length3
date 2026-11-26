@@ -7,7 +7,7 @@ import type {MarkName} from '../../ui/icons.ts';
 import {errorText} from '../../../api/errors.ts';
 import {wayOut} from '../../ui/way-out.ts';
 import {changes, putBack} from '../../../repo/history.ts';
-import {DraftMoveError, openDrafts} from '../forge/open-drafts.ts';
+import {DraftMoveError, openDrafts} from './open-drafts.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes

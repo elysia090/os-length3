@@ -216,8 +216,10 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),
         "change_reject" => to(history::reject(&a.s("repo")?, &a.s("id")?, &a.s("note")?)?),
-        "change_review_at" => to(history::review_at(&a.s("repo")?, &a.s("id")?, &a.get("expected")?,
-            &a.s("verdict")?, &a.s("note")?, &a.get::<Vec<history::ReviewLine>>("lines")?, &a.s("request")?, DIFF_LIMIT)?),
+        "change_review_at" => to(history::review_at(&a.s("repo")?, &a.s("id")?, history::PinnedReview {
+            expected: a.get("expected")?, verdict: a.s("verdict")?, note: a.s("note")?,
+            lines: a.get("lines")?, request: a.s("request")?,
+        }, DIFF_LIMIT)?),
         "change_merge_at" => to(history::merge_at(&repos()?, &a.s("repo")?, &a.s("id")?, &a.get("expected")?)?),
         "change_reject_at" => to(history::reject_at(&a.s("repo")?, &a.s("id")?, &a.get("expected")?, &a.s("note")?)?),
         "change_diff_at" => to(history::change_diff_at(&a.s("repo")?, &a.s("id")?, &a.get("expected")?, DIFF_LIMIT)?),

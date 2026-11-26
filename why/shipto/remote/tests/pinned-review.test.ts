@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {markBasis} from '../../../repo/review-lines.ts';
+import {markBasis} from '../../../api/review-lines.ts';
 import {sha256} from '../serve/app.ts';
 import {enc, service} from './testing.ts';
 

@@ -29,5 +29,5 @@ pub use self::changes::{at_head, changed, Changes, changes, diff, DiffLine, File
 pub use self::commits::{commit_issue, cut, cut_on, issue_words, settle_issues};
 pub use self::log::{Cut, line, log, log_of};
 pub(crate) use self::log::progress;
-pub use self::review::{Change, change_diff, change_diff_at, change_line_source, changes_of_repo, hand_in, HandIn, merge, merge_at, merged_seen, push, reject, reject_at, reset, Review, ReviewLine, Revision, review, review_at, state_word, submit, submit_at, work_diff_at};
+pub use self::review::{Change, change_diff, change_diff_at, change_line_source, changes_of_repo, hand_in, HandIn, merge, merge_at, merged_seen, PinnedReview, push, reject, reject_at, reset, Review, ReviewLine, Revision, review, review_at, state_word, submit, submit_at, work_diff_at};
 pub(crate) use self::review::{listed, remember_merged};

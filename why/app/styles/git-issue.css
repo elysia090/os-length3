@@ -110,7 +110,7 @@
 .git-total-files { margin: 0; color: var(--sub); font: 400 var(--t-word)/var(--u) var(--sans); }
 .git-desk .git-paper > .git-paper-review { grid-area: 3 / 2; align-self: end; min-height: calc(1.5 * var(--u)); display: flex; gap: 4px; }
 .git-desk .git-paper > .git-paper-review[hidden] { display: none; }
-.git-desk .git-paper .git-review-key { box-sizing: border-box; min-height: calc(1.5 * var(--u)); padding: 0 calc(var(--u) / 2); border-radius: 4px; color: var(--sub); }
+.git-desk .git-paper .git-review-key { box-sizing: border-box; min-height: calc(1.5 * var(--u)); padding: 0 calc(var(--u) / 2); border-radius: var(--r-key); color: var(--sub); }
 .git-review-approve:not(:disabled) { border: 1px solid var(--ink); color: var(--ink); font-weight: 700; }
 .git-review-key:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
 .git-review-approve.approved::before { content: '• '; color: var(--add); }

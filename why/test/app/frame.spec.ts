@@ -6,8 +6,8 @@ import {expect, test} from './fixtures.ts';
 //   one degree      the frame is 2 cells (48 px, about 1° at arm's length) every way, on every screen
 //   receding        it takes no more of a desk screen than film's safe-action margin does (13.5%)
 //   one square      every place of the rail a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at 2 px
-//   constant        the rail the same where it stands; on work desks, only the Places key
-//   two sides       nothing of the world is seen in the frame's strips (the top two cells, the left two)
+//   constant        the rail the same where it stands; on work desks, a single identical Places key
+//   two sides       no work through the top strip, or through the desk's left measure (one cell in narrow Forge)
 //   quiet           at rest the frame's marks and words are the frame's quiet colour, its lines the quiet line, nothing
 //                   in it filled with ink; ink only on the place one is in and what is chosen there
 
@@ -28,6 +28,8 @@ function framed() {
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
   const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .forge-places-key, .sr-only';
+  // Forge takes a smaller left measure when the full rail is away on a narrow desk. The top strip is unchanged.
+  const left = document.getElementById('page')?.dataset.place === 'forge' && matchMedia('(max-width: 1000px)').matches ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
     if (el.closest(own) || !shown(el) || el.children.length) continue;
@@ -38,7 +40,7 @@ function framed() {
     const mid = (a: number, b: number) => (a + b) / 2, clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
     const spots: [number, number][] = [];
     if (r.top < IN && r.bottom > 0 && r.right > 0 && r.left < W) spots.push([clamp(mid(r.left, r.right), 0, W - 1), mid(Math.max(r.top, 0), Math.min(r.bottom, IN))]);
-    if (r.left < IN && r.right > 0 && r.bottom > F && r.top < H) spots.push([mid(Math.max(r.left, 0), Math.min(r.right, IN)), clamp(mid(r.top, r.bottom), F, H - 1)]);
+    if (r.left < left - 2 && r.right > 0 && r.bottom > F && r.top < H) spots.push([mid(Math.max(r.left, 0), Math.min(r.right, left - 2)), clamp(mid(r.top, r.bottom), F, H - 1)]);
     for (const [x, y] of spots) {
       const at = document.elementFromPoint(x, y);
       if (at && (at === el || el.contains(at))) intrudes.push(`${el.tagName.toLowerCase()}.${el.className} at ${box(el)}`);
@@ -61,10 +63,15 @@ function framed() {
     for (const line of [c.outlineStyle !== 'none' && c.outlineWidth !== '0px' ? c.outlineColor : '', c.boxShadow.includes(INK) && !c.boxShadow.includes('12px') ? INK : ''])
       if (line === INK) loud.push(`${name}: a line of ink`);
   }
-  return {W, H, places, door: document.querySelector('.door:not([hidden])') && box(document.querySelector('.door')!), intrudes, loud};
+  const corners = [...document.querySelectorAll('#page .forge-places-key')].filter(shown).map((key) => {
+    const mark = key.querySelector('svg')!, c = getComputedStyle(key);
+    return {key: box(key), mark: box(mark), expanded: key.getAttribute('aria-expanded'), color: c.color,
+      inked: c.backgroundColor === INK || c.outlineStyle !== 'none' || c.boxShadow !== 'none'};
+  });
+  return {W, H, places, corners, door: document.querySelector('.door:not([hidden])') && box(document.querySelector('.door')!), intrudes, loud};
 }
 
-test('the frame is the camera\'s: one degree, receding, one square, the same in every place, on two sides only, and quiet at rest', async ({signedIn: app}) => {
+test('the frame is the camera\'s: one degree, receding, one square, a stable rail or corner, on two sides only, and quiet at rest', async ({signedIn: app}) => {
   test.setTimeout(300_000);
   await app.newRepo.make('hello', {template: 'C'});
   await app.git.write('hello', 'Fix: Say hello louder');
@@ -101,8 +108,15 @@ test('the frame is the camera\'s: one degree, receding, one square, the same in 
         const now = JSON.stringify(f.places.map((p) => [p.label, p.box, p.mark]));
         if (place === 'forge' || place === 'git') {
           expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
+          expect(f.door, `${what}: no second way beside the Places key`).toBeNull();
+          expect(f.corners, `${what}: one quiet corner at rest`).toEqual([{
+            key: [size.width - 56, 12, 44, 44],
+            mark: [size.width - 42, 26, 16, 16],
+            expanded: 'false', color: INK, inked: false,
+          }]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {
+          expect(f.corners, `${what}: only the permanent rail here`).toHaveLength(0);
           rail ??= now;
           expect(now, `${what}: the permanent rail as on the other places`).toBe(rail);
         }

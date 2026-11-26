@@ -1,5 +1,5 @@
 import type {PurposeId} from '../../host/purposes.ts';
-import type {ForgePlace} from '../forge/places.ts';
+import type {ForgePlace} from './places.ts';
 import type {Carry} from '../../ui/glide.ts';
 
 /**

@@ -3,7 +3,7 @@ import {h} from '../ui/dom.ts';
 import {setWindowTitle} from '../../api/tauri.ts';
 import {icon} from '../ui/icons.ts';
 import {placeholder} from '../pages/kit/common.ts';
-import type {ForgePlace} from '../pages/forge/places.ts';
+import type {ForgePlace} from '../pages/kit/places.ts';
 import type {Context, Writing} from '../pages/kit/context.ts';
 import {currentProfile, home, startEditing} from '../pages/home/home.ts';
 import {Me} from '../pages/me/me.ts';
