@@ -11,7 +11,7 @@ import {openNext as openConversation} from '../kit/next.ts';
 import {icon} from '../../ui/icons.ts';
 import type {Context} from '../kit/context.ts';
 import {Sections} from './done.ts';
-import {backToMain, crossfade, issueBox, issueHead, issueSteps, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
+import {backToMain, crossfade, issuePaper, issueHead, issueSteps, knowIssues, mergeRow, resize, type IssueEvents, type RepoState} from './issue.ts';
 import {IssueRow} from './issue-row.ts';
 import {RepoFolders} from './repo-chips.ts';
 import {laidOut} from '../../../repo/git-state.ts';
@@ -351,10 +351,11 @@ class GitPage {
     const leave = backToMain(x, st, this.events, this.again);
     // Under the sheet, read down a dotted line from its foot: the change's Review (its history at the line, what it
     // changes and what is said of it at the right), and where the line ends, what is done to the issue from here.
-    const review = reviewBox(x, st, this.again), merge = mergeRow(x, st, this.again);
+    const {box, history: review} = issuePaper(x, st, this.events, this.again);
+    const merge = mergeRow(x, st, this.again);
     const after = review || leave || merge
       ? h('div', {class: 'issue-after'}, h('div', {class: 'issue-run'}, review), leave || merge ? h('div', {class: 'issue-end'}, leave, merge) : null) : null;
-    return [h('div', {class: 'issue-card'}, issueBox(x, st, this.events, this.again)), after].filter((n): n is HTMLElement => !!n);
+    return [h('div', {class: 'issue-card'}, box), after].filter((n): n is HTMLElement => !!n);
   }
 
   /**
