@@ -14,6 +14,9 @@ test.beforeEach(async ({signedIn: app}) => {
 
 test('a file edited is saved, and its own menu offers to put it back as it was at the last commit', async ({signedIn: app}) => {
   expect(await app.file.revertable('hello', 'README.md'), 'as committed: nothing to put back').toBe(false);
+  // Global File now lives at Home. Dismiss it and return to the same paper before writing.
+  await app.file.close();
+  await app.rail.go('forge');
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   // Gone from and come back to, it is as it was written.
   await app.rail.go('home');
@@ -49,6 +52,8 @@ test('a file put back from its own menu is as it was at the last commit, and its
   await app.forge.editFile('README.md', '# hello\n\nNot wanted.\n');
 
   await app.file.revert('hello', 'README.md', 'Local modifications discarded.');
+  await app.file.close();
+  await app.rail.go('forge');
 
   await expect(app.forge.editor('README.md')).toHaveValue(was);
   expect(await app.file.revertable('hello', 'README.md')).toBe(false);

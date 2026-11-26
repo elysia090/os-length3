@@ -6,7 +6,7 @@ import {expect, test} from './fixtures.ts';
 //   one degree      the frame is 2 cells (48 px, about 1° at arm's length) every way, on every screen
 //   receding        it takes no more of a desk screen than film's safe-action margin does (13.5%)
 //   one square      every place of the rail a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at 2 px
-//   constant        the rail the same where it stands; on work desks, a single identical Places key
+//   constant        the rail the same where it stands; on work desks, a single Places key, beside Search when available
 //   two sides       no work through the top strip, or through the desk's left measure (one cell in narrow Forge)
 //   quiet           at rest the frame's marks and words are the frame's quiet colour, its lines the quiet line, nothing
 //                   in it filled with ink; ink only on the place one is in and what is chosen there
@@ -15,7 +15,7 @@ const U = 24, F = 2 * U;
 const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 1366, height: 768}, {width: 1024, height: 768}, {width: 390, height: 844}, {width: 320, height: 568}];
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
 const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)', FRAME_EDGE = 'rgb(110, 109, 106)';
-const CORNER = {forge: 'rgb(193, 190, 176)', git: 'rgb(239, 235, 227)', inbox: 'rgb(239, 235, 227)'} as const;
+const CORNER = {forge: 'rgb(193, 190, 176)', git: 'rgb(193, 190, 176)', inbox: 'rgb(239, 235, 227)'} as const;
 
 /** The frame as it stands now: run in the page. */
 function framed() {
@@ -28,7 +28,7 @@ function framed() {
     return {label: b.getAttribute('aria-label') ?? '', box: box(b), mark: box(mark), stroke: path ? getComputedStyle(path).strokeWidth : '', colour: getComputedStyle(b).color, current: b.getAttribute('aria-current') === 'page'};
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
-  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .forge-places-key, .sr-only';
+  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .forge-places-key, .forge-search-key, .sr-only';
   // Forge takes a smaller left measure when the full rail is away on a narrow desk. The top strip is unchanged.
   const place = document.getElementById('page')?.dataset.place;
   const left = (place === 'forge' || place === 'inbox') && matchMedia('(max-width: 999px)').matches ? 24 : F;
@@ -65,9 +65,9 @@ function framed() {
     for (const line of [c.outlineStyle !== 'none' && c.outlineWidth !== '0px' ? c.outlineColor : '', c.boxShadow.includes(INK) && !c.boxShadow.includes('12px') ? INK : ''])
       if (line === INK) loud.push(`${name}: a line of ink`);
   }
-  const corners = [...document.querySelectorAll('#page .forge-places-key')].filter(shown).map((key) => {
+  const corners = [...document.querySelectorAll('#page :is(.forge-places-key, .forge-search-key)')].filter(shown).map((key) => {
     const mark = key.querySelector('svg')!, c = getComputedStyle(key);
-    return {key: box(key), mark: box(mark), expanded: key.getAttribute('aria-expanded'), color: c.color,
+    return {label: key.getAttribute('aria-label'), key: box(key), mark: box(mark), expanded: key.getAttribute('aria-expanded'), color: c.color,
       inked: c.backgroundColor === INK || c.outlineStyle !== 'none' || c.boxShadow !== 'none'};
   });
   const door = document.querySelector('.door:not([hidden])');
@@ -112,11 +112,14 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
         if (place === 'forge' || place === 'git' || place === 'inbox') {
           expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
           expect(f.door, `${what}: no second way beside the Places key`).toBeNull();
-          expect(f.corners, `${what}: one quiet corner at rest`).toEqual([{
-            key: [size.width - 56, 12, 44, 44],
-            mark: [size.width - 42, 26, 16, 16],
-            expanded: 'false', color: CORNER[place], inked: false,
-          }]);
+          const key = (label: 'Places' | 'Search', right: number) => ({
+            label, key: [size.width - right - 44, 12, 44, 44],
+            mark: [size.width - right - 31, 25, 18, 18],
+            expanded: label === 'Places' ? 'false' : null, color: CORNER[place], inked: false,
+          });
+          const places = key('Places', 12);
+          expect(f.corners, `${what}: one quiet corner at rest`).toEqual(
+            place === 'inbox' ? [places] : [key('Search', 56), places]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {
           expect(f.corners, `${what}: only the permanent rail here`).toHaveLength(0);
