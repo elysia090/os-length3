@@ -38,6 +38,8 @@ export interface Laid {
   /** A terminal rather than a file's sheet: the person's ('term': first in the row, never taken off, no name over
    * it) or the Agent's ('agent'). */
   kind?: 'term' | 'agent';
+  /** A second view of the same file is closed only from the original paper. */
+  companion?: boolean;
 }
 
 type Way = 'left' | 'right';
@@ -251,9 +253,9 @@ export class Desk {
       ...(laid.after ? [h('span', {class: 'desk-dir desk-after'}, laid.after)] : []));
     const rename = laid.rename;
     if (rename) name.addEventListener('click', () => { if (!getSelection()?.toString()) rename(name); });
-    const close = term ? null : h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})}, mark('close'));
+    const close = term || laid.companion ? null : h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})}, mark('close'));
     close?.addEventListener('click', (e) => { e.stopPropagation(); this.#shut(key); });
-    const el = h('div', {class: 'desk-box', 'data-key': key, ...(laid.kind ? {'data-kind': laid.kind} : {})}, ...(term ? [] : [label]), laid.element, ...(close ? [close] : []));
+    const el = h('div', {class: 'desk-box', 'data-key': key, ...(laid.kind ? {'data-kind': laid.kind} : {}), ...(laid.companion ? {'data-beside': ''} : {})}, ...(term ? [] : [label]), laid.element, ...(close ? [close] : []));
     // Where it is scrolled to inside it is said in it while it is scrolled, by a mark cut square at its edge.
     scrollMarks(el);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the desk turns after the
@@ -300,7 +302,7 @@ export class Desk {
   }
 
   /** `key` taken off the desk, at once; the piece in hand, if it was, is the one beside it. */
-  lift(key: string) {
+  lift(key: string, focus = true) {
     const b = this.#boxes.get(key);
     if (!b) return;
     const after = next(this.#row, key, 'left') ?? next(this.#row, key, 'right');
@@ -309,7 +311,7 @@ export class Desk {
     this.#boxes.delete(key);
     this.#row = this.#row.filter((k) => k !== key);
     this.#relay(true);
-    if (this.#held === key) { this.#held = null; if (after) this.take(after); else this.#changed(); }
+    if (this.#held === key) { this.#held = null; if (after) this.take(after, focus); else this.#changed(); }
   }
 
   /** The name said over `key` changed (a file renamed). */

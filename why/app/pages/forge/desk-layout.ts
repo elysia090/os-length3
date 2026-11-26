@@ -1,6 +1,6 @@
 // Where each piece of the desk lies (desk.ts), and how far along it the desk is turned: kept apart from the page so it
 // is measured and tested as numbers. One rule for where a piece is: the pieces lie in a row on a 24 px grid in the
-// order they were opened (the terminal first), every one the same width, two cells between them, so a piece's place is
+// order they were opened (the terminal first), every one the same width, one cell between them, so a piece's place is
 // its number in the row and nothing else: x = n * (WIDTH + GAP). Every piece's top is on one line, a cell under the
 // band (its name stands in that cell); it is as tall as its lines, never lower than a cell over the window's foot,
 // what is under that scrolled to inside it. The desk rests only with a piece at its edge: a piece gone to that is
@@ -24,15 +24,15 @@ export const CODE = 17;
 export const WIDTH = up(2 * GRID + 49 * CODE * .602 + GRID);
 /** How many lines of the terminal are in sight. */
 export const TERM_LINES = 18;
-/** Between two pieces: the shadow of the one in hand, and a cell and a half clear of it. */
-export const GAP = 2 * GRID;
+/** One cell between papers, including the active paper's thin shadow. */
+export const GAP = GRID;
 /** The desk's ground before its first piece (none: it starts where the band's keys do), over the pieces (their names
  * stand in it), and under them. */
 export const PAD = 0;
 export const TOP = GRID;
 export const FOOT = GRID;
-/** A piece's shadow, half a cell right and down (styles: --shade). */
-export const SHADOW = GRID / 2;
+/** The active paper's shadow (forge-places.css). */
+export const SHADOW = 4;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
 

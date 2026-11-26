@@ -1,7 +1,7 @@
 /* Forge's own plane. The place switch and temporary tools never claim a grid cell. */
 body.forge-place {
   --forge-origin: 48px;
-  --forge-top: 72px;
+  --forge-top: 90px;
   --forge-slot: 630px;
   --forge-slot-width: min(360px, calc(100vw - var(--forge-slot) - 24px));
   padding: 0;
@@ -21,11 +21,24 @@ body.forge-place > .rail, body.forge-place > #door { display: none; }
 .forge-layout.work.bench > .bar { display: none; }
 .forge-layout.work.bench.forge-searching > .bar { display: flex; position: absolute; top: 12px; left: var(--forge-origin); width: min(576px, calc(100% - var(--forge-origin) - 60px)); height: 36px; z-index: 12; }
 .forge-layout .band-tools .search-results { left: 0; top: 52px; }
-.forge-layout .desk .desk-box { --line: 19px; padding-block: 6px; box-shadow: none; }
-.forge-layout .desk-file > .sheet { padding-inline-end: 6px; grid-template-columns: minmax(25px, max-content) minmax(0, 1fr); }
-.forge-layout .desk-label { padding-inline: 6px; }
-.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held { background: var(--ground); outline-color: var(--edge); color: var(--sub); }
-.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held > .desk-label { color: var(--sub); }
+.forge-title { position: absolute; z-index: 1; top: 24px; left: var(--forge-origin); margin: 0; padding-inline-end: 8px;
+  background: var(--ground); color: var(--ink); font: 700 17px/24px var(--sans); pointer-events: none; }
+.forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: 16px; padding-block: var(--sheet-inset-y); box-shadow: none; }
+.forge-layout .desk :is(.gutter, .code) { font-size: 16px; }
+.forge-layout .desk-file { max-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
+.forge-layout .desk-file.long { height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
+.forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
+.forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: 16px; }
+.forge-layout .desk-close { margin-block-end: 6px; }
+.forge-layout .desk-room:not([data-place='Forge']) .desk-box[data-beside] { visibility: hidden; }
+.forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) { box-shadow: 4px 4px 0 var(--ink); }
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held,
+.forge-layout .desk .desk-box.leaving:not(.held),
+body:has(.forge-document-menu) .forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) {
+  background: var(--ground); outline-color: var(--edge); color: var(--sub); box-shadow: none; }
+.forge-layout .desk-box:not(.held) > .desk-label,
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held > .desk-label,
+body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: var(--sub); font-weight: 400; }
 
 .forge-places-key { position: fixed; top: 12px; right: 12px; z-index: 19; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); cursor: var(--cursor-hand); }
@@ -40,8 +53,9 @@ body.forge-place > .rail, body.forge-place > #door { display: none; }
   font: inherit; color: inherit; cursor: var(--cursor-hand); }
 .forge-menu-item:is(:hover, :focus-visible):not(:disabled) { background: var(--slot); outline-offset: -2px; }
 .forge-menu-item:disabled { color: var(--sub); cursor: var(--cursor-arrow); }
-.forge-places [role='menuitemradio'] { padding-inline-start: 26px; position: relative; }
-.forge-places [aria-checked='true']::before { content: '✓'; position: absolute; left: 8px; }
+.forge-places [role='menuitemradio'],
+.forge-document-menu:has([role='menuitemcheckbox']) .forge-menu-item { padding-inline-start: 26px; position: relative; }
+.forge-menu [aria-checked='true']::before { content: '✓'; position: absolute; left: 8px; }
 .forge-folders { min-width: min(250px, calc(100vw - 12px)); }
 .forge-folder-status, .forge-menu-status { padding: 3px 8px; color: var(--sub); }
 .forge-folder-status:empty, .forge-menu-status:empty { display: none; }
@@ -79,7 +93,7 @@ body.forge-routes .forge-route-tools { display: grid; border-top: 1px solid var(
   width: var(--forge-slot-width); padding: 6px; outline-color: var(--ink); box-shadow: none; }
 .file-tree.on-forge-desk::before { content: none; }
 .file-tree.on-forge-desk > .tree-children { padding: 0; }
-.file-tree.on-forge-desk .tree-desk-root > .tree-row { position: absolute; left: 0; right: 56px; bottom: 100%; padding: 0 6px; margin: 0; }
+.file-tree.on-forge-desk .tree-desk-root > .tree-row { position: absolute; left: 0; right: 56px; bottom: calc(100% + 6px); padding: 0 6px; margin: 0; }
 .file-tree.on-forge-desk .tree-desk-root > .tree-row > .tree-name { flex: 0 1 auto; min-width: 0; }
 .file-tree.on-forge-desk .tree-row { --in: calc(max(0, var(--depth, 0)) * 15px); min-height: 24px; margin: 0; }
 .file-tree.on-forge-desk .tree-row:not(:has(> .tree-more[aria-expanded='true'])) { color: var(--ink); background: transparent; }

@@ -1,10 +1,11 @@
 import {nativeOptionArrow} from '../../ui/text-keys.ts';
-import {differs, Held} from '../../../repo/conflict.ts';
+import {differs} from '../../../repo/conflict.ts';
 import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
 import {t} from '../../../text/i18n.ts';
 import {lineCount} from '../../../repo/reading.ts';
-import {EDIT_LIMIT, store} from '../../../repo/repos.ts';
+import {EDIT_LIMIT} from '../../../repo/repos.ts';
+import {Draft} from './draft.ts';
 import {answers} from '../kit/common.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
 import {diffFiles} from '../kit/diff-view.ts';
@@ -207,8 +208,8 @@ export function numbering(gutter: HTMLElement): (text: string) => void {
 
 /** A file's box, as the page draws it, that an editor is made in. */
 interface FileBox {
-  repo: string;
   path: string;
+  companion: boolean;
   /** The file's head: what is asked when it was saved elsewhere comes under it. */
   head: HTMLElement;
   /** Where its text is, its line numbers (`gutter`) beside it, written by `number`. */
@@ -225,10 +226,10 @@ interface FileBox {
 /** One file's text, to be written in and saved. */
 export class Editor {
   readonly area: HTMLTextAreaElement;
-  private box: FileBox;
-  /** Its text as saved, as written here, and as saved elsewhere (conflict.ts). */
-  private held: Held;
-  private timer = 0;
+  readonly draft: Draft;
+  private readonly box: FileBox;
+  private readonly listening = new AbortController();
+  readonly #unwatch: () => void;
   /** The text's length and lines as it was last fitted to (-1: not fitted). */
   private fitted = {length: -1, lines: -1};
   // Saved elsewhere while this one has unsaved edits: asked in the box, over the text, which
@@ -243,43 +244,44 @@ export class Editor {
   private large = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('File too large to save here')});
   private whole = h('button', {type: 'button', class: 'button small-button primary'}, t('Save full file')) as HTMLButtonElement;
 
-  /** `text` in an editor, put on the `box`'s sheet. */
-  constructor(text: string, box: FileBox) {
+  /** A view of the draft, put on the box's sheet. */
+  constructor(draft: Draft, box: FileBox) {
+    this.draft = draft;
     this.box = box;
     const area = this.area = h('textarea', {class: 'code code-edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
-      'aria-label': t('Edit {path}', {path: shownPath(box.path)})}) as HTMLTextAreaElement;
-    area.value = text;
+      'aria-label': t(box.companion ? 'Edit {path} beside' : 'Edit {path}', {path: shownPath(box.path)})}) as HTMLTextAreaElement;
+    area.value = draft.text;
     box.sheet.replaceChildren(box.gutter, area);
-    box.sheet.addEventListener('pointerdown', (event) => this.pressed(event));
-    requestAnimationFrame(() => this.fit());
-    this.held = new Held(text);
+    const listening = {signal: this.listening.signal};
+    box.sheet.addEventListener('pointerdown', (event) => this.pressed(event), listening);
+    requestAnimationFrame(() => { if (!this.listening.signal.aborted) this.fit(); });
+    this.#unwatch = draft.watch(() => this.paint());
     this.see.addEventListener('click', () => {
       this.difference.hidden = !this.difference.hidden;
       this.see.setAttribute('aria-expanded', String(!this.difference.hidden));
       this.paintDiff();
     });
     this.other.addEventListener('click', () => {
-      this.show(this.held.useTheirs());
-      this.settle();
-      box.state.el.textContent = '';
+      draft.useTheirs();
       area.focus();
     });
     this.mine.addEventListener('click', async () => {
-      const text = this.held.keepMine(area.value);
-      this.settle();
-      await this.write(text);
-      area.focus();
+      await draft.keepMine();
+      if (area.isConnected) area.focus();
     });
     this.whole.addEventListener('click', () => void this.saveWhole());
-    area.addEventListener('input', () => this.typed());
-    area.addEventListener('blur', () => void this.save());
+    area.addEventListener('input', () => this.typed(), listening);
+    area.addEventListener('blur', () => void draft.flush(), listening);
     // The tab closing (or put away) saves what is written, before the store keeps what it has (repos.ts).
-    addEventListener('beforeunload', this.leaving);
-    document.addEventListener('visibilitychange', this.leaving);
-    area.addEventListener('keydown', (event) => this.key(event));
+    addEventListener('beforeunload', this.leaving, listening);
+    document.addEventListener('visibilitychange', this.leaving, listening);
+    area.addEventListener('keydown', (event) => this.key(event), listening);
     // Undo and Redo of an indent or a move take back the selection it had, not only the text.
-    area.addEventListener('input', (event) => this.undone(event as InputEvent));
+    area.addEventListener('input', (event) => this.undone(event as InputEvent), listening);
+    this.paint();
   }
+
+  drop() { this.listening.abort(); this.#unwatch(); }
 
   /**
    * Fitted to its text; out of sight (folded, or its page hidden) it cannot be measured: fitted again when it shows.
@@ -300,8 +302,28 @@ export class Editor {
     area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`;
   }
 
-  /** `text` in the editor, fitted and numbered. */
-  private show(text: string) { this.area.value = text; this.fit(); this.box.number(text); }
+  /** A change from the other view or the store must not take this view's selection or scroll. */
+  private show(text: string) {
+    const {area} = this, {selectionStart, selectionEnd, selectionDirection, scrollLeft, scrollTop} = area;
+    area.value = text;
+    area.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
+    this.fit();
+    this.box.number(text);
+    area.scrollTo(scrollLeft, scrollTop);
+  }
+
+  private paint() {
+    const {draft, box} = this;
+    if (this.area.value !== draft.text) this.show(draft.text);
+    if (draft.theirs !== null) { this.asking(); return; }
+    if (this.ask.isConnected) this.settle();
+    if (!draft.tooLarge) this.fits();
+    if (draft.failed) box.state.el.textContent = t('Failed to save: {message}', {message: errorText(draft.error)});
+    else if (draft.unread) box.state.el.textContent = t('File changed on disk. Unsaved changes are kept here.');
+    else if (draft.tooLarge) this.tooLarge();
+    else if (draft.clean) box.state.saved();
+    else box.state.unsaved();
+  }
 
   /**
    * The whole box is the place to write. A press beside the text (its numbers, or the room around
@@ -327,9 +349,9 @@ export class Editor {
 
   /** What differs between the other text and this one, drawn under the answers while it is open. */
   private paintDiff() {
-    const {difference, held} = this;
-    if (difference.hidden || held.theirs === null) return;
-    const d = differs(held.theirs, this.area.value);
+    const {difference, draft} = this;
+    if (difference.hidden || draft.theirs === null) return;
+    const d = differs(draft.theirs, draft.text);
     difference.replaceChildren(...diffFiles([{path: t('Compare local vs. external'), status: 'modified', binary: false, lines: d.lines, more: d.more}]));
   }
 
@@ -343,7 +365,6 @@ export class Editor {
   /** Saved elsewhere while this one has unsaved edits: asked under the head, nothing saved until it is answered. */
   private asking() {
     const {ask} = this;
-    clearTimeout(this.timer);
     this.box.state.el.textContent = t('Modified externally');
     keepOut(ask);
     if (!ask.isConnected) {
@@ -357,56 +378,13 @@ export class Editor {
   }
 
   /**
-   * A text saved elsewhere (another device, the shell, why, Git) comes in unless this one has unsaved edits: then it
-   * is asked, and false.
-   */
-  take(text: string): boolean {
-    const {state} = this.box;
-    const came = this.held.came(text, this.area.value);
-    // (Its own save heard back after it was written on again: nothing came from elsewhere.)
-    if (came === 'known') return true;
-    if (came === 'ask') { this.asking(); return false; }
-    if (came === 'take') this.show(text);
-    this.settle();
-    if (came === 'same' || state.el.textContent === t('Modified externally')) state.el.textContent = '';
-    return true;
-  }
-
-  private async write(text: string) {
-    const {state} = this.box;
-    try {
-      this.held.writes(text);
-      await store.write(this.box.repo, this.box.path, text);
-      this.held.wrote(text);
-      if (this.area.value === this.held.saved) state.saved(); else state.unsaved();
-    } catch (e) {
-      state.el.textContent = t('Failed to save: {message}', {message: errorText(e)});
-    }
-  }
-
-  private async save() {
-    clearTimeout(this.timer);
-    if (!this.held.canSave) return;
-    if (this.area.value === this.held.saved) { this.box.state.saved(); return; }
-    // Past what Forge edits, it is not written as it is (it would come back read in part): said, with the way on.
-    if (this.over()) { this.tooLarge(); return; }
-    this.fits();
-    await this.write(this.area.value);
-  }
-
-  /** Whether what is written is more than Forge edits and saves. */
-  private over(): boolean {
-    return this.area.value.length > EDIT_LIMIT / 4 && new TextEncoder().encode(this.area.value).length > EDIT_LIMIT;
-  }
-
-  /**
    * Grown past what Forge edits: the head says it is not saved, and the box how big it is and what can be done (made
    * once; written on, only its size follows, so Save it whole never moves under the pointer).
    */
   private tooLarge() {
     const {large} = this;
     const size = t('Size is {size}. Forge can only save files up to {limit}. Unsaved changes remain in editor.',
-      {size: bytes(new TextEncoder().encode(this.area.value).length), limit: bytes(EDIT_LIMIT)});
+      {size: bytes(this.draft.bytes()), limit: bytes(EDIT_LIMIT)});
     this.box.state.el.textContent = t('Unsaved · Exceeds {limit}', {limit: bytes(EDIT_LIMIT)});
     keepOut(large);
     if (large.isConnected) { large.firstElementChild!.textContent = size; return; }
@@ -423,47 +401,25 @@ export class Editor {
     putAway(large, () => large.remove(), {fold: true});
   }
 
-  /** Kept whole as written, past what Forge edits: the page reads it again, its start to read (reader.ts). */
+  /** Kept whole as written, past what Forge edits: the page reads its start to read. */
   private async saveWhole() {
-    const {state} = this.box;
     this.whole.disabled = true;
-    try {
-      const text = this.area.value;
-      this.held.writes(text);
-      await store.put(this.box.repo, this.box.path, new TextEncoder().encode(text));
-      this.held.wrote(text);
-      this.fits();
-      state.saved();
-    } catch (e) {
-      state.el.textContent = t('Failed to save: {message}', {message: errorText(e)});
-    } finally { this.whole.disabled = false; }
+    try { await this.draft.flush(true); } finally { this.whole.disabled = false; }
   }
 
-  /** Written in: saved a moment after the typing stops, unless what to keep is still being asked. */
   private typed() {
-    const {area, held} = this;
     this.fit(true);
-    this.box.number(area.value);
-    if (held.asking) {
-      // Written on until it is theirs: nothing is left to ask.
-      if (held.typed(area.value)) { this.settle(); this.box.state.el.textContent = ''; } else this.paintDiff();
+    this.box.number(this.area.value);
+    this.draft.edit(this.area.value);
+  }
+
+  private leaving = (event: Event) => {
+    if (!this.area.isConnected || this.draft.clean) return;
+    if (event.type === 'beforeunload' && (this.draft.tooLarge || this.draft.failed || this.draft.unread || this.draft.theirs !== null)) {
+      event.preventDefault();
       return;
     }
-    // Too large to save, it keeps saying so (not the dot) until it is small enough or saved whole.
-    if (!this.large.isConnected) this.box.state.unsaved();
-    clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => void this.save(), 700);
-  }
-
-  /**
-   * The tab closing or put away: what is written is saved (once the editor is gone, it no longer listens). What cannot
-   * be saved as it is (too large) is not lost without a word: the browser asks before the tab closes.
-   */
-  private leaving = (event: Event) => {
-    if (!this.area.isConnected) { removeEventListener('beforeunload', this.leaving); document.removeEventListener('visibilitychange', this.leaving); return; }
-    if (this.area.value === this.held.saved) return;
-    if (event.type === 'beforeunload' && this.over()) { event.preventDefault(); return; }
-    void this.save();
+    void this.draft.flush();
   };
 
   /**
@@ -475,7 +431,7 @@ export class Editor {
     if (event.isComposing || nativeOptionArrow(event)) return;
     const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
     const alt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
-    if (ctrl && event.key === 's') { event.preventDefault(); void this.save(); return; }
+    if (ctrl && event.key === 's') { event.preventDefault(); void this.draft.flush(); return; }
     if (ctrl && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
       event.preventDefault();
       indent(this.area, event.code === 'BracketLeft');

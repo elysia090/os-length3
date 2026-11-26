@@ -16,6 +16,7 @@ import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
 import {openFolder} from './open-folder.ts';
 import {workPlaces, type WorkPlace} from './places.ts';
+import type {BesideOption} from './document-menu.ts';
 
 /**
  * Forge owns each repo's retained document desk. Files and Prompt take a separate slot without changing
@@ -88,16 +89,18 @@ function keptDesk(repo: string): Kept | null {
   try { const k = JSON.parse(localStorage.getItem(KEPT + repo) ?? 'null') as Kept | null; return k && Array.isArray(k.cols) ? k : null; } catch { return null; }
 }
 
-function kept(repo: string, desk: Desk) {
-  const files = desk.row.filter((key) => key !== TERM && key !== AGENT);
-  try { localStorage.setItem(KEPT + repo, JSON.stringify({cols: files.map((key) => [key]), held: desk.held})); } catch { /* kept for this run only */ }
+function kept(repo: string, {desk, beside}: Laid) {
+  const files = desk.row.filter((key) => key !== TERM && key !== AGENT && key !== BESIDE);
+  const held = desk.held === BESIDE ? beside?.path ?? null : desk.held;
+  try { localStorage.setItem(KEPT + repo, JSON.stringify({cols: files.map((key) => [key]), held})); } catch { /* kept for this run only */ }
 }
 
 /** The terminal's key on a desk, and the Agent's own terminal's. */
-const TERM = 'term', AGENT = 'agent';
+const TERM = 'term', AGENT = 'agent', BESIDE = '\0beside';
 
 /** A repo's desk, and the files lying on it. */
-interface Laid { desk: Desk; files: Map<string, DeskFile> }
+interface Twin { path: string; file: DeskFile; closing: Promise<boolean> | null }
+interface Laid { desk: Desk; files: Map<string, DeskFile>; beside: Twin | null }
 
 /** The page, its parts put together: the desk of each repo worked on here, and the one on screen. */
 class Forge {
@@ -107,6 +110,7 @@ class Forge {
   private now: {repo: string | null} = {repo: null};
   private readonly switcher: ReturnType<typeof workPlaces>;
   private readonly prompt: HTMLElement;
+  private readonly title: HTMLElement;
   private placeInHand: WorkPlace = 'Forge';
   private folderOut: (() => void) | null = null;
   private startOut: HTMLElement | null = null;
@@ -214,8 +218,8 @@ class Forge {
     document.addEventListener('keydown', keys, true);
     this.offKeys = () => document.removeEventListener('keydown', keys, true);
     this.known = ctx.repo;
-    // The accessible page heading does not cost a persistent band.
-    this.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
+    this.title = h('h1', {class: 'forge-title'}, t('Forge'));
+    this.element.prepend(this.title);
   }
 
   /**
@@ -266,7 +270,10 @@ class Forge {
     this.switcher.drop();
     this.offChange();
     this.offKeys();
-    for (const d of this.desks.values()) for (const f of d.files.values()) f.drop();
+    for (const d of this.desks.values()) {
+      d.beside?.file.drop();
+      for (const f of d.files.values()) f.drop();
+    }
   }
 
   /**
@@ -296,7 +303,7 @@ class Forge {
   /** The file in hand on `repo`'s desk ('' while a terminal is: the person's, or the Agent's). */
   private fileHeld(repo: string): string {
     const d = this.desks.get(repo), held = d?.desk.held;
-    return held && d.files.has(held) ? held : '';
+    return held === BESIDE ? d?.beside?.path ?? '' : held && d?.files.has(held) ? held : '';
   }
 
   /** Shift+N: a new file made at once beside the box in hand (at the repo's top, with no ending, beside a terminal),
@@ -322,6 +329,7 @@ class Forge {
     const there = d.files.get(to);
     if (there) return there;
     if (!d.files.has(from)) return null;
+    if (d.beside?.path === from) this.forgetBeside(d);
     const f = this.layFile(repo, d, to, {instead: from});
     d.files.get(from)?.drop();
     d.files.delete(from);
@@ -340,6 +348,7 @@ class Forge {
     const repo = this.now.repo;
     if (!repo) return;
     this.placeInHand = place;
+    this.title.textContent = t(place);
     this.center.dataset.place = place;
     this.prompt.hidden = place !== 'Prompt';
     this.switcher.set(place, true);
@@ -400,18 +409,21 @@ class Forge {
     if (!d) {
       const files = new Map<string, DeskFile>();
       let restoring = true;
-      const desk = new Desk(t('Files in {name}', {name: repo}), repo, (key) => this.shut(repo, key), () => {
+      const name = () => desk.element.dataset.repo!;
+      const desk = new Desk(t('Files in {name}', {name: repo}), repo, (key) => void this.closeFile(name(), key), () => {
         if (restoring) return;
-        kept(repo, desk);
+        const current = name(), laid = this.desks.get(current);
+        if (!laid) return;
+        kept(current, laid);
+        const path = this.fileHeld(current);
         // The file in hand is the one Forge works on: File marks it (told once each time it is another).
-        if (this.now.repo === repo && desk.held && desk.held !== AGENT && desk.held !== TERM && desk.held !== this.told) {
-          this.told = desk.held;
-          this.ctx.reading(desk.held);
-          // Where the person left off (Home says it): the file in hand.
-          this.ctx.leftAt(repo, desk.held, 0);
+        if (this.now.repo === current && path && path !== this.told) {
+          this.told = path;
+          this.ctx.reading(path);
+          this.ctx.leftAt(current, path, 0);
         }
       });
-      d = {desk, files};
+      d = {desk, files, beside: null};
       this.desks.set(repo, d);
       // Written in a box: where the person left off (Home says the line) is where its caret is.
       desk.element.addEventListener('input', (e) => {
@@ -423,7 +435,7 @@ class Forge {
       const was = keptDesk(repo);
       // (The terminal is the bench's own, laid as the desk comes on screen; the Agent's is born again when it is asked
       // again. A desk kept in columns is laid as a row, column by column.)
-      for (const key of (was?.cols ?? []).flat()) if (key !== TERM && key !== AGENT && !d.files.has(key)) this.layFile(repo, d, key, {at: Infinity});
+      for (const key of (was?.cols ?? []).flat()) if (key !== TERM && key !== AGENT && key !== BESIDE && !d.files.has(key)) this.layFile(repo, d, key, {at: Infinity});
       if (was?.held && desk.has(was.held)) desk.take(was.held, false);
       // A desk never worked at: its README, to be read first.
       if (!was) {
@@ -444,22 +456,74 @@ class Forge {
     const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
       const to = await renaming(repo, from, written);
       if (to === from) return;
+      if (!await f.flush()) throw new Error(t('Save the file before renaming it.'));
       await store.move(repo, from, to);
       // Named, it is written in: the box where it lay, the keyboard going on from its name into it, at its end.
       this.moved(repo, from, to)?.toEnd();
-    }, () => f.toEnd()));
+    }, () => f.toEnd()), {
+      beside: () => this.besideOption(d, path),
+      readOnly: () => { if (d.beside?.path === path) this.forgetBeside(d); },
+    });
     d.files.set(path, f);
     d.desk.lay(path, f, how);
     return f;
   }
 
+  private besideOption(d: Laid, path: string): BesideOption | null {
+    if (this.placeInHand !== 'Forge' || this.now.repo === null || this.desks.get(this.now.repo) !== d
+      || d.desk.row.find((key) => d.files.has(key)) !== path) return null;
+    return {checked: d.beside?.path === path, toggle: (ownsFocus) => this.toggleBeside(d, path, ownsFocus)};
+  }
+
+  private async toggleBeside(d: Laid, path: string, ownsFocus: () => boolean): Promise<boolean> {
+    const first = d.files.get(path);
+    if (!first || !this.besideOption(d, path)) return false;
+    const open = d.beside;
+    if (open) {
+      if (open.path !== path) return false;
+      return open.closing ??= (async () => {
+        try {
+          if (!await first.flush()) return false;
+          if (d.beside !== open) return true;
+          const back = ownsFocus() && this.visible() && this.besideOption(d, path) !== null;
+          this.forgetBeside(d);
+          if (back) d.desk.take(path, true, false, true);
+          return true;
+        } finally { open.closing = null; }
+      })();
+    }
+    const twin = first.beside(() => d.desk.relayout());
+    if (!twin) return false;
+    d.beside = {path, file: twin, closing: null};
+    d.desk.lay(BESIDE, {...twin, companion: true}, {after: path});
+    // Wide: the original paper does not move. Narrow: the same desk looks along to the second paper.
+    d.desk.take(BESIDE, true, false, true);
+    return true;
+  }
+
+  private forgetBeside(d: Laid) {
+    const view = d.beside;
+    if (!view) return;
+    d.beside = null;
+    view.file.drop();
+    d.desk.lift(BESIDE, false);
+  }
+
+  private async closeFile(repo: string, key: string) {
+    const file = this.desks.get(repo)?.files.get(key);
+    if (file && await file.flush() && this.desks.get(repo)?.files.get(key) === file) {
+      this.shut(repo, key, this.now.repo === repo && this.visible() && this.placeInHand === 'Forge');
+    }
+  }
+
   /** A file's box taken off the desk (its close, or the file gone); the Prompt's stays. */
-  private shut(repo: string, key: string) {
+  private shut(repo: string, key: string, focus = true) {
     const d = this.desks.get(repo);
     if (!d) return;
+    if (d.beside?.path === key) this.forgetBeside(d);
     d.files.get(key)?.drop();
     d.files.delete(key);
-    d.desk.lift(key);
+    d.desk.lift(key, focus);
   }
 
   /** `path` of the repo worked on, a box on its desk (laid now if it was not), in hand; at `line`, the keyboard in it
@@ -532,6 +596,7 @@ class Forge {
   /** No selected repo: a visible first move and the same action from the bare desk. */
   private none() {
     this.now.repo = null;
+    this.title.textContent = t('Forge');
     this.work.setRepo(null);
     this.prompt.hidden = true;
     this.center.dataset.place = 'Forge';
@@ -577,6 +642,7 @@ class Forge {
     const {ctx} = this;
     for (const name of [...this.desks.keys()]) if (!all.includes(name)) {
       const gone = this.desks.get(name)!;
+      gone.beside?.file.drop();
       for (const f of gone.files.values()) f.drop();
       gone.desk.element.remove();
       this.desks.delete(name);

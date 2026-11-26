@@ -63,6 +63,7 @@ export class Held {
   /** `text` is being written to the store; `wrote`, it is there. */
   writes(text: string) { this.writing = text; }
   wrote(text: string) { this.saved = text; this.writing = null; }
+  failed() { this.writing = null; }
 }
 
 /** What saving here would do to the other text: theirs before, mine after, as a diff shows a change. */

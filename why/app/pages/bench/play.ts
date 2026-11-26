@@ -65,7 +65,9 @@ const held = new Map<string, {count: number; text: string | null; made: boolean}
 
 /** An editor open on `path` of `repo` (forge/desk-file.ts): the player types into it through `take`. */
 export function editorOn(repo: string, path: string, editor: Editing) {
-  editors.set(key(repo, path), editor);
+  const name = key(repo, path);
+  editors.set(name, editor);
+  return () => { if (editors.get(name) === editor) editors.delete(name); };
 }
 
 /**

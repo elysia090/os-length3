@@ -40,8 +40,15 @@ export async function clipboardEdit(edit: Exclude<Edit, 'Select All'>, selection
 
 let closeActive: (() => void) | undefined;
 
+export interface BesideOption {
+  checked: boolean;
+  /** Whether action may still restore the caller's focus, including after an acknowledgment. */
+  toggle(ownsFocus: () => boolean): Promise<boolean> | boolean;
+}
+
 /** The file's actual editor, not a directory row, terminal, loading text, or a stale textarea. */
-export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElement | null): () => void {
+export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElement | null,
+  beside?: () => BesideOption | null): () => void {
   const listening = new AbortController();
   let putAway: ((back?: boolean) => void) | undefined;
   const eligible = (area: HTMLTextAreaElement | null): area is HTMLTextAreaElement =>
@@ -107,6 +114,24 @@ export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElem
         || (area.readOnly && (edit === 'Cut' || edit === 'Paste')) || (edit === 'Select All' && !selected.value);
       b.addEventListener('click', () => { void run(edit); });
       buttons.push(b);
+    }
+    const view = beside?.();
+    if (view) {
+      const toggle = h('button', {class: 'forge-menu-item', type: 'button', role: 'menuitemcheckbox',
+        'aria-checked': String(view.checked)}, t('Beside')) as HTMLButtonElement;
+      toggle.addEventListener('click', async () => {
+        if (busy || !owned()) return;
+        busy = true;
+        toggle.disabled = true;
+        const done = await view.toggle(owned);
+        if (layer.signal.aborted) return;
+        if (done) { close(!view.checked); return; }
+        busy = toggle.disabled = false;
+        status.textContent = view.checked ? t('Could not save changes. Beside stays open.') : t('This file cannot be opened beside itself.');
+        fit();
+        toggle.focus({preventScroll: true});
+      });
+      buttons.push(toggle);
     }
     menu.append(...buttons, status);
     menu.tabIndex = -1;

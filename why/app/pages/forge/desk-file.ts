@@ -5,13 +5,14 @@ import {caretIn, fieldCarried} from '../../ui/caret.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {bytes} from '../../../text/format.ts';
-import {EDIT_LIMIT, onChange, store} from '../../../repo/repos.ts';
+import {EDIT_LIMIT, onChange, store, type Change} from '../../../repo/repos.ts';
 import {shownPath} from '../../../repo/issues.ts';
 import {AGENT} from '../../../repo/agent-hands.ts';
 import {editorOn, holdBack, openingWith} from '../bench/play.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering} from './editor.ts';
 import type {Laid} from './desk.ts';
-import {documentMenu} from './document-menu.ts';
+import {documentMenu, type BesideOption} from './document-menu.ts';
+import {Draft} from './draft.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers
@@ -26,8 +27,17 @@ export interface DeskFile extends Laid {
   toEnd(): void;
   /** Its own top, measured from the box's: where `line` is. */
   lineTop(line: number): number;
+  /** The draft must be acknowledged before a user closes its sheet. */
+  flush(): Promise<boolean>;
+  /** A second view of the current draft, not a second owner of the file. */
+  beside(grew: () => void): DeskFile | null;
   /** Stop following the repo. */
   drop(): void;
+}
+
+interface PaperActions {
+  beside?(): BesideOption | null;
+  readOnly?(): void;
 }
 
 /** Where `a` and `b` first differ (the shorter's length where one begins the other). */
@@ -45,7 +55,8 @@ export function lineOf(text: string, at: number): number {
 }
 
 /** `path` of `repo` as a box on the desk; `grew` hears it change height (the desk lays its boxes again). */
-export function deskFile(repo: string, path: string, grew: () => void, rename?: (name: HTMLElement) => void): DeskFile {
+export function deskFile(repo: string, path: string, grew: () => void, rename?: (name: HTMLElement) => void,
+  actions: PaperActions = {}, shared?: Draft): DeskFile {
   const shown = shownPath(path);
   const cut = shown.lastIndexOf('/');
   const state = fileState();
@@ -53,10 +64,13 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const head = h('h2', {class: 'desk-file-head'}, h('span', {class: 'sr-only'}, `/root/${repo}/${shown}`), state.el);
   const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
   const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
-  const element = h('div', {class: 'desk-file', 'data-path': path}, head, sheet);
+  const element = h('div', {class: 'desk-file', 'data-path': path, 'data-view': shared ? 'beside' : 'primary'}, head, sheet);
   const number = numbering(gutter);
   let editor: Editor | null = null;
-  const dropMenu = documentMenu(element, () => editor?.area ?? null);
+  const dropMenu = documentMenu(element, () => editor?.area ?? null, actions.beside);
+  let dropView: (() => void) | undefined;
+  let revision = 0;
+  let dropped = false;
   let wanted: number | null = null;
   let endWanted = false;
   /** The keyboard asked for before the text was read: given once it is. */
@@ -154,30 +168,18 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     markLine(area, line, from, to);
   }
 
-  const load = async () => {
-    let c;
-    try { c = await store.read(repo, path); } catch (e) { state.el.textContent = String(e); return; }
-    if (c.text === null) { sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)}))); grew(); return; }
-    if (c.truncated) {
-      number(c.text);
-      sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
-      state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
-      grew();
-      return;
-    }
-    // A file the Agent is still to be seen making opens empty, its lines numbered as it is typed, never ahead of it.
-    const opening = openingWith(repo, path, c.text);
-    number(opening);
-    const e = editor = new Editor(opening, {repo, path, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
+  function bind(draft: Draft) {
+    number(draft.text);
+    const e = editor = new Editor(draft, {path, companion: !!shared, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
     // Where the Agent is in it, told up to the desk (desk.ts WORK_AT), whose camera keeps that line in sight: its hand
     // as it writes (the first place what it put differs from what was there), its eye as it reads.
     const workAt = (line: number | null) => {
       const lh = lineHeight(e.area);
       tell(element, line === null ? null : {top: e.area.offsetTop + (line - 1) * lh, height: lh});
     };
-    editorOn(repo, path, {
+    const unregister = shared ? null : editorOn(repo, path, {
       take: (text) => {
-        const was = e.area.value, ok = e.take(text);
+        const was = draft.text, ok = draft.take(text);
         if (ok && text !== was) workAt(lineOf(text, firstDiffering(was, text)));
         return ok;
       },
@@ -201,42 +203,70 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     // caret under the hand and turns nothing.
     e.area.addEventListener('input', () => lead(e.area));
     e.area.addEventListener('keydown', (k) => { if (!k.isComposing) requestAnimationFrame(() => lead(e.area)); });
-    new ResizeObserver(() => { stand(e.area); grew(); }).observe(e.area);
-    new ResizeObserver(() => stand(e.area)).observe(element);
+    const areaSize = new ResizeObserver(() => { stand(e.area); grew(); });
+    const bodySize = new ResizeObserver(() => stand(e.area));
+    areaSize.observe(e.area);
+    bodySize.observe(element);
+    dropView = () => {
+      unregister?.();
+      areaSize.disconnect(); bodySize.disconnect();
+      clearTimeout(handRest);
+      e.drop();
+      if (!shared) draft.stop();
+    };
     if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
     if (wanted !== null) at(wanted);
     else if (endWanted) toEnd();
     else if (focusing) e.area.focus({preventScroll: true});
     grew();
   };
-  void load();
 
-  const off = onChange((ch) => {
-    if (ch.repo !== repo || !editor) return;
-    // The repo changed as a whole (a shell on the root wrote it, a file put whole that is read only in part): the
-    // file read again, taken in as written elsewhere, or read again in part to read only.
-    if (ch.what === 'repo') {
-      void store.read(repo, path).then((c) => {
-        if (!editor) return;
-        if (c.text !== null && !c.truncated) { editor.take(c.text); return; }
-        editor = null;
-        sheet.replaceChildren(gutter, h('pre', {class: 'code'}, '…'));
-        void load();
-      }, () => {});
+  async function load() {
+    const reading = ++revision;
+    const current = () => !dropped && reading === revision;
+    let c;
+    try { c = await store.read(repo, path); } catch (e) { if (current()) state.el.textContent = errorText(e); return; }
+    if (!current()) return;
+    if (editor) {
+      if (c.text !== null && !c.truncated) { editor.draft.take(c.text); return; }
+      // A full write can cause this notice before its promise settles. Wait for its real acknowledgment;
+      // an externally replaced binary or partial file must not take unsaved text out of either view.
+      if (!await editor.draft.settled()) { if (current()) editor.draft.blockUnread(); return; }
+      if (!current()) return;
+      actions.readOnly?.();
+      dropView?.(); dropView = undefined;
+      editor = null;
+    }
+    if (c.text === null) { sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)}))); grew(); return; }
+    if (c.truncated) {
+      number(c.text);
+      sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
+      state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
+      grew();
       return;
     }
+    const opening = openingWith(repo, path, c.text);
+    state.el.textContent = '';
+    bind(new Draft(opening, EDIT_LIMIT, async (text, whole) => {
+      if (whole) await store.put(repo, path, new TextEncoder().encode(text));
+      else await store.write(repo, path, text);
+    }));
+  }
+
+  function changed(ch: Change) {
+    if (ch.repo !== repo) return;
+    if (ch.what === 'repo') { void load(); return; }
     if ((ch.what !== 'file' && ch.what !== 'unread') || ch.path !== path) return;
     if (ch.what === 'file' && ch.by === AGENT && holdBack(repo, path, ch.text)) return;
-    // Changed with its words not handed on (not text, or only part of it can be read), or saved whole past what
-    // Forge edits (asked for in its box): read again, in part to read only where it is so.
-    if (ch.what === 'unread' || ((ch.text.length > EDIT_LIMIT / 4) && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
-      editor = null;
-      sheet.replaceChildren(gutter, h('pre', {class: 'code'}, '…'));
+    if (!editor || ch.what === 'unread' || (ch.text.length > EDIT_LIMIT / 4 && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
       void load();
       return;
     }
-    editor.take(ch.text);
-  });
+    ++revision;
+    editor.draft.take(ch.text);
+  }
+  const off = shared ? null : onChange(changed);
+  if (shared) bind(shared); else void load();
 
   /**
    * A file whose lines pass the world's lower third stands to the window's foot, with paper under its last line up to
@@ -297,7 +327,9 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
-    drop: () => { dropMenu(); off(); },
+    flush: () => editor?.draft.flush() ?? Promise.resolve(true),
+    beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {}, editor.draft) : null,
+    drop: () => { dropped = true; dropMenu(); off?.(); dropView?.(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
     ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
   };
