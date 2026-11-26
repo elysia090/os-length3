@@ -3,7 +3,7 @@ import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-lay
 
 /** The Forge paper, its ground, and the separate neutral terminal work face. */
 const FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(239, 235, 227)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)';
-const TERMINAL_FACE = 'rgb(232, 232, 232)', TERMINAL_INK = 'rgb(27, 27, 27)';
+const TERMINAL_FACE = 'rgb(237, 234, 229)', TERMINAL_INK = 'rgb(27, 27, 27)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo

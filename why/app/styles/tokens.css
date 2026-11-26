@@ -254,11 +254,11 @@
   --t-inbox-title: 38px;
 }
 
-/* The neutral terminal work face, separate from the Forge ground and document paper. */
+/* Warm neutral terminal material, quieter in colour than the Forge and Inbox paper. */
 :root {
   --prompt-edge: #242424;
-  --prompt-face: #e8e8e8;
-  --prompt-grain: #dedede;
+  --prompt-face: #edeae5;
+  --prompt-grain: #e9e6e1;
   --prompt-ink: #1b1b1b;
   --prompt-quiet: #505050;
   --prompt-rule: #a5a5a5;
@@ -277,27 +277,27 @@
   --prompt-ansi-bright-magenta: #8c4687;
   --prompt-ansi-bright-cyan: #126e7a;
   --prompt-cast: #1a1d17;
-  --prompt-band: #e7e7e7;
+  --prompt-band: #e8e4df;
   --prompt-band-edge: #686868;
-  --prompt-band-highlight: #fff;
-  --prompt-band-side: #f4f4f4;
+  --prompt-band-highlight: #fcfaf7;
+  --prompt-band-side: #f5f2ee;
   --prompt-rail-idle: #a6a6a6;
-  --prompt-rail-light: #f9f9f9;
+  --prompt-rail-light: #faf7f3;
   --prompt-rail-active: #575757;
   --prompt-rail-hot: #727272;
   --prompt-focus: #666;
   --prompt-turn: #3a3a3a;
   --prompt-turn-disabled: #a4a4a4;
-  --prompt-turn-hot: #cdcdcd;
+  --prompt-turn-hot: #d0cbc5;
   --prompt-turn-hot-ink: #151515;
-  --prompt-face-edge: #a7a7a7;
-  --prompt-face-shade: #aeaeae;
-  --prompt-face-light: #f7f7f7;
-  --prompt-scroll-track: #d7d7d7;
-  --prompt-scroll-edge: #b1b1b1;
+  --prompt-face-edge: #a9a6a2;
+  --prompt-face-shade: #b0ada8;
+  --prompt-face-light: #f8f5f1;
+  --prompt-scroll-track: #dad6d1;
+  --prompt-scroll-edge: #b3afa9;
   --prompt-scroll-thumb: #9b9b9b;
-  --prompt-scroll-trim: #d0d0d0;
+  --prompt-scroll-trim: #d3cfca;
   --prompt-scroll-active: #646464;
-  --prompt-scroll-hot: #c7c7c7;
+  --prompt-scroll-hot: #cac5bf;
   --prompt-scroll-focus: #6b6b6b;
 }

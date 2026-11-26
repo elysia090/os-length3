@@ -71,7 +71,7 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   const terminal = app.main.locator('.forge-prompt-slot');
   await expect(app.main).toHaveAccessibleName('Forge');
   await expect(terminal.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
-  await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-color', 'rgb(231, 231, 231)');
+  await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-color', 'rgb(232, 228, 223)');
   await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-image', 'none');
   await expect(terminal).toHaveCSS('outline-color', 'rgb(36, 36, 36)');
   await expect(forge.promptBox).toBeFocused();
