@@ -149,7 +149,13 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     const slot = app.main.locator('.forge-prompt-slot');
     await expect(slot).toHaveClass(/held/);
     const term = (await slot.boundingBox())!, printed = (await output.boundingBox())!;
-    expect([term.x, term.y], 'the terminal stays in its own slot').toEqual([630, PAPER_TOP]);
+    // Leave the document, its shadow and a half-cell seam; a terminal at its cap stays a cell from the right.
+    const bay = F + 24 * U + SHADOW + U / 2;
+    expect(term.x, 'the terminal stays in its own slot').toBe(Math.max(bay, size.width - U - 800));
+    expect(term.x + term.width, 'the terminal ends a cell from the right').toBe(size.width - U);
+    const tag = (await slot.locator('.terminal-paper-head').boundingBox())!;
+    expect(tag.height, 'the Prompt is named in the band above its paper').toBe(22);
+    expect(term.y + tag.height + 1, 'the top of the terminal paper shares the document horizon').toBe(PAPER_TOP);
     expect(printed.y + printed.height, 'the terminal’s last visible line is above the lower third').toBeLessThanOrEqual(r.lower + .5);
   });
 }
