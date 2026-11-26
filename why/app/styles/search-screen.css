@@ -26,9 +26,11 @@
 .search-screen-back:is(:hover, :focus-visible) { color: var(--nighthawks-paper); outline-color: currentColor; }
 .search-screen-paper {
   --ground: var(--nighthawks-paper); --paper: var(--nighthawks-paper);
-  --sub: var(--nighthawks-paper-sub); --rule: var(--nighthawks-rule);
+  --sub: var(--nighthawks-paper-sub); --grain: var(--nighthawks-paper-grain);
   --quiet: var(--sub); --slot: var(--nighthawks-paper-selected);
-  background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-field) var(--r-field) var(--r-key) var(--r-key);
+  /* One continuous grid under both the question and everything it finds, rooted at the paper's own edge. */
+  background: conic-gradient(var(--grain) 25%, var(--paper) 25% 50%, var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
+  color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-field); overflow: clip;
   box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
 }
 /* The query is written on the top of one sheet. The rim and shadow belong to the sheet, not a nested field. */
@@ -38,30 +40,33 @@
   width: 18px; height: 18px; color: var(--sub); pointer-events: none;
 }
 .search-screen-form .search-in {
-  --grain: var(--nighthawks-paper-grain);
   display: block; min-height: calc(2 * var(--u)); padding: 0 var(--s4) 0 calc(var(--u) + var(--s4));
-  border: 0; border-radius: var(--r-field) var(--r-field) 0 0; caret-color: var(--ink);
-  background: conic-gradient(var(--grain) 25%, var(--paper) 25% 50%, var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
+  border: 0; border-radius: 0; caret-color: var(--ink); background: transparent;
   font: var(--t-word)/var(--u) var(--sans);
 }
 .search-screen-form .search-in:is(:focus, :focus-visible) { outline: none; }
 .search-screen-results:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty)) {
-  border-top: 1px solid var(--rule); margin: 0; padding: var(--s2);
+  /* Keep the space where the rule was, not the rule itself. */
+  margin: 0; padding: calc(var(--s2) + 1px) var(--s2) var(--s2);
 }
 .search-screen-status:empty, .search-screen-results:not(:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty))) { display: none; }
 .search-screen-status { font: var(--t-word)/var(--u) var(--sans); color: var(--sub); }
 .search-screen .found-secs { display: block; }
-.search-screen .found-sec { width: 100%; max-width: none; padding: 0; outline: none; box-shadow: none; }
+.search-screen .found-sec { width: 100%; max-width: none; padding: 0; outline: none; box-shadow: none; background: transparent; }
 .search-screen .found-sec-head { position: static; padding-inline: var(--s2); color: var(--sub); font-weight: 400; }
 .search-screen .found-sec-rows { max-height: none; overflow: visible; }
 .search-screen .choice { margin: 0; padding-inline: var(--s2); }
+/* The highlighted row is ink in the same paper, not a second solid surface that hides its grid. */
 .search-screen .choice:is(:hover, :focus-visible),
-.search-screen:has(.search-in:focus) .choice.first { background: var(--slot); color: var(--ink); }
+.search-screen:has(.search-in:focus) .choice.first {
+  background: color-mix(in srgb, var(--slot) 28%, var(--paper)); color: var(--ink); mix-blend-mode: multiply;
+}
 .search-screen .search-suggestion {
   display: block; min-height: var(--u); width: 100%; border: 0; border-radius: var(--r-key);
   font: var(--t-word)/var(--u) var(--mono); text-align: left; color: var(--ink);
   background: transparent; overflow-wrap: anywhere; cursor: var(--cursor-hand);
 }
+.search-screen .sheet-hit mark { mix-blend-mode: multiply; }
 .search-screen .sheet-line { color: var(--sub); }
 .search-screen .sheet-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 760px) {

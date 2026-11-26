@@ -98,6 +98,13 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await expect(input).toBeFocused();
   await expect(suggested.getByRole('button')).toHaveCount(3);
   const form = stage.getByRole('search'), lensInside = form.locator('svg.mark');
+  const paper = stage.locator('.search-screen-paper'), region = stage.getByRole('region', {name: 'Search results'});
+  await expect(paper).toHaveCSS('border-radius', '8px');
+  await expect(paper).toHaveCSS('overflow', 'clip');
+  await expect(paper).toHaveCSS('background-image', /^conic-gradient\(/);
+  await expect(input).toHaveCSS('background-image', 'none');
+  await expect(input).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(region).toHaveCSS('border-top-width', '0px');
   const at = (await input.boundingBox())!;
   const inner = (await lensInside.boundingBox())!;
   expect(at.x + at.width / 2).toBe(195);
@@ -108,6 +115,8 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await expect(suggested).toHaveCount(0);
   const hit = stage.getByRole('button', {name: /src\/main\.c.*return 0/});
   await expect(hit).toBeInViewport({ratio:1});
+  await expect(region).toHaveCSS('border-top-width', '0px');
+  await expect(region.locator('.found-sec')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await input.boundingBox()).toEqual(at);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
   // Chrome's native clear button is inside the writing field, 27 px from the right edge.
