@@ -145,6 +145,7 @@ export default {
   'Enter title after {kind}:': '{kind}：の後にタイトルを入力してください',
   'Right pane': '右ペイン',
   'Beside': '横に開く',
+  'Beside: {name}': '横の表示：{name}',
   'Edit {path} beside': '{path}を横の表示で編集',
   'Could not save changes. Beside stays open.': '保存できなかったため、横の表示を開いたままにしました。',
   'This file cannot be opened beside itself.': 'このファイルは横に開けません。',

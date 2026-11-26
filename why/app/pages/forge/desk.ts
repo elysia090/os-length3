@@ -147,8 +147,10 @@ export class Desk {
     this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
     this.#map = rowMap(this.element, () => this.#row.map((key) => {
       const b = this.#boxes.get(key)!;
-      return {x: b.x, w: b.w, held: key === this.#held, name: b.el.querySelector('.desk-label')?.textContent?.trim() || key, go: () => this.take(key)};
-    }));
+      const name = b.label.textContent?.trim() || key;
+      return {x: b.x, w: b.w, held: key === this.#held,
+        name: b.laid.companion ? t('Beside: {name}', {name}) : name, go: () => this.take(key)};
+    }), undefined, SHADOW);
     // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not.
     ownCamera(this.element, {away: () => Promise.resolve(), afar: () => {}, near: () => {}, far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));

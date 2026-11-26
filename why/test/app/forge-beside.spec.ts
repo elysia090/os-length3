@@ -19,6 +19,7 @@ const writeGate = () => {
   (window as GatedWindow).forgeGate = gate;
   Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
     const message = args[0] as Call | {batch: Call[]};
+    if (!message || typeof message !== 'object') { Reflect.apply(post, this, args); return; }
     const entries = 'batch' in message ? message.batch : [message];
     const write = entries.find((c) => c.name === 'repo_write' && c.args.repo === 'pine' && c.args.path === 'README.md');
     if (!write) { Reflect.apply(post, this, args); return; }
@@ -61,6 +62,10 @@ test('Beside is a first-paper toggle and cannot close before the shared draft is
   await toggle.click();
   await expect(right).toBeFocused();
   await expect(right).toHaveValue('# pine\n');
+  const paper = page.locator('.desk-box:has([data-view="beside"])');
+  const source = page.locator('.desk-box:has([data-view="primary"])');
+  await expect(paper).toHaveCSS('box-shadow', 'rgb(23, 22, 21) 4px 4px 0px 0px');
+  await expect(source).toHaveCSS('box-shadow', 'none');
   await expect.poll(position).toEqual(before);
 
   await right.press('Shift+F10');
@@ -69,7 +74,11 @@ test('Beside is a first-paper toggle and cannot close before the shared draft is
   await page.keyboard.press('Escape');
   await expect(right).toBeFocused();
 
-  await page.evaluate(() => (window as GatedWindow).forgeGate.hold());
+  const initialWrites = await page.evaluate(() => {
+    const g = (window as GatedWindow).forgeGate;
+    g.hold();
+    return g.writes;
+  });
   await right.press('Control+End');
   await page.keyboard.insertText('Typed beside; stored once.');
   await expect(left).toHaveValue('# pine\nTyped beside; stored once.');
@@ -83,7 +92,7 @@ test('Beside is a first-paper toggle and cannot close before the shared draft is
   await page.evaluate(() => (window as GatedWindow).forgeGate.release());
   await expect(right).toHaveCount(0);
   await expect(left).toBeFocused();
-  expect(await page.evaluate(() => (window as GatedWindow).forgeGate.writes)).toBe(1);
+  expect(await page.evaluate(() => (window as GatedWindow).forgeGate.writes)).toBe(initialWrites + 1);
   await page.reload();
   await app.settled();
   await expect(left).toHaveValue('# pine\nTyped beside; stored once.');
@@ -148,4 +157,33 @@ test('Files asks at the actual row; only the final Delete is red', async ({page}
   await app.forge.use('Files');
   await expect(tree.getByRole('button', {name: 'README.md', exact: true})).toBeVisible();
   await expect(row).toHaveCount(0);
+});
+
+test('in a narrow window Beside follows the same horizontal desk and returns to the original view', async ({page}) => {
+  await page.route('**/webroot/**', (route) => route.abort());
+  await page.setViewportSize({width: 390, height: 844});
+  const app = new App(page);
+  await page.goto(process.env.SELFTEST_APP!);
+  await app.settled();
+  await app.newRepo.make('pine');
+  const left = app.forge.editor('README.md');
+  const right = page.getByRole('textbox', {name: 'Edit README.md beside', exact: true});
+  const toggle = page.getByRole('menuitemcheckbox', {name: 'Beside', exact: true});
+  const desk = page.getByRole('region', {name: 'Files in pine', exact: true});
+  const at = async () => await desk.evaluate((d) => d.scrollLeft);
+  await expect.poll(at).toBe(0);
+  await left.press('Shift+F10');
+  await toggle.click();
+  await expect(right).toBeFocused();
+  await expect.poll(at).toBeGreaterThan(0);
+  const row = page.locator('.row-map');
+  await expect(row.getByRole('button', {name: 'Beside: README.md', exact: true})).toHaveAttribute('aria-current', 'true');
+  await row.getByRole('button', {name: 'README.md', exact: true}).click();
+  await expect.poll(at).toBe(0);
+  await left.press('Shift+F10');
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect(right).toHaveCount(0);
+  await expect(left).toBeFocused();
+  await expect.poll(at).toBe(0);
 });

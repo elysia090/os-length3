@@ -118,7 +118,7 @@ export function documentMenu(owner: HTMLElement, current: () => HTMLTextAreaElem
     const view = beside?.();
     if (view) {
       const toggle = h('button', {class: 'forge-menu-item', type: 'button', role: 'menuitemcheckbox',
-        'aria-checked': String(view.checked)}, t('Beside')) as HTMLButtonElement;
+        'aria-checked': String(view.checked), 'aria-label': t('Beside')}, t('Beside')) as HTMLButtonElement;
       toggle.addEventListener('click', async () => {
         if (busy || !owned()) return;
         busy = true;
