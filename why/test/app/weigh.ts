@@ -4,81 +4,82 @@ import type {Page} from '@playwright/test';
 // in CIE Lab, full at 50; the ground's dots are the ground).
 
 /** Where the weight of what is drawn in the world lies across it, from its middle (-1 its left edge, 1 its right). */
-export async function across(page: Page): Promise<number> {
-  const shot = (await page.screenshot()).toString('base64');
-  return page.evaluate(async (src) => {
-    const img = new Image();
-    img.src = src;
-    await img.decode();
-    const c = document.createElement('canvas');
-    c.width = img.width, c.height = img.height;
-    const g = c.getContext('2d')!;
-    g.drawImage(img, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height;
-    const lab = (r: number, gr: number, b: number) => {
-      const f = (v: number) => { v /= 255; return v > .04045 ? ((v + .055) / 1.055) ** 2.4 : v / 12.92; };
-      r = f(r), gr = f(gr), b = f(b);
-      let x = (r * .4124 + gr * .3576 + b * .1805) / .95047, y = r * .2126 + gr * .7152 + b * .0722, z = (r * .0193 + gr * .1192 + b * .9505) / 1.08883;
-      const k = (t: number) => (t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-      x = k(x), y = k(y), z = k(z);
-      return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-    };
-    const ground = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number), G = lab(ground[0], ground[1], ground[2]);
-    // (The ground's dots are the ground: a pixel of the dot's colour is not ink.)
-    const D = lab(0x95, 0x93, 0x90);
-    let sum = 0, sx = 0;
-    for (let y = 48; y < H; y += 2) for (let x = 48; x < W; x += 2) {
-      const i = 4 * (y * W + x), L = lab(d[i], d[i + 1], d[i + 2]);
-      if (Math.hypot(L[0] - D[0], L[1] - D[1], L[2] - D[2]) < 6) continue;
-      const ink = Math.min(1, Math.hypot(L[0] - G[0], L[1] - G[1], L[2] - G[2]) / 50);
-      sum += ink, sx += ink * x;
-    }
-    return (sx / sum - (48 + W) / 2) / ((W - 48) / 2);
-  }, `data:image/png;base64,${shot}`);
-}
+export function across(page: Page): Promise<number> { return measure(page, 'weight'); }
 
 /** The world in cells of 24 px from the frame's corner, each as drawn: 'g' bare ground (its colour and its dot only), 'p'
  * bare paper, 'x' a mark on it (DESIGN §2, the negative space). */
-export async function emptiness(page: Page): Promise<string[]> {
+export function emptiness(page: Page): Promise<string[]> { return measure(page, 'cells'); }
+
+function measure(page: Page, mode: 'weight'): Promise<number>;
+function measure(page: Page, mode: 'cells'): Promise<string[]>;
+async function measure(page: Page, mode: 'weight' | 'cells'): Promise<number | string[]> {
   const shot = (await page.screenshot()).toString('base64');
-  return page.evaluate(async (src) => {
+  return page.evaluate(async ({source, mode}) => {
     const img = new Image();
-    img.src = src;
+    img.src = source;
     await img.decode();
     const c = document.createElement('canvas');
-    c.width = img.width, c.height = img.height;
+    c.width = img.width;
+    c.height = img.height;
     const g = c.getContext('2d')!;
     g.drawImage(img, 0, 0);
     const d = g.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height, U = 24;
     const lab = (r: number, gr: number, b: number) => {
       const f = (v: number) => { v /= 255; return v > .04045 ? ((v + .055) / 1.055) ** 2.4 : v / 12.92; };
-      r = f(r), gr = f(gr), b = f(b);
+      r = f(r); gr = f(gr); b = f(b);
       let x = (r * .4124 + gr * .3576 + b * .1805) / .95047, y = r * .2126 + gr * .7152 + b * .0722, z = (r * .0193 + gr * .1192 + b * .9505) / 1.08883;
       const k = (t: number) => (t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-      x = k(x), y = k(y), z = k(z);
+      x = k(x); y = k(y); z = k(z);
       return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
     };
-    const tone = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
-    const G = lab(...rgb(tone('--ground'))), D = lab(...rgb(tone('--dot') || '#959390')), P = lab(...rgb(tone('--paper')));
+    const paint = (color: string): number[] => {
+      g.fillStyle = 'transparent';
+      g.fillStyle = color.trim();
+      const hex = g.fillStyle;
+      if (!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error(`Expected opaque material, got ${color}`);
+      return lab(...([1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]));
+    };
+    const body = getComputedStyle(document.body);
+    const G = paint(body.backgroundColor);
+    const dot = /radial-gradient\(circle,\s*(rgb\([^)]*\))/.exec(body.backgroundImage)?.[1];
+    const D = dot ? paint(dot) : null;
+    const pixels = (x: number, y: number) => {
+      const i = 4 * (y * W + x);
+      return lab(d[i], d[i + 1], d[i + 2]);
+    };
     const far = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const isDot = (p: number[]) => !!D && far(p, D) < 6;
+    if (mode === 'weight') {
+      let sum = 0, sx = 0;
+      for (let y = 48; y < H; y += 2) for (let x = 48; x < W; x += 2) {
+        const p = pixels(x, y);
+        if (isDot(p)) continue;
+        const ink = Math.min(1, far(p, G) / 50);
+        sum += ink; sx += ink * x;
+      }
+      return (sx / sum - (48 + W) / 2) / ((W - 48) / 2);
+    }
+
+    // Git and other desks can keep their paper local even when the body lays that place's ground.
+    const page = document.querySelector('#page') ?? document.body;
+    const P = paint(getComputedStyle(page).getPropertyValue('--paper'));
     const rows: string[] = [];
     for (let j = 0; j < Math.floor((H - 48) / U); j++) {
       let line = '';
       for (let i = 0; i < Math.floor((W - 48) / U); i++) {
         let ground = 0, paper = 0, n = 0;
         for (let y = 48 + j * U; y < 48 + (j + 1) * U; y += 2) for (let x = 48 + i * U; x < 48 + (i + 1) * U; x += 2) {
-          const k = 4 * (y * W + x), L = lab(d[k], d[k + 1], d[k + 2]);
+          const p = pixels(x, y);
           n++;
-          if (far(L, G) < 3 || far(L, D) < 6) ground++;
-          else if (far(L, P) < 3) paper++;
+          if (far(p, G) < 3 || isDot(p)) ground++;
+          else if (far(p, P) < 3) paper++;
         }
         line += ground === n ? 'g' : paper === n ? 'p' : 'x';
       }
       rows.push(line);
     }
     return rows;
-  }, `data:image/png;base64,${shot}`);
+  }, {source:`data:image/png;base64,${shot}`, mode});
 }
 
 /** The bare ground's fields (joined cells of it): each one's size, and whether it reaches the world's edge (the frame's
