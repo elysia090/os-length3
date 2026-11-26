@@ -54,7 +54,7 @@ function example(here: Here): [string, string] {
  * The server being made: its chip, put in the band (`naming`), and the faint server under it, for the view to stand
  * in their places: its board's two slides and the box at the foot. Its name's field is returned to take the keyboard.
  */
-export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; slides: HTMLElement[]; dock: HTMLElement} {
+export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElement; paper: HTMLElement; dock: HTMLElement} {
   const [say, sayAt] = example(here);
   const {name, handle, label, fit, reveal} = fields(say, sayAt);
   const make = button(t('Create'), 'small-button primary');
@@ -87,7 +87,7 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
   };
   make.addEventListener('click', () => void done());
   for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
-  return {name, slides: ghostBoard(heldServers(ways)), dock: ghostDock(people)};
+  return {name, paper: ghostBoard(heldServers(ways)), dock: ghostDock(people)};
 }
 
 /**
@@ -151,13 +151,8 @@ function heldServers(ways: MakingWays): HTMLElement {
  * The server it will be, faint: its first board as it will open, of the same parts a made one is (its TODO's first
  * line and its talk's foot in their own words, each where it will stand), with what is held under it (`back`).
  */
-function ghostBoard(back: HTMLElement): HTMLElement[] {
-  return [h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')), ghostBody()), back),
-  // Beside it, the edge of the box that will make its next board, where it will be.
-  // (As it will stand once the server is made: + New board, not a + alone that says nothing of what it makes.)
-  h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '+'), h('h2', {class: 'muted'}, t('New board')))))];
+function ghostBoard(back: HTMLElement): HTMLElement {
+  return h('div', {class: 'board-card board-ghost'}, h('div', {class: 'board-head', 'aria-hidden': 'true'}, h('h2', {}, 'general')), ghostBody(), back);
 }
 
 /** Under it, the box that will write to its people, saying them by the name being written (`people`). */

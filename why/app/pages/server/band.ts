@@ -13,7 +13,7 @@ interface BandWays {
   make(): void;
   manage(): void;
   rename(id: string, name: string): Promise<void>;
-  paperEdge(after: number): number | undefined;
+  paperEdge(): number | undefined;
 }
 
 type Choice = {key: string; label: string; checked?: boolean; act(): void; server?: string};
@@ -31,7 +31,6 @@ export class Band {
   private readonly naming = h('div', {class: 'server-making-at'});
   private readonly panel: HTMLElement;
   private readonly chooser: HTMLElement;
-  private readonly plus: HTMLButtonElement;
   private readonly said = h('div', {class: 'server-said'});
   private asked: HTMLElement | null = null;
   private listening: AbortController | null = null;
@@ -44,15 +43,13 @@ export class Band {
     this.here = here;
     this.ways = ways;
     const id = `server-choices-${++nextPicker}`;
-    this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Create server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     this.key = h('button', {type: 'button', class: 'server-disclosure', 'aria-label': t('Server menu'), 'aria-haspopup': 'menu',
       'aria-expanded': 'false', 'aria-controls': id}, h('span', {class: 'server-hinge', 'aria-hidden': 'true'}, mark('down'))) as HTMLButtonElement;
     this.held.append(this.name, this.label, this.editor, this.key);
     this.panel = h('div', {class: 'server-choices', id, role: 'menu', 'aria-label': t('Servers'), hidden: ''});
     this.chooser = h('div', {class: 'server-chooser', hidden: ''}, this.held, this.panel, this.renameError);
-    this.element = h('div', {class: 'server-top'}, this.plus, h('div', {class: 'server-band-content'}, this.chooser, this.status, this.naming), this.said);
+    this.element = h('div', {class: 'server-top'}, h('div', {class: 'server-band-content'}, this.chooser, this.status, this.naming), this.said);
 
-    this.plus.addEventListener('click', () => { this.close(); this.ways.make(); });
     this.key.addEventListener('click', () => { if (!this.close(true)) this.open(); });
     this.key.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -93,7 +90,9 @@ export class Band {
     const choices: Choice[] = this.here.list.map((s) => ({
       key: `server:${s.id}`, server: s.id, label: s.name, checked: s === room, act: () => this.ways.show(s.id),
     }));
-    return [...choices, ...this.guestChoices(), ...(room ? [{key: 'manage', label: t('Manage…'), act: () => this.ways.manage()}] : [])];
+    return [...choices, ...this.guestChoices(),
+      ...(room ? [{key: 'manage', label: t(room.owner ? 'Manage…' : 'Members'), act: () => this.ways.manage()}] : []),
+      ...(this.here.signedIn ? [{key: 'create', label: t('Create server'), act: () => this.ways.make()}] : [])];
   }
 
   private items() { return [...this.panel.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')]; }
@@ -134,7 +133,7 @@ export class Band {
   private fitChoices() {
     const x = this.chooser.getBoundingClientRect().left;
     const unit = parseFloat(getComputedStyle(this.chooser).getPropertyValue('--u'));
-    const beside = (this.ways.paperEdge(x) ?? x) - x - 4;
+    const beside = (this.ways.paperEdge() ?? x) - x - 4;
     const available = beside >= 4 * unit ? beside : window.innerWidth - x - 4;
     this.chooser.style.setProperty('--server-choices-fit', `${Math.max(0, Math.floor(available))}px`);
   }
@@ -215,7 +214,6 @@ export class Band {
     const guests = this.guestChoices();
     const guest = this.here.alone ? guests.find((g) => g.checked) : undefined;
     if (this.editing && (this.editing.server !== serverId || !room?.owner)) this.endName();
-    this.plus.hidden = !signedIn;
     this.status.hidden = signedIn;
     this.status.textContent = signedIn ? '' : t('Public boards');
     this.said.replaceChildren(...(this.here.naming && this.asked ? [this.asked] : []));
@@ -258,5 +256,5 @@ export class Band {
     }
   }
 
-  chip(id: string): HTMLElement | null { return this.held.dataset.server === id ? this.held : null; }
+
 }

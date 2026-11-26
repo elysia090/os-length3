@@ -77,32 +77,20 @@ test('signed out, every place starts at the frame\'s corner: a desk\'s band from
   }
 });
 
-/**
- * A desk with a row (Server, Inbox: DESIGN §6): the piece in the hand whole in the window, from a cell under the band
- * to a cell over the window's foot, as wide as the window has whole cells for (24 at most), paper with its shadow;
- * and with the desk at the row's start, the row's first sheet at the desk's edge, `cells` wide, the piece two cells on.
- */
-async function row(what: string, size: {width: number; height: number}, first: Locator, cells: number, held: Locator) {
-  await expect(async () => {
-    const p = await at(held);
-    const wide = U * Math.min(24, Math.max(10, Math.floor((size.width - 2 * U - 2 - U / 2) / U)));
-    expect(Math.abs(p.width - wide), `${what}: its piece ${wide / U} cells wide`).toBeLessThan(1);
-    expect(p.x, `${what}: its piece's left edge in the window`).toBeGreaterThanOrEqual(2 * U - 1);
-    expect(p.x + p.width + U / 2, `${what}: its piece and its shadow in the window`).toBeLessThanOrEqual(size.width);
-    expect(Math.abs(p.y - 3 * U), `${what}: its piece's top a cell under the band`).toBeLessThan(1);
-    // Its foot a cell over the window's, or as near as whole cells allow (DESIGN §3: it is whole cells tall).
-    const foot = size.height - (p.y + p.height);
-    expect(foot >= U - 1 && foot < 2 * U && Math.round(p.height) % U === 0, `${what}: its piece whole cells tall, its foot a cell over the window's (${foot})`).toBe(true);
-    const look = await held.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow !== 'none']; });
-    expect(look, `${what}: its piece in the hand is paper with its shadow`).toEqual(['rgb(253, 250, 244)', true]);
-    const f = await first.boundingBox();
-    // The desk at the row's start (a window with room for both): the first sheet at the desk's edge.
-    if (f && f.x >= 0) {
-      expect([Math.round(f.x), Math.round(f.width)], `${what}: its first sheet at the desk's edge, ${cells} cells`).toEqual([2 * U, cells * U]);
-      expect(Math.round(p.x - (f.x + f.width)) % (26 * U), `${what}: its piece two cells on, or a piece and two cells further`).toBe(2 * U);
-      expect(await first.evaluate((el) => getComputedStyle(el).boxShadow), `${what}: its first sheet is not in the hand`).toBe('none');
-    }
-  }).toPass({timeout: 4000});
+/** Server's held paper is the approved centered close-up, a full measure beneath the index on a phone. */
+async function serverDesk(app: App, size: {width: number; height: number}) {
+  const paper = app.server.paper;
+  await expect(paper).toBeInViewport({ratio: 1});
+  const w = (await paper.boundingBox())!;
+  const index = (await app.server.topics.boundingBox())!;
+  expect(Math.abs(w.x + w.width / 2 - size.width / 2)).toBeLessThan(2);
+  if (size.width >= 1000 && size.height >= 684) {
+    expect(w.width).toBe(Math.min(768, size.width - 480));
+    expect(w.height).toBe(528);
+    expect(index.x + index.width).toBeLessThan(w.x);
+  } else expect(index.y + index.height).toBeLessThan(w.y);
+  await expect(paper).toHaveCSS('background-color', 'rgb(239, 235, 227)');
+  await expect(paper).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 2px 4px 0px 0px');
 }
 
 async function inboxDesk(app: App, size: {width: number; height: number}) {
@@ -141,7 +129,7 @@ test('signed in, the Remote is a sheet from the desk\'s corner still; Server and
     await inboxDesk(app, size);
     expect(await sideways(app), what('Inbox')).toBeLessThanOrEqual(0);
     await app.server.open();
-    await row(what('Server'), size, app.server.side, 8, app.server.view.locator('.slide[aria-current="true"]'));
+    await serverDesk(app, size);
     expect(await sideways(app), what('Server')).toBeLessThanOrEqual(0);
   }
 });

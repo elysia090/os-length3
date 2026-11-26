@@ -1,51 +1,22 @@
-/* A board's talk: posts one under another, a run of them by one person, what came since. */
-
-/* What is said is set as a transcript is (DESIGN §10): one left edge, and three sizes on the sheet: its name, the
-   words, and one small size for what is beside them (a time, a day, a label). The speaker's line (their mark a cell wide,
-   their name, the time), then what they said under it from the sheet's own edge, on lines of a cell; a run of one
-   person's posts says who once. So a line is as long as the sheet is wide less a cell each side: 72 letters on a piece
-   of 24 cells, 36 on a phone's of 13, inside what is read without slowing (35 to 72); a column for faces beside the
-   words would leave a phone 30. Between two posts of a run half a line, before another speaker a line. The page folds
-   what is far out of view to boxes of the same height, so the browser's own scroll anchoring is off. */
-.tl-start { padding: var(--u) 0 0; min-height: 1lh; }
-/* No post yet: the line at the talk's foot, by the box one writes in, where the first post will come. */
-.timeline.tl-empty { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
-/* A board's talk stands on its foot: a few posts stand at its foot, by the box they are written in, the latest just over
-   it, never at its top over a sheet of nothing; more than it holds, it scrolls as it did. */
-.board-talk > .timeline { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100%; }
-.timeline.tl-empty > .tl-start { padding: 0; }
-/* Every post read, and all of them on the board at once: plain to see, so not said (server/board.ts openAtFoot). Its
-   room is kept, so the posts do not move when the talk grows past the board and it is said again. */
-.board-card.fits .tl-start.tl-all { visibility: hidden; }
-.tl-pages { overflow-anchor: none; }
-/* A day's name: on a line of its own, small, at the same edge. */
-.tl-day { margin: var(--u) 0 0; color: var(--sub); font: var(--t-word)/var(--u) var(--mono); }
-.tl-day + .tl-post { margin-top: 0; }
-.tl-post { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s2); margin: var(--u) calc(-1 * var(--s2)) 0; padding: 0 var(--s2);
-  border-radius: var(--r-key); font: var(--t-word)/var(--u) var(--sans); transition: none; }
-.tl-post.tl-runs { margin-top: 0; }
-.tl-post.held, .tl-post:focus-within { background: var(--raised); }
-.tl-main { display: contents; }
-.tl-face { display: grid; place-items: center; width: var(--u); height: var(--u); border-radius: var(--r-mark); font: 900 var(--t-word)/1 var(--display); }
-/* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
-.tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
-.tl-who { grid-column: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
-.tl-who { height: var(--u); overflow: hidden; }
-.tl-who > time, .tl-acts > time { font: var(--t-word)/1 var(--mono); color: var(--sub); }
-.tl-body { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tl-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: 0; min-height: var(--u); }
-.tl-foot:empty { display: none; }
-/* A post's deeds are in its top right corner while it is the post in hand (pressed, or with the keyboard in it), and
-   on no other: what can be done with a thing is on the thing in hand, and nothing waits on a pointer over it. Inside
-   the post, not over the one above. */
-.tl-acts { position: absolute; top: 0; right: var(--s2); z-index: 1; display: flex; align-items: center; gap: var(--s2); background: var(--raised);
-  opacity: 0; visibility: hidden; translate: 0 3px; transition: none; }
-.tl-acts:empty { display: none; }
-.tl-post.held .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
-.tl-act { background: var(--ground); }
-.tl-act[aria-pressed='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* A transcript, read from the first line down. Only the transcript scrolls. */
+.tl-start { min-height: 1px; }
+.tl-start:not(:empty) { line-height: var(--u); }
+.tl-fits .tl-start.tl-all { visibility: hidden; font-size: 0; line-height: 0; }
 .tl-foot-mark { height: 1px; }
-/* The mark for what came floats just above the box (its holder has no height), so showing it moves nothing. */
-.tl-new-at { position: sticky; bottom: var(--s3); z-index: 3; height: 0; display: flex; justify-content: flex-start; align-items: flex-end; }
-.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 700 var(--t-word) var(--sans); cursor: var(--cursor-hand); }
-.tl-new[hidden] { display: none; }
+.tl-page { display: flow-root; }
+.tl-post { position: relative; margin: 0; padding: 0 0 var(--u); }
+.tl-page > .tl-post:last-child { padding-bottom: var(--u); }
+.tl-who {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start;
+  gap: 0 var(--s3); min-width: 0; min-height: var(--u); line-height: var(--u);
+}
+.tl-who > b { min-width: 0; overflow-wrap: anywhere; }
+.tl-who > time { flex: none; margin-inline-start: auto; color: var(--sub); font: 400 13px/var(--u) var(--mono); }
+.tl-body { margin: 0; max-width: 66ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-acts { position: absolute; top: 0; right: 0; background: var(--paper); visibility: hidden; }
+.tl-acts:empty { display: none; }
+.tl-post.held .tl-acts, .tl-post:focus-within .tl-acts { visibility: visible; }
+.tl-act { background: var(--paper); }
+.tl-new-at { position: sticky; bottom: var(--s3); z-index: 1; height: 0; display: flex; align-items: flex-end; }
+.tl-new { min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-key);
+  background: var(--ink); color: var(--paper); font: 700 var(--t-word) var(--sans); cursor: var(--cursor-hand); }

@@ -183,7 +183,7 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox' || here === 'runtime') && !await this.navigation.isVisible()
+    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox' || here === 'runtime' || here === 'server') && !await this.navigation.isVisible()
       && await this.app.forge.placesKey.isVisible();
   }
 
@@ -219,7 +219,7 @@ class Rail extends Part {
       // A far side: to its place (unless there, or at the far side already), then through the door.
       if (now !== place) {
         if (now !== of) await this.go(of);
-        if (of === 'home' && await this.usesPlaces()) await (await this.destination('remote')).click();
+        if (await this.usesPlaces()) await (await this.destination(place)).click();
         else await this.door.click();
       }
       await expect(at).toHaveAttribute('data-place', place);
@@ -813,8 +813,14 @@ class Inbox extends Part {
 class Server extends Part {
   /** Its page: the servers on its top line, the boards under them, the people at the right. */
   get view() { return this.page.locator('#page[data-place="server"] > .work:not(.bench)'); }
-  /** The right: who is in it, then the repos they show in it. */
-  get side() { return this.view.getByRole('complementary', {name: 'Members and shared repos'}); }
+  get topics() { return this.view.getByRole('navigation', {name: 'Topics'}); }
+  get paper() { return this.view.locator('.server-paper'); }
+  face(name: 'Talk' | 'TODO') { return this.view.locator('.server-overline').getByRole('button', {name, exact: true}); }
+
+  async newRoom() {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitem', {name: 'Create server', exact: true}).click();
+  }
 
   /** To its page, by the rail or the Places menu on a work desk. */
   async open() {
@@ -840,7 +846,7 @@ class Server extends Part {
 
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
-    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    const field = this.view.getByRole('textbox', {name: 'Thread name', exact: true});
     await this.newBoard();
     await field.fill(name);
     await field.press('Enter');
@@ -849,14 +855,14 @@ class Server extends Part {
 
   /** To the board `name`, by its line on the room's own sheet (the row shows the one in the hand alone). */
   async goBoard(name: string) {
-    await this.side.getByRole('button', {name, exact: true}).click();
+    await this.topics.getByRole('button', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}).click();
     await expect(this.board(name)).toBeVisible();
   }
 
   /** To the board not made yet, by its line on the room's own sheet: its name then takes the keyboard. */
   async newBoard() {
-    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
-    if (!(await field.isVisible())) await this.side.getByRole('button', {name: 'New board', exact: true}).click();
+    const field = this.view.getByRole('textbox', {name: 'Thread name', exact: true});
+    if (!(await field.isVisible())) await this.topics.getByRole('button', {name: 'New thread…', exact: true}).click();
     await expect(field).toBeVisible();
   }
 
@@ -878,7 +884,7 @@ class Server extends Part {
   }
   async manage() {
     if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
-    await this.roomChoices.getByRole('menuitem', {name: 'Manage…', exact: true}).click();
+    await this.roomChoices.getByRole('menuitem', {name: /^(Manage…|Members)$/}).click();
   }
 
   /** The box at the board's foot that writes in it. */

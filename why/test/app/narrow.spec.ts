@@ -107,10 +107,12 @@ test('on a phone, a device row shows the device\'s name beside when it was used'
   expect((await name.boundingBox())!.width).toBeGreaterThan(100);
 });
 
-test('signed out, Server has no right pane and so no line where it would start', async ({app}) => {
+test('signed out, Server shows no member or thread-creation controls', async ({app}) => {
   await app.server.open();
-  await expect(app.server.side).toBeHidden();
-  await expect(app.server.view.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
+  await expect(app.server.paper).toBeVisible();
+  await expect(app.server.view.getByRole('button', {name: 'New thread…'})).toBeHidden();
+  await expect(app.server.view.getByRole('button', {name: 'Server menu'})).toBeHidden();
+  expect(await sideways(app.page)).toBeLessThanOrEqual(0);
 });
 
 test('a build without why says so in Runtime, never a parser\'s words', async ({app}) => {

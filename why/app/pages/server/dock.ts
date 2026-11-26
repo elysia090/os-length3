@@ -6,6 +6,7 @@ import * as servers from '../../../shipto/servers.ts';
 import {postNow} from './talk.ts';
 import {button, type Shown} from './parts.ts';
 import {Drafts} from '../../../home/drafts.ts';
+import {connection} from '../../../shipto/connection.ts';
 import {errorText} from '../../../api/errors.ts';
 
 /**
@@ -13,7 +14,13 @@ import {errorText} from '../../../api/errors.ts';
  * page, keeps it, and it is there when the board is on screen again; gone once sent. A
  * guest's is kept apart from one of its people's.
  */
-const drafts = new Drafts();
+let own: string | undefined;
+let kept = new Drafts();
+function draftsAs() {
+  const session = connection()?.session ?? '';
+  if (own !== session) { own = session; kept = new Drafts(); }
+  return kept;
+}
 
 /** What the box at the foot needs of the page it is on. */
 interface DockWays {
@@ -57,33 +64,36 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
  * board, what went wrong sending said in `note`; a guest no longer let in is told so (`noLonger`).
  */
 function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, noLonger: (e: unknown) => void): HTMLElement {
-  const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Post in #{board}', {board: b.name}),
-    placeholder: b.member ? t('To members of {server}', {server: b.server}) : t('As guest ({name})', {name: guest!.as})}) as HTMLTextAreaElement;
-  const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
+  const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), ...(b.member ? {'data-member-reply': ''} : {}), 'aria-label': t('Post in #{board}', {board: b.name}),
+    placeholder: b.member ? t('Write a post') : t('As guest ({name})', {name: guest!.as})}) as HTMLTextAreaElement;
+  const key = `${b.member ? 'member' : `guest:${guest?.token}`}:${b.id}`;
+  const drafts = draftsAs();
   field.value = drafts.get(key);
   const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
   // Post at the box's bottom right, as Forge's box has Run and Inbox's Send: what sends is in sight, not only known.
-  // Its keys are in its title, as Run's are, and on it in small.
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const post = h('button', {type: 'button', class: 'button small-button prompt-run',
-    'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post'),
-  // (Enter is a new line here: the key that sends says its keys on itself, as it comes with the words.)
-  h('span', {class: 'key-said', 'aria-hidden': 'true'}, mac ? '⌘↵' : 'Ctrl+↵')) as HTMLButtonElement;
-  // Holding words or not: on a phone's width, where the box is narrow, Post comes with the words and leaves its room
-  // to what the empty box says (styles.css).
+  const post = h('button', {type: 'button', class: 'topic-face-key server-post',
+    'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post')) as HTMLButtonElement;
   const form = h('form', {class: 'prompt'});
-  const worded = () => form.classList.toggle('has-words', !!field.value.trim());
   let sending = false;
+  const worded = () => { post.disabled = sending || !field.value.trim(); };
   const send = async () => {
     if (sending) return;
     // Nothing written: the box shakes its head, as every box does sent empty.
     if (!field.value.trim()) { field.focus(); nudge(field.closest('.prompt')); return; }
     sending = true;
+    const posted = field.value;
+    worded();
     note.replaceChildren();
-    try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); worded(); } catch (e) {
+    try {
+      await postNow(b.id, posted, guest?.token);
+      // A continued draft is newer than the one just sent.
+      if (drafts.get(key) === posted) drafts.sent(key);
+      if (field.value === posted) { field.value = ''; fit(); }
+    } catch (e) {
       note.textContent = errorText(e);
       if (guest) noLonger(e);
-    } finally { sending = false; }
+    } finally { sending = false; worded(); }
   };
   field.addEventListener('input', () => { drafts.set(key, field.value); fit(); worded(); });
   if (field.value) queueMicrotask(fit);
@@ -95,9 +105,6 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, n
   });
   // Pressed, the keyboard stays where one writes, for the next.
   post.addEventListener('click', () => { void send(); field.focus({preventScroll: true}); });
-  // The keyboard there as the board is drawn, nothing scrolled for it: come to from another page, the page is still
-  // rising in from under the window (main.ts select), and the field reached for there pulled it up and away.
-  if (b.member) queueMicrotask(() => { field.focus({preventScroll: true}); field.setSelectionRange(field.value.length, field.value.length); });
   form.append(field, post);
   worded();
   return form;

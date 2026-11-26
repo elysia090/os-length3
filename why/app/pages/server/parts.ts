@@ -108,8 +108,8 @@ export interface GearWays {
   done(): void;
   /** Something changed: the gear and the side are drawn again. */
   again(): void;
-  /** How many people and repos the pane last drew for this server, if it has: the parts' counts at once. */
-  known(): {people: number; repos: number} | null;
+  write(address: string): void;
+  seeRepo(repo: import('../../../shipto/servers.ts').ShownRepo): void;
   /** A board was removed or brought back: the boards are built again on the way back to them. */
   boardsChanged(): void;
   /** One left the server, or removed it: the next one, or making one. */

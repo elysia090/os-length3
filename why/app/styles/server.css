@@ -1,18 +1,5 @@
-/* The room is the band's name. Its boards and their foot keep the usual grid. */
-.server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 0; }
-/* The band's row, and under it the board's top on the rail's first row: its head is that row, and what it holds
-   starts on the second. Under the band's row, while one is named, what the Remote said no to (server/band.ts). */
-/* (Its keys are the band's, 36 from the window's 6, as the door is; under it the row's top is a cell under the band:
-   y = 72.) */
-.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 var(--s5) calc(3 * var(--u) - var(--outer-top) - var(--h-control)) var(--band-left); }
-/* (Its top line is on the band's row: it goes on from the door to Inbox, a step after it.) */
-body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(--band-left)); }
-/* Server's page: the view the whole page's, its edges the bench's. */
-/* (Its row goes to the window's right edge and foot, past the page's own: nothing of it is cut at the page's.) */
-.page.page-work[data-place='server'] { overflow: visible; }
-.page.page-work[data-place='server'] > .work { position: relative; height: 100%; grid-template-columns: minmax(0, 1fr); }
 /* The chooser occupies just the room's place on the band. Its local cut does not reflow the desk. */
-.server-band-content { flex: 1; min-width: 0; min-height: var(--h-control); }
+.server-band-content { min-width: 0; min-height: var(--h-control); }
 .server-room-status { display: inline-block; line-height: var(--h-control); }
 .server-chooser { --hinge: calc(var(--s4) + 2px); --seam: calc((var(--h-control) + var(--hinge)) / 2 - 1px);
   position: relative; z-index: 2; width: fit-content; max-width: 100%; }
@@ -26,13 +13,13 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .server-held > .server-display-edit { field-sizing: content; min-width: 4ch; border-bottom: 1px solid var(--ink); }
 .server-display-edit:focus { outline: none; }
 .server-display-error { position: absolute; inset-block-start: 100%; inset-inline-start: 0; width: max-content;
-  max-width: min(calc(9 * var(--u)), var(--server-choices-fit, 100vw)); padding: var(--s1); background: var(--ground); color: var(--off); }
+  max-width: min(calc(9 * var(--u)), var(--server-choices-fit, 100vw)); padding: var(--s1); background: var(--ground); color: var(--nighthawks-paper); }
 .server-display-error:empty, .server-chooser:has(.server-disclosure[aria-expanded='true']) > .server-display-error { display: none; }
 .server-disclosure { width: var(--h-control); height: var(--h-control); flex: none; display: grid; place-items: center;
-  padding: 0; border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--frame); cursor: var(--cursor-hand); }
+  padding: 0; border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); cursor: var(--cursor-hand); }
 .server-disclosure > .server-hinge { display: grid; place-items: center; width: var(--hinge); height: var(--hinge); border-radius: var(--r-key); }
 .server-hinge > svg { width: var(--s4); height: var(--s4); }
-.server-disclosure[aria-expanded='true'] > .server-hinge { background: var(--slot); color: var(--ink); }
+.server-disclosure[aria-expanded='true'] > .server-hinge { background: var(--nighthawks-shadow); color: var(--ink); }
 .server-disclosure[aria-expanded='true'] svg { transform: rotate(180deg); }
 .server-disclosure:active > .server-hinge { background: var(--ink); color: var(--ground); }
 .server-choices { position: absolute; inset-block-start: var(--seam); inset-inline-start: 0;
@@ -41,7 +28,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   background: var(--ground); }
 .server-chooser:has(.server-disclosure[aria-expanded='true'])::after {
   position: absolute; content: ''; inset-block-start: var(--seam); inset-inline-start: 0;
-  width: calc(100% - (var(--h-control) - var(--hinge)) / 2); height: 1px; background: var(--edge); pointer-events: none;
+  width: calc(100% - (var(--h-control) - var(--hinge)) / 2); height: 1px; background: var(--nighthawks-desk-disabled); pointer-events: none;
 }
 .server-choice { position: relative; display: grid; grid-template-columns: var(--s4) minmax(0, 1fr); align-items: center;
   min-height: var(--u); padding: 0 var(--s1) 0 0; border: 0; background: var(--ground); color: var(--sub);
@@ -55,7 +42,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   background: var(--ink); inset-inline-start: calc(-1 * var(--s2)); inset-block-start: calc(50% - var(--s1) / 2); }
 .server-choice.news::before { inset-inline-start: var(--s1); }
 .server-choice.news[aria-checked='true']::before { inset-inline-start: auto; inset-inline-end: var(--s1); }
-.server-said { flex-basis: 100%; padding-left: calc(var(--h-row) + var(--s2)); }
+.server-said { padding-block: var(--s1); }
 .server-said:empty, .server-said:has(> .server-ask:empty) { display: none; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
    one name; Make beside it. Wider than the row (a phone's width, its address written), Make goes under it. */
@@ -75,191 +62,12 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   color: var(--sub); font: inherit; font-family: var(--mono); line-height: inherit; cursor: var(--cursor-hand); }
 .server-at:hover { color: var(--ink); }
 .server-address { display: inline-flex; align-items: baseline; font-family: var(--mono); }
-/* The server it will be, faint under its chip: its first board dashed on the ground as it will open (its TODO's first
-   line, its talk's foot in their own words, not a box in a box nor bars that read as loading), and the box at the foot
-   it will write in, saying its people by the name as it is written; nothing in it to press. Made, it stands there whole. */
-/* (A board to be made is not a sheet yet: its piece is a dashed line on the ground, in the hand or not.) */
-.server-center .slide:has(> :is(.board-ghost, .board-new)), .server-center .slide[aria-current='true']:has(> :is(.board-ghost, .board-new)) { background: var(--ground); color: var(--sub); outline-style: dashed; outline-color: var(--edge); box-shadow: none; }
-.board-ghost .board-head h2 { color: var(--sub); }
-/* What a board will hold, faint (server/board.ts ghostBody): a server's first board while it is named, a new board. */
-.board-faint { color: var(--sub); }
-.board-faint .todo-box { border-color: var(--rule); background: transparent; }
-.board-faint .todo-mark { cursor: var(--cursor-arrow); }
-.board-faint .todo-title { display: flex; align-items: center; color: var(--sub); font-weight: 400; }
-.board-talk.board-faint { display: flex; flex-direction: column; overflow: hidden; }
-.board-faint .timeline { flex: 1; }
-/* A new board, made where it will stand: the board it will be, dashed on the ground as a server's first board is
-   while it is named, its name written in its head in a board name's letters with Make beside it, what a board is said
-   at the top of where its talk will be; the edge beside the one on screen dashed, its mark +. Made, it stands whole. */
-/* Its head: #, the name (narrowing before Make leaves the line), Make; refused, why under them. */
-.slide[aria-current='true'] .board-card.board-new > .board-head { display: grid; grid-template-columns: auto minmax(0, max-content) auto; justify-content: start;
-  align-items: center; column-gap: var(--s2); border-bottom: 1px dashed var(--rule); }
-.board-new > .board-head > .button { margin-left: var(--s1); }
-.board-naming { display: flex; min-width: 0; cursor: var(--cursor-text); }
-.board-name-in { min-width: 4ch; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 700 var(--t-word)/calc(2 * var(--u)) var(--sans); text-overflow: ellipsis; }
-.board-name-in:focus { outline: none; }
-.board-name-in::placeholder { color: var(--sub); font-weight: 400; }
-.board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
-.board-new > .board-head > .error:empty { display: none; }
-.board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--u); }
-.prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); }
-/* What the side will hold, quiet (never see-through): its words and lines the quiet ones. */
-.side-ghost { color: var(--quiet); }
-.side-ghost * { color: inherit; border-color: var(--rule); }
-/* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
-   the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */
-.server-signed-out { margin: var(--top-line) var(--s5) 0 var(--body-left); }
-/* The boards are the row of a desk (DESIGN §6, server/row.ts): from the desk's edge, a cell under the band, to the
-   window's right edge and a cell over its foot; pieces one width (--piece, as many whole cells as there is room for,
-   24 at most), two cells apart; the desk rests only with a piece at its edge. First in the row the room's own sheet,
-   eight cells wide; then its boards; one board is in the hand. */
-.server-center > .slides { position: relative; min-height: 0; margin: 0 calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; }
-.server-center .slide-stage { box-sizing: border-box; height: 100%; padding-bottom: var(--u); overflow: auto hidden; overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory; scrollbar-width: none; }
-.server-center .slide-stage::-webkit-scrollbar { display: none; }
-.server-center .slide-stage::before, .server-center .slide-stage::after { content: none; }
-.server-center .slide-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
-/* (After the last piece, room for it to come to the desk's edge: the row's end.) */
-.server-center .slide-track { display: flex; gap: calc(2 * var(--u)); box-sizing: border-box; width: max-content; min-width: 100%; height: 100%;
-  padding-right: calc(100% - var(--piece, 100%)); }
-/* A piece: not in the hand, the ground's own colour inside a quiet line, its words a step quieter. */
-/* (Standing to the foot, a sheet is as tall as the whole cells there are room for: its lines, counted from its foot
-   up, stay on the grid on a window of any height.) */
-.server-center .slide, .slide-track > .server-side { position: relative; flex: none; box-sizing: border-box; height: round(down, 100%, var(--u)); scroll-snap-align: start;
-  border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; }
-.server-center .slide { display: flex; flex-direction: column; width: var(--piece, 100%); min-width: 0; }
-/* In the hand: paper, an ink edge, its shadow (§5); the box that writes in it at its foot, part of the sheet. */
-.server-center .slide[aria-current='true'] { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
-.server-center .slide > .board-card { flex: 1; min-height: 0; border: 0; border-radius: inherit; background: none; }
-/* What is said in the boards' place (an invitation that opens nothing): a sheet as tall as what it says. */
-.server-center .slide.said { height: auto; align-self: flex-start; }
-/* One read ahead (row.ts) is its name only to look at until it is in the hand, what it holds there unseen. */
-.slide.full[aria-current='false']:not(.leaving) .board-card > :not(.board-head) { visibility: hidden; }
-/* The box that writes in a board stands at that board's foot, inside its sheet under a quiet rule. */
-.slide > .dock { position: static; inset: auto; flex: none; max-width: none; margin: 0; padding: 0 var(--u) var(--u); transform: none; }
-.slide > .dock:empty { display: none; }
-.slide > .dock::after { content: none; }
-/* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
-.slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
-.prompt-run > .key-said { margin-left: var(--s2); font: var(--t-word)/1 var(--mono); color: var(--sub); }
-/* No line between a board's talk and the box one writes in: read back, what passes under the box's edge goes a little
-   out of focus (depth, §1), in the cell the talk keeps empty at its foot, so at rest on the latest nothing is. Inside
-   the sheet's edge: blurred, its pixel of ink was a smudge at both ends of the cell (nothing over a sheet's edge, §3). */
-.slide > .board-card:has(> .board-talk, > .part-panel) + .dock { position: relative; }
-.slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before, .inbox-write::before {
-  content: ''; position: absolute; left: 1px; right: 1px; bottom: 100%; height: var(--u); pointer-events: none;
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); mask-image: linear-gradient(to top, #000, transparent); }
-/* A board's head: its name in the display face, its capitals a cell tall on the second line of the sheet (a sheet's
-   name, §5), a cell of paper before it; after the name its two parts, which go under it where they do not fit beside
-   it, as words do. */
-.board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); box-sizing: border-box; min-height: calc(2 * var(--u)); padding: 0 var(--u); }
-.board-head h2 { flex: 0 1 auto; min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-head > .board-mark { font: 700 var(--t-word)/calc(2 * var(--u)) var(--mono); }
-/* The board in the hand: its name is the place's one large thing (PLACES, Server), two cells of capitals on the sheet's
-   second and third lines (DESIGN §3: a name c cells tall in a box of its own size, its margins −.2043·c·u and
-   −.1713·c·u), over the boards beside it, whose names are a cell (master and servant: one top to the size). Its # and
-   its parts stand on the name's foot, the parts in their field of two cells. */
-.slide[aria-current='true'] .board-card:not(.board-new) > .board-head { align-items: flex-end; min-height: calc(3 * var(--u)); padding-top: var(--u); }
-/* (A name longer than the sheet breaks over lines at that size, balanced, a line every three cells, as the person's
-   name does on Home: never cut short.) */
-.slide[aria-current='true'] .board-card:not(.board-new) > .board-head h2 { font-size: var(--t-voice); line-height: calc(3 * var(--u)); white-space: normal; overflow: visible; text-overflow: clip; text-wrap: balance; overflow-wrap: anywhere;
-  margin: calc(2 * var(--u) - (3 * var(--u) + var(--t-voice)) / 2 + .1245 * var(--t-voice)) 0 calc(-1 * ((3 * var(--u) - var(--t-voice)) / 2 + .1245 * var(--t-voice))); letter-spacing: -.055em; }
-.slide[aria-current='true'] .board-card:not(.board-new) > .board-head > .board-mark { line-height: var(--u); }
-.board-head .grow { flex: 1; }
-.board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.board-head > .button { flex: none; }
-/* A board on screen is one sheet, never a box in a box: its head across it over a quiet rule, its name and after it its
-   two parts, Talk and TODO, as Remote's are (chosen in ink, the ink going along to the other); under it the part
-   chosen, the whole sheet: its talk scrolling as a conversation does (the latest at its foot, what was said before
-   above it), or its TODO, the same list as Home's but not boxed again (the board is its box), as wide as its lines are
-   read, scrolling in itself when it is long, its keys shown while one writes in it. The part not chosen stays where it
-   is under it, unseen, so the talk is where it was read to when it comes back. */
-.board-card:not(.board-said, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.board-card > .board-head { grid-column: 1; }
-/* (Beside the name, the head's gap from it; where the name leaves no room, on a line of their own under it, from its left.) */
-.board-head > .parts { flex: none; flex-wrap: nowrap; min-height: calc(2 * var(--u)); align-items: center; }
-.board-head .part { height: var(--h-control); padding-inline: var(--s3); }
-.slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: 0 1px 0 var(--rule); }
-.board-card > .board-talk, .board-card > .part-panel { grid-column: 1; grid-row: 2; min-height: 0; margin: 0; }
-.board-card > .part-panel { display: grid; grid-template-rows: minmax(0, 1fr); }
-.board-card > .part-panel[hidden] { visibility: hidden; }
-.board-todo { display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s4) var(--u); }
-.board-todo .todo-box { min-height: 0; max-width: 720px; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
-.board-todo .todo-items { padding: 0; }
-.board-todo .error:empty { display: none; }
-.board-todo > .todo-clear { justify-self: start; height: var(--h-control); }
-/* The TODO in front, the box at the foot is the talk's and goes, the board taking its room. */
-/* (Its TODO's panel told by its id, panel-board-…-todo: a :has() holds no other.) */
-.slide:has(> .board-card > .part-panel[id$='-todo']:not([hidden])) > .dock { display: none; }
-.todo-read { white-space: pre-wrap; }
-/* (Whole cells, DESIGN §3: a cell of paper over its first line and under its last, the cell the box's blur is in.) */
-.board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--u); overscroll-behavior: contain; }
-/* Where one writes, in a board or a conversation: the next line of the sheet, as the note's next item is, and nothing
-   drawn round it (DESIGN §1: paper and ink. A box with a fill and an edge of its own in the sheet was a sheet in a
-   sheet, §3, a second fill in the hand's piece, and the input every program has). Its lines are the talk's, a cell
-   each, its words starting where the talk's words do; what it says empty (whom it writes to) is quiet; its key, come
-   with the words, stands in a line's room. Written in, the caret says so. */
-:is(.slide > .dock > .prompt, .inbox-write .write-line), :is(.slide > .dock > .prompt, .inbox-write .write-line):focus-within {
-  min-height: var(--u); padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
-:is(.slide > .dock .prompt-in, .inbox-write .bubble-in)::placeholder { color: var(--sub); opacity: 1; }
-:is(.slide > .dock .prompt-in, .inbox-write .bubble-in) { line-height: var(--u); }
-:is(.slide > .dock, .inbox-write) .prompt-run { margin-block: calc((var(--u) - var(--h-control)) / 2); }
-.board-talk:focus-visible { outline-offset: -2px; }
-.board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .server-back:empty { display: none; }
 .your-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: var(--h-row); padding: 0 var(--s3); }
 .your-row > .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .server-say { flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .server-say .line-in { flex: 1; min-width: 10em; }
-/* The room's own sheet, first in the row at the desk's edge: who is in it, then the repos they show. Eight cells wide,
-   a cell of ground round what it says; not in the hand (it is read, and what changes it is behind the gear). */
-.slide-track > .server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--u); width: calc(8 * var(--u)); overflow-y: auto; padding: var(--u); }
-.slide-track > .server-side[hidden] { display: none; }
-/* Its boards, by name: lines the frame's square tall across the sheet, the one in the hand in ink (as the step that is
-   next is on Git's own sheet); a dot on one with something not seen. Any board is one press from here. */
-.side-index { margin: 0 calc(-1 * var(--u)); gap: 0; }
-.side-index:empty { display: none; }
-.side-index > h3 { padding: 0 var(--u); }
-.side-boards { display: grid; margin: 0; padding: 0; list-style: none; }
-.side-board { position: relative; display: flex; align-items: baseline; gap: var(--s2); box-sizing: border-box; width: 100%; height: var(--u); padding: 0 var(--u); border: 0; border-radius: 0;
-  background: none; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); text-align: left; cursor: var(--cursor-hand); }
-.side-board > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-board > .board-mark { font: 700 var(--t-word)/var(--u) var(--mono); }
-.side-board[aria-current='true'] { background: var(--ink); color: var(--ground); font-weight: 700; }
-.side-board:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
-.side-board[aria-current='true']:focus-visible { outline-color: var(--ground); }
-.side-board.news::after { content: ''; align-self: center; flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: currentColor; }
-/* A heading over its list as a section's is over its content. */
-.side-part { display: grid; gap: 0; }
-/* (A label on a desk: 13 px mono, lowercase, as Home's are.) */
-.server-side .side-part h3 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; text-transform: lowercase; }
-.server-side .empty { margin-top: 0; padding: var(--s5) var(--s4); }
-.people, .side-repos { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-/* Words of two sizes in a row share a baseline; the face sits centred by them. */
-/* (What is said of them, owner, on a line of its own under the name: the sheet is eight cells wide.) */
-.people li, .person-go { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
-.people li:has(> .person-go) { display: block; }
-.people :is(li, .person-go) > .muted { grid-column: 2; }
-.people li > .lately-badge { align-self: center; }
-/* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
-.people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
-/* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
-.person-go { width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
-  padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
-  transition: none; }
-.person-go:hover { transition-duration: var(--motion); color: var(--ink); }
-.person-go > .lately-badge { align-self: center; }
-.person-go > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
-/* It goes to the Inbox: an arrow at its end says so, always there and quiet (§7). */
-.person-go::after { content: '→'; grid-column: 3; grid-row: 1; color: var(--quiet); }
-.person-go:is(:hover, :focus-visible)::after { color: var(--ink); }
-.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
-.side-repo[aria-current='true'] { background: var(--raised); }
-.side-repo:hover { color: var(--ink); }
-.side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-repo > .small:not(.seen-mark) { grid-column: 1; }
-.side-repo .seen-mark { grid-column: 2; grid-row: 1; }
 /* In the boards' place: behind the gear, or a repo shown. */
 /* Behind the gear, and a repo shown: a head as a page's, then what it holds
    on the ground itself (cards, or one box in two panes), never a box around

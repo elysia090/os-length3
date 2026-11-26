@@ -5,7 +5,7 @@ import {lookup, send, shown as named, shownAs, threads} from '../../../shipto/in
 import * as servers from '../../../shipto/servers.ts';
 import {deed, parts, type Parts} from '../kit/common.ts';
 import {every} from '../../../api/runs.ts';
-import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard, type GearWays} from './parts.ts';
+import {askIn, boardName, button, foot, line, MOVE, smallCard, type GearWays} from './parts.ts';
 import {guestsCard} from './guests.ts';
 import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
@@ -32,8 +32,6 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
   const tabs = sheet(s, w);
   // The counts as the pane last drew them, at once: the parts' names do not step sideways when the reading comes.
   tabs.count('boards', s.boards.filter((b) => !b.gone).length);
-  const known = w.known();
-  if (known) { tabs.count('people', known.people); tabs.count('repos', known.repos); }
   const grid = (k: Part, ...cards: (Node | null)[]) => tabs.panel(k).replaceChildren(h('div', {class: 'grid small-grid'}, ...cards));
   try {
     const [people, repos, mineAll] = await Promise.all([servers.people(s.id), servers.shownIn(s.id), servers.seenAll()]);
@@ -138,12 +136,12 @@ function personCard({s, w, mine}: Read, p: servers.Person): HTMLElement {
   const c = smallCard(h('span', {class: 'person-title'}, personBadge(named(p.address)), h('span', {}, named(p.address))),
     line(p.owner ? t('Owner') : p.address === mine ? t('You') : ''));
   c.classList.add('person-card');
-  if (s.owner && p.address !== mine) {
-    const out = button(t('Remove'), 'small-button');
-    out.addEventListener('click', () => askIn(c, out, named(p.address), t('Remove {who} from {server}.', {who: named(p.address), server: s.name}),
-      t('Remove'), async () => { await servers.removePerson(s.id, p.address || p.id || ''); w.again(); }));
-    c.append(footLeft(out));
-  }
+  const message = p.address && p.address !== mine ? button(t('Message {name}', {name: named(p.address)}), 'small-button') : null;
+  message?.addEventListener('click', () => w.write(p.address));
+  const out = s.owner && p.address !== mine ? button(t('Remove'), 'small-button') : null;
+  out?.addEventListener('click', () => askIn(c, out, named(p.address), t('Remove {who} from {server}.', {who: named(p.address), server: s.name}),
+    t('Remove'), async () => { await servers.removePerson(s.id, p.address || p.id || ''); w.again(); }));
+  if (out || message) c.append(h('div', {class: 'card-foot'}, out, h('span', {class: 'grow'}), message));
   return c;
 }
 
@@ -220,16 +218,21 @@ function ownRepo({s, w, repos, mineAll, mine}: Read, x: servers.RepoSeen): HTMLE
     c.append(setting(w, c, t('Publicly visible'), r?.asServer === s.id, {what: [t('Publicly accessible as "{name}".', {name: shownAs(`${s.address}:${x.name}`)}), t('Your username remains hidden.')], verb: t('Visibility')},
       (v) => (v ? servers.setSeen(x.name, 'everyone', {as: s.id}) : servers.setSeen(x.name, 'servers', {servers: [...new Set([...shares(x.name), s.id])]}))));
   }
+  if (r) c.append(foot(repoView(w, r)));
   return c;
+}
+
+function repoView(w: GearWays, repo: servers.ShownRepo) {
+  const open = button(t('View'), 'small-button');
+  open.addEventListener('click', () => w.seeRepo(repo));
+  return open;
 }
 
 function othersRepo({s, w}: Read, r: servers.ShownRepo): HTMLElement {
   const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Publicly visible as "{name}"', {name: shownAs(r.as)})) : null);
-  if (s.owner) {
-    const off = button(t('Remove'), 'small-button');
-    deed(off, async () => { await servers.takeOff(s.id, r.owner || r.ownerId || '', r.name); w.again(); });
-    c.append(footLeft(off));
-  }
+  const off = s.owner ? button(t('Remove'), 'small-button') : null;
+  if (off) deed(off, async () => { await servers.takeOff(s.id, r.owner || r.ownerId || '', r.name); w.again(); });
+  c.append(h('div', {class: 'card-foot'}, off, h('span', {class: 'grow'}), repoView(w, r)));
   return c;
 }
 

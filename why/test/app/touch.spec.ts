@@ -17,7 +17,7 @@ import {expect, test} from './fixtures.ts';
 test.use({reducedMotion: 'no-preference'});
 const PLACES = {
   home: '.home-own > .section', 'new-repo': '.nr-box', forge: '.desk-box.held', git: '.issue-slot[aria-current="true"] .issue-card',
-  server: '.slide.full', inbox: '.inbox-thread', runtime: 'main#page', remote: 'main#page',
+  server: '.server-paper', inbox: '.inbox-thread', runtime: 'main#page', remote: 'main#page',
 } as const;
 
 /** In the page: the controls in sight, in order from the top right. */

@@ -176,19 +176,20 @@ What is half written in any of them stays, going along the row or to another pag
 
 ### Server: where many talk
 
-*A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
-in the hand, its capitals two cells tall over the boards beside it, whose names are a cell.
+*A room: topics of talk, each with a shared list, and the people in it.* Its one large thing is the name of the
+topic in hand. The room is the handle on the left, with topics by name below it: the line held takes ink, and
+unread is a separate dot. New thread is the last command in that index.
 
-A desk with a row (§6). First, the room's own sheet, eight cells, as Inbox's first sheet is (a cell of paper round
-its lines, a line a cell tall): its boards by name (the one in the hand in ink,
-a dot on one with something not seen), the way to a new one, who is in it, the repos they show. Then its boards in
-their order: the one in the hand a sheet as wide as any piece; **one not in the hand is its name on the ground and
-nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is taken up. Last, so too, the board
-not made yet. The board in the hand is a sheet: its name in the display
-face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
-fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
-room is named on the band's row after the door. The triangle beside the name brings the server choices down from
-its own edge. The checked server is the one in hand; putting the choices away does not move the board.
+One centered paper, with its words flush left. The short line above it says which face is held and offers its
+other face, Talk or TODO; no count. Its title and paper do not move. The talk is a reading order, its authors
+and times with what was said. Only the transcript scrolls. The reply stays at the paper's foot, and a topic
+comes back to the last place read; arrivals do not turn the reader away from an older line. The whole held
+topic has the same paper grain as a held Inbox letter, behind the ink.
+
+The triangle beside the room opens its list immediately below its edge. The checked choice is the room in hand.
+An owner can rename directly at the name, without rewriting the address. Manage holds members, shared repos,
+board visibility, and the server's actual settings without putting another sheet on the desk. A guest or public
+reader does not receive the member's commands or content.
 
 ### Inbox: Server's far side, what was said to one
 

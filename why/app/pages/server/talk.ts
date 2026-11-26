@@ -1,13 +1,12 @@
 import {h} from '../../ui/dom.ts';
 import {dateFormat} from '../../../text/format.ts';
-import {arrive, closeUp, cut, paced, still} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {shown} from '../../../shipto/inbox.ts';
 import * as servers from '../../../shipto/servers.ts';
 import {coalesced, every} from '../../../api/runs.ts';
 import {errorText} from '../../../api/errors.ts';
-import {personBadge} from '../kit/pane.ts';
-import {readTime, SPRING} from '../../ui/law.ts';
+import {readTime} from '../../ui/law.ts';
+import {connection} from '../../../shipto/connection.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -31,12 +30,12 @@ const EVERY = 15_000;
 const SAY_READING = 250;
 
 
-/** Whose a post is, as someone is everywhere (pane.ts): their initial on their tint, the same for the same name. */
-const face = (p: servers.Post) => {
-  const b = personBadge(shown(p.by));
-  b.classList.add('tl-face');
-  return b;
-};
+// Only the place in a transcript is held across topics, never a post or an
+// old view. A different Remote session or guest/member scope cannot reuse it.
+type Spot = {id: string; at: number; top: number};
+const places = new Map<string, Spot>();
+let readingAs: string | undefined;
+
 const CLOCK: Intl.DateTimeFormatOptions = {hour: '2-digit', minute: '2-digit', hour12: false};
 const DAY_NAME: Intl.DateTimeFormatOptions = {weekday: 'short', month: 'short', day: 'numeric'};
 const clock = (ms: number) => dateFormat(CLOCK).format(ms);
@@ -73,8 +72,8 @@ interface Shown { page: servers.Page; el: HTMLElement; drawn: boolean; near: boo
  * A board's talk, in `scroller` (the box that scrolls it); `member`: read as one of its people.
  * `saw` hears the newest post read: its foot in view (with the window), so what came is seen.
  */
-export function timeline(scroller: HTMLElement, board: string, member: boolean, saw?: (post: string) => void): HTMLElement {
-  return new Talk(scroller, board, member, saw).root;
+export function timeline(scroller: HTMLElement, board: string, member: boolean, saw?: (post: string) => void) {
+  return new Talk(scroller, board, member, saw);
 }
 
 /** Every post of `board` after post `after`, read a hundred at a time. */
@@ -88,30 +87,20 @@ async function allAfter(board: string, member: boolean, after: string): Promise<
   }
 }
 
-/**
- * A post: a face and a name where a run starts, then the text. One that may be taken down (one's own, or any as the
- * server's owner) has Take down, which `down` does.
- */
-function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promise<void>): HTMLElement {
+/** Plain attribution and its words, in order. The real deletion affordance remains scoped by Remote. */
+function post(p: servers.Post, day: boolean, down: (art: HTMLElement) => Promise<void>): HTMLElement {
   const when = new Date(p.at);
-  // A name on this Remote is shown alone; one on a domain with it. A guest by the name they chose, always
-  // with "guest" beside it and their face dashed, so they are never taken for one of its people.
   const [name, domain] = shown(p.by).split('@');
   const where = p.guest ? t('Guest') : domain ? `@${domain}` : '';
-  const time = h('time', {class: 'muted small', datetime: when.toISOString()}, clock(p.at));
-  const below = h('div', {class: 'tl-foot muted small'});
+  const time = h('time', {datetime: when.toISOString()}, day ? `${dayName(p.at)}  ${clock(p.at)}` : clock(p.at));
   const acts = h('div', {class: 'tl-acts'});
-  const main = h('div', {class: 'tl-main'},
-    ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, where), time)]),
-    h('p', {class: 'tl-body'}, p.body), below);
-  // (In a run the time is among what the post in hand shows, with its deeds: the speaker's line is said once.)
-  if (runs) acts.append(time);
-  const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`}, runs ? null : face(p), main, acts);
+  const art = h('article', {class: 'tl-post', 'data-post': p.id, 'data-time': String(p.at),
+    ...(p.mayTakeDown ? {tabindex: '0'} : {})},
+  h('div', {class: 'tl-who'}, h('b', {}, name), where ? h('span', {class: 'muted small'}, where) : null, time),
+  h('p', {class: 'tl-body'}, p.body), acts);
   if (p.mayTakeDown) acts.append(takeDown(() => down(art)));
-  // A post pressed is the one in hand: what can be done with it (its time, its deeds) is on it, and on no other. Nothing
-  // waits on a pointer over it.
   art.addEventListener('click', () => {
-    for (const other of art.parentElement?.querySelectorAll('.tl-post.held') ?? []) if (other !== art) other.classList.remove('held');
+    for (const other of art.closest('.timeline')?.querySelectorAll('.tl-post.held') ?? []) if (other !== art) other.classList.remove('held');
     art.classList.add('held');
   });
   return art;
@@ -133,6 +122,7 @@ function takeDown(act: () => Promise<void>): HTMLButtonElement {
 /** The talk while it is on screen: the pages it holds, where the reader is, and reading on. */
 class Talk {
   readonly root = h('div', {class: 'timeline'});
+  readonly stop: () => void;
   /** Newest page first; on screen the other way round, newest at the foot. */
   private readonly pages: Shown[] = [];
   private readonly list = h('div', {class: 'tl-pages', role: 'region', 'aria-label': t('Posts')});
@@ -148,6 +138,11 @@ class Talk {
   private readonly scroller: HTMLElement;
   private readonly board: string;
   private readonly member: boolean;
+  private readonly scope: string;
+  private readonly placeKey: string;
+  private restore: Spot | null;
+  private height = 0;
+  private heldTop: number | null = null;
   private readonly saw: ((post: string) => void) | undefined;
   /** Pages near the view are drawn; far from it, folded. */
   private readonly watch: IntersectionObserver;
@@ -161,10 +156,33 @@ class Talk {
     this.scroller = scroller;
     this.board = board;
     this.member = member;
+    this.scope = connection()?.session ?? '';
+    this.placeKey = `${member ? 'member' : 'public'}:${board}`;
+    if (readingAs !== this.scope) { places.clear(); readingAs = this.scope; }
+    this.restore = places.get(this.placeKey) ?? null;
     this.saw = saw;
     this.watch = new IntersectionObserver((entries) => this.nearOrFar(entries), {root: scroller, rootMargin: NEAR});
     this.more = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) void this.older(); }, {root: scroller, rootMargin: '200% 0px 0px 0px'});
     this.fresh.addEventListener('click', () => { this.unseen = 0; this.tell(); this.toFoot(true); });
+    scroller.addEventListener('scroll', () => this.keepPlace(), {passive: true});
+    // If the composition is being written to, the previous viewport tells
+    // whether the reader followed the foot or was reading elsewhere.
+    const sized = new ResizeObserver(() => {
+      const next = scroller.clientHeight;
+      if (!next) return;
+      const wasAtFoot = this.height && scroller.scrollHeight - scroller.scrollTop - this.height < 3;
+      this.height = next;
+      this.root.classList.toggle('tl-fits', scroller.scrollHeight <= next + 1);
+      if (wasAtFoot && !this.restore) this.toFoot();
+    });
+    sized.observe(scroller);
+    sized.observe(this.root);
+    const takeReading = () => { if (this.pages.length) this.restore = null; };
+    scroller.addEventListener('wheel', takeReading, {passive: true});
+    scroller.addEventListener('pointerdown', takeReading, {passive: true});
+    scroller.addEventListener('keydown', (e) => {
+      if (['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown'].includes(e.key)) takeReading();
+    });
     const here = {board, read: this.came, seen: () => this.read()};
     onScreen.add(here);
     // Back at the foot: what came is seen.
@@ -175,22 +193,73 @@ class Talk {
     }, {root: scroller});
     // While it is on screen, what came is looked for now and then (not while the page is hidden, slower while nobody is at
     // it, at once when someone comes back: runs.ts paced); once it is gone, all of this stops.
-    every(EVERY, () => { const c = this.came(false); this.read(); return c; }, {
+    const polling = every(EVERY, () => { const c = this.came(false); this.read(); return c; }, {
       alive: () => this.root.isConnected, paced: true,
-      ended: () => { this.watch.disconnect(); this.more.disconnect(); seen.disconnect(); onScreen.delete(here); },
+      ended: () => { this.watch.disconnect(); this.more.disconnect(); seen.disconnect(); sized.disconnect(); onScreen.delete(here); },
     });
+    this.stop = () => { this.keepPlace(); polling.stop(); };
     // The mark floats over the posts at the foot (its holder has no height), so showing it moves nothing.
     this.root.append(this.start, this.list, this.foot, h('div', {class: 'tl-new-at'}, this.fresh));
     this.more.observe(this.start);
     seen.observe(this.foot);
   }
 
+  /** The scrollport's geometry disappears while TODO is in front. Its position does not. */
+  holdFace() {
+    this.keepPlace();
+    this.heldTop = this.scroller.scrollTop;
+  }
+
+  showFace() {
+    if (this.heldTop !== null) {
+      this.scroller.scrollTop = this.heldTop;
+      this.heldTop = null;
+    }
+    if (this.pages.length && this.locatePlace(!this.done)) void this.older();
+    this.read();
+  }
+
   /** The foot in view: the newest post held is read. */
   private read() {
-    // Not while its board is read ahead beside the one on screen (row.ts), nor while its TODO is in front of it: seen
-    // once slid to, or come back to (seenNow).
-    if (this.root.closest('.slide[aria-current="false"], .part-panel[hidden]')) return;
-    if (this.footIn && this.pages.length && document.visibilityState === 'visible') this.saw?.(this.pages[0].page.newest);
+    if (!this.active() || this.restore) return;
+    if (this.footIn && this.pages.length && this.atFoot() && document.visibilityState === 'visible') this.saw?.(this.pages[0].page.newest);
+  }
+
+  private active() {
+    return this.root.isConnected && (connection()?.session ?? '') === this.scope && !this.root.closest('[hidden], [inert]');
+  }
+
+  private keepPlace() {
+    if (!this.active() || this.restore || this.heldTop !== null || !this.pages.length) return;
+    if (this.atFoot()) { places.delete(this.placeKey); return; }
+    const top = this.view().top;
+    const row = [...this.list.querySelectorAll<HTMLElement>('[data-post]')]
+      .find((el) => el.getBoundingClientRect().bottom > top);
+    if (row?.dataset.post && row.dataset.time) {
+      places.delete(this.placeKey);
+      places.set(this.placeKey, {id: row.dataset.post, at: Number(row.dataset.time), top: row.getBoundingClientRect().top - top});
+      // Bound memory independently of how many threads were once visited.
+      if (places.size > 64) places.delete(places.keys().next().value!);
+    }
+  }
+
+  /** Restore an actual author line, even when new posts arrived in the meantime. */
+  private locatePlace(more: boolean): boolean {
+    if (!this.restore) return false;
+    const here = this.restore;
+    const rows = [...this.list.querySelectorAll<HTMLElement>('[data-post]')];
+    const exact = rows.find((el) => el.dataset.post === here.id);
+    const oldest = Number(rows[0]?.dataset.time ?? Infinity);
+    if (!exact && more && oldest >= here.at) return true;
+    // A removed post restores to its nearest surviving successor, not to a different thread.
+    const target = exact ?? rows.find((el) => Number(el.dataset.time) >= here.at) ?? rows.at(-1);
+    this.restore = null;
+    if (target) this.scroller.scrollTop += target.getBoundingClientRect().top - this.view().top - here.top;
+    return false;
+  }
+
+  private report() {
+    this.scroller.dispatchEvent(new CustomEvent('topic-posts', {detail: this.pages.some((page) => page.page.posts === null || page.page.posts.length > 0), bubbles: true}));
   }
 
   // ---- where the reader is ----
@@ -219,8 +288,7 @@ class Talk {
     const out: Node[] = [];
     for (const p of [...s.page.posts].reverse()) {
       const day = !prev || servers.dayOf(prev.at) !== servers.dayOf(p.at);
-      if (day) out.push(h('div', {class: 'tl-day', role: 'separator'}, h('span', {}, dayName(p.at))));
-      out.push(post(p, !day && servers.sameRun(prev, p), (art) => this.takeDown(p, s, art)));
+      out.push(post(p, day, (art) => this.takeDown(p, s, art)));
       prev = p;
     }
     s.el.replaceChildren(...out);
@@ -233,6 +301,7 @@ class Talk {
     await servers.takeDown(this.board, p.id);
     if (s.page.posts) s.page.posts = s.page.posts.filter((q) => q.id !== p.id);
     this.steady(() => art.remove());
+    this.report();
   }
 
   /** An empty box of the height it had: nothing on screen moves. */
@@ -263,6 +332,7 @@ class Talk {
   }
 
   private nearOrFar(entries: IntersectionObserverEntry[]) {
+    if (!this.active()) return;
     for (const e of entries) {
       const s = this.pages.find((x) => x.el === e.target);
       if (!s) continue;
@@ -286,9 +356,10 @@ class Talk {
   private nearStart() { return this.start.getBoundingClientRect().bottom > this.view().top - 2 * this.view().height; }
 
   /** Read the page above; `fresh`: a post just came to a talk that had none (its first), which comes in as one does. */
-  private async older(fresh?: 'mine' | 'theirs') {
+  private async older(mine = false) {
     if (this.reading || this.done) return;
     this.reading = true;
+    let seek = false;
     this.list.setAttribute('aria-busy', 'true');
     this.start.classList.remove('tl-all');
     // Said only when reading takes a while: a page read at once comes without a word flashing before it (a board just
@@ -296,8 +367,11 @@ class Talk {
     const saying = window.setTimeout(() => { this.start.textContent = t('Loading…'); }, SAY_READING);
     try {
       const r = await servers.older(this.board, this.member, this.pages.at(-1)?.page.oldest ?? null);
-      this.addOlder(r.posts, fresh);
+      if (!this.root.isConnected) return;
+      this.addOlder(r.posts, mine);
       this.done = !r.more;
+      seek = this.active() && this.locatePlace(r.more);
+      this.report();
       this.start.textContent = this.done ? (this.pages.length ? t('No more posts') : t('No posts yet')) : '';
       // Every post said to be there: only worth saying where there is more than the board shows (styles.css).
       this.start.classList.toggle('tl-all', this.done && this.pages.length > 0);
@@ -308,20 +382,17 @@ class Talk {
     // Something came while the first page was being read (one's own post, just sent): read again, so it shows.
     if (this.cameMeanwhile) { this.cameMeanwhile = false; if (!this.pages.length) { this.done = false; void this.older(); } else void this.came(true); return; }
     // A short page leaves the start in view: read on.
-    if (!this.done && this.nearStart()) void this.older();
+    if (!this.done && this.active() && (seek || this.nearStart())) void this.older();
   }
 
-  /** The page read above all held: the first at the foot (coming in as a post does, when `fresh`), any other above, nothing moving. */
-  private addOlder(posts: servers.Post[], fresh?: 'mine' | 'theirs') {
+  /** Older pages are inserted above the reading position; a first visit starts at the latest overflow. */
+  private addOlder(posts: servers.Post[], mine: boolean) {
     const page = servers.pageOf(posts);
     if (!page) return;
     if (this.pages.length) { this.steady(() => this.add(page, 'older')); return; }
-    const s = this.add(page, 'older');
-    this.toFoot(); this.read();
-    if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
-    // The talk as it opens, read in after its board was drawn (the board slid to): it comes up where it stands, not
-    // all at once in one frame.
-    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(200), easing: SPRING});
+    this.add(page, 'older');
+    if (this.active() && (mine || !this.restore)) this.toFoot();
+    this.read();
   }
 
   private tell() {
@@ -331,28 +402,26 @@ class Talk {
 
   /** What came since the newest post held, put at the foot; `mine`: the reader just wrote, so go to it. */
   private async look(mine: boolean): Promise<void> {
-    if (!this.pages.length) { this.done = false; if (this.reading) { this.cameMeanwhile = true; return; } return this.older(mine ? 'mine' : 'theirs'); }
+    if (!this.root.isConnected || (connection()?.session ?? '') !== this.scope) return;
+    if (!this.pages.length) {
+      this.done = false;
+      if (this.reading) { this.cameMeanwhile = true; return; }
+      return this.older(mine);
+    }
     try {
       const got = await allAfter(this.board, this.member, this.pages[0].page.newest);
-      if (got.length) this.addNewer(got, mine);
+      if (this.root.isConnected && (connection()?.session ?? '') === this.scope && got.length) this.addNewer(got, mine);
     } catch { /* tried again on the next look */ }
   }
 
-  /** What came, at the foot: followed if the reader is there (or wrote it), else a mark to go down to it. */
+  /** New arrivals do not move a place held higher up. One's own post does go to the foot. */
   private addNewer(got: servers.Post[], mine: boolean) {
-    const following = mine || this.atFoot();
-    // What was said before, standing on the talk's foot, goes up to make room on the same curve (as the Inbox's
-    // does), not a line higher in one frame; where the talk scrolls, the scroll brings the new in instead.
-    const before = [this.start, ...this.list.children] as HTMLElement[];
-    const anchor = before[before.length - 1], was = anchor.getBoundingClientRect().top;
-    // Oldest page first, each at the foot: one's own coming up out of the box it was written in, what someone
-    // else wrote in from their side, as a message does in the Inbox.
-    for (const p of servers.onTop(got).reverse()) {
-      const s = this.add(p, 'newer');
-      if (mine) arrive(s.el, 1, 'y', 18, 300); else arrive(s.el, -1, 'x', 18, 300);
-    }
-    if (following) { this.toFoot(mine); this.read(); } else { this.unseen += got.length; this.tell(); }
-    const by = was - anchor.getBoundingClientRect().top;
-    if (by > .5) closeUp(before, by, 300);
+    const open = this.active();
+    const following = open && (mine || (!this.restore && this.atFoot()));
+    for (const page of servers.onTop(got).reverse()) this.add(page, 'newer');
+    this.report();
+    if (following) { this.restore = null; this.toFoot(); this.read(); }
+    else if (mine) { this.restore = null; this.heldTop = Number.MAX_SAFE_INTEGER; }
+    else { this.unseen += got.length; this.tell(); }
   }
 }
