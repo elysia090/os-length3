@@ -139,13 +139,13 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await expect(requestRow).toHaveAccessibleName(/unread$/);
   await expect(requestRow).toHaveAttribute('aria-current', 'false');
   await expect(requestRow.locator('.inbox-dot')).toBeVisible();
-  await expect(inbox.thread(mina.handle)).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(inbox.thread(mina.handle)).toHaveCSS('background-color', 'rgb(239, 235, 227)');
   const grain = (paper: Locator) => paper.evaluate((el) => {
     const material = getComputedStyle(el);
     return [material.backgroundImage, material.backgroundSize];
   });
   await expect.poll(() => grain(inbox.thread(mina.handle))).toEqual([
-    expect.stringMatching(/^conic-gradient\(rgb\(228, 222, 209\)/), '4px 4px',
+    expect.stringMatching(/^conic-gradient\(rgb\(227, 222, 213\)/), '4px 4px',
   ]);
   await expect(inbox.thread(mina.handle)).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 6px 6px 0px 0px');
   expect(await inbox.thread(mina.handle).boundingBox()).toEqual({x: 312, y: 96, width: 816, height: 552});

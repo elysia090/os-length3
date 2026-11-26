@@ -63,7 +63,8 @@
   --nighthawks-ground: #3a3d36;
   --nighthawks-dot: #4c4e48;
   --nighthawks-dots: radial-gradient(circle, var(--nighthawks-dot) 1.5px, transparent 1.9px);
-  --nighthawks-paper: #f0ebdf;
+  --nighthawks-paper: #efebe3;
+  --nighthawks-paper-grain: #e3ded5;
   --nighthawks-paper-ink: var(--ink);
   --nighthawks-paper-sub: #514e49;
   --nighthawks-rule: #a9a49b;
@@ -224,7 +225,7 @@
   --edge: var(--nighthawks-desk-disabled);
   --forge-desk-text: var(--nighthawks-desk-quiet);
   --forge-desk-grain: #43463e;
-  --forge-paper-grain: #e4ded1;
+  --forge-paper-grain: var(--nighthawks-paper-grain);
   --forge-paper-edge: #68655c;
   --forge-paper-shade: var(--nighthawks-shadow);
   --forge-paper-thumb: #837d71;
@@ -236,7 +237,7 @@
   --inbox-desk: var(--nighthawks-ground);
   --inbox-dots: radial-gradient(circle, #4c4e47 1.1px, transparent 1.8px);
   --inbox-paper: var(--nighthawks-paper);
-  --inbox-paper-grain: #e4ded1;
+  --inbox-paper-grain: var(--nighthawks-paper-grain);
   --inbox-muted: var(--nighthawks-paper-sub);
   --inbox-rule: var(--nighthawks-rule);
   --inbox-desk-quiet: var(--nighthawks-desk-quiet);

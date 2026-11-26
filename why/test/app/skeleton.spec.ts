@@ -113,7 +113,7 @@ async function inboxDesk(app: App, size: {width: number; height: number}) {
   await expect(app.forge.placesKey).toBeVisible();
   await expect(held).toBeInViewport({ratio: 1});
   expect(await held.boundingBox()).toEqual({x, y, width: Math.min(816, size.width - x - (desk ? 48 : 24)), height: Math.min(552, size.height - y - 38)});
-  await expect(held).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(held).toHaveCSS('background-color', 'rgb(239, 235, 227)');
   await expect(held).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 6px 6px 0px 0px');
   const index = app.inbox.conversations;
   if (desk) {

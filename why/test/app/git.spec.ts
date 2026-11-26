@@ -135,9 +135,9 @@ test('Git uses desk ink outside the issue and paper ink inside it, without recol
   const forge = await body.evaluate((node) => getComputedStyle(node).backgroundColor);
   await app.rail.go('git');
   await expect(body).toHaveCSS('background-color', 'rgb(58, 61, 54)');
-  await expect(app.main.getByRole('heading', {name: 'Git', exact: true, level: 1})).toHaveCSS('color', 'rgb(240, 235, 223)');
+  await expect(app.main.getByRole('heading', {name: 'Git', exact: true, level: 1})).toHaveCSS('color', 'rgb(239, 235, 227)');
   const card = app.main.locator('.issue-slot[aria-current="true"] > .issue-card');
-  await expect(card).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(card).toHaveCSS('background-color', 'rgb(239, 235, 227)');
   await expect(app.git.firstLine).toHaveCSS('color', 'rgb(23, 22, 21)');
   await app.git.firstLine.fill('Fix: Output');
   await app.git.firstLine.press('Enter');
@@ -146,7 +146,7 @@ test('Git uses desk ink outside the issue and paper ink inside it, without recol
 
   await app.forge.placesKey.click();
   const menu = app.forge.places;
-  await expect(menu).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(menu).toHaveCSS('background-color', 'rgb(239, 235, 227)');
   await expect(menu).toHaveCSS('color', 'rgb(23, 22, 21)');
   await app.forge.use('Forge');
   await expect(app.forge.editor('README.md')).toBeVisible();

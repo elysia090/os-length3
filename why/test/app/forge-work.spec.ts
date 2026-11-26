@@ -2,7 +2,7 @@ import {expect, test} from './fixtures.ts';
 import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-layout.ts';
 
 /** The Forge paper, its ground, and the separate neutral terminal work face. */
-const FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(240, 235, 223)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)';
+const FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(239, 235, 227)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)';
 const TERMINAL_FACE = 'rgb(232, 232, 232)', TERMINAL_INK = 'rgb(27, 27, 27)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in

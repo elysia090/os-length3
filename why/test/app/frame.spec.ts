@@ -114,7 +114,7 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
           expect(f.corners, `${what}: one quiet corner at rest`).toEqual([{
             key: [size.width - 56, 12, 44, 44],
             mark: [size.width - 42, 26, 16, 16],
-            expanded: 'false', color: place === 'inbox' ? 'rgb(240, 235, 223)' : INK, inked: false,
+            expanded: 'false', color: place === 'inbox' ? 'rgb(239, 235, 227)' : INK, inked: false,
           }]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {
