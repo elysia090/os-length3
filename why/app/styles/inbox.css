@@ -77,12 +77,10 @@ body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display
   border-radius: var(--r-inbox-paper); outline: 1px solid var(--ink); outline-offset: -1px;
   background-color: var(--paper); color: var(--ink); box-shadow: 6px 6px 0 var(--inbox-shadow);
 }
-/* The same check as a document in hand, starting at the live header's lower rule.
-   An absolute grid child takes the paper's full width, including the insets, without framing the text. */
-.inbox-thread[data-kind=letter][data-state=contact]:has(> .inbox-messages) { position: relative; isolation: isolate; }
-.inbox-thread[data-kind=letter][data-state=contact]:has(> .inbox-messages)::before {
-  content: ''; position: absolute; grid-row: 2 / -1; inset: 0; z-index: -1; pointer-events: none;
-  background: conic-gradient(var(--inbox-paper-grain) 25%, var(--paper) 25% 50%, var(--inbox-paper-grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
+/* An open conversation uses one continuous sheet; requests and recipient entry are plain. */
+.inbox-thread[data-kind=letter][data-state=contact]:has(> .inbox-messages) {
+  background-image: conic-gradient(var(--inbox-paper-grain) 25%, var(--paper) 25% 50%, var(--inbox-paper-grain) 50% 75%, var(--paper) 75%);
+  background-size: var(--s1) var(--s1);
 }
 .inbox-thread:focus-visible { outline-offset: -1px; outline-width: 1px; }
 .inbox-thread ::selection { color: var(--ink); background: var(--slot); }

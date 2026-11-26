@@ -141,11 +141,11 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await expect(requestRow.locator('.inbox-dot')).toBeVisible();
   await expect(inbox.thread(mina.handle)).toHaveCSS('background-color', 'rgb(240, 235, 223)');
   const grain = (paper: Locator) => paper.evaluate((el) => {
-    const below = getComputedStyle(el, '::before');
-    return [below.gridRowStart, below.backgroundImage, below.backgroundSize];
+    const material = getComputedStyle(el);
+    return [material.backgroundImage, material.backgroundSize];
   });
   await expect.poll(() => grain(inbox.thread(mina.handle))).toEqual([
-    '2', expect.stringMatching(/^conic-gradient\(rgb\(228, 222, 209\)/), '4px 4px',
+    expect.stringMatching(/^conic-gradient\(rgb\(228, 222, 209\)/), '4px 4px',
   ]);
   await expect(inbox.thread(mina.handle)).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 6px 6px 0px 0px');
   expect(await inbox.thread(mina.handle).boundingBox()).toEqual({x: 312, y: 96, width: 816, height: 552});
@@ -153,7 +153,7 @@ test('the conversation index, opened-paper marks and Places are independent', as
 
   await requestRow.click();
   await expect(inbox.thread(avery.handle).getByRole('button', {name: 'Accept', exact: true})).toBeVisible();
-  expect(await grain(inbox.thread(avery.handle))).toEqual(['auto', 'none', 'auto']);
+  expect(await grain(inbox.thread(avery.handle))).toEqual(['none', 'auto']);
   await expect(requestRow).toHaveAttribute('aria-current', 'true');
   await expect(requestRow.locator('.inbox-dot')).toBeHidden();
   await expect(requestRow.locator('.inbox-first-line')).toHaveCSS('background-color', 'rgb(23, 22, 21)');
@@ -175,7 +175,7 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await inbox.newMessage.click();
   const to = inbox.recipient.getByRole('textbox', {name: 'Recipient address'});
   await expect(to).toBeFocused();
-  expect(await grain(inbox.recipient)).toEqual(['auto', 'none', 'auto']);
+  expect(await grain(inbox.recipient)).toEqual(['none', 'auto']);
   await to.fill('sel');
   await expect(all).toHaveCount(3);
   await all.nth(0).click();
