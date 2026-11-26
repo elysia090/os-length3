@@ -149,6 +149,7 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout, .git-layout 
     round(down, max(0px, var(--places-room) - var(--places-frame)), var(--places-row))));
   scroll-snap-type: y proximity;
 }
+.forge-places[data-keys] { scroll-snap-type: none; }
 @media (max-height: 360px) { .forge-places { --places-rows: 4; } }
 .forge-menu hr { margin: 3px 5px; border: 0; border-top: 1px solid var(--rule); }
 .forge-menu-item { width: 100%; min-height: 28px; padding: 3px 8px; border: 0; border-radius: var(--r-key); text-align: left; background: transparent;

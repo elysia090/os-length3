@@ -47,13 +47,15 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   });
   let commands: HTMLButtonElement[] = [];
   const items = () => [...tabs, ...commands].filter((b) => !b.disabled);
-  const focus = (b: HTMLButtonElement | undefined) => {
+  const focus = (b: HTMLButtonElement | undefined, edge?: 'Home' | 'End') => {
     if (!b) return;
     b.focus({preventScroll: true});
+    // Take endpoints exactly even if a preceding wheel tick brought a fractional row into view.
+    if (edge) { menu.scrollTop = edge === 'Home' ? 0 : menu.scrollHeight; return; }
     const row = b.getBoundingClientRect(), bounds = menu.getBoundingClientRect();
     const top = bounds.top + menu.clientTop, bottom = top + menu.clientHeight;
-    if (row.top < top) menu.scrollTop += row.top - top;
-    else if (row.bottom > bottom) menu.scrollTop += row.bottom - bottom;
+    if (row.top < top) menu.scrollTop += Math.floor(row.top - top);
+    else if (row.bottom > bottom) menu.scrollTop += Math.ceil(row.bottom - bottom);
   };
   const set = (place: K, available: (destination: K) => boolean = () => true) => {
     here = place;
@@ -70,6 +72,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     commands = extra().map(({label, run, onPress}) => item(label, 'menuitem', () => { close(); run(key); }, onPress));
     menu.hidden = false;
     key.setAttribute('aria-expanded', 'true');
+    menu.dataset.keys = '';
     menu.scrollTop = 0;
     const current = tabs[places.indexOf(here)];
     focus(current && !current.disabled ? current : items()[0]);
@@ -85,12 +88,20 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     watching = new MutationObserver(() => { if (!owner.isConnected || owner.closest('[hidden]')) close(); });
     watching.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['hidden']});
   });
+  const pointerScroll = () => { delete menu.dataset.keys; };
+  menu.addEventListener('wheel', pointerScroll, {passive: true});
+  menu.addEventListener('pointerdown', pointerScroll, {passive: true});
   menu.addEventListener('keydown', (e) => {
     const all = items();
     const i = all.indexOf(document.activeElement as HTMLButtonElement);
     const next = e.key === 'ArrowDown' ? (i + 1) % all.length : e.key === 'ArrowUp' ? (i + all.length - 1) % all.length
       : e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : null;
-    if (next !== null) { e.preventDefault(); focus(all[next]); }
+    if (next !== null) {
+      e.preventDefault();
+      // End a wheel's snap animation before laying out what the keyboard picked.
+      menu.dataset.keys = '';
+      focus(all[next], e.key === 'Home' || e.key === 'End' ? e.key : undefined);
+    }
     if (e.key === 'Tab') close(true);
   });
   owner.append(key, menu);
