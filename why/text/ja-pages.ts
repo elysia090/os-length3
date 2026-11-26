@@ -144,6 +144,7 @@ export default {
   files: 'ファイル',
   runs: '実行',
   'Search this repo': 'この repo を検索',
+  'Search in': '検索範囲',
   Search: '検索',
   Terminal: '端末',
   Tools: '道具',

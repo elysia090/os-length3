@@ -1,4 +1,5 @@
 import {expect, test} from './fixtures.ts';
+import {App} from './app.ts';
 
 test('Search is a separate history step, with the work kept and the matched line opened in Forge', async ({app}) => {
   const {page, forge} = app;
@@ -96,7 +97,7 @@ test('an empty Search suggests real files only when asked by the hand', async ({
 
   // Focus alone (including moving away and tabbing back) is not a request to suggest.
   await input.press('Shift+Tab');
-  await expect(stage.getByRole('button', {name:'Back',exact:true})).toBeFocused();
+  await expect(stage.getByRole('combobox', {name:'Search in', exact:true})).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(input).toBeFocused();
   await expect(suggested).toHaveCount(0);
@@ -206,6 +207,8 @@ test('the keyboard shortcut is still the existing search in place, separate from
 
 test('from Git, a Search match opens the repo in Forge and Back revisits Search and Git', async ({app}) => {
   const {page, forge} = app;
+  await app.newRepo.make('atlas', {template: 'C'});
+  await forge.editFile('src/main.c', 'int main(void) {\n    return 7;\n}');
   await app.newRepo.make('hello', {template: 'C'});
   await app.rail.go('git');
   const lens = app.main.getByRole('button', {name: 'Search', exact: true});
@@ -215,14 +218,163 @@ test('from Git, a Search match opens the repo in Forge and Back revisits Search 
   await lens.click();
   const stage = page.getByRole('main', {name: 'Search', exact: true});
   const query = stage.getByRole('searchbox');
+  const scope = stage.getByRole('combobox', {name: 'Search in', exact: true});
+  await expect(scope).toHaveValue('hello');
   await expect(query).toBeFocused();
-  await query.fill('return');
-  await stage.getByRole('button', {name: /src\/main\.c.*return 0/}).click();
+  await query.fill('return 7');
+  await scope.click();
+  await stage.getByRole('option', {name:'atlas',exact:true}).click();
+  await stage.getByRole('button', {name: /src\/main\.c.*return 7/}).click();
   await expect(forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 0;');
+  await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 7;');
   await page.evaluate(() => history.back());
-  await expect(query).toHaveValue('return');
+  await expect(query).toHaveValue('return 7');
+  await expect(scope).toHaveValue('atlas');
   await query.press('Escape');
   await expect(stage).toHaveCount(0);
   await expect(git).toBeFocused();
+  await expect(git.getByRole('button', {name:'Git folder: hello',exact:true})).toBeVisible();
+});
+
+test('the repo named in Search changes scope without moving the query or losing the Forge desk', async ({app}) => {
+  const {page, forge} = app;
+  await page.setViewportSize({width: 1320, height: 880});
+  await app.newRepo.make('atlas', {template: 'C'});
+  await forge.editFile('README.md', '# Atlas\nUse local launch target.\nKeep this detail.');
+  await app.newRepo.make('hello', {template: 'C'});
+  const editor = forge.editor('src/main.c');
+  await editor.focus();
+  const before = await editor.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(4, 12, 'backward');
+    return [el.selectionStart, el.selectionEnd, el.selectionDirection];
+  });
+  await app.main.getByRole('button', {name:'Search', exact:true}).click();
+  const stage = page.getByRole('main', {name:'Search',exact:true}), query = stage.getByRole('searchbox');
+  const scope = stage.getByRole('combobox', {name:'Search in',exact:true});
+  const hit = stage.getByRole('button', {name:/README\.md.*Use local launch target/});
+  await expect(scope).toHaveValue('hello');
+  await expect(query).toBeFocused();
+  await query.fill('launch target');
+  await expect(stage.getByRole('status')).toHaveText('No results found for "launch target"');
+  const at = await query.boundingBox();
+
+  await scope.click();
+  await expect(scope).toHaveJSProperty('value', 'hello');
+  await expect(stage.getByRole('option', {name:'atlas',exact:true})).toBeVisible();
+  await expect(stage.locator('.search-screen-paper')).toHaveCSS('box-shadow', 'none');
+  await page.keyboard.press('Escape');
+  await expect(stage).toBeVisible();
+  await expect(scope).toBeFocused();
+
+  await scope.click();
+  await stage.getByRole('option', {name:'atlas',exact:true}).click();
+  await expect(query).toHaveValue('launch target');
+  await expect(query).toBeFocused();
+  await expect(scope).toHaveValue('atlas');
+  expect(await query.boundingBox()).toEqual(at);
+  await expect(hit).toBeVisible();
+  await hit.click();
+  const read = forge.editor('README.md');
+  await expect(read).toBeFocused();
+  await expect(read).toHaveValue('# Atlas\nUse local launch target.\nKeep this detail.');
+  await expect.poll(() => forge.lineChosen('README.md')).toBe('Use local launch target.');
+
+  await page.evaluate(() => history.back());
+  await expect(scope).toHaveValue('atlas');
+  await expect(query).toHaveValue('launch target');
+  await expect(hit).toBeVisible();
+  await query.press('Escape');
+  await expect(stage).toHaveCount(0);
+  await expect(editor).toBeFocused();
+  expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd, el.selectionDirection])).toEqual(before);
+});
+
+type ReadGate = {hold: boolean; waiting: boolean; delivered: boolean; release(): void};
+type ReadGateWindow = typeof window & {searchGate: ReadGate};
+
+/** Hold one real read from A while B can read; pass all other traffic and the real A response unchanged. */
+function holdSearchRead() {
+  type Call = {id: number; name: string; args?: {repo?: string; path?: string}};
+  const post = Worker.prototype.postMessage;
+  const gate: ReadGate = {hold: false, waiting: false, delivered: false, release() {}};
+  (window as ReadGateWindow).searchGate = gate;
+  Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+    const message = args[0] as Call | {batch: Call[]} | null;
+    const calls = !gate.hold || !message || typeof message !== 'object' ? [] : 'batch' in message ? message.batch : [message];
+    const slow = calls.find(c => c.name === 'repo_read' && c.args?.repo === 'hello' && c.args.path === 'README.md');
+    if (!slow) { Reflect.apply(post, this, args); return; }
+    gate.hold = false; gate.waiting = true;
+    const rest = calls.filter(c => c !== slow);
+    if (rest.length) Reflect.apply(post, this, [{batch: rest}]);
+    gate.release = () => {
+      gate.waiting = false;
+      const heard = (e: MessageEvent<{id?: number}>) => {
+        if (e.data.id !== slow.id) return;
+        gate.delivered = true;
+        this.removeEventListener('message', heard);
+      };
+      this.addEventListener('message', heard);
+      Reflect.apply(post, this, [slow]);
+    };
+  };
+}
+
+test('a delayed read from the old scope cannot replace or open a matching path in the new one', async ({page}) => {
+  await page.route('**/webroot/**', (route) => route.abort());
+  await page.addInitScript(holdSearchRead);
+  const app = new App(page), {forge} = app;
+  await page.goto(process.env.SELFTEST_APP!);
+  await app.settled();
+  await app.newRepo.make('atlas', {template:'C'});
+  await forge.editFile('README.md', '# Atlas\nThree before it.\nOne more.\nLaunch target in Atlas.');
+  await app.newRepo.make('hello', {template:'C'});
+  await forge.editFile('README.md', '# Hello\nLaunch target in Hello.');
+  const source = forge.editor('src/main.c');
+  await source.focus();
+  await source.press('End');
+  const from = await source.evaluate((el: HTMLTextAreaElement) => el.selectionStart);
+  await app.main.getByRole('button', {name:'Search',exact:true}).click();
+  const stage = page.getByRole('main', {name:'Search',exact:true}), field = stage.getByRole('searchbox');
+  const scope = stage.getByRole('combobox', {name:'Search in',exact:true});
+  const atlas = stage.getByRole('button', {name:/README\.md.*Launch target in Atlas/});
+  const hello = stage.getByRole('button', {name:/README\.md.*Launch target in Hello/});
+
+  const hold = () => page.evaluate(() => { const gate = (window as ReadGateWindow).searchGate; gate.hold = true; gate.delivered = false; });
+  const switchTo = async (repo: string) => {
+    await scope.click();
+    await stage.getByRole('option', {name:repo,exact:true}).click();
+  };
+  const waiting = () => expect.poll(() => page.evaluate(() => (window as ReadGateWindow).searchGate.waiting)).toBe(true);
+  const release = async () => {
+    await page.evaluate(() => (window as ReadGateWindow).searchGate.release());
+    await expect.poll(() => page.evaluate(() => (window as ReadGateWindow).searchGate.delivered)).toBe(true);
+  };
+  await hold();
+  await field.fill('launch target');
+  await waiting();
+  await switchTo('atlas');
+  await expect(field).toHaveValue('launch target');
+  await expect(atlas).toBeVisible();
+  // The old answer arrives while this very Search DOM is still alive.
+  await release();
+  await expect(hello).toHaveCount(0);
+  await expect(atlas).toBeVisible();
+
+  await hold();
+  await switchTo('hello');
+  await waiting();
+  await switchTo('atlas');
+  await atlas.click();
+  await expect.poll(() => forge.lineChosen('README.md')).toBe('Launch target in Atlas.');
+  // It may also answer after a match has already taken us away.
+  await release();
+  await expect(forge.editor('README.md')).toHaveValue('# Atlas\nThree before it.\nOne more.\nLaunch target in Atlas.');
+
+  await page.evaluate(() => history.back());
+  await expect(scope).toHaveValue('atlas');
+  await expect(atlas).toBeVisible();
+  await expect(hello).toHaveCount(0);
+  await field.press('Escape');
+  await expect(source).toBeFocused();
+  expect(await source.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(from);
 });

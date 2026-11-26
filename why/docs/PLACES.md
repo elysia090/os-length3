@@ -594,12 +594,16 @@ on Home's rail. With no repo, Open Folder is the empty desk's own first move.
 
 The lens opens a dedicated Search screen. The query has the keyboard as
 it comes in. The editor shortcuts still open the quick in-place search;
-neither puts a permanent search strip on the working desk. One centered paper holds real file suggestions, from the desk
-first; as soon as one writes, it holds only the paths, lines and excerpts
-found for those words. Back or Escape gives the work its keyboard and selection back.
-Enter or a press on a match goes to the saved line in Forge; browser Back
-then revisits the search, with its query. The entry moves only its own
-contents a small step in 140 ms, or no motion when the system asks for less.
+neither puts a permanent search strip on the working desk. The centered
+paper starts as the field alone. A press on the empty field or Down asks
+for real file suggestions, the desk's first. Typed words instead find
+paths, lines and excerpts. The repo name beside Search chooses another
+repo kept here; the same words stay in the same field. Escape puts away
+open choices first; Escape again, or Back, gives the work its keyboard
+and selection back. Enter or a press on a match goes to the saved line
+in Forge; browser Back revisits the search, with its scope and query.
+The entry moves only its own contents a small step in 140 ms, or no
+motion when the system asks for less.
 
 **The terminal.** Prompt opens a companion on the right of the same
 Forge desk. It does not choose another place, cover a file, or take its

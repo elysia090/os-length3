@@ -99,6 +99,9 @@ let readingPath: string | null = null;
 const searchTrail = new SearchTrail({
   surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
   files: repo => forgeOf?.searchPaths(repo) ?? [],
+  restore(repo, place) {
+    if (place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
+  },
   open(repo, path, line) {
     searchTrail.leave(false);
     // Even in Forge, opening a match is a new step. Back can read this same search again.
@@ -307,6 +310,9 @@ window.addEventListener('popstate', (event) => {
   if (id === current) {
     if (search !== null) searchTrail.enter(search);
   } else {
+    // Git is redrawn after a result opens Forge; use the desk that actually started Search, not the result's repo.
+    const origin = search !== null && id === 'git' ? searchTrail.origin(search) : null;
+    if (origin && origin !== openRepo) ctx.remember(origin);
     void select(id, search !== null, true).then(() => {
       if (search !== null && current === id && history.state?.search === search) searchTrail.enter(search);
     });

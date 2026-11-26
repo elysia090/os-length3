@@ -2,10 +2,11 @@ import {searchScreen} from '../pages/bench/search-screen.ts';
 import {onRenamed, rekey} from '../../repo/repos.ts';
 
 /** Search is a real history step of a particular work desk, not a permanent purpose or shared URL. */
-interface Visit { repo: string; query: string; carry: () => void }
+interface Visit { repo: string; origin: string; place: string; query: string; carry: () => void }
 interface Trail {
   surfaces(): HTMLElement[];
   files(repo: string): string[];
+  restore(repo: string, place: string): void;
   open(repo: string, path: string, line: number): void;
   name(): void;
 }
@@ -46,7 +47,10 @@ export class SearchTrail {
     onRenamed((from, to) => {
       rekey(this.queries, from, to);
       rekey(this.opened, from, to);
-      for (const visit of this.visits.values()) if (visit.repo === from) visit.repo = to;
+      for (const visit of this.visits.values()) {
+        if (visit.repo === from) visit.repo = to;
+        if (visit.origin === from) visit.origin = to;
+      }
     });
   }
   get open() { return this.live !== null; }
@@ -55,7 +59,7 @@ export class SearchTrail {
   start(repo: string, place: string, origin: Element | null, rejoin?: () => HTMLElement | null) {
     if (this.live) return;
     const id = `${this.here}:${++this.next}`;
-    this.visits.set(id, {repo, query: this.queries.get(repo) ?? '', carry: keep(origin, rejoin)});
+    this.visits.set(id, {repo, origin: repo, place, query: this.queries.get(repo) ?? '', carry: keep(origin, rejoin)});
     if (this.visits.size > 24) this.visits.delete(this.visits.keys().next().value!);
     history.pushState({place, search: id}, '');
     this.enter(id);
@@ -65,23 +69,26 @@ export class SearchTrail {
     return typeof value === 'string' && this.visits.has(value) ? value : null;
   }
 
+  origin(id: string) { return this.visits.get(id)?.origin ?? null; }
+
   enter(id: string) {
     if (this.live?.id === id) return;
     this.leave(false);
     const visit = this.visits.get(id);
     if (!visit) return;
-    const repo = visit.repo;
-    const screen = searchScreen(repo, visit.query, [...this.way.files(repo), ...(this.opened.get(repo) ?? [])], {
+    const files = (repo: string) => [...this.way.files(repo), ...(this.opened.get(repo) ?? [])];
+    const screen = searchScreen(visit.repo, visit.query, files(visit.repo), {
+      scope: (repo) => { visit.repo = repo; return files(repo); },
       back: () => {
         if (this.leaving) return;
         this.leaving = true;
         history.back();
       },
       write: (query) => { visit.query = query; this.queries.set(visit.repo, query); },
-      open: (path, line) => {
-        if (this.leaving) return;
+      open: (repo, path, line) => {
+        if (this.leaving || visit.repo !== repo) return;
         this.opened.set(repo, [...new Set([path, ...(this.opened.get(repo) ?? [])])].slice(0, 5));
-        this.way.open(visit.repo, path, line);
+        this.way.open(repo, path, line);
       },
     });
     const desks = this.way.surfaces().filter(el => !el.inert);
@@ -100,7 +107,8 @@ export class SearchTrail {
     screen.close();
     for (const el of desks) { el.inert = false; delete el.dataset.searchAway; }
     this.way.name();
-    if (restore) this.visits.get(id)?.carry();
+    const visit = restore ? this.visits.get(id) : null;
+    if (visit) { this.way.restore(visit.origin, visit.place); visit.carry(); }
   }
 
   /** Repo history is private to the identity that typed it. */

@@ -7,9 +7,10 @@ import {stillAt} from '../../../repo/search.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 
 interface Ways {
+  scope(repo: string): string[];
   back(): void;
   write(query: string): void;
-  open(path: string, line: number): void;
+  open(repo: string, path: string, line: number): void;
 }
 
 /** One repo's search, in its own place. The result rows use the same source and matcher as Home's Reference. */
@@ -19,6 +20,8 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   input.value = query;
   const back = h('button', {class: 'search-screen-back', type: 'button'}, h('span', {'aria-hidden': 'true'}, '←'), t('Back'));
   back.addEventListener('click', ways.back);
+  const scope = h('select', {class: 'search-screen-repo', 'aria-label': t('Search in')}) as HTMLSelectElement;
+  scope.append(new Option(repo, repo));
   const form = h('form', {role: 'search', class: 'search-screen-form'}, mark('search'), input);
   const rows = h('div', {class: 'search-screen-matches'});
   const status = h('p', {class: 'search-screen-status', role: 'status'});
@@ -28,14 +31,14 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     back, h('div', {class: 'search-screen-content'},
       h('header', {class: 'search-screen-head'},
         h('h1', {id: 'repo-search-title'}, t('Search')),
-        h('code', {class: 'search-screen-repo'}, repo)),
+        scope),
       paper));
   let files: Promise<Files> | null = null;
   let revision = 0, frame = 0, gone = false;
   let suggesting: false | 'list' | 'first' = false;
   const choices = () => Array.from(rows.querySelectorAll<HTMLButtonElement>('.choice'));
   const fresh = (run: number) => !gone && run === revision;
-  async function go(path: string, line: number, words: string, run: number) {
+  async function go(repo: string, path: string, line: number, words: string, run: number) {
     if (!fresh(run)) return;
     const file = await store.read(repo, path).catch(() => null);
     if (!fresh(run)) return;
@@ -44,16 +47,16 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
       opened = opened.filter(other => other !== path);
       files = null; again(); input.focus({preventScroll: true}); return;
     }
-    ways.open(path, at);
+    ways.open(repo, path, at);
   }
-  async function find(words: string, run: number) {
+  async function find(repo: string, words: string, run: number) {
     const batch = files ??= readAll(repo);
     try {
       const ready = await batch;
       if (!fresh(run)) return;
       const found = await search(words, ready, () => !fresh(run));
       if (!found || !fresh(run)) return;
-      const open = (path: string, line: number) => { void go(path, line, words, run); };
+      const open = (path: string, line: number) => { void go(repo, path, line, words, run); };
       const matches = foundView(found, words, {file: path => open(path, 0), line: open}, {sections: true});
       const had = choices().indexOf(document.activeElement as HTMLButtonElement);
       rows.replaceChildren(...matches);
@@ -68,7 +71,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     }
   }
   /** Suggest actual open work first, then existing files at the repo's root if it has not been worked in. */
-  async function suggest(run: number) {
+  async function suggest(repo: string, run: number) {
     const solid = Array.from(new Set(opened)).slice(0, 5);
     if (solid.length < 3) {
       const root = await store.tree(repo, '').catch(() => []);
@@ -80,7 +83,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     const heading = t('Suggested files');
     const links = solid.map(path => {
       const item = h('button', {type: 'button', class: 'choice search-suggestion'}, shownPath(path));
-      item.addEventListener('click', () => void go(path, 0, '', run));
+      item.addEventListener('click', () => void go(repo, path, 0, '', run));
       return item;
     });
     rows.replaceChildren(h('section', {class: 'search-suggestions', 'aria-label': heading},
@@ -99,23 +102,37 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
 
   function again() {
     cancelAnimationFrame(frame);
-    const words = input.value.trim(), run = ++revision;
+    const from = repo, words = input.value.trim(), run = ++revision;
     if (!words) {
       status.textContent = ''; rows.replaceChildren(); results.removeAttribute('aria-busy');
-      if (suggesting) void suggest(run);
+      if (suggesting) void suggest(from, run);
       return;
     }
     results.setAttribute('aria-busy', 'true');
-    frame = requestAnimationFrame(() => void find(words, run));
+    frame = requestAnimationFrame(() => void find(from, words, run));
   }
   const unwatch = onChange(c => {
     if (c.repo !== repo || !input.value.trim()) return;
     if (files) files = patched(files, c);
     again();
   });
-  input.addEventListener('input', () => {
+  const empty = () => {
     suggesting = false;
-    rows.replaceChildren(); status.textContent = ''; ways.write(input.value); again();
+    rows.replaceChildren();
+    status.textContent = '';
+  };
+  scope.addEventListener('change', () => {
+    if (!scope.value || scope.value === repo) return;
+    repo = scope.value;
+    opened = ways.scope(repo); files = null; empty();
+    again();
+    // A select closes and returns focus to its key after issuing change. Give the hand back to the query then.
+    requestAnimationFrame(() => {
+      if (!gone && document.activeElement === scope) input.focus({preventScroll: true});
+    });
+  });
+  input.addEventListener('input', () => {
+    empty(); ways.write(input.value); again();
   });
   // Chrome's clear button also clicks the input, but clears its value before that click arrives.
   let pressedEmpty = false;
@@ -136,6 +153,8 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   element.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.isComposing) return;
     if (e.key === 'Escape') {
+      // A native scope picker takes its own Escape before Search takes another.
+      if (CSS.supports('selector(:open)') && scope.matches(':open')) return;
       e.preventDefault();
       if (putAwaySuggestions()) input.focus({preventScroll: true});
       else ways.back();
@@ -159,7 +178,14 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   });
   return {
     element,
-    focus() { input.focus({preventScroll: true}); input.select(); again(); },
+    focus() {
+      input.focus({preventScroll: true}); input.select(); again();
+      void store.names().then(names => {
+        if (gone) return;
+        scope.replaceChildren(...Array.from(new Set([repo, ...names]), name => new Option(name, name)));
+        scope.value = repo;
+      }, () => {});
+    },
     close() { gone = true; cancelAnimationFrame(frame); unwatch(); element.remove(); },
   };
 }

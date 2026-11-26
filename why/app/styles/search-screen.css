@@ -16,7 +16,33 @@
 @media (prefers-reduced-motion: reduce) { .search-screen-content { animation: none; } }
 .search-screen-head { display: flex; min-height: var(--h-row); align-items: baseline; justify-content: center; gap: var(--s3); margin: 0 0 var(--s4); }
 .search-screen-head h1 { margin: 0; font: 700 var(--t-head)/1 var(--display); }
-.search-screen-repo { min-width: 0; overflow-wrap: anywhere; font: var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); }
+/* The scope is the repo name itself; selecting it keeps the query on the same sheet. */
+.search-screen-repo {
+  min-width: 0; max-width: 24ch; border: 0; border-radius: var(--r-key);
+  font: var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet);
+  background: transparent; cursor: var(--cursor-hand);
+}
+.search-screen-repo:is(:hover, :focus-visible) { color: var(--nighthawks-paper); }
+@supports (appearance: base-select) and selector(::picker(select)) {
+  .search-screen-repo, .search-screen-repo::picker(select) { appearance: base-select; }
+  .search-screen-repo { align-items: center; gap: var(--s1); padding: 0 var(--s1); }
+  .search-screen-repo:open { color: var(--nighthawks-paper); }
+  .search-screen-repo::picker-icon { font-size: var(--t-word); }
+  /* The selector is the only sheet in the hand while its choices are out. */
+  .search-screen:has(.search-screen-repo:open) .search-screen-paper { box-shadow: none; }
+  .search-screen-repo::picker(select) {
+    min-width: calc(7 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--u)));
+    max-height: calc(7 * var(--u)); margin-top: var(--s1); padding: var(--s1);
+    border: 1px solid var(--ink); border-radius: var(--r-field);
+    background: var(--nighthawks-paper); color: var(--ink);
+    box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
+  }
+  .search-screen-repo option {
+    min-width: 0; min-height: var(--h-row); padding: 0 var(--s2); overflow-wrap: anywhere;
+    border-radius: var(--r-key); color: inherit; background: transparent;
+  }
+  .search-screen-repo option:is(:checked, :hover, :focus-visible) { background: var(--nighthawks-paper-selected); }
+}
 .search-screen-back {
   position: absolute; top: var(--s3); left: var(--s4);
   display: inline-flex; align-items: center; gap: var(--s1); min-height: var(--h-row); padding: 0 var(--s2);
