@@ -66,6 +66,9 @@ async function measure(page: Page, mode: 'weight' | 'cells', pitch = 24): Promis
     const P = paint(surface.getPropertyValue('--paper'));
     const grain = surface.getPropertyValue('--forge-paper-grain');
     const GP = grain ? paint(grain) : null;
+    // Only inside the Home note's actual rectangle is its yellow stock bare paper. A mark elsewhere stays a mark.
+    const note = page.matches('[data-place="home"]') ? page.querySelector('.home-portrait .home-own > .section') : null;
+    const home = note?.getClientRects().length ? {at: note.getBoundingClientRect(), fill: paint(getComputedStyle(note).backgroundColor)} : null;
     const rows: string[] = [];
     for (let j = 0; j < Math.floor((H - 48) / pitch); j++) {
       let line = '';
@@ -75,7 +78,8 @@ async function measure(page: Page, mode: 'weight' | 'cells', pitch = 24): Promis
           const p = pixels(x, y);
           n++;
           if (far(p, G) < 3 || isDot(p)) ground++;
-          else if (far(p, P) < 3 || GP && far(p, GP) < 3) paper++;
+          else if (far(p, P) < 3 || GP && far(p, GP) < 3 || home && x >= home.at.left && x < home.at.right &&
+            y >= home.at.top && y < home.at.bottom && far(p, home.fill) < 3) paper++;
         }
         line += ground === n ? 'g' : paper === n ? 'p' : 'x';
       }

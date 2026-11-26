@@ -48,7 +48,6 @@
   --add-tint: #d7eadc;
   --marker: #ecca5f;
   --marker-soft: #f4e5bb;
-  --home-note: #d7c55a;
   /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
   --off: #7f2b3c;
   --del: #883146;
@@ -213,6 +212,9 @@ body {
   --nighthawks-paper-off: var(--off);
   --nighthawks-shadow: #1a1d17;
 }
+
+/* The portrait owns its note's stock, on screen as well as on the departing page. */
+.home-portrait { --home-note: #d7c55a; }
 
 /* Forge's document table: the same light on an unraised desk and one sheet in hand.
    These colors do not replace the app's general palette or the Prompt's colors. */

@@ -7,7 +7,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //
 //   one lens        nothing in sight is drawn scaled, zoomed or in perspective
 //   one horizon     the subject's edges on the grid
-//   one subject     one shadow cast in focus: 12 px right/down on sheets, 4 px on Forge's paper
+//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and Forge's paper
 //   the frame       under what is called up, the available frame controls stay in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
@@ -20,7 +20,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //   the field       the bare ground is one field, reaching the window's right or foot, with nothing of it trapped
 //                   between things; at most a third of the world's cells carry a mark
 //   a whole title   the band's name whole at its size, inside the window, or not there
-//   one voice       the display face at its two sizes, no text and no number said twice in it
+//   one voice       the display voice and names in their measure, no text and no number said twice
 
 const U = 24;
 const SIZES = [{width: 1536, height: 864}, {width: 1024, height: 768}, {width: 768, height: 864}, {width: 390, height: 844}];
@@ -28,7 +28,7 @@ const NAME = 33.0124, PERSON = 66.0248;
 
 /** Each place, what is its subject (the one thing with the shadow at rest), and what may stand at the frame's corner. */
 const PLACES = {
-  home: {subject: '.home-own > .section', corner: '.home-own'},
+  home: {subject: '.home-own > .section', corner: '.home-own', anchor: '.home-person h1'},
   'new-repo': {subject: '.nr-box', corner: '.new-repo'},
   // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
   forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
@@ -65,7 +65,28 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const over = !veil || el.closest('.file-tree, .me-pop, .search-results, .rail') !== null;
     return [{name: el.className.toString().slice(0, 60), x: Number(m[1]), y: Number(m[2]), blur: Number(m[3]), focus: over, box: [r.left, r.top, r.width, r.height]}];
   });
-  const s = document.querySelector(subject)?.getBoundingClientRect() ?? null;
+  const sheet = document.querySelector(subject);
+  const s = sheet?.getBoundingClientRect() ?? null;
+  const home = sheet?.matches('.home-own > .section') ? (() => {
+    const portrait = sheet.closest('.home-portrait')!;
+    const person = portrait.querySelector('.home-person')!, note = getComputedStyle(sheet);
+    const row = getComputedStyle(portrait.querySelector('.home-row')!);
+    const repos = portrait.querySelector('.home-repos-sec')!.getBoundingClientRect();
+    const type = (el: Element) => {
+      const {fontSize, lineHeight, fontWeight, color} = getComputedStyle(el);
+      return [parseFloat(fontSize), lineHeight, fontWeight, color] as const;
+    };
+    return {
+      paint: [note.backgroundColor, note.color, note.boxShadow],
+      crown: type(person.querySelector('h1')!),
+      noteType: [...sheet.querySelectorAll('.todo-title, .todo-kind:not([hidden]), .todo-detail:not([hidden])')]
+        .filter(inSight).map((el) => ({detail: el.matches('.todo-detail'), type: type(el)})),
+      repoTypes: [...portrait.querySelectorAll('.home-repos .card-title')].filter(inSight).map(type),
+      line: row.display === 'grid' ? Math.max(person.getBoundingClientRect().bottom, repos.bottom) + 16
+        : person.getBoundingClientRect().bottom + 24,
+      alongside: row.display === 'grid', repos: {left: repos.left, top: repos.top},
+    };
+  })() : null;
   // The display face's words in sight, each text as it is set, with its size (a person's initial in their mark, on the
   // rail or beside what they said, is a mark, not words).
   const display = [...(function* () {
@@ -112,6 +133,8 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const diffHead = el.closest('.git-diff-head'), diffLines = el.closest('.git-diff-lines');
     // A letter is set on its own local lines inside the accepted stock and measure.
     const letterLine = el.closest('.inbox-entry-by, .inbox-footer > p');
+    // These two labels stand on the repo names' baseline and the inset of the activity glass, respectively.
+    const homeHead = el.closest('.home-portrait :is(.home-repos-sec > h2, .home-waits > .lately > h2)');
     const totals = el.closest('.git-totals');
     // The transcript is ruled from its reading origin within the paper, not the window edge.
     const transcript = el.closest('.board-talk');
@@ -122,6 +145,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
       : totals ? totals.getBoundingClientRect().top + pitch / 2
       : letterLine ? letterLine.getBoundingClientRect().top + pitch / 2
+      : homeHead ? homeHead.getBoundingClientRect().top + pitch / 2
       : transcript ? transcript.getBoundingClientRect().top - transcript.scrollTop + 1 + pitch / 2 : 12;
     // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
     // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
@@ -163,7 +187,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper, home};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -174,7 +198,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = place === 'forge' && !called ? 4 : place === 'inbox' ? 6 : U / 2;
+    const shade = place === 'home' || place === 'forge' && !called ? 4 : place === 'inbox' ? 6 : U / 2;
     expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual(place === 'server' && !called ? [2, 4, 0] : [shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
@@ -187,6 +211,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
       } else {
         // One horizon: the subject stands on the grid (whole cells from the window's top left).
         for (const [edge, v] of [['left', f.subject!.x], ['top', f.subject!.y]] as const) {
+          // On Home the note follows the portrait's last line, measured on the portrait grid below.
+          if (place === 'home' && edge === 'top') continue;
           // Forge's paper starts at y=90; the name and the ground still keep the window grid.
           const origin = place === 'forge' && edge === 'top' ? 90 : 0;
           expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
@@ -198,11 +224,35 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     } else {
       expect(f.frameOver, `${what}: the frame control over the veil, in focus`).toBe(true);
     }
+    const compactHome = size.width <= 600, homeCap = compactHome ? 2.25 : 3;
+    const homeTitle = homeCap * U / .727, homeWriting = compactHome ? 18 : 20, homeName = compactHome ? 17 : .7 * NAME;
+    if (place === 'home') {
+      expect(f.home, `${what}: the portrait and note`).not.toBeNull();
+      const home = f.home!, sheet = f.subject!;
+      expect([sheet.x, sheet.w, sheet.h], `${what}: the whole note`).toEqual(compactHome ? [24, 336, 312] : [48, 624, 288]);
+      expect(Math.abs(sheet.y - home.line), `${what}: the note begins after the portrait's last line`).toBeLessThan(1);
+      expect(home.paint, `${what}: one yellow paper in dark ink with a short hard cast`).toEqual([
+        'rgb(215, 197, 90)', 'rgb(23, 22, 21)', 'rgb(26, 29, 23) 4px 4px 0px 0px',
+      ]);
+      expect(Math.abs(home.crown[0] - homeTitle), `${what}: the portrait at its cap height`).toBeLessThan(.01);
+      expect(home.crown.slice(1)).toEqual([`${(homeCap + 1) * U}px`, '900', 'rgb(239, 235, 227)']);
+      expect(home.noteType.length).toBeGreaterThan(0);
+      for (const {detail, type} of home.noteType)
+        expect(type, `${what}: the note's own writing grid`).toEqual([homeWriting, detail ? '28px' : '36px', detail ? '400' : '700', 'rgb(23, 22, 21)']);
+      for (const [name, pitch, weight] of home.repoTypes) {
+        expect(Math.abs(name - homeName)).toBeLessThan(.01);
+        expect([pitch, weight]).toEqual(['24px', '900']);
+      }
+      expect(home.alongside ? home.repos.left : home.repos.top, `${what}: destinations beside or below the note`)
+        .toBeGreaterThanOrEqual(home.alongside ? sheet.x + sheet.w + 2 * U : sheet.y + sheet.h);
+    }
     // Every line of words on a cell of the grid (DESIGN §3, whole cells).
     expect(f.offGrid, `${what}: lines of words off the grid`).toEqual([]);
-    // Inbox follows its own letter measure: dossier notes, ink and a single display name at two possible widths.
-    const sizes = place === 'inbox' ? [13, 14, 17, 18, 20, 30, 38] : place === 'server' ? [13, 14, 16, 17, 18, 34, 36] : [17, NAME, PERSON];
-    const displaySizes = place === 'inbox' ? [30, 38] : place === 'server' ? [34, 36] : [NAME, PERSON];
+    // Inbox and Server have distinct reading measures; on Home the portrait, note and destinations have their own.
+    const sizes = place === 'inbox' ? [13, 14, 17, 18, 20, 30, 38] : place === 'server' ? [13, 14, 16, 17, 18, 34, 36]
+      : place === 'home' ? [17, homeTitle, homeWriting, homeName] : [17, NAME, PERSON];
+    const displaySizes = place === 'inbox' ? [30, 38] : place === 'server' ? [34, 36]
+      : place === 'home' ? [homeTitle, homeName] : [NAME, PERSON];
     for (const size of f.sizes) expect(sizes.some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the place's sizes`).toBe(true);
     for (const d of f.display) expect(displaySizes.some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
