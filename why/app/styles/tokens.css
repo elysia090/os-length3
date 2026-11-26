@@ -236,6 +236,7 @@ body:has(> .page.page-inbox > .inbox-shell) {
   --inbox-desk: var(--nighthawks-ground);
   --inbox-dots: radial-gradient(circle, #4c4e47 1.1px, transparent 1.8px);
   --inbox-paper: var(--nighthawks-paper);
+  --inbox-paper-grain: #e4ded1;
   --inbox-muted: var(--nighthawks-paper-sub);
   --inbox-rule: var(--nighthawks-rule);
   --inbox-desk-quiet: var(--nighthawks-desk-quiet);
