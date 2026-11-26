@@ -18,7 +18,13 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--rule) transparent;
+  scrollbar-color: var(--nighthawks-paper-thumb) transparent;
+}
+@supports not (scrollbar-color: auto) {
+  .git-diff-scroll::-webkit-scrollbar-thumb { background: var(--nighthawks-paper-thumb) padding-box; }
+}
+@media (forced-colors: active) {
+  .git-diff-scroll { scrollbar-color: auto; scrollbar-width: auto; }
 }
 /* One opening line and eleven reading lines, whether the file fills them or not. The closing rule belongs to
    the reading area, and the one scrollport owns every file. */
@@ -74,7 +80,10 @@ button.git-diff-name, button.git-diff-number {
   outline: 1px solid var(--ink);
   outline-offset: -1px;
 }
-.git-diff-count { color: var(--sub); white-space: pre; flex: none; }
+/* The position belongs to the file heading, not the fold button or either column of line numbers. */
+.git-diff-meta { display: flex; flex-wrap: wrap; justify-content: end; align-items: baseline; gap: 0 var(--s2); color: var(--sub); }
+.git-diff-position { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.git-diff-count { white-space: pre; }
 .git-diff-lines {
   display: grid;
   inline-size: max-content;

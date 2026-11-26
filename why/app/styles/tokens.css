@@ -204,6 +204,7 @@ body {
   --nighthawks-paper-grain: #e3ded5;
   --nighthawks-paper-ink: var(--ink);
   --nighthawks-paper-sub: #514e49;
+  --nighthawks-paper-thumb: #837d71;
   --nighthawks-rule: #a9a49b;
   --nighthawks-desk-quiet: #c1beb0;
   --nighthawks-desk-disabled: #726e65;
@@ -230,7 +231,7 @@ body {
   --forge-paper-grain: var(--nighthawks-paper-grain);
   --forge-paper-edge: #68655c;
   --forge-paper-shade: var(--nighthawks-shadow);
-  --forge-paper-thumb: #837d71;
+  --forge-paper-thumb: var(--nighthawks-paper-thumb);
 }
 
 /* This desk's approved light. The dots below are the solid composition of the original dot ink at 20%

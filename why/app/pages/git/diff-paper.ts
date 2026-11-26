@@ -254,7 +254,9 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
       f.added ?? (!f.more ? f.lines.filter((line) => line.kind === 'add').length : 0),
       f.removed ?? (!f.more ? f.lines.filter((line) => line.kind === 'del').length : 0),
     ].map((n, i) => n ? `${i ? '−' : '+'}${n}` : '').filter(Boolean).join('  ');
-    const head = h('div', {class: 'git-diff-head'}, fold, h('span', {class: 'git-diff-count'}, count));
+    const position = files.length > 1 ? h('span', {class: 'git-diff-position'}, `${index + 1} / ${files.length}`) : null;
+    const meta = h('span', {class: 'git-diff-meta'}, position, h('span', {class: 'git-diff-count'}, count));
+    const head = h('div', {class: 'git-diff-head'}, fold, meta);
     const body = h('div', {class: 'git-diff-lines'});
     const section = h('section', {class: 'git-diff-file'}, head, body);
     const file: FileView = {path: f.path, section, head, fold, body, sides: {old: [], new: []}};
