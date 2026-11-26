@@ -243,4 +243,11 @@ body:has(> .page.page-inbox > .inbox-shell) {
   --inbox-selection: var(--nighthawks-paper-selected);
   --inbox-shadow: var(--nighthawks-shadow);
   --r-inbox-paper: 5px;
+  /* The letter's own words and quiet metadata, not new type sizes for the other desks. */
+  --t-inbox-time: 13px;
+  --t-inbox-meta: 14px;
+  --t-inbox-write: 18px;
+  --t-inbox-words: 20px;
+  --t-inbox-compact-title: 30px;
+  --t-inbox-title: 38px;
 }

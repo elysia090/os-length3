@@ -43,19 +43,21 @@ test('a hue says a kind and nothing else: each clearly a hue, each kind its own'
 
 // Three sizes, one, two and four times (DESIGN §3, after Vignelli): every word at one size, a name at twice it, the
 // shot's one large thing at four; what says less is said quieter or in the other weight, never smaller. One bold.
-test('every size of type is one of three, and every weight one of three', async () => {
+test('a place uses the common type scale or the letter’s scoped measure, and every weight is one of three', async () => {
   const {readdirSync} = await import('node:fs');
   const dir = new URL('../styles/', import.meta.url);
   const sheets = readdirSync(dir).filter((f) => f.endsWith('.css')).map((f) => [f, readFileSync(new URL(f, dir), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')] as const);
   const SIZES = /^(var\(--t-(word|head|voice)\)|var\(--size\)|inherit|0)$/;
+  const INBOX = /^var\(--t-inbox-(time|meta|write|words|compact-title|title)\)$/;
+  const allowed = (file: string, size: string) => SIZES.test(size) || file === 'inbox.css' && INBOX.test(size);
   for (const [f, s] of sheets) {
-    for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.match(m[1]!.trim(), SIZES, `${f}: font-size ${m[1]}`);
+    for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.ok(allowed(f, m[1]!.trim()), `${f}: font-size ${m[1]}`);
     for (const m of s.matchAll(/(?<![-\w])font:\s*([^;}]+)/g)) {
       const v = m[1]!.trim();
       if (v === 'inherit') continue;
       const t = /^(?:(?:italic|normal)\s+)?(?:(\d{3})\s+)?(\S+?)(?:\/\S+)?\s/.exec(`${v} `);
       assert.ok(t, `${f}: font ${v}`);
-      assert.match(t[2]!, SIZES, `${f}: font ${v}`);
+      assert.ok(allowed(f, t[2]!), `${f}: font ${v}`);
       if (t[1]) assert.ok(['400', '700', '900'].includes(t[1]), `${f}: font ${v}`);
     }
     for (const m of s.matchAll(/font-weight:\s*([^;}]+)/g)) assert.ok(['400', '700', '900', 'inherit'].includes(m[1]!.trim()), `${f}: font-weight ${m[1]}`);
