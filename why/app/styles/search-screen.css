@@ -22,9 +22,9 @@
   position: absolute; inset: var(--s3) var(--s4) auto;
   display: flex; justify-content: space-between; align-items: center;
 }
-/* The centered margin box takes the word two desk cells left of its optical
+/* The centered margin box takes the word one desk cell left of its optical
    offset. The field stays on the same axis. */
-.search-screen-head h1 { margin: 0; margin-inline-end: calc(4 * var(--u) + var(--s2)); font: 700 var(--t-head)/1 var(--display); }
+.search-screen-head h1 { margin: 0; margin-inline-end: calc(2 * var(--u) + var(--s2)); font: 700 var(--t-head)/1 var(--display); }
 /* The scope is the repo name itself; selecting it keeps the query on the same sheet. */
 .search-screen-repo {
   width: max-content; min-width: 0; max-width: min(24ch, calc(50vw - 2 * var(--u)));

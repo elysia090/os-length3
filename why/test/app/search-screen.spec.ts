@@ -260,7 +260,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   const title = stage.getByRole('heading', {name:'Search',exact:true});
   const at = (await query.boundingBox())!, head = (await title.boundingBox())!;
   const corner = (await scope.boundingBox())!;
-  expect(head.x + head.width / 2).toBe(at.x + at.width / 2 - (2 * 24 + 4));
+  expect(head.x + head.width / 2).toBe(at.x + at.width / 2 - (24 + 4));
   expect(corner.x).toBeGreaterThan(head.x + head.width);
   expect(corner.y + corner.height).toBeLessThan(head.y);
 
