@@ -592,18 +592,19 @@ focused line into view, and Escape puts the list away. Files is the current
 repo's tree, with actions on its rows. The whole filesystem is still File
 on Home's rail. With no repo, Open Folder is the empty desk's own first move.
 
-The lens opens a dedicated Search screen. The query has the keyboard as
-it comes in. The editor shortcuts still open the quick in-place search;
-neither puts a permanent search strip on the working desk. The centered
-paper starts as the field alone. A press on the empty field or Down asks
-for real file suggestions, the desk's first. Typed words instead find
-paths, lines and excerpts. The repo name beside Search chooses another
-repo kept here; the same words stay in the same field. Escape puts away
-open choices first; Escape again, or Back, gives the work its keyboard
-and selection back. Enter or a press on a match goes to the saved line
-in Forge; browser Back revisits the search, with its scope and query.
-The entry moves only its own contents a small step in 140 ms, or no
-motion when the system asks for less.
+The lens opens a dedicated Search screen by a cut, without moving the desk
+behind it. With nothing written, one small writing line is centered on the
+desk and already has the keyboard. Back and the actual repo name stay at
+the edges. A press on the empty line or Down asks for real file suggestions,
+the desk's first. Typed words instead find paths, lines and excerpts. Both
+lists begin at the query's left edge and run into the room to the right,
+without moving or framing the query. The repo name chooses another repo
+kept here, keeping the words in place. The editor shortcuts still open
+quick, in-place search; neither makes a permanent strip on the work.
+
+Escape puts away open choices first; Escape again, or Back, gives the work
+its keyboard and selection back. Enter or a press on a match goes to the saved
+line in Forge; browser Back revisits the search, with its scope and query.
 
 **The terminal.** Prompt opens a companion on the right of the same
 Forge desk. It does not choose another place, cover a file, or take its
