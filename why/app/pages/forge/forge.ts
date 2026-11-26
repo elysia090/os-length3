@@ -605,7 +605,7 @@ class Forge {
   /** `path` of the repo worked on, a box on its desk (laid now if it was not), in hand; at `line`, the keyboard in it
    * (unless not `keyboard`). A file just made (`made`) is laid under the box in hand, as a new post goes under the one
    * before it. */
-  private open(path: string, line = 0, made = false, keyboard = true) {
+  private open(path: string, line = 0, write: Writing = false, keyboard = true) {
     const repo = this.now.repo;
     if (!repo || !path) return;
     if (this.placeInHand !== 'Forge' && matchMedia('(max-width: 1000px)').matches) this.selectPlace('Forge', false);
@@ -618,9 +618,14 @@ class Forge {
     const f = d.files.get(path) ?? this.layFile(repo, d, path);
     // Made, it is not gone into yet: in hand, its name to be written, at the size it is read at (the camera does not
     // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
-    if (made) { d.desk.take(path, false, !unseen); return; }
+    if (write === 'name') { d.desk.take(path, false, !unseen); return; }
     d.desk.take(path, keyboard, !unseen);
-    if (keyboard) f.at(line);
+    if (!keyboard) return;
+    if (typeof write === 'object') {
+      f.toOffset(write.at);
+      this.ctx.leftAt(repo, path, write.at);
+    } else if (write === 'end') f.toEnd();
+    else f.at(line);
   }
 
   /** `path` of the repo worked on, a box on its desk, laid if it was not, the hand left where it is. */
@@ -672,7 +677,7 @@ class Forge {
     this.closeStart();
     this.selectPlace(this.placeInHand, false);
     if (path) {
-      this.open(path, line, write === 'name', keyboard);
+      this.open(path, line, write, keyboard);
       if (write === 'name') d.desk.name(path);
     } else d.desk.relayout();
   }

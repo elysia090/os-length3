@@ -90,6 +90,8 @@ test('a profile with a word longer than a phone is wide breaks in the word, neve
 
 test('a window too short for the rail keeps + clear of the person\'s icon, and + is pressed', async ({app}) => {
   await app.page.setViewportSize({width: 720, height: 450});
+  // Home has no rail; measure this on a page that still uses it.
+  await app.rail.go('remote');
   const plus = (await app.rail.button('new-repo').boundingBox())!;
   const me = (await app.me.button.boundingBox())!;
   expect(plus.y + plus.height).toBeLessThanOrEqual(me.y);

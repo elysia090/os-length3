@@ -24,6 +24,8 @@ import {SPRING} from '../../ui/law.ts';
 export interface DeskFile extends Laid {
   /** The line `line` (1-based) chosen in it, the caret there (none: the caret at its top). */
   at(line: number): void;
+  /** The keyboard in it, at an existing character offset (Home's last edit, not a line highlighted by search). */
+  toOffset(offset: number): void;
   /** The keyboard in it, the caret at its end (a file just named goes on being written). */
   toEnd(): void;
   /** Its own top, measured from the box's: where `line` is. */
@@ -98,8 +100,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   let revision = 0;
   let writer: string | null = null;
   let dropped = false;
-  let wanted: number | null = null;
-  let endWanted = false;
+  let wanted: {line: number} | {offset: number | 'end'} | null = null;
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
   /**
@@ -180,7 +181,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   };
 
   function at(line: number) {
-    if (!editor) { wanted = line; later(); return; }
+    if (!editor) { wanted = {line}; later(); return; }
     const {area} = editor;
     // No line asked for: the caret at its top.
     if (line < 1) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
@@ -261,10 +262,12 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       e.drop();
       if (!shared) draft.stop();
     };
-    if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
-    if (wanted !== null) at(wanted);
-    else if (endWanted) toEnd();
-    else if (focusing) e.area.focus({preventScroll: true});
+    const request = stillAsked() ? wanted : null;
+    wanted = null;
+    if (request && 'line' in request) at(request.line);
+    else if (request) toOffset(request.offset);
+    else if (focusing && stillAsked()) e.area.focus({preventScroll: true});
+    focusing = false;
     grew();
   };
 
@@ -409,17 +412,19 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     fieldCarried();
   }
 
-  function toEnd() {
-    if (!editor) { endWanted = true; later(); return; }
-    const {area} = editor, end = area.value.length;
+  function toOffset(offset: number | 'end') {
+    if (!editor) { wanted = {offset}; later(); return; }
+    const {area} = editor;
+    const at = offset === 'end' ? area.value.length : Math.max(0, Math.min(offset, area.value.length));
     area.focus({preventScroll: true});
-    area.setSelectionRange(end, end);
+    area.setSelectionRange(at, at);
     lead(area);
   }
 
   return {
     element,
-    toEnd,
+    toOffset,
+    toEnd: () => toOffset('end'),
     name: cut < 0 ? shown : shown.slice(cut + 1),
     dir: cut < 0 ? '' : `${shown.slice(0, cut)}/`,
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
@@ -437,7 +442,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {retry}, editor.draft) : null,
     drop: () => { dropped = true; dropMenu(); off?.(); offEarly?.(); dropView?.(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
-    ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
+    ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; rename(name); }} : {}),
   };
 }
 

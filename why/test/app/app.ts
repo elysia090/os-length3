@@ -183,7 +183,7 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    return (here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()
+    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()
       && await this.app.forge.placesKey.isVisible();
   }
 
@@ -199,6 +199,13 @@ class Rail extends Part {
   async go(place: Place) {
     const at = this.page.locator('#page');
     const now = await at.getAttribute('data-place');
+    if (now === 'home' && await this.usesPlaces()) {
+      if (place === 'home') return;
+      if (place === 'new-repo') await this.main.locator('.home-repos .card.new').click();
+      else await (await this.destination(place)).click();
+      if (place !== 'file' && place !== 'plugin') await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
     if (place === 'git' || (place === 'forge' && now === 'git')) {
       if (now !== place) {
         if (now !== 'forge' && now !== 'git') await this.go('forge');
@@ -212,7 +219,8 @@ class Rail extends Part {
       // A far side: to its place (unless there, or at the far side already), then through the door.
       if (now !== place) {
         if (now !== of) await this.go(of);
-        await this.door.click();
+        if (of === 'home' && await this.usesPlaces()) await (await this.destination('remote')).click();
+        else await this.door.click();
       }
       await expect(at).toHaveAttribute('data-place', place);
       return;

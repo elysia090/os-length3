@@ -475,12 +475,13 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
 /** Home's TODO: one list for the person, kept in Home's state (the same file why todo reads). */
 export function todoBox(): HTMLElement {
   const status = h('p', {class: 'error', role: 'alert'});
-  const remaining = h('small', {});
+  const remaining = h('small', {class: 'sr-only'});
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
     {datePlacement: 'detail', counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
-  // Named TODO alone: what is left and Clear done stand on its line, at its right.
+  // Its name is heard; what is on the paper is what was written. Clear completed belongs to its foot.
   const section = h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
-    h('h2', {}, h('span', {id: 'todo-title'}, 'TODO'), h('span', {class: 'todo-left'}, remaining, box.clear)), box.element, status);
+    h('h2', {class: 'sr-only', id: 'todo-title'}, 'TODO'), remaining, box.element, status,
+    h('div', {class: 'todo-left'}, box.clear));
   // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; why; another tab): the list shows it (bug: Home
   // drawn before the Remote's TODO came in showed none until it was drawn again).
   const stop = onState((key, outside) => {

@@ -139,7 +139,7 @@ const ctx: Context = {
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
-    if (!isWorkPage(current)) return;
+    if (current !== 'home' && !isWorkPage(current)) return;
     ++asked;
     searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
   },
@@ -153,6 +153,7 @@ const ctx: Context = {
           else void select(id);
         },
       })),
+      ...(current === 'home' ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
       {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
     ];
   },
@@ -374,7 +375,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (id === 'home' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();

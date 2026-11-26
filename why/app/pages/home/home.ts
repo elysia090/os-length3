@@ -12,17 +12,19 @@ import {onRenamed, store, type RepoSummary} from '../../../repo/repos.ts';
 import {homeIsHeld} from '../../../shipto/lifecycle.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {repoList} from './repo-list.ts';
+import {recentGlass} from './recent-glass.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
 import {Reference} from '../bench/reference.ts';
 import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {mark, type MarkName} from '../../ui/icons.ts';
-import {fitSize, inkEdge} from '../../ui/optical.ts';
+import {inkEdge} from '../../ui/optical.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
 import {nudge} from '../../ui/glide.ts';
 import {whole} from '../../ui/whole.ts';
+import {placesMenu} from '../kit/places.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -34,7 +36,7 @@ export function startEditing(ctx: Context) {
 
 /**
  * Home: the person's name as large as Home is wide, and under it what is theirs to do beside where it is done: the
- * TODO, a box as Forge's are, and the repos and servers as a column of their names, each pressed to go there.
+ * TODO, a box as Forge's are, and the repos by name, each pressed to go there.
  */
 export function home(ctx: Context): Node[] {
   const owner = true;
@@ -43,7 +45,7 @@ export function home(ctx: Context): Node[] {
   // (Home is not seen before its repos are drawn: ui/whole.ts.)
   const listed = whole(list.refresh());
   const grid = list.element;
-  // A column of names (home.css), Home's own: New repo's list and other grids stay cards.
+  // Names set beside their label (home.css); New repo's list and other grids stay cards.
   grid.classList.add('home-repos');
   const header = profileHeader(count, owner, ctx);
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
@@ -51,26 +53,67 @@ export function home(ctx: Context): Node[] {
   // Against the right edge, the repos by name; at its foot what waits (the plug's area and an agent's cards over it
   // while there are any). The servers are a count that goes to Server, where they are.
   const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid);
-  const waits = h('div', {class: 'home-waits'}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
+  const waits = h('div', {class: 'home-waits'}, lately(ctx), pluginArea(), agentCards((repo, issue) => {
+    void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); });
+  }));
   const beside = h('div', {class: 'home-beside'}, repos, waits);
   const note = todoBox();
   // Home's own things are pieces on its desk: the person's (name and note), then the repos and what waits. They are
   // short, so they are set as words are (home.css): along, and what does not fit beside the last goes under it.
-  const own = h('div', {class: 'home-own'}, header, ...unread, note);
+  const own = h('div', {class: 'home-own'}, h('div', {class: 'home-person'}, header, ...unread), note);
   const main = h('div', {class: 'home-main home-row'}, own, beside);
   // The note and the slip are whole cells tall, whatever is written on them: what is under them stays on the grid.
   wholeCells(note);
   for (const slip of waits.children) wholeCells(slip as HTMLElement);
-  // The names' ink stands on the column's left edge (not their boxes), and the person's name is as large as the column
-  // has room for: measured as the repos are drawn, and as what waits is.
+  // The names' ink stands on the column's left edge. Fixed rank does not shrink when a longer name is given.
   const edges = () => {
     for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title')) inkEdge(el, 'left');
-    fitName(header);
+    alignName(header);
   };
   new MutationObserver(edges).observe(beside, {childList: true, subtree: true, characterData: true});
   const sized = new ResizeObserver(edges);
   sized.observe(repos); sized.observe(header);
-  return [onTheGround(main, ctx, listed)];
+  return [portrait(main, ctx, listed)];
+}
+
+/** Home is not a toolbar. What is written stays at rest, and the existing Places key is its only frame. */
+function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
+  const layout = h('div', {class: 'home-layout home-portrait'}, main);
+  let repo = ctx.repo;
+  void listed.then((repos) => {
+    if (repos && !repos.some((r) => r.name === repo)) repo = repos[0]?.name ?? null;
+  });
+  function find(anchor: Element | null) {
+    if (repo) ctx.searchRepo?.(repo, anchor, () => document.querySelector('#page .home-portrait .forge-places-key'));
+  }
+  const places = placesMenu(layout, ['Home'], 'Home', () => {}, () => {
+    const at = repo;
+    return [
+      {label: 'Forge', run: () => void ctx.go('forge')},
+      {label: 'Git', run: () => void ctx.go('git')},
+      {label: 'Server', run: () => void ctx.go('server')},
+      {label: 'Inbox', run: () => void ctx.go('inbox')},
+      {label: 'Remote', run: () => void ctx.go('remote')},
+      {label: 'Runtime', run: () => void ctx.go('runtime')},
+      ...(at ? [
+        {label: 'Search', run: (key: HTMLElement) => find(key)},
+        {label: 'Prompt', run: () => { void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); }},
+      ] : []),
+      ...(ctx.placeCommands?.(['home', 'forge', 'server', 'runtime', 'new-repo']) ?? []),
+    ];
+  });
+  function keys(event: KeyboardEvent) {
+    if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
+    if (!repo || !(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || layout.closest('[inert]')) return;
+    const k = event.key.toLowerCase();
+    if (((k === 'k' || k === 'p') && !event.shiftKey) || (k === 'f' && event.shiftKey)) {
+      event.preventDefault();
+      places.close();
+      find(document.activeElement);
+    }
+  }
+  document.addEventListener('keydown', keys);
+  return layout;
 }
 
 /**
@@ -136,7 +179,7 @@ let latelyWas: HTMLElement[] = [];
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'}, ...latelyWas);
   arrowKeys(list, '.pane-row');
-  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Recent activity')), list);
+  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, recentGlass(), h('h2', {id: 'lately-title'}, t('Recent activity')), list);
   let asked = 0;
   const paint = async () => {
     const mine = ++asked;
@@ -153,9 +196,10 @@ function lately(ctx: Context): HTMLElement {
       // nothing is said under the file but its repo, once (the words are heard only).
       const names = [left.repo, shownName(left.path), left.path.split('/').pop() ?? ''].map((n) => n.toLowerCase());
       const telling = !!quote && !names.includes(quote.replace(/^[\s#/*>;-]+|[\s*/;]+$/g, '').toLowerCase());
-      rows.push(telling
-        ? latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, go: goOn})
-        : latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {heard: true, place: left.repo, go: goOn}));
+      const resume = latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}),
+        {quote: telling ? quote : undefined, heard: !telling, place: left.repo, go: goOn});
+      resume.classList.add('pane-resume');
+      rows.push(resume);
     }
     // The servers and the conversations asked at once: neither waits on the other (one round to the Remote, not two).
     const [all, threads] = connection()
@@ -232,24 +276,10 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
   el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
 }
 
-/** The grid's cell (styles: --u), and how tall the display face's capitals are, of its size. */
-const U = 24, CAP = .727;
-
-/**
- * The name, Home's title: its capitals two cells tall at any length, over as many lines as it takes; one cell only
- * where a word of it is longer than the column at two (the programme's next size down, never a size between). Its ink,
- * not its box, stands on the left edge.
- */
-function fitName(header: HTMLElement) {
-  const name = header.querySelector<HTMLElement>('.identity > h1'), layout = header.closest<HTMLElement>('.home-layout');
-  if (!name || !layout) return;
-  // (With no name written, what stands in its place is measured: the placeholder.) Each word, as a line holds it whole.
-  const words = (name.textContent || name.dataset.placeholder || '').split(/\s+/).filter(Boolean);
-  const each = words.map((word) => fitSize(name, word, header.clientWidth, -.055, () => fitName(header)));
-  if (!each.length || each.some((fits) => !fits)) return;
-  const cells = Math.floor((Math.min(...each) * CAP) / U);
-  name.style.setProperty('--name-cap', String(Math.max(1, Math.min(2, cells))));
-  inkEdge(name, 'left');
+/** The ink, not the box, begins at the column's edge. CSS keeps the name's size while it wraps. */
+function alignName(header: HTMLElement) {
+  const name = header.querySelector<HTMLElement>('.identity > h1');
+  if (name) inkEdge(name, 'left');
 }
 
 /**
@@ -344,7 +374,7 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
     handle.hidden = !user || standsIn;
     bio.textContent = p.bio;
     said.textContent = '';
-    fitName(header);
+    alignName(header);
   };
   paint();
   // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
@@ -392,7 +422,7 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
     };
     written(name, {most: LIMITS.name, begun: () => { if (standsIn) { name.textContent = ''; standsIn = false; } },
       kept: (text) => { if (text) void keep({name: text}, name); else paint(); }});
-    name.addEventListener('input', () => fitName(header));
+    name.addEventListener('input', () => alignName(header));
     name.addEventListener('blur', () => { if (!name.textContent) paint(); });
     if (connection()) written(handleIn, {most: LIMITS.handle + 1, kept: (text) => void keep({handle: text}, handleIn)});
     written(bio, {most: LIMITS.bio, lines: true, kept: (text) => void keep({bio: text}, bio)});
@@ -409,13 +439,6 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
       if (pressing) addEventListener('click', () => setTimeout(close), {once: true, capture: true}); else close();
     });
   }
-  // As wide as Home's column, the name as large as that lets it be: fitted again as the column narrows or widens
-  // (not as the name's size makes the profile taller).
-  let wide = 0;
-  new ResizeObserver(() => {
-    const w = header.parentElement?.clientWidth ?? 0;
-    if (w !== wide) { wide = w; fitName(header); }
-  }).observe(header);
   // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; why; another tab): drawn as it is now, unless it
   // is being written.
   const stop = onState((key, outside) => {

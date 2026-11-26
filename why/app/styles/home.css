@@ -1,137 +1,248 @@
-/* Home (and New repo, on the same ground): a desk. The frame is the rail's column and the band's row, two cells
-   each; the desk starts at their corner, and everything on Home is set on the dots' grid from there (--u, a dot in
-   the middle of every cell). Its pieces are short, so they are set as words are in a line: along from the desk's
-   edge, one width (twenty-four cells, or as many as the window has room for), two cells apart, and a piece that does
-   not fit beside the last goes under it, at the desk's edge again, two cells down. (Forge's pieces are as tall as the
-   window: its desk is one line, and is looked along.) So nothing of Home is ever out of sight sideways: a whole
-   screen has the two pieces side by side, half a screen and a phone one under the other.
-   The first is the person's own: the name, its capitals two cells tall, standing a cell under the band; what is
-   theirs to do, a yellow note. The second, the repos by name and what waits, a slip; side by side, its first repo's
-   name stands on the line the person's does. Words are in few sizes and no others: 11 and 13 px (said quietly, in
-   mono), 15 px (written and read), capitals a cell tall (a name), capitals two cells tall (the person's). */
+/* Home: one name over the note, and the work beside it. Keep the note the only raised surface; give it
+   twenty-six cells, the destinations only the room their names need, and leave the rest of the desk unassigned. The same pieces fit down
+   the page when there is no room alongside. New repo uses the band's ordinary surface. */
 /* From the desk's corner (no step in from the band's keys: what is under the terminal's key starts where it does) to
    the window's right edge. */
 .page:has(> .home-layout) { --body-left: 0px; padding: 0; }
 .page > .home-layout { position: relative; max-width: none; }
-/* ---- The band: the keys from the rail's corner (forge-band.css, one with a desk's). ---- */
-/* ---- The pieces. (New repo's own thing is one piece, laid as a page's is.) ---- */
-.home-main { display: block; }
-.home-row { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u));
-  padding-bottom: calc(2 * var(--u)); }
-.home-row > * { flex: none; box-sizing: border-box; width: var(--piece); min-width: 0; }
-.home-beside { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start; }
-/* ---- The TODO: a note, as wide as the column, a cell under the profile; its shadow half a cell right and down, as
-   every sheet's on a desk is (one light). Whole cells (DESIGN §3): a cell of paper over and under; each line of it a
-   cell, an item's first line and its detail alike; an item's mark in the two cells before its words, as a file's
-   numbers are, and its × in the two after. As tall as what is written on it and the line of what the keys do, up to
-   the grid's next line (home.ts: --to-grid); never under four cells. ---- */
-.home-own > .section {
-  position: relative; box-sizing: border-box; width: 100%; margin: var(--u) 0 0; min-height: calc(4 * var(--u)); padding: var(--u) 0 calc(var(--u) + var(--to-grid, 0px));
-  background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink);
+/* No band or rail on the portrait. The same single Places key used by the working desks is enough here. */
+:is(body:has(> #page[data-place='home'] > .home-portrait), .place-left > .page[data-place='home']) {
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
 }
-.home-own > .section > h2 { position: absolute; top: var(--u); right: calc(2 * var(--u)); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--u) var(--mono); }
-.home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body:has(> #page[data-place='home'] > .home-portrait) { grid-template-columns: minmax(0, 1fr); }
+body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { display: none; }
+.page > .home-portrait {
+  --own-measure: calc(26 * var(--u)); --name-cap: 3; --places-down: var(--nighthawks-shadow);
+  container: home-portrait / inline-size;
+  padding: calc(2 * var(--u) - var(--outer-top)) 0 0 calc(2 * var(--u) - var(--outer));
+}
+.home-portrait .forge-places-key { color: var(--nighthawks-desk-quiet); }
+.home-portrait .forge-places-key:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
+.home-portrait .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
+@media (max-width: 600px) { .page > .home-portrait { --name-cap: 2.25; padding-inline-start: calc(var(--u) - var(--outer)); } }
+/* The first capitals still stand together on the room's line; note and destinations have different depth. */
+.home-main { display: block; }
+.home-row {
+  --available: round(down, 100% - var(--shade), var(--u));
+  --own-width: min(var(--own-measure), var(--available));
+  --beside-width: min(var(--available), clamp(16 * var(--u), var(--available) - var(--own-measure) - 2 * var(--u), 18 * var(--u)));
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u)); padding-bottom: calc(2 * var(--u));
+}
+.home-row > * { flex: none; box-sizing: border-box; min-width: 0; }
+.home-row .clearing { --ground: var(--nighthawks-ground); }
+.home-own { width: var(--own-width); }
+.home-beside {
+  width: var(--beside-width);
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start;
+}
+.home-row .profile { color: var(--nighthawks-paper); }
+.home-row .identity > h1 {
+  /* Keep the first cap at the same upper line; a third cell raises the rank without squeezing a longer name. */
+  margin-block-start: calc(var(--cap) * var(--u) - (var(--pitch) + var(--size)) / 2 + .1245 * var(--size));
+  text-wrap: balance;
+}
+@media (min-width: 1110px) { .home-beside { padding-block-start: calc(3 * var(--u) - var(--s1)); } }
+.home-row .identity > :is(.counts, .handle, .bio, .bio-ask) { color: var(--nighthawks-desk-quiet); }
+.home-row .identity [contenteditable] { caret-color: var(--nighthawks-paper); }
+.home-row .identity [contenteditable]:empty::before { color: var(--nighthawks-rule); }
+.home-row .identity .count-go:is(:hover, :focus-visible) { color: var(--nighthawks-paper); }
+.home-row .identity :focus-visible, .home-repos :is(.card-open, .repo-gear-button, .card.new):focus-visible { outline-color: var(--nighthawks-paper); }
+.home-row .identity > .error, .home-person > .error { color: var(--del-tint); }
+/* The TODO is the only lifted object. Muted yellow and a hard, short shadow keep its silhouette legible without
+   letting a slab of saturated colour or its shadow eclipse the actual writing. */
+.home-own > .section {
+  --note: var(--home-note); --note-quiet: var(--nighthawks-paper-sub);
+  --note-row: calc(1.5 * var(--u)); --note-gutter: calc(2 * var(--u)); --note-writing: 20px;
+  position: relative; box-sizing: border-box; width: 100%; margin: var(--u) 0 0;
+  min-height: calc(12 * var(--u)); padding: var(--s4) 0 calc(var(--u) + var(--to-grid, 0px));
+  background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px;
+  box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
+}
+/* Clear completed is at the foot only when it can act; the first line is the writing. */
+.home-own .todo-left { display: flex; justify-content: flex-end; margin-inline: var(--note-gutter); font: 400 var(--t-word)/var(--u) var(--mono); }
+@media (max-width: 600px) {
+  .home-own > .section { --note-gutter: calc(1.5 * var(--u)); --note-writing: 18px; min-height: calc(13 * var(--u)); }
+}
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
 .home-own .todo-clear:hover { color: var(--ink); }
 .home-own .todo-box { display: block; min-height: 0; border: 0; border-radius: 0; background: none; }
 .home-own .todo-items { padding: 0; }
 .home-own .todo-item { padding: 0; }
-.home-own .todo-head { position: relative; grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr) auto; column-gap: 0; min-height: var(--u); padding-right: calc(2 * var(--u)); }
-.home-own .todo-dates-detail .todo-head { grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr); }
+.home-own .todo-head { position: relative; grid-template-columns: var(--note-gutter) auto minmax(0, 1fr) auto; column-gap: 0; min-height: var(--note-row); padding-right: var(--note-gutter); }
+.home-own .todo-dates-detail .todo-head { grid-template-columns: var(--note-gutter) auto minmax(0, 1fr); }
 /* An item's mark: a box drawn as heavy as the words, soft at the corner; ticked, filled. */
-.home-own .todo-mark { position: relative; justify-self: stretch; width: auto; height: var(--u); border-radius: var(--r-key); color: var(--ink); }
+.home-own .todo-mark { position: relative; justify-self: stretch; width: auto; height: var(--note-row); border-radius: var(--r-key); color: var(--ink); }
 .home-own .todo-mark > .icon { display: none; }
-.home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid currentColor; border-radius: var(--r-key); }
+.home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 18px; height: 18px; border: 2px solid currentColor; border-radius: var(--r-key); }
 .home-own .todo-item.done .todo-mark::before { background: currentColor; }
 .home-own .todo-item.done .todo-mark::after { content: ''; position: absolute; left: calc(50% - 4.5px); top: calc(50% - 4px); width: 9px; height: 5px; box-sizing: border-box;
   border: 2px solid var(--note); border-top: 0; border-right: 0; rotate: -45deg; }
 .home-own .todo-mark:hover { color: var(--ink); }
 .home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
-.home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--u) var(--sans); }
-.home-own .todo-title { min-height: var(--u); height: var(--u); }
+.home-own :is(.todo-title, .todo-kind) { font: 700 var(--note-writing)/var(--note-row) var(--sans); }
+.home-own .todo-title { min-height: var(--note-row); height: var(--note-row); }
 /* (The kind is a row's height and no taller, whatever its colon's box is, and a word space before the title: "Fix: The
    title" on one line, both on the row's middle.) */
-.home-own .todo-kind:not([hidden]) { display: flex; align-items: center; height: var(--u); margin-right: .25em; white-space: nowrap; }
+.home-own .todo-kind:not([hidden]) { display: flex; align-items: center; height: var(--note-row); margin-right: .25em; white-space: nowrap; }
 .home-own .todo-title::placeholder { color: var(--note-quiet); font-weight: 400; }
 .home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
 .home-own .todo-head > .todo-strike { height: 2px; margin-top: 1px; background: var(--note-quiet); }
-.home-own .todo-detail { width: calc(100% - 4 * var(--u)); margin: 0 0 0 calc(2 * var(--u)); font: 400 var(--t-word)/var(--u) var(--sans); }
+.home-own .todo-detail { width: calc(100% - 2 * var(--note-gutter)); margin: 0 0 0 var(--note-gutter); font: 400 var(--note-writing)/calc(var(--u) + var(--s1)) var(--sans); }
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
 .home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/var(--u) var(--mono); }
-.home-own .todo-dates-detail .todo-created { margin: 0 0 0 calc(2 * var(--u)); }
+.home-own .todo-dates-detail .todo-created { margin: 0 0 0 var(--note-gutter); }
 /* An item's ×, at the row's right end inside the note's ink edge (never over it: the subject's edge is whole, §2). */
-.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(2 * var(--u) - 1px); height: var(--u); border-radius: var(--r-key); background: var(--note); color: var(--note-quiet); }
+.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(var(--note-gutter) - 1px); height: var(--note-row); border-radius: var(--r-key); background: var(--note); color: var(--note-quiet); }
 .home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
 .home-own .todo-head > .todo-away:hover { color: var(--ink); }
 /* What the keys do, while one writes: the note's last line, its room always kept, so nothing moves as it is said.
    One line: as many of the keys as it holds whole, the first first; what does not fit is not said, never cut. */
 .home-own > .section > .error:empty { display: none; }
-.home-own > .section > .error { margin: 0 calc(2 * var(--u)); line-height: var(--u); }
-.home-own > .error { margin-top: var(--s2); }
-/* ---- The repos by name: said what they are on a line of a cell, then a name every two cells, its capitals a cell
-   tall with their feet on the grid; then, a cell under them, the way to a new one, in the words' own size. ---- */
-.home-repos-sec { max-width: 100%; margin: 0; }
-.home-repos-sec > h2 { display: block; height: var(--u); margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
-.grid.home-repos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; justify-items: start; }
+.home-own > .section > .error { margin: 0 var(--note-gutter); line-height: var(--u); }
+.home-person > .error { margin-top: var(--s2); }
+/* The names follow their label, on the same line. When the names need another line they stay in that measure;
+   the name and its key go together. What is new or fetched is said without laying words across another name. */
+.home-repos-sec {
+  display: grid; grid-template-columns: minmax(calc(3 * var(--u)), max-content) minmax(0, 1fr);
+  align-items: baseline; width: 100%; margin: 0;
+}
+.home-repos-sec > h2 { display: block; margin: 0; color: var(--nighthawks-desk-quiet); font: 400 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
+.grid.home-repos { display: block; min-width: 0; }
 .grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; }
-.home-repos > .card.repo.gear-card { position: relative; display: flex; justify-content: flex-start; align-items: flex-end; height: calc(2 * var(--u)); max-width: 100%; }
-.home-repos > .gear-card > .card-open { position: relative; display: flex; align-items: flex-end; height: 100%; min-width: 0; padding: 0; border: 0; background: none; }
-.home-repos > .gear-card > .card-open > .card-title { --size: var(--t-head); flex: none; padding: 0; margin: 0 0 calc(-.1245 * var(--size)) var(--ink-left, 0px);
-  font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; white-space: nowrap; }
+/* Even three short entries must turn the line. The create key is the last entry, never a third column. */
+.home-repos > :is(.card.repo.gear-card, .card.new) {
+  min-width: calc(100% / 3 + var(--s1)); max-width: 100%; padding-inline-end: var(--s3); vertical-align: baseline;
+}
+.home-repos > .card.repo.gear-card { position: relative; display: inline-flex; align-items: baseline; gap: var(--s1); }
+.home-repos > .gear-card > .card-open {
+  display: block; width: auto; flex: 0 1 auto; min-width: 0;
+  padding: calc((var(--h-control) - var(--u)) / 2) 0; border: 0; background: none;
+}
+.home-repos > .gear-card > .card-open > .card-title {
+  display: block; padding: 0; margin-inline-start: var(--ink-left, 0px); overflow-wrap: anywhere;
+  color: var(--nighthawks-desk-quiet); font: 900 var(--repo-name-size, calc(.7 * var(--t-head)))/var(--u) var(--display); letter-spacing: -.035em;
+}
+@media (max-width: 600px) { .home-repos { --repo-name-size: var(--t-word); } }
 .home-repos > .gear-card > .card-open > :is(.card-summary, .muted) { display: none; }
-/* Where it stands, said after its name only while that is something to know (not here yet, being brought). */
-.home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync { display: block; position: absolute; left: calc(100% + var(--u)); bottom: -8px;
-  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
-.home-repos > .card.repo.away > .card-open > .card-title { color: var(--quiet); }
-/* (Under the pointer a name takes paper under it, as anything pressed does: nothing comes, no line is drawn, §14.) */
-.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { color: var(--ink); }
-.home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); }
-.home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
-/* Its gear: after the name, small and quiet, its middle on the capitals' top; there always (it waits on no pointer).
-   No ring round it. */
-.home-repos > .gear-card > .repo-gear { position: absolute; left: calc(100% + var(--s1)); right: auto; top: var(--s3); width: var(--u); height: var(--u); display: grid; place-items: center;
-  }
-.home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--u); border: 0; border-radius: var(--r-key); background: none; }
+.home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync {
+  display: block; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-rule); overflow-wrap: anywhere;
+}
+.home-repos > .card.repo.away > .card-open > .card-title { color: var(--nighthawks-rule); }
+/* A name is a destination, not another piece of paper; a pointed-to name just comes up in ink. */
+.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { color: var(--nighthawks-paper); }
+.home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); color: var(--ink); }
+/* The gear is always after the name, taking its own room even when the names wrap. */
+.home-repos > .gear-card > .repo-gear {
+  position: static; flex: none; align-self: flex-start; display: grid; place-items: center;
+  width: var(--u); height: var(--h-control);
+}
+.home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--h-control); border: 0; border-radius: var(--r-key); background: none; color: var(--nighthawks-rule); }
+.home-repos > .gear-card > .repo-gear > button:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
 .home-repos > .gear-card > .repo-gear > button .mark { width: 18px; height: 18px; stroke-width: 2; }
-.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max-content; min-width: max(100%, 280px); max-width: calc(100vw - 2 * var(--u)); text-align: left; }
-/* (Words on the ground: its patch of the ground and its room to the grid's next line, fit.css .clearing, kept against
-   the cards' own "no fill" above.) */
-.grid.repo-grid.home-repos > .card.new { display: flex; align-items: center; gap: 0; height: var(--u); margin: var(--u) calc(-1 * var(--to-cell, 0px)) 0 0;
-  padding: 0 var(--to-cell, 0px) 0 0; background: var(--ground); color: var(--ink);
-  font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
+.home-repos > .gear-card > .repo-gear-pop {
+  /* Leave the frame's two cells and the shadow to menusOnGrid, including at the narrowest setting. */
+  top: calc(var(--h-control) + var(--s1)); left: 0; right: auto;
+  width: min(12 * var(--u), round(down, 100vw - 2.5 * var(--u), var(--u)));
+  overflow-wrap: anywhere; text-align: left;
+}
+.grid.repo-grid.home-repos > .card.new {
+  display: inline-block; width: max-content; height: var(--h-control); margin: 0;
+  padding-block: calc((var(--h-control) - var(--u)) / 2); padding-inline-end: var(--s3);
+  color: var(--nighthawks-desk-quiet); font: 700 var(--t-word)/var(--u) var(--mono);
+  text-align: start; text-transform: lowercase; white-space: nowrap;
+}
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
-.grid.repo-grid.home-repos > .card.new:hover { color: var(--ink); }
-.home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
-/* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
-   piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
-   cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
-.home-waits { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: var(--u); }
-.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--u) var(--u) calc(var(--u) + var(--to-grid, 0px));
-  /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
-     hand is on any desk.) */
-  background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
-/* (A piece not in the hand: its words a step quieter than ink, DESIGN §5; the note is the hand's.) */
-.home-waits > .lately { color: var(--sub); }
-.home-waits > .lately > h2 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); color: inherit; letter-spacing: 0; text-transform: lowercase; }
-/* With nothing waiting there is no slip: a frame round "nothing new" says nothing a bare desk does not (DESIGN §1, the
-   removal test; §5, a frame round nothing). */
+.grid.repo-grid.home-repos > .card.new:hover { color: var(--nighthawks-paper); }
+.home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); overflow-wrap: anywhere; }
+/* Recent activity is an index back to the work. A single quiet glass behind its controls, not the writing itself
+   and not another raised sheet. Keep the words and their positions unchanged. */
+.home-waits { --glass-inset: var(--s2); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: calc(2 * var(--u)); }
+/* The return names sit in stronger ink; brighten the commands, not the glass underneath them. */
+.home-waits > .lately {
+  --recent-heading: color-mix(in srgb, var(--nighthawks-paper) 22%, var(--nighthawks-desk-quiet));
+  --recent-action: color-mix(in srgb, var(--nighthawks-paper) 64%, var(--nighthawks-desk-quiet));
+  position: relative; isolation: isolate; width: calc(15 * var(--u)); max-width: 100%; padding-bottom: var(--to-grid, 0px); color: var(--nighthawks-desk-quiet); }
+/* The same readable control on an opaque surface if the reader asks for less transparency. No work moves. */
+.home-waits > .lately > .home-recent-glass {
+  position: absolute; z-index: -1; pointer-events: none; border-radius: var(--r-sheet);
+  inset: calc(-1 * var(--glass-inset)) calc(-1 * (var(--s4) + var(--s1) / 2));
+  background: color-mix(in srgb, var(--nighthawks-ground), var(--nighthawks-shadow) 18%);
+  border: 1px solid var(--nighthawks-ground);
+}
+.home-recent-glass > svg { position: absolute; inset: 0; }
+.home-recent-glint { flood-color: var(--nighthawks-paper); }
+.home-recent-hairline {
+  /* Half-pixel mask clips snap differently on opposing sides in Chrome. Stroke the same inset
+     as a vector: one evenly covered pixel at 2×, half coverage at 1×. */
+  display: none; fill: none; stroke: var(--glass-edge); stroke-width: .5px;
+  x: .25px; y: .25px; width: calc(100% - .5px); height: calc(100% - .5px);
+  rx: calc(var(--r-sheet) - .25px);
+}
+@media (prefers-reduced-transparency: no-preference) {
+  @supports (backdrop-filter: blur(1px)) {
+    .home-waits > .lately > .home-recent-glass {
+      --glass-edge: color-mix(in srgb, var(--nighthawks-shadow) 36%, transparent);
+      background: color-mix(in srgb, var(--nighthawks-shadow) 18%, transparent);
+      border: 0;
+      backdrop-filter: var(--home-recent-optics, blur(1px));
+    }
+    .home-waits > .lately > .home-recent-glass::after {
+      content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+      /* Non-refracting fallback: one glint at each horizontal edge, a darker edge on the sides. */
+      --glass-glint-shift: calc(24% * cos(var(--glass-light)));
+      --glass-cap: color-mix(in srgb, var(--nighthawks-paper) calc(20% * sin(var(--glass-light))), transparent);
+      --glass-foot: color-mix(in srgb, var(--nighthawks-paper) calc(15% * sin(var(--glass-light))), transparent);
+      background:
+        linear-gradient(90deg, transparent 2%, var(--glass-cap) calc(50% + var(--glass-glint-shift)), transparent 98%) top / 100% var(--r-sheet) no-repeat,
+        linear-gradient(90deg, transparent 2%, var(--glass-foot) calc(50% - var(--glass-glint-shift)), transparent 98%) bottom / 100% var(--r-sheet) no-repeat,
+        var(--glass-edge);
+      mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0);
+      mask-composite: exclude;
+    }
+    /* On Chrome the curved reflection is inside the optical texture, not a painted stripe. */
+    .home-waits > .lately > .home-recent-glass[data-optical]::after { content: none; }
+    .home-recent-glass[data-optical] .home-recent-hairline { display: block; }
+  }
+}
+@media (forced-colors: active) { .home-waits > .lately > .home-recent-glass { display: none; } }
+.home-waits > .lately > h2 { width: fit-content; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--recent-heading); background-color: transparent; letter-spacing: 0; text-transform: lowercase; }
 .home-waits > .lately:is(:has(.lately-none), :has(> .lately-list:empty)) { display: none; }
-.home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
+.home-waits .lately-list { display: flex; flex-direction: column; gap: 0; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; color: inherit; text-align: left; }
+.home-waits .pane-row:hover { color: var(--nighthawks-paper); }
+.home-waits .pane-row:focus-visible { outline-color: var(--nighthawks-paper); }
 .home-waits .pane-row > .pane-bar { display: none; }
-.home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; white-space: nowrap; }
-.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
+.home-waits .pane-row > :is(.pane-line, .pane-at) { display: block; overflow-wrap: anywhere; }
+.home-waits .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--recent-action); letter-spacing: 0; }
+.home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { color: var(--nighthawks-paper); }
+.home-waits .pane-resume > .pane-line::after { content: ' →'; white-space: nowrap; font-weight: 400; color: inherit; }
 .home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: inherit; }
-/* Where it is, the file's servant: a step quieter and the other weight (said as the file's name was, it read as a second
-   thing waiting). */
-.home-waits .pane-row > .pane-at { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); }
-/* What else waits, after the first: a line each, its name and what was said. */
+.home-waits .pane-row > .pane-at { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); }
 .home-waits .pane-row + .pane-row { margin-top: var(--u); }
-.home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
-.home-waits .lately-none { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 .home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
 .home-waits > .agent-cards { width: calc(12 * var(--u)); max-width: 100%; }
+
+/* With room for both columns (26 + 2 + 16 cells), the taller heading sets the edge where both pieces begin.
+   The glass extends up over its words' inset, so it is the glass's edge, not its text, that lands on that line. */
+@supports (grid-template-rows: subgrid) {
+  @container home-portrait (min-width: 1056px) {
+    .home-row {
+      display: grid; grid-template-columns: var(--own-width) var(--beside-width);
+      grid-template-rows: auto auto; row-gap: var(--s4);
+    }
+    .home-own, .home-beside {
+      display: grid; grid-row: 1 / span 2; grid-template-rows: subgrid;
+      width: auto; align-self: stretch; align-items: start; row-gap: var(--s4);
+    }
+    .home-own { grid-column: 1; }
+    .home-beside { grid-column: 2; padding-block-start: 0; }
+    .home-person { grid-row: 1; padding-block-end: var(--s2); }
+    .home-beside > .home-repos-sec { grid-row: 1; margin-block-start: calc(3 * var(--u) - var(--s1)); }
+    .home-own > .section, .home-beside > .home-waits { grid-row: 2; margin-block-start: 0; }
+    .home-waits > .lately { margin-block-start: var(--glass-inset); }
+  }
+}
