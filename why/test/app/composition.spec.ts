@@ -301,9 +301,9 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
       if (place === 'forge') await app.forge.editor('README.md').focus();
       if (place === 'inbox') {
         const thread = app.inbox.thread(bo.handle);
-        if (!await thread.isVisible() || !await thread.evaluate((e) => e.getBoundingClientRect().right <= innerWidth + 1)) {
-          await app.inbox.conversation(bo.handle).click();
-        }
+        // Returning holds the same letter. On a narrow window the index is beside it, not a fallback to poke
+        // before the authenticated letter has finished reading.
+        await expect(thread).toBeInViewport({ratio: 1});
         await expect(thread.getByText('are you coming on Saturday?', {exact: true})).toBeInViewport({ratio: .8});
       }
       await shot(app, place, size);
