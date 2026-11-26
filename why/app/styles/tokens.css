@@ -58,22 +58,6 @@
   /* The Agent's own line, round its pill: a blue, the one colour nothing else here is drawn in. */
   --agent: #20426e;
 
-  /* Nighthawks material, opted into by the individual desks. Keep the dot's colour already composed over
-     its ground: the light is opaque, and the base palette above still serves the unstyled places. */
-  --nighthawks-ground: #3a3d36;
-  --nighthawks-dot: #4c4e48;
-  --nighthawks-dots: radial-gradient(circle, var(--nighthawks-dot) 1.5px, transparent 1.9px);
-  --nighthawks-paper: #efebe3;
-  --nighthawks-paper-grain: #e3ded5;
-  --nighthawks-paper-ink: var(--ink);
-  --nighthawks-paper-sub: #514e49;
-  --nighthawks-rule: #a9a49b;
-  --nighthawks-desk-quiet: #c1beb0;
-  --nighthawks-desk-disabled: #726e65;
-  --nighthawks-paper-selected: #ded3bb;
-  --nighthawks-paper-off: var(--off);
-  --nighthawks-shadow: #1a1d17;
-
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
   --display: 'Inter Display', 'Display JP', var(--sans);
@@ -210,6 +194,24 @@
   :root { --spring: linear(0, 0.062, 0.192, 0.338, 0.477, 0.596, 0.694, 0.771, 0.831, 0.877, 0.911, 0.937, 0.955, 0.969, 0.979, 0.986, 0.991, 0.994, 0.997, 0.999, 1); }
 }
 
+/* App materials are not global .everyday controls. The desks opt in to this shared paint, including
+   departing papers that keep their light during a Places change. The dots are opaque over this ground. */
+body {
+  --nighthawks-ground: #3a3d36;
+  --nighthawks-dot: #4c4e48;
+  --nighthawks-dots: radial-gradient(circle, var(--nighthawks-dot) 1.5px, transparent 1.9px);
+  --nighthawks-paper: #efebe3;
+  --nighthawks-paper-grain: #e3ded5;
+  --nighthawks-paper-ink: var(--ink);
+  --nighthawks-paper-sub: #514e49;
+  --nighthawks-rule: #a9a49b;
+  --nighthawks-desk-quiet: #c1beb0;
+  --nighthawks-desk-disabled: #726e65;
+  --nighthawks-paper-selected: #ded3bb;
+  --nighthawks-paper-off: var(--off);
+  --nighthawks-shadow: #1a1d17;
+}
+
 /* Forge's document table: the same light on an unraised desk and one sheet in hand.
    These colors do not replace the app's general palette or the Prompt's colors. */
 :is(body.forge-place:has(> #page .desk-room[data-place='Forge']),
@@ -254,8 +256,8 @@
   --t-inbox-title: 38px;
 }
 
-/* Warm neutral terminal material, quieter in colour than the Forge and Inbox paper. */
-:root {
+/* The Forge Prompt is a warm neutral, quieter in colour than the paper beside it. */
+body.forge-place {
   --prompt-edge: #242424;
   --prompt-face: #edeae5;
   --prompt-grain: #e9e6e1;
