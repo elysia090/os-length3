@@ -7,10 +7,10 @@ import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
-import {onChange, store} from '../../../repo/repos.ts';
+import {onChange} from '../../../repo/repos.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../../prompt/system.ts';
-import {fileDeeds, fileDeleteAsk, joined, split, type Deeds} from '../kit/file-deeds.ts';
+import {fileDeeds, fileDeleteAsk, joined, moveFile, split, type Deeds} from '../kit/file-deeds.ts';
 import type {Writing} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 
@@ -549,7 +549,7 @@ export class FileTree {
   private async moved(repo: string, path: string, to: string, showing = () => true) {
     const was = `/root/${repo}/${path}`, now = `/root/${repo}/${to}`;
     if (to !== path) {
-      await store.move(repo, path, to);
+      await moveFile(repo, path, to);
       for (const p of [...expandedPaths]) if (p === was || p.startsWith(`${was}/`)) { expandedPaths.delete(p); expandedPaths.add(now + p.slice(was.length)); }
     }
     const parts = to.split('/');

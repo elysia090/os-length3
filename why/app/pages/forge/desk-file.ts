@@ -5,7 +5,7 @@ import {caretIn, fieldCarried} from '../../ui/caret.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {bytes} from '../../../text/format.ts';
-import {EDIT_LIMIT, onChange, store, type Change} from '../../../repo/repos.ts';
+import {EDIT_LIMIT, onChange, onPathsChanging, store, type Change} from '../../../repo/repos.ts';
 import {shownPath} from '../../../repo/issues.ts';
 import {AGENT} from '../../../repo/agent-hands.ts';
 import {editorOn, holdBack, openingWith} from '../bench/play.ts';
@@ -13,6 +13,7 @@ import {Editor, fileState, lineHeight, lineStart, numbering} from './editor.ts';
 import type {Laid} from './desk.ts';
 import {documentMenu, type BesideOption} from './document-menu.ts';
 import {Draft} from './draft.ts';
+import {openDrafts} from './open-drafts.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers
@@ -38,6 +39,7 @@ export interface DeskFile extends Laid {
 interface PaperActions {
   beside?(): BesideOption | null;
   readOnly?(): void;
+  retry?(draft: Draft): void;
 }
 
 /** Where `a` and `b` first differ (the shorter's length where one begins the other). */
@@ -52,6 +54,26 @@ export function lineOf(text: string, at: number): number {
   let line = 1;
   for (let i = text.indexOf('\n'); i >= 0 && i < at; i = text.indexOf('\n', i + 1)) line++;
   return line;
+}
+
+let writerId = 0;
+
+/** Preserve a draft without touching the original. The actual repo store refuses an occupied name. */
+async function saveDraftCopy(repo: string, path: string, text: string): Promise<string> {
+  const cut = path.lastIndexOf('/');
+  let dir = cut < 0 ? '' : path.slice(0, cut);
+  const name = Array.from(path.slice(cut + 1)).slice(0, 40).join('') + '.draft';
+  let list = await store.tree(repo, dir).catch(() => null);
+  if (list === null) { dir = ''; list = await store.tree(repo, dir); }
+  const names = new Set(list.map((e) => e.name));
+  let copy = name;
+  for (let n = 2; names.has(copy); n++) copy = `${name}-${n}`;
+  const destination = dir ? `${dir}/${copy}` : copy;
+  const data = new TextEncoder().encode(text);
+  if (data.length <= EDIT_LIMIT) await store.add(repo, dir, copy, text);
+  // add is exclusive. Larger drafts get the same explicit full-file save as the editor, at the reserved copy path.
+  else { await store.add(repo, dir, copy, ''); await store.put(repo, destination, data); }
+  return destination;
 }
 
 /** `path` of `repo` as a box on the desk; `grew` hears it change height (the desk lays its boxes again). */
@@ -70,6 +92,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const dropMenu = documentMenu(element, () => editor?.area ?? null, actions.beside);
   let dropView: (() => void) | undefined;
   let revision = 0;
+  let writer: string | null = null;
   let dropped = false;
   let wanted: number | null = null;
   let endWanted = false;
@@ -170,7 +193,10 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
 
   function bind(draft: Draft) {
     number(draft.text);
-    const e = editor = new Editor(draft, {path, companion: !!shared, head, sheet, gutter, number, state, flow: element, seen: () => grew()});
+    const forget = shared ? null : openDrafts.register(repo, path, draft);
+    const e = editor = new Editor(draft, {path, companion: !!shared, head, sheet, gutter, number, state, flow: element,
+      seen: () => grew(), recover: () => recover(draft), retry: () => retry(draft)});
+
     // Where the Agent is in it, told up to the desk (desk.ts WORK_AT), whose camera keeps that line in sight: its hand
     // as it writes (the first place what it put differs from what was there), its eye as it reads.
     const workAt = (line: number | null) => {
@@ -209,6 +235,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     bodySize.observe(element);
     dropView = () => {
       unregister?.();
+      forget?.();
       areaSize.disconnect(); bodySize.disconnect();
       clearTimeout(handRest);
       e.drop();
@@ -221,23 +248,41 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     grew();
   };
 
-  async function load() {
-    const reading = ++revision;
-    const current = () => !dropped && reading === revision;
+  type Read = 'initial' | 'external' | 'own' | 'copy';
+  async function load(reason: Read = 'initial', reading = ++revision) {
+    const draft = editor?.draft;
+    const current = () => !dropped && reading === revision && draft === editor?.draft;
+    if (draft) {
+      // Block new writes in the notice's own turn. Only work already sent to the store is allowed to finish.
+      if (reason === 'external' || reason === 'copy') draft.checkOutside();
+      await draft.idle();
+      if (!current() || (reason === 'own' && !draft.clean)) return;
+    }
     let c;
-    try { c = await store.read(repo, path); } catch (e) { if (current()) state.el.textContent = errorText(e); return; }
-    if (!current()) return;
-    if (editor) {
-      if (c.text !== null && !c.truncated) { editor.draft.take(c.text); return; }
-      // A full write can cause this notice before its promise settles. Wait for its real acknowledgment;
-      // an externally replaced binary or partial file must not take unsaved text out of either view.
-      if (!await editor.draft.settled()) { if (current()) editor.draft.blockUnread(); return; }
-      if (!current()) return;
+    try { c = await store.read(repo, path); }
+    catch (e) {
+      if (current()) {
+        if (draft && reason !== 'own') draft.blockUnread();
+        else if (!draft) state.el.textContent = errorText(e);
+      }
+      return;
+    }
+    if (!current() || (draft && reason === 'own' && !draft.clean)) return;
+    const full = c.text !== null && !c.truncated;
+    const copied = reason === 'copy' && draft?.copy != null;
+    if (draft) {
+      if (full && !copied) { draft.take(c.text!); return; }
+      if (draft.unsaved && !copied) { draft.blockUnread(); return; }
       actions.readOnly?.();
       dropView?.(); dropView = undefined;
       editor = null;
     }
-    if (c.text === null) { sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)}))); grew(); return; }
+    if (c.text === null) {
+      state.el.textContent = '';
+      sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)})));
+      grew();
+      return;
+    }
     if (c.truncated) {
       number(c.text);
       sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
@@ -247,25 +292,56 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     }
     const opening = openingWith(repo, path, c.text);
     state.el.textContent = '';
+    const author = writer = `forge-draft:${++writerId}`;
     bind(new Draft(opening, EDIT_LIMIT, async (text, whole) => {
-      if (whole) await store.put(repo, path, new TextEncoder().encode(text));
-      else await store.write(repo, path, text);
+      if (whole) await store.put(repo, path, new TextEncoder().encode(text), author);
+      else await store.write(repo, path, text, author);
     }));
+  }
+
+  function retry(draft: Draft) {
+    if (shared) actions.retry?.(draft);
+    else if (editor?.draft === draft && !draft.locked) void load(draft.copy === null ? 'external' : 'copy');
+  }
+
+  async function recover(draft: Draft) {
+    if (!draft.unread) return;
+    const release = draft.lock();
+    if (!release) return;
+    try {
+      const text = draft.text;
+      draft.copied(await saveDraftCopy(repo, path, text), text);
+    } finally { release(); }
   }
 
   function changed(ch: Change) {
     if (ch.repo !== repo) return;
-    if (ch.what === 'repo') { void load(); return; }
-    if ((ch.what !== 'file' && ch.what !== 'unread') || ch.path !== path) return;
+    if (ch.what !== 'repo' && ch.path !== path) return;
+    if (ch.what === 'dir') { void load('external'); return; }
+    if (ch.what === 'removed') {
+      if (ch.to === undefined && editor?.draft.checking) editor.draft.blockUnread();
+      return;
+    }
+    // Full-file writes announce a truncated/unreadable preview before the write promise resolves.
+    // It isn't an external replacement and must never wedge newer text typed while the write was in flight.
+    if (writer !== null && ch.by === writer) {
+      if (ch.what !== 'file' && !editor?.draft.checking && !editor?.draft.unread) void load('own', revision);
+      return;
+    }
     if (ch.what === 'file' && ch.by === AGENT && holdBack(repo, path, ch.text)) return;
-    if (!editor || ch.what === 'unread' || (ch.text.length > EDIT_LIMIT / 4 && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
-      void load();
+    if (!editor || ch.what !== 'file' || (ch.text.length > EDIT_LIMIT / 4 && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
+      void load('external');
       return;
     }
     ++revision;
     editor.draft.take(ch.text);
   }
   const off = shared ? null : onChange(changed);
+  const offEarly = shared ? null : onPathsChanging((changedRepo, paths) => {
+    if (changedRepo !== repo || !paths.includes(path)) return;
+    ++revision;
+    editor?.draft.checkOutside();
+  });
   if (shared) bind(shared); else void load();
 
   /**
@@ -327,9 +403,9 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
-    flush: () => editor?.draft.flush() ?? Promise.resolve(true),
-    beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {}, editor.draft) : null,
-    drop: () => { dropped = true; dropMenu(); off?.(); dropView?.(); },
+    flush: () => editor?.draft.closeable() ?? Promise.resolve(true),
+    beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {retry}, editor.draft) : null,
+    drop: () => { dropped = true; dropMenu(); off?.(); offEarly?.(); dropView?.(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
     ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
   };

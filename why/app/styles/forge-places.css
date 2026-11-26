@@ -27,6 +27,7 @@ body.forge-place > .rail, body.forge-place > #door { display: none; }
 .forge-layout .desk :is(.gutter, .code) { font-size: 16px; }
 .forge-layout .desk-file { max-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
 .forge-layout .desk-file.long { height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
+.forge-layout .desk-file-head > .file-read-notice:not(:empty) { align-self: flex-start; min-height: var(--line); line-height: var(--line); }
 .forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
 .forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: 16px; }
 .forge-layout .desk-close { margin-block-end: 6px; }

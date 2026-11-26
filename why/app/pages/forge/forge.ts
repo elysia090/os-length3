@@ -13,7 +13,7 @@ import {takeFiles} from './files-in.ts';
 import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
-import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
+import {deedsUnder, fileDeeds, moveFile, renaming, split, untitled} from '../kit/file-deeds.ts';
 import {openFolder} from './open-folder.ts';
 import {workPlaces, type WorkPlace} from './places.ts';
 import type {BesideOption} from './document-menu.ts';
@@ -289,7 +289,7 @@ class Forge {
     const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path, like: '', head: `/root/${repo}${path ? `/${path}` : ''}`,
       made: (made, file) => { done(); if (file) this.made(repo, made); },
       move: async (to) => {
-        if (to !== path) await store.move(repo, path, to);
+        await moveFile(repo, path, to);
         done();
         this.shut(repo, path);
         this.ctx.openRepo(repo, to);
@@ -456,8 +456,7 @@ class Forge {
     const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
       const to = await renaming(repo, from, written);
       if (to === from) return;
-      if (!await f.flush()) throw new Error(t('Save the file before renaming it.'));
-      await store.move(repo, from, to);
+      await moveFile(repo, from, to);
       // Named, it is written in: the box where it lay, the keyboard going on from its name into it, at its end.
       this.moved(repo, from, to)?.toEnd();
     }, () => f.toEnd()), {

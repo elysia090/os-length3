@@ -178,6 +178,7 @@ export type Change = {
 export class Observed implements RepoStore {
   readonly changes = new EventTarget();
   private inner: RepoStore;
+  private readonly probing = new Map<string, Map<string, symbol>>();
   constructor(inner: RepoStore) { this.inner = inner; }
   private tell(c: Change) { this.changes.dispatchEvent(new CustomEvent<Change>('change', {detail: c})); }
   list(fresh = false) { return this.inner.list(fresh); }
@@ -258,16 +259,33 @@ export class Observed implements RepoStore {
     this.tell(this.file(repo, path, c, from, by));
   }
   /** Something outside the store changed `repo` (a Prompt on the root writes it directly, or another tab's core). */
-  changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }
+  changedOutside(repo: string, by?: string) {
+    this.probing.delete(repo);
+    this.tell({repo, path: '', what: 'repo', by});
+  }
   /** These paths of `repo` changed outside the store (the core took them in from the Remote): each said as it is now. */
   async changedPaths(repo: string, paths: string[], by?: string) {
-    for (const path of paths) {
-      const c = await this.inner.read(repo, path).catch(() => null);
-      if (c) { this.tell(this.file(repo, path, c, undefined, by)); continue; }
-      // Not a file: a folder (made), or gone.
-      const dir = await this.inner.tree(repo, path).then(() => true, () => false);
-      this.tell({repo, path, what: dir ? 'dir' : 'removed', by});
+    let pending = this.probing.get(repo);
+    if (!pending) { pending = new Map(); this.probing.set(repo, pending); }
+    const notices = [...new Set(paths)].map((path) => {
+      const check = Symbol();
+      pending.set(path, check);
+      return {path, check};
+    });
+    // Readers that can write must hear what changed before this classification reads it, not after.
+    this.changes.dispatchEvent(new CustomEvent('paths-changing', {detail: {repo, paths}}));
+    for (const {path, check} of notices) {
+      const latest = () => this.probing.get(repo) === pending && pending.get(path) === check;
+      if (!latest()) continue;
+      try {
+        const c = await this.inner.read(repo, path).catch(() => null);
+        if (!latest()) continue;
+        if (c) { this.tell(this.file(repo, path, c, undefined, by)); continue; }
+        const dir = await this.inner.tree(repo, path).then(() => true, () => false);
+        if (latest()) this.tell({repo, path, what: dir ? 'dir' : 'removed', by});
+      } finally { if (latest()) pending.delete(path); }
     }
+    if (!pending.size && this.probing.get(repo) === pending) this.probing.delete(repo);
   }
 }
 /** Who wrote, when it was another tab of this browser. */
@@ -361,6 +379,16 @@ export function rekey<V>(map: Map<string, V>, from: string, to: string) {
   if (!map.has(from)) return;
   map.set(to, map.get(from)!);
   map.delete(from);
+}
+
+/** Known outside paths that have not yet been read and classified. */
+export function onPathsChanging(listen: (repo: string, paths: readonly string[]) => void): () => void {
+  const f = (e: Event) => {
+    const {repo, paths} = (e as CustomEvent<{repo: string; paths: string[]}>).detail;
+    listen(repo, paths);
+  };
+  store.changes.addEventListener('paths-changing', f);
+  return () => store.changes.removeEventListener('paths-changing', f);
 }
 
 /** Hear every change made through the store; returns the way to stop. */

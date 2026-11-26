@@ -7,6 +7,7 @@ import type {MarkName} from '../../ui/icons.ts';
 import {errorText} from '../../../api/errors.ts';
 import {wayOut} from '../../ui/way-out.ts';
 import {changes, putBack} from '../../../repo/history.ts';
+import {DraftMoveError, openDrafts} from '../forge/open-drafts.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes
@@ -36,6 +37,15 @@ export async function renaming(repo: string, path: string, written: string): Pro
   if (theirs) throw theirs;
   if (to !== path && await there(repo, inside, name)) throw taken(name);
   return to;
+}
+
+/** The one safe path move for tools that act on the user's editable files. */
+export async function moveFile(repo: string, from: string, to: string) {
+  try { await openDrafts.move(repo, from, to, () => store.move(repo, from, to)); }
+  catch (err) {
+    if (err instanceof DraftMoveError) throw new Error(t('Could not save {path}. Nothing was moved.', {path: err.path}));
+    throw err;
+  }
 }
 
 /**

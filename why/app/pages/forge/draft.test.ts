@@ -100,3 +100,41 @@ test('an unreadable external replacement cannot be overwritten by blur or by clo
   assert.deepEqual(writes, []);
   draft.stop();
 });
+
+test('the exact outside notification blocks a write even before its queued microtask and read complete', async () => {
+  const writes: string[] = [];
+  const draft = new Draft('before', 1000, async (text) => { writes.push(text); });
+  draft.edit('local');
+  const queued = draft.flush(); // Has a promise, but has not started the store call.
+  draft.checkOutside();
+  assert.equal(draft.checking, true);
+  assert.equal(await queued, false);
+  assert.equal(await draft.flush(), false);
+  draft.blockUnread();
+  assert.equal(await draft.closeable(), false);
+  assert.deepEqual(writes, []);
+  draft.copied('file.draft', 'local');
+  assert.equal(await draft.closeable(), true);
+  assert.equal(await draft.flush(), false); // A copy cannot authorize overwriting or moving the original.
+  draft.edit('newer text');
+  assert.equal(draft.copy, null);
+  assert.equal(await draft.closeable(), false);
+  draft.stop();
+});
+
+test('an unchanged external read lets queued local edits proceed; a changed read asks instead', async () => {
+  const writes: string[] = [];
+  const draft = new Draft('before', 1000, async (text) => { writes.push(text); });
+  draft.edit('local');
+  draft.checkOutside();
+  assert.equal(draft.take('before'), true);
+  assert.equal(draft.checking, false);
+  assert.equal(await draft.flush(), true);
+  assert.deepEqual(writes, ['local']);
+  draft.edit('next');
+  draft.checkOutside();
+  assert.equal(draft.take('external'), false);
+  assert.equal(draft.theirs, 'external');
+  assert.equal(await draft.flush(), false);
+  draft.stop();
+});

@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {Draft} from './draft.ts';
+import {DraftMoveError, OpenDrafts} from './open-drafts.ts';
+
+test('folder moves wait for open descendants, freeze both views of the same draft, and never conflate prefixes', async () => {
+  const docs = new OpenDrafts();
+  const writes: string[] = [];
+  let resume!: () => void;
+  const delayed = new Promise<void>((r) => { resume = r; });
+  const a = new Draft('a', 200, async (text) => { await delayed; writes.push(text); });
+  const b = new Draft('b', 200, async (text) => { writes.push(text); });
+  const other = new Draft('outside', 200, async () => assert.fail('other path saved'));
+  docs.register('repo', 'src/a.c', a);
+  docs.register('repo', 'src/b.c', b);
+  docs.register('repo', 'src-old/a.c', other);
+  a.edit('a newer');
+  b.edit('b newer');
+  other.edit('outside newer');
+  let moved = false;
+  const move = docs.move('repo', 'src', 'code', async () => { moved = true; writes.push('move'); });
+  assert.equal(a.locked, true);
+  assert.equal(b.locked, true);
+  assert.equal(other.locked, false);
+  a.edit('ignore while moving');
+  assert.equal(a.text, 'a newer');
+  assert.equal(moved, false);
+  const late = new Draft('just opened', 200, async () => assert.fail('untouched document saved'));
+  docs.register('repo', 'src/late.c', late);
+  assert.equal(late.locked, true);
+  resume();
+  await move;
+  assert.equal(writes.at(-1), 'move');
+  assert.deepEqual(writes.slice(0, -1).sort(), ['a newer', 'b newer']);
+  assert.equal(late.locked, false);
+  [a, b, other, late].forEach((draft) => draft.stop());
+});
+
+test('failed save or outside conflict aborts the move and gives all drafts back', async () => {
+  const docs = new OpenDrafts();
+  const draft = new Draft('before', 200, async () => { throw Error('write refused'); });
+  const other = new Draft('keep', 200, async () => {});
+  docs.register('repo', 'here/draft', draft);
+  docs.register('repo', 'here/other', other);
+  draft.edit('retained');
+  const commit = async () => assert.fail('move bypassed refusal');
+  await assert.rejects(docs.move('repo', 'here', 'there', commit), (err) => err instanceof DraftMoveError && err.path === 'here/draft');
+  assert.equal(draft.text, 'retained');
+  assert.equal(draft.locked, false);
+  assert.equal(other.locked, false);
+  draft.checkOutside();
+  await assert.rejects(docs.move('repo', 'here/draft', 'there', commit), DraftMoveError);
+  assert.equal(draft.text, 'retained');
+  draft.stop(); other.stop();
+});

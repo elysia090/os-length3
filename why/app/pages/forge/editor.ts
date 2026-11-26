@@ -221,6 +221,8 @@ interface FileBox {
   flow: HTMLElement;
   /** Fitted to its text (true), or out of sight and not measured (false): fitted again when it shows. */
   seen(measured: boolean): void;
+  recover(): Promise<void>;
+  retry(): void;
 }
 
 /** One file's text, to be written in and saved. */
@@ -243,6 +245,11 @@ export class Editor {
   // Grown past what Forge edits: said in the box, over the text, with the way to keep it whole.
   private large = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('File too large to save here')});
   private whole = h('button', {type: 'button', class: 'button small-button primary'}, t('Save full file')) as HTMLButtonElement;
+  private blocked = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Recover unsaved changes')});
+  private copy = h('button', {type: 'button', class: 'button small-button'}, t('Keep a copy')) as HTMLButtonElement;
+  private again = h('button', {type: 'button', class: 'button small-button'}, t('Check again')) as HTMLButtonElement;
+  private said = h('p', {class: 'muted small'});
+  private recoveryError = h('p', {class: 'error small', role: 'alert'});
 
   /** A view of the draft, put on the box's sheet. */
   constructor(draft: Draft, box: FileBox) {
@@ -270,6 +277,12 @@ export class Editor {
       if (area.isConnected) area.focus();
     });
     this.whole.addEventListener('click', () => void this.saveWhole());
+    this.again.addEventListener('click', () => box.retry());
+    this.copy.addEventListener('click', async () => {
+      this.recoveryError.textContent = '';
+      try { await box.recover(); }
+      catch (e) { this.recoveryError.textContent = errorText(e); }
+    });
     area.addEventListener('input', () => this.typed(), listening);
     area.addEventListener('blur', () => void draft.flush(), listening);
     // The tab closing (or put away) saves what is written, before the store keeps what it has (repos.ts).
@@ -314,17 +327,43 @@ export class Editor {
 
   private paint() {
     const {draft, box} = this;
+    this.area.readOnly = draft.locked;
+    box.state.el.classList.toggle('file-read-notice', draft.checking || draft.unread);
+    for (const b of [this.copy, this.again, this.other, this.mine]) b.disabled = draft.locked;
     if (this.area.value !== draft.text) this.show(draft.text);
+    if (draft.checking || draft.unread) {
+      this.fits();
+      if (this.ask.isConnected) this.settle();
+      if (draft.checking) {
+        this.blocked.remove();
+        box.state.el.textContent = t('Checking file…');
+      } else {
+        box.state.el.textContent = t('File could not be read in full.');
+        this.offerRecovery();
+      }
+      return;
+    }
+    if (this.blocked.isConnected) this.blocked.remove();
     if (draft.theirs !== null) { this.asking(); return; }
     if (this.ask.isConnected) this.settle();
     if (!draft.tooLarge) this.fits();
     if (draft.failed) box.state.el.textContent = t('Failed to save: {message}', {message: errorText(draft.error)});
-    else if (draft.unread) box.state.el.textContent = t('File changed on disk. Unsaved changes are kept here.');
     else if (draft.tooLarge) this.tooLarge();
     else if (draft.clean) box.state.saved();
     else box.state.unsaved();
   }
 
+  private offerRecovery() {
+    const {draft} = this;
+    this.said.textContent = draft.copy !== null ? t('Draft kept as {path}.', {path: draft.copy})
+      : t('Automatic saving is paused. Keep your draft in a new file or check the original again.');
+    this.again.textContent = t(draft.copy !== null ? 'Reload original' : 'Check again');
+    this.copy.hidden = draft.copy !== null || !draft.unsaved;
+    if (!this.blocked.isConnected) {
+      this.blocked.replaceChildren(this.said, this.recoveryError, answers(this.again, this.copy));
+      this.box.head.after(this.blocked);
+    }
+  }
   /**
    * The whole box is the place to write. A press beside the text (its numbers, or the room around
    * them) is that line, selected as a line found is; a press below the text puts the caret at its end.
@@ -414,8 +453,8 @@ export class Editor {
   }
 
   private leaving = (event: Event) => {
-    if (!this.area.isConnected || this.draft.clean) return;
-    if (event.type === 'beforeunload' && (this.draft.tooLarge || this.draft.failed || this.draft.unread || this.draft.theirs !== null)) {
+    if (!this.area.isConnected || this.draft.clean || this.draft.copy !== null) return;
+    if (event.type === 'beforeunload' && (this.draft.tooLarge || this.draft.failed || this.draft.unread || this.draft.checking || this.draft.theirs !== null)) {
       event.preventDefault();
       return;
     }
@@ -429,6 +468,7 @@ export class Editor {
    */
   private key(event: KeyboardEvent) {
     if (event.isComposing || nativeOptionArrow(event)) return;
+    if (this.draft.locked && event.key !== 'Escape') return;
     const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
     const alt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (ctrl && event.key === 's') { event.preventDefault(); void this.draft.flush(); return; }
