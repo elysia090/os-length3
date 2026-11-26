@@ -20,6 +20,7 @@ test.beforeEach(async ({app}) => {
 });
 
 test('→ at the end, and Tab, complete a path in the repo, and say the choices when there are several', async ({app}) => {
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox;
   await box.fill('cat sr');
   await box.press('ArrowRight');
@@ -153,7 +154,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^whole$/m);
   });
 
-  test('exit ends the shell where it is: the terminal stays on the desk, how it ended its last line and no line to type at; the band\'s >_ starts a new shell in it', async ({app}) => {
+  test('exit ends the shell where it is: the terminal keeps its last output, with no line to type at until restarted there', async ({app}) => {
     const stand = app.forge.prompt.page().locator('.desk-term.stand');
     await app.forge.run('echo before');
     await app.forge.promptBox.fill('exit');
@@ -161,8 +162,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(stand.locator('.term.ended')).toBeVisible();
     await expect(stand).toBeVisible();
     await expect(app.forge.promptBox).toBeHidden();
-    await app.forge.tools.getByRole('button', {name: 'Terminal', exact: true}).click();
-    await expect(app.forge.promptBox).toBeFocused();
+    await app.forge.prompt.getByRole('switch', {name: 'Restart', exact: true}).click();
+    await expect(app.forge.promptBox).toBeVisible();
     await app.forge.run('echo again');
     await expect(app.forge.prompt.locator('.term-out')).toContainText(/^again$/m);
     await expect(app.forge.prompt.locator('.term-out')).not.toContainText('before');
@@ -319,7 +320,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // (Git is all desk too: no pane there lists what was run.)
     await app.rail.go('git');
     await expect(app.main.locator('.band-bench > .side')).toHaveCount(0);
-    await app.rail.go('forge');
+    await app.forge.use('Prompt');
     await expect(out.getByText('first-run', {exact: true})).toBeVisible();
   });
 
@@ -328,7 +329,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt).toContainText(/^kept-here$/m);
     for (const place of ['git', 'home'] as const) {
       await app.rail.go(place);
-      await app.rail.go('forge');
+      if (place === 'home') await app.rail.go('forge');
+      await app.forge.use('Prompt');
       await expect(app.forge.prompt).toContainText(/^kept-here$/m);
     }
   });
@@ -378,7 +380,10 @@ test.describe('the Prompt, started by writing to it', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
     await expect(app.main.getByRole('region', {name: /^In this browser/})).not.toContainText('Locked by an active Prompt');
     await app.rail.go('forge');
-    await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
+    await expect(app.forge.promptBox).toBeHidden();
+    await app.forge.use('Prompt');
+    await expect(app.forge.promptBox).toBeFocused();
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveAttribute('data-state', 'starting');
     // Written to, it starts; the line sent before its first prompt line runs once it is there.
     await app.forge.promptBox.fill('echo first');
     await app.forge.promptBox.press('Control+Enter');
@@ -407,6 +412,7 @@ test('on the desk Enter runs the Prompt\'s line, as a terminal\'s does, Shift+En
 
 test('the Prompt is a real terminal: colours as programs give them, a line rewritten in place, and vi has every key', async ({app}) => {
   test.setTimeout(240_000);
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
   await box.fill(`printf '\\033[1;31mred\\033[0m plain\\n'; for i in 1 2 3; do printf '\\rstep %s' $i; done; echo`);
   await box.press('Enter');
@@ -439,6 +445,7 @@ test('the Prompt is a real terminal: colours as programs give them, a line rewri
 
 test('what draws on a screen runs on it: a pager, an editor, top and htop, a picker; watch draws in place; each gives the line back', async ({app}) => {
   test.setTimeout(600_000);
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out'), screen = app.page.locator('.vt-screen');
   const p = app.page;
   // Each one's screen comes up saying what it shows, takes its keys, and goes; the box is the line one types at again.

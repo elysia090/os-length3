@@ -296,11 +296,14 @@ test('Git\'s column keeps its width whether it scrolls or not', async ({app}) =>
 test('Git is read and pressed: its box at the foot stands back until asked for, and back again once done with', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
+  const input = app.main.getByRole('textbox', {name: 'Prompt input', exact: true});
+  // The desk first binds the available repo. Before that, the same shortcut has no target.
+  await expect(input).toBeEnabled();
   // Not over the issue's buttons on arrival.
   const dock = app.main.locator('.dock:visible');
   await expect(dock).toHaveCSS('opacity', '0');
   await app.page.keyboard.press('Control+Backquote');
-  await expect(app.main.getByRole('textbox', {name: 'Prompt input', exact: true})).toBeFocused();
+  await expect(input).toBeFocused();
   await expect(dock).toHaveCSS('opacity', '1');
   await app.page.keyboard.press('Escape');
   await expect(dock).toHaveCSS('opacity', '0');

@@ -32,6 +32,8 @@ export interface DeskFile extends Laid {
   flush(): Promise<boolean>;
   /** A second view of the current draft, not a second owner of the file. */
   beside(grew: () => void): DeskFile | null;
+  /** The repo's name changed; this paper and its draft stay in place. */
+  renameRepo(to: string): void;
   /** Stop following the repo. */
   drop(): void;
 }
@@ -83,7 +85,8 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const cut = shown.lastIndexOf('/');
   const state = fileState();
   // Its place in "/", heard (its name is said over the box, seen), and what the file says of itself.
-  const head = h('h2', {class: 'desk-file-head'}, h('span', {class: 'sr-only'}, `/root/${repo}/${shown}`), state.el);
+  const address = h('span', {class: 'sr-only'}, `/root/${repo}/${shown}`);
+  const head = h('h2', {class: 'desk-file-head'}, address, state.el);
   const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
   const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
   const element = h('div', {class: 'desk-file', 'data-path': path, 'data-view': shared ? 'beside' : 'primary'}, head, sheet);
@@ -91,6 +94,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   let editor: Editor | null = null;
   const dropMenu = documentMenu(element, () => editor?.area ?? null, actions.beside);
   let dropView: (() => void) | undefined;
+  let renamedView: (() => void) | undefined;
   let revision = 0;
   let writer: string | null = null;
   let dropped = false;
@@ -193,7 +197,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
 
   function bind(draft: Draft) {
     number(draft.text);
-    const forget = shared ? null : openDrafts.register(repo, path, draft);
+    let forget = shared ? null : openDrafts.register(repo, path, draft);
     const e = editor = new Editor(draft, {path, companion: !!shared, head, sheet, gutter, number, state, flow: element,
       seen: () => grew(), recover: () => recover(draft), retry: () => retry(draft)});
 
@@ -203,16 +207,23 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       const lh = lineHeight(e.area);
       tell(element, line === null ? null : {top: e.area.offsetTop + (line - 1) * lh, height: lh});
     };
-    const unregister = shared ? null : editorOn(repo, path, {
-      take: (text) => {
+    const editing = {
+      take: (text: string) => {
         const was = draft.text, ok = draft.take(text);
         if (ok && text !== was) workAt(lineOf(text, firstDiffering(was, text)));
         return ok;
       },
       area: e.area,
-      gaze: (line) => { gaze(e.area, line); workAt(line); },
-      hand: (at) => handAt(e.area, at),
-    });
+      gaze: (line: number | null) => { gaze(e.area, line); workAt(line); },
+      hand: (at: number | null) => handAt(e.area, at),
+    };
+    let unregister = shared ? null : editorOn(repo, path, editing);
+    if (!shared) renamedView = () => {
+      unregister?.();
+      forget?.();
+      forget = openDrafts.register(repo, path, draft);
+      unregister = editorOn(repo, path, editing);
+    };
     // Written in on the line washed: it stays while the writing is on that line, its end following; a line broken or
     // written above it, it goes.
     e.area.addEventListener('input', () => {
@@ -234,6 +245,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     areaSize.observe(e.area);
     bodySize.observe(element);
     dropView = () => {
+      renamedView = undefined;
       unregister?.();
       forget?.();
       areaSize.disconnect(); bodySize.disconnect();
@@ -403,6 +415,14 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
     at,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
+    renameRepo(to) {
+      if (to === repo) return;
+      repo = to;
+      ++revision; // A read begun under the old name can no longer replace this paper.
+      address.textContent = `/root/${repo}/${shown}`;
+      renamedView?.();
+      if (!editor && !shared) void load();
+    },
     flush: () => editor?.draft.closeable() ?? Promise.resolve(true),
     beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {retry}, editor.draft) : null,
     drop: () => { dropped = true; dropMenu(); off?.(); offEarly?.(); dropView?.(); },

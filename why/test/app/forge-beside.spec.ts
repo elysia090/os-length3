@@ -319,3 +319,42 @@ test('an oversized full save is its own acknowledgment, not an unreadable outsid
   await expect(page.getByRole('group', {name: 'Recover unsaved changes'})).toHaveCount(0);
   await expect(editor).toHaveValue('Newer edit while the full write was being acknowledged.');
 });
+
+test('repo rename keeps both Forge views on the new repo, and their edit survives reload', async ({page}) => {
+  await page.route('**/webroot/**', (route) => route.abort());
+  const app = new App(page);
+  await page.goto(process.env.SELFTEST_APP!);
+  await app.settled();
+  await app.newRepo.make('pine');
+  const primary = app.forge.editor('README.md');
+  const companion = page.getByRole('textbox', {name: 'Edit README.md beside', exact: true});
+  await primary.press('Shift+F10');
+  await page.getByRole('menuitemcheckbox', {name: 'Beside', exact: true}).click();
+  await expect(companion).toBeFocused();
+
+  await app.rail.go('home');
+  const repos = app.main.getByRole('region', {name: 'Repos'});
+  await repos.getByRole('button', {name: 'Actions for pine'}).click();
+  const menu = repos.getByRole('menu', {name: 'Actions for pine'});
+  await menu.getByRole('menuitem', {name: 'Rename', exact: true}).click();
+  const name = menu.getByRole('textbox', {name: 'New name', exact: true});
+  await name.fill('cedar');
+  await name.press('Enter');
+  await expect(repos.getByRole('group', {name: 'cedar', exact: true})).toBeVisible();
+  await app.rail.go('forge');
+  await expect(app.forge.desk).toHaveAttribute('data-repo', 'cedar');
+  await expect(app.main.getByRole('heading', {name: /^\/root\/cedar\/README\.md/})).toHaveCount(2);
+  await expect(primary).toHaveValue('# pine\n');
+  await expect(companion).toHaveValue('# pine\n');
+
+  const text = '# pine\n\nPersisted after renaming.\n';
+  await companion.fill(text);
+  await companion.press('Control+s');
+  await expect(primary).toHaveValue(text);
+  await app.forge.find('Persisted after renaming');
+  await expect(app.forge.hit(/Persisted after renaming/)).toBeVisible();
+  await page.reload();
+  await app.settled();
+  await expect(app.forge.desk).toHaveAttribute('data-repo', 'cedar');
+  await expect(primary).toHaveValue(text);
+});

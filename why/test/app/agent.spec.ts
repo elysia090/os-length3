@@ -2,7 +2,7 @@ import type {Page} from '@playwright/test';
 import {expect, personName, test} from './fixtures.ts';
 
 // The Agent: an API key given in Runtime's Agent (beside the dotfiles, apart from them), and `agent` and what to do run
-// in the terminal on Forge's desk: the line is the person's, run there; the Agent's own terminal is born beside it, and
+// in the terminal on Forge's desk: the line is the person's, run there; the Agent's own terminal is laid on the desk, and
 // what it does and says comes there, played at a person's pace, the person's terminal left to them. The maker is played here (its key's form is Anthropic's): its list of models, a
 // ping, and each turn of its model's as `turns` says it (the conversation so far in, its next words and tools out).
 
@@ -34,7 +34,7 @@ async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[
 /** What the last tool given back said, in the conversation so far. */
 const given = (asked: Asked) => ((asked.messages.at(-1)?.content as {content?: string}[] | undefined)?.[0]?.content ?? '');
 
-test('a key given in Runtime: `agent` run in the terminal is asked of the Agent, whose own terminal is born beside it; taken away, the line says so', async ({app}) => {
+test('a key given in Runtime: `agent` run in Prompt is asked of the Agent, on its own piece of the desk; taken away, the line says so', async ({app}) => {
   const told: string[] = [];
   await maker(app.page, told, () => [{type: 'text', text: 'Run it so:\n\n```sh\nmake\n```\n'}]);
   await app.runtime.open('Agent');
@@ -47,6 +47,7 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   await app.rail.go('forge');
   // (The file in front: the one in hand on the desk.)
   await app.forge.editor('README.md').focus();
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox;
   await box.focus();
   await box.fill('agent How is it built?');
@@ -59,12 +60,15 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   await expect(agent.locator('.agent-asked')).toHaveText('How is it built?');
   await expect(agent.locator('.agent-words')).toContainText('Run it so:');
   await expect(agent.locator('.agent-words .answer-code')).toHaveText('make');
-  // (A piece of the desk, set down after the terminal it was asked in and before the files, on the row's line.)
-  const file = (await app.main.locator('.desk-box[data-key="README.md"]').boundingBox())!;
-  const beside = (await app.main.locator('.desk-box[data-key="agent"]').boundingBox())!;
+  // The Prompt stays in its own slot. The Agent is on the row beside the document, not in the Prompt's transcript.
+  await expect(app.forge.prompt).toBeVisible();
+  await expect(app.forge.prompt.getByRole('region', {name: 'Agent', exact: true})).toHaveCount(0);
+  const file = (await app.forge.piece('README.md').boundingBox())!;
+  const beside = (await app.forge.piece('agent').boundingBox())!;
   const order = await app.forge.desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.key));
-  expect(order.slice(0, 3)).toEqual(['term', 'agent', 'README.md']);
-  expect(beside.x + beside.width).toBeLessThan(file.x);
+  expect(order.slice(0, 2)).toEqual(['README.md', 'agent']);
+  expect(order).not.toContain('term');
+  expect(file.x + file.width).toBeLessThan(beside.x);
   expect(Math.abs(beside.y - file.y)).toBeLessThan(2);
   // Told the repo and the file in front, and nothing of it in the pane but the line run.
   expect(told[0]).toContain('"hello"');
@@ -80,6 +84,7 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   await app.main.getByRole('button', {name: 'Remove', exact: true}).click();
   await expect(app.main.getByRole('textbox', {name: 'API key'})).toBeVisible();
   await app.rail.go('forge');
+  await app.forge.use('Prompt');
   await box.focus();
   await box.fill('agent Again?');
   await box.press('Enter');
@@ -104,6 +109,7 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await app.page.reload();
   await app.settled();
   await app.rail.go('forge');
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox;
   await box.focus();
   await box.fill('agent Still there?');
@@ -131,6 +137,7 @@ test('handed an issue\'s work, the Agent reads and writes its files: its termina
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
   await app.rail.go('forge');
+  await app.forge.use('Prompt');
   const box = app.forge.promptBox;
   await box.focus();
   await box.fill('agent Say in the README how it is built.');
@@ -178,6 +185,7 @@ test('what the Agent changes on seeing a run is shown after that run\'s output, 
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
   await app.rail.go('forge');
+  await app.forge.use('Prompt');
   // When the run's output is first on the screen, and when the mended line first is.
   await page.evaluate(() => {
     const at = {ran: 0, mended: 0};

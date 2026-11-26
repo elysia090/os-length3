@@ -434,7 +434,7 @@ class Forge {
       desk.element.addEventListener('input', (e) => {
         const area = e.target as HTMLTextAreaElement;
         const path = area.closest<HTMLElement>('.desk-file')?.dataset.path;
-        if (path && area.selectionStart !== undefined) this.ctx.leftAt(repo, path, area.selectionStart);
+        if (path && area.selectionStart !== undefined) this.ctx.leftAt(name(), path, area.selectionStart);
       });
       // As it was left: the files along the row, the one in hand.
       const was = keptDesk(repo);
@@ -459,6 +459,7 @@ class Forge {
   /** `path` of `repo` laid on its desk `d` as a sheet (after the piece in hand, unless `how` says where). */
   private layFile(repo: string, d: Laid, path: string, how: {at?: number; instead?: string} = {}): DeskFile {
     const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
+      const repo = d.desk.element.dataset.repo!;
       const to = await renaming(repo, from, written);
       if (to === from) return;
       await moveFile(repo, from, to);
@@ -563,8 +564,17 @@ class Forge {
   /** Renamed: its desk under its new name. */
   renamed(from: string, to: string) {
     const d = this.desks.get(from);
-    if (d) { this.desks.delete(from); this.desks.set(to, d); d.desk.renamed(t('Files in {name}', {name: to}), to); }
-    if (this.now.repo === from) this.now.repo = to;
+    if (d) {
+      this.desks.delete(from);
+      this.desks.set(to, d);
+      d.desk.renamed(t('Files in {name}', {name: to}), to);
+      for (const f of d.files.values()) f.renameRepo(to);
+      d.beside?.file.renameRepo(to);
+    }
+    if (this.now.repo === from) {
+      this.now.repo = to;
+      this.work.setRepo(to);
+    }
     if (this.known === from) this.known = to;
   }
 

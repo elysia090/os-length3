@@ -29,8 +29,10 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
 .git-title { top: calc(var(--u) - var(--outer-top)); left: 0; }
 .forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: var(--t-word); padding-block: var(--sheet-inset-y); box-shadow: none; }
 .forge-layout .desk :is(.gutter, .code) { font-size: var(--t-word); }
-.forge-layout .desk-file { max-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
-.forge-layout .desk-file.long { height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
+/* The scrollable area and the blank space under its last line use the same paper insets. */
+.forge-layout .desk-file { --file-content-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); max-height: var(--file-content-height); }
+.forge-layout .desk-file.long { height: var(--file-content-height); }
+.forge-layout .desk-file.long > .sheet { padding-bottom: calc(var(--file-content-height) - var(--ahead, 0px)); }
 .forge-layout .desk-file-head > .file-read-notice:not(:empty) { align-self: flex-start; min-height: var(--line); line-height: var(--line); }
 .forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
 .forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: var(--t-word); }
