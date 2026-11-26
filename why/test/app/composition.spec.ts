@@ -116,7 +116,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const foot = el.closest('.board-talk > .timeline')?.querySelector(':scope > .tl-foot-mark');
     const pitch = code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
-      : tag ? paper!.getBoundingClientRect().top - 6 - pitch / 2
+      : tag ? paper!.getBoundingClientRect().top - pitch / 2
       : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
       : totals ? totals.getBoundingClientRect().top + pitch / 2

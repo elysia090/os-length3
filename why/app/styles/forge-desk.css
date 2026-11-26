@@ -49,11 +49,10 @@
 /* A file's sheet: whole lines, a cell of paper over and under them (the piece's own padding, never scrolled); its
    numbers quiet, a letter clear of its words, in the two cells before them; its words from the grid's line two cells
    in, a cell of paper after them. What is under its foot is scrolled to here, what is past its right edge in its text;
-   neither with the browser's bars (ui/scroll-marks.ts says where one is while it is scrolled). */
+   Forge's active document takes the native vertical thumb; its horizontal mark remains. */
 .desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - 2 * var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
-/* A file whose lines pass the world's lower third stands to the foot, its paper going on under its last line as far as
-   brings that line up to the lower third (--ahead, desk.ts): the room ahead of what is written last (DESIGN §2). */
-.desk-file.long { height: calc(var(--tallest, 100vh) - 2 * var(--line)); }
+/* A file whose lines pass the world's lower third has paper beyond its last line, bringing the line up to the
+   lower third (--ahead, desk.ts): the room ahead of what is written last (DESIGN §2). */
 .desk-file.long > .sheet { padding-bottom: calc(var(--tallest, 100vh) - 2 * var(--line) - var(--ahead, 0px)); }
 /* A sheet's proportions, whole cells (DESIGN §3): its numbers in two cells, at the words' size on their lines, a
    letter clear of them; forty-nine letters; a cell of paper. (A file of a thousand lines and more puts its words a

@@ -8,14 +8,14 @@ import {expect, test} from './fixtures.ts';
 
 /** In the page: of the pieces of a desk in sight, which hold each channel's top. */
 function channels(sel: string) {
-  const INK = 'rgb(23, 22, 21)', GROUND = getComputedStyle(document.body).backgroundColor;
+  const EDGE = 'rgb(104, 101, 92)', GROUND = getComputedStyle(document.body).backgroundColor;
   const pieces = [...document.querySelectorAll<HTMLElement>(sel)].filter((p) => { const r = p.getBoundingClientRect(); return r.width && r.right > 48 && r.left < innerWidth; });
   const name = (p: HTMLElement) => p.dataset.key ?? p.getAttribute('aria-label') ?? p.className.toString().slice(0, 30);
   const has = (p: HTMLElement, what: (c: CSSStyleDeclaration) => boolean) => what(getComputedStyle(p));
   return {
     all: pieces.length,
     filled: pieces.filter((p) => has(p, (c) => c.backgroundColor !== GROUND && c.backgroundColor !== 'rgba(0, 0, 0, 0)')).map(name),
-    inked: pieces.filter((p) => has(p, (c) => c.outlineColor === INK && c.outlineStyle !== 'none')).map(name),
+    inked: pieces.filter((p) => has(p, (c) => c.outlineColor === EDGE && c.outlineStyle !== 'none')).map(name),
     shadowed: pieces.filter((p) => has(p, (c) => c.boxShadow !== 'none')).map(name),
     keyboard: pieces.filter((p) => p.contains(document.activeElement)).map(name),
   };
@@ -34,7 +34,7 @@ test('one master holds every channel\'s top, and what is written goes to it alon
     for (const [channel, holders] of Object.entries({fill: c.filled, edge: c.inked, shadow: c.shadowed, keyboard: c.keyboard})) {
       expect(holders, `${key} in hand: the ${channel}`).toEqual([key]);
     }
-    await expect(app.forge.piece(key)).toHaveCSS('box-shadow', 'rgb(23, 22, 21) 4px 4px 0px 0px');
+    await expect(app.forge.piece(key)).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
     // What is written goes to the master alone: every servant's text is as it was.
     const before = await app.page.evaluate(() => [...document.querySelectorAll<HTMLTextAreaElement>('section.desk:not([hidden]) .desk-box:not(.held) textarea')].map((t) => t.value));
     await app.page.keyboard.press('Control+End');

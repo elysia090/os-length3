@@ -31,25 +31,73 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
 .git-title { top: calc(var(--u) - var(--outer-top)); left: 0; }
 .forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: var(--t-word); padding-block: var(--sheet-inset-y); box-shadow: none; }
 .forge-layout .desk :is(.gutter, .code) { font-size: var(--t-word); }
-/* The scrollable area and the blank space under its last line use the same paper insets. */
-.forge-layout .desk-file { --file-content-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); max-height: var(--file-content-height); }
-.forge-layout .desk-file.long { height: var(--file-content-height); }
+/* The scrollport owns the height. The sheet fills unused space for a press below the text, but the editor itself
+   is still fitted to its real lines. A short file needs no extra scroll range. */
+.forge-layout .desk-file {
+  --file-content-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y));
+  display: flex; flex-direction: column;
+  height: var(--file-content-height); max-height: var(--file-content-height);
+  margin-inline-end: var(--s1); scrollbar-gutter: stable; scrollbar-width: thin;
+  scrollbar-color: var(--file-thumb, transparent) transparent;
+}
 .forge-layout .desk-file.long > .sheet { padding-bottom: calc(var(--file-content-height) - var(--ahead, 0px)); }
+.forge-layout .desk-file > .file-ask { flex: none; }
 .forge-layout .desk-file-head > .file-read-notice:not(:empty) { align-self: flex-start; min-height: var(--line); line-height: var(--line); }
-.forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
+.forge-layout .desk-file > .sheet { flex: 1 0 auto; padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
+/* Keep the right-aligned numbers off the text without moving its column, for any number of digits. */
+.forge-layout .desk-file > .sheet > .gutter { inset-inline-start: calc(-1 * var(--s1)); }
 .forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: var(--t-word); }
-.forge-layout .desk-close { margin-block-end: 6px; }
-/* The desk remembers its selected paper, but only the hand exposes its actions. */
+.forge-layout .desk .desk-box:not([data-kind]) > .desk-label {
+  min-height: var(--u); max-width: calc(100% - var(--u)); margin-block-end: 0; align-items: center;
+}
+.forge-layout .desk .desk-box:not([data-kind]) .desk-name:not([contenteditable]) { overflow: hidden; text-overflow: ellipsis; }
 .forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-close { display: none; }
 .forge-layout .desk-room:not([data-place='Forge']) .desk-box[data-beside] { visibility: hidden; }
-.forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) { box-shadow: 4px 4px 0 var(--ink); }
 .forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held,
-.forge-layout .desk .desk-box.leaving:not(.held),
-body:has(.forge-document-menu) .forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) {
-  background: var(--ground); outline-color: var(--edge); color: var(--sub); box-shadow: none; }
+.forge-layout .desk .desk-box.leaving:not(.held) { background: var(--ground); outline-color: var(--edge); color: var(--sub); box-shadow: none; }
 .forge-layout .desk-box:not(.held) > .desk-label,
-.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held > .desk-label,
-body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: var(--sub); font-weight: 400; }
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held > .desk-label { color: var(--sub); font-weight: 400; }
+
+/* A drawn 2px grid under the words. The quiet documents take the desk's material without sharing a cast. */
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) {
+  --paper-base: var(--ground);
+  --paper-check: var(--forge-desk-grain);
+  outline-color: var(--edge);
+  color: var(--forge-desk-text);
+  background-color: var(--paper-base);
+  background-image: conic-gradient(var(--paper-check) 25%, var(--paper-base) 25% 50%, var(--paper-check) 50% 75%, var(--paper-base) 75%);
+  background-size: var(--s1) var(--s1);
+}
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) :is(.desk-label, .gutter) { color: var(--forge-desk-text); }
+body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] > .desk .desk-box.held:not([data-kind]) {
+  --paper-base: var(--paper);
+  --paper-check: var(--forge-paper-grain);
+  --file-thumb: var(--forge-paper-thumb);
+  outline-color: var(--forge-paper-edge);
+  box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
+  color: var(--ink);
+}
+body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
+body:not(:has(.forge-document-menu)) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) .desk-dir { color: var(--forge-desk-text); }
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .scroll-mark.down { display: none; }
+body:has(.forge-document-menu) .forge-layout .desk .desk-box > .desk-label { font-weight: 400; }
+body:has(.forge-document-menu) .forge-layout .desk .desk-close { display: none; }
+
+/* Where the written paper ends, its × sits outside the upper right, in the same row as the file name. */
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .desk-close,
+body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-title, .forge-open-folder) { color: var(--paper); }
+.forge-layout .desk-room[data-place='Forge'] .desk-close:focus-visible { outline-color: var(--paper); }
+body.forge-place:has(.desk-room[data-place='Forge']) .forge-places-key[aria-expanded='false'] { color: var(--forge-desk-text); }
+body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .forge-places-key):focus-visible,
+.forge-layout .desk-room[data-place='Forge'] > .row-map .row-piece:focus-visible { outline-color: var(--paper); }
+.forge-layout .desk-room[data-place='Forge'] > .row-map .row-piece:is([aria-current='true'], :hover, :focus-visible)::before { background: var(--paper); }
+@supports not (scrollbar-color: auto) {
+  .forge-layout .desk-file::-webkit-scrollbar-thumb { background: var(--file-thumb, transparent) padding-box; }
+}
+@media (forced-colors: active) {
+  .forge-layout .desk-file { scrollbar-color: auto; scrollbar-width: auto; }
+}
 
 .forge-places-key { position: fixed; top: 12px; right: 12px; z-index: 19; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); cursor: var(--cursor-hand); }

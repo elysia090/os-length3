@@ -88,7 +88,7 @@ test('Beside is a first-paper toggle and cannot close before the shared draft is
   await expect(right).toHaveValue('# pine\n');
   const paper = page.locator('.desk-box:has([data-view="beside"])');
   const source = page.locator('.desk-box:has([data-view="primary"])');
-  await expect(paper).toHaveCSS('box-shadow', 'rgb(23, 22, 21) 4px 4px 0px 0px');
+  await expect(paper).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
   await expect(source).toHaveCSS('box-shadow', 'none');
   await expect.poll(position).toEqual(before);
 

@@ -299,7 +299,8 @@ export class Editor {
   /**
    * Fitted to its text; out of sight (folded, or its page hidden) it cannot be measured: fitted again when it shows.
    * `typing`, with its text only added to since, it grows if it must and is not measured from nothing: that laid the
-   * page out twice at every keystroke, and most change no height at all.
+   * page out twice at every keystroke, and most change no height at all. Number the current rows first: in
+   * the sheet's grid a stale, taller gutter would stretch the auto-height textarea while it is being measured.
    */
   fit(typing = false) {
     const {area} = this;
@@ -320,8 +321,8 @@ export class Editor {
     const {area} = this, {selectionStart, selectionEnd, selectionDirection, scrollLeft, scrollTop} = area;
     area.value = text;
     area.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
-    this.fit();
     this.box.number(text);
+    this.fit();
     area.scrollTo(scrollLeft, scrollTop);
   }
 
@@ -447,9 +448,10 @@ export class Editor {
   }
 
   private typed() {
+    const text = this.area.value;
+    this.box.number(text);
     this.fit(true);
-    this.box.number(this.area.value);
-    this.draft.edit(this.area.value);
+    this.draft.edit(text);
   }
 
   private leaving = (event: Event) => {

@@ -2,7 +2,7 @@ import {expect, test} from './fixtures.ts';
 import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-layout.ts';
 
 /** The colours a piece is drawn in (styles/tokens.css): the desk's ground, paper, ink, and the terminal's green. */
-const GROUND = 'rgb(220, 217, 212)', PAPER = 'rgb(253, 250, 244)', INK = 'rgb(23, 22, 21)', GREEN = 'rgb(164, 234, 200)';
+const GROUND = 'rgb(220, 217, 212)', FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(240, 235, 223)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)', GREEN = 'rgb(164, 234, 200)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo
@@ -527,7 +527,7 @@ test('a piece whole in sight pressed is in hand where it lies, the caret where i
   expect(await desk.evaluate((d) => d.scrollTop)).toBe(0);
 });
 
-test('the desk is a row on the grid: a piece\'s place is its number in the row, every paper one width and a cell from the next, every top on one line, whichever is in hand; it turns as far as brings its last piece to the edge, and never down', async ({app}) => {
+test('the desk is a row on the grid: a piece\'s place is its number in the row, every paper one width and half a cell from the next, every top on one line, whichever is in hand; it turns as far as brings its last piece to the edge, and never down', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.forge.desk;
   await expect(desk.locator('.desk-plane > .desk-box')).not.toHaveCount(0);
@@ -684,17 +684,17 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
       close: !!close && getComputedStyle(close).display !== 'none', words: getComputedStyle(words).color,
       inView: r.x >= 24 && r.right <= innerWidth};
   }));
-  const quiet = (paper: Awaited<ReturnType<typeof look>>[number]) => {
+  const quiet = (paper: Awaited<ReturnType<typeof look>>[number], ground = FORGE_GROUND) => {
     expect({ground: paper.ground, shadow: paper.shadow, close: paper.close, quieter: paper.words !== INK && paper.words !== GREEN})
-      .toEqual({ground: GROUND, shadow: 'none', close: false, quieter: true});
+      .toEqual({ground, shadow: 'none', close: false, quieter: true});
   };
   for (const key of ['README.md', 'src/main.c']) {
     await app.forge.editor(key).focus();
     await expect(app.forge.piece(key)).toHaveClass(/held/);
     const all = await look(), hand = all.find((b) => b.key === key)!;
-    expect(hand).toMatchObject({ground: PAPER, shadow: `${INK} ${SHADOW}px ${SHADOW}px 0px 0px`, words: INK, close: true});
+    expect(hand).toMatchObject({ground: PAPER, shadow: `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`, words: INK, close: true});
     const rest = all.filter((b) => b.key !== key);
-    rest.forEach(quiet);
+    rest.forEach((paper) => quiet(paper));
     const other = rest.find((b) => b.inView)!;
     await app.forge.piece(other.key).hover({position: {x: 8, y: 8}});
     quiet((await look()).find((b) => b.key === other.key)!);
@@ -705,11 +705,11 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
   await expect(term).toHaveCSS('background-color', INK);
   await expect(term).toHaveCSS('box-shadow', 'none');
   await expect(app.forge.promptBox).toHaveCSS('color', GREEN);
-  (await look()).forEach(quiet);
+  (await look()).forEach((paper) => quiet(paper, GROUND));
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();
   await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect(app.forge.piece('src/main.c')).toHaveCSS('box-shadow', `${INK} ${SHADOW}px ${SHADOW}px 0px 0px`);
+  await expect(app.forge.piece('src/main.c')).toHaveCSS('box-shadow', `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`);
 });
 
 test('Shift+N makes a new file beside the one in hand where nothing is being written; written in a file, it is an N', async ({app}) => {

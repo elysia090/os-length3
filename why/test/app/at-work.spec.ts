@@ -6,15 +6,15 @@ import {across, emptiness, emptyIn} from './weigh.ts';
 //
 //   eye-trace     the piece in hand is at the desk's edge, where the eye is after a move, unless it was pressed:
 //                 then it is where it was pressed, under the hand
-//   look room     the line written never stands in the third of the world it goes towards; a file whose lines pass
-//                 the lower third stands to the foot, paper ahead of its last line; the terminal's last line, where its
+//   look room     the line written never stands in the third of the world it goes towards; a file keeps its full
+//                 surface, and only real lines past the lower third add room ahead of the last line; the terminal's last line, where its
 //                 work is, out of the lower third
 //   no jump       from one rest to the next a thing stands where it stood or has gone at least a cell
 //   order kept    what is left of what is not reversed
 //   weight        the weight of what is drawn lies left of the world's middle, the room ahead to the right, and the
 //                 lower right of the world at least as empty as its upper left
 
-const U = 24, F = 2 * U, PAPER_TOP = 90, PAPER_INSET = 12, LINE = 19, SHADOW = 4;
+const U = 24, F = 2 * U, PAPER_TOP = 90, PAPER_INSET = 12, SHADOW = 4;
 type Box = [number, number, number, number];
 type Rest = {pieces: Record<string, Box>; held: string; caret: {top: number; foot: number; ahead: number; letter: number} | null; lower: number; upper: number; H: number};
 
@@ -91,14 +91,9 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
       await page.keyboard.type(`A line written, number ${i}.`);
       if (i % 4 && i !== lines) continue;
       r = await at(`line ${i} written`);
-      // Writing moves nothing but the line written: the piece where it stood, growing by whole lines from its top.
+      // Writing moves nothing outside the paper: it stands to the same foot from the first line onward.
       expect(r.pieces['README.md']!.slice(0, 2), `line ${i}: README where it stood`).toEqual([F, PAPER_TOP]);
-      const paperHeight = r.pieces['README.md']![3];
-      const shortPaper = 2 * PAPER_INSET + (i + 2) * LINE;
-      // A short paper fits its rendered lines; the browser may round the text area's scroll height up by two pixels.
-      // A long paper stands to the foot. The change of height never moves its name or its neighbours.
-      expect((paperHeight >= shortPaper && paperHeight <= shortPaper + 2) || paperHeight === tallPaperFoot - PAPER_TOP,
-        `line ${i}: short paper fits its lines, or the long paper stands at the foot (${paperHeight}px)`).toBe(true);
+      expect(r.pieces['README.md']![3], `line ${i}: same height from first line to last`).toBe(tallPaperFoot - PAPER_TOP);
       // Look room: the line written never in the lower third.
       expect(r.caret!.foot, `line ${i}: the line written out of the lower third`).toBeLessThanOrEqual(r.lower + .5);
     }

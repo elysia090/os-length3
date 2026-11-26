@@ -289,6 +289,8 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       dropView?.(); dropView = undefined;
       editor = null;
     }
+    // A read-only preview scrolls its actual content, without a writer's look-ahead room.
+    element.classList.remove('long');
     if (c.text === null) {
       state.el.textContent = '';
       sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)})));
@@ -357,8 +359,8 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   if (shared) bind(shared); else void load();
 
   /**
-   * A file whose lines pass the world's lower third stands to the window's foot, with paper under its last line up to
-   * that third: the room ahead of the line written last (DESIGN §2, look room). Shorter, it is as tall as its lines.
+   * The working surface is always full height, but only real lines past the lower third call for room
+   * to write ahead of the last line (DESIGN §2). The fitted textarea measures text, not empty paper.
    */
   function stand(area: HTMLTextAreaElement) {
     const foot = parseFloat(getComputedStyle(element).getPropertyValue('--ahead'));

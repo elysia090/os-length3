@@ -208,3 +208,23 @@
 @supports (transition-timing-function: linear(0, 1)) {
   :root { --spring: linear(0, 0.062, 0.192, 0.338, 0.477, 0.596, 0.694, 0.771, 0.831, 0.877, 0.911, 0.937, 0.955, 0.969, 0.979, 0.986, 0.991, 0.994, 0.997, 0.999, 1); }
 }
+
+/* Forge's document table: the same light on an unraised desk and one sheet in hand.
+   These colors do not replace the app's general palette or the Prompt's colors. */
+body.forge-place:has(.desk-room[data-place='Forge']) {
+  --ground: var(--nighthawks-ground);
+  --dots: var(--nighthawks-dots);
+  --paper: var(--nighthawks-paper);
+  --sub: var(--nighthawks-paper-sub);
+  --quiet: var(--sub);
+  --rule: var(--nighthawks-rule);
+  --raised: #ded9d0;
+  --slot: var(--nighthawks-paper-selected);
+  --edge: var(--nighthawks-desk-disabled);
+  --forge-desk-text: var(--nighthawks-desk-quiet);
+  --forge-desk-grain: #43463e;
+  --forge-paper-grain: #e4ded1;
+  --forge-paper-edge: #68655c;
+  --forge-paper-shade: var(--nighthawks-shadow);
+  --forge-paper-thumb: #837d71;
+}

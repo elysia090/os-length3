@@ -620,44 +620,31 @@ new one. (Before: the Prompt was a box at the center's foot, under the desk,
 52 px high at rest and raised over the desk to run; before that the first box
 of the desk.)
 
-**A file** is a sheet of paper, its corner 10 px as a key of the band's is
-(every sheet's: the terminal's, File's tree, Home's note and slip; at 3 px the
-sheets read harder than everything round them), fifty letters wide
-(552 px), written in where it lies, in the code face at the size one writes
-at (16.5 px, a line a cell), its line numbers quiet in a margin a cell and a
-half wide. Its name stands over its top-left corner (mono 700, 20 px; its
-folder before it), its close over its top-right, there under the pointer. A
-sheet is as tall as its lines and never lower than two cells over the
-window's foot: what is under that, and what is past its fiftieth letter, is
-scrolled to inside it. Where a sheet (or the terminal, or the desk itself)
-is scrolled to is said only while it is scrolled and a moment after
-(700 ms): a bar 4 px thick, cut square, just inside the edge it is scrolled
-along, as long as the part in sight is of the whole. At rest nothing is
-drawn, and there is no scrollbar to take.
+**A file** is a work surface even before a line is written. The open
+documents are 576 px wide at full measure, 12 px apart and top-aligned.
+At 1536 × 864 each stands at y=90, 744 px tall; 720 px of that is its
+scrollport, room for 37 full lines at a 19 px pitch. A short, long or blank
+file owns the same space. Only actual lines are numbered. A press below the
+text puts the caret at its end, never adds lines. Real lines past the lower
+third keep the established room ahead of the caret. Scroll longer text
+inside the sheet, with the active document's native vertical thumb; only
+the actual horizontal overflow uses the transient edge mark. The
+right-aligned numbers sit 4 px further from the text than the track's
+alignment edge. The close is a 24 px button, an × at the right of the file
+name's row, outside the sheet, and closes only the view. Forge's 2 px drawn
+grid is inside each sheet, not an overlay on the words. Just the document
+in hand has the lightest material and its one 4 px cast.
 
-**In hand.** One piece is in hand: the hard shadow, a cell right and a cell
-down, is under it alone (ink under a file, green under the terminal, whose
-shadow is always there). A piece pressed is in hand, the caret where it was
-pressed. Pressed twice (on its paper, not on a word of the piece already in
-hand, where two presses choose the word), a piece is 1.7 times as large,
-letters, lines and width together (28 px letters), and is the page's one
-sheet: brought to the desk's edge under the band's keys wherever it lay
-(the terminal gone off that edge), its shadow as much longer and its name as
-much larger as it is nearer the eye, the next sheet's edge showing past it.
-Pressed twice again, or Escape on the desk, it is its own size where it
-lies in the row. (Made larger where it lay, the desk turned a little to fit
-it and left the terminal cut in half by the rail's corner: the window's
-upper left looked wrong.)
+**In hand.** The file taken up is in the bright paper's ink and the others
+stay on the ground. A press inside it puts the caret where it was pressed;
+two presses select a word, not a different sized sheet. The × closes only
+the sheet after its edits are saved.
 
-**Turning the desk.** The desk is turned only along the row, and only as far as
-brings the piece in hand whole into sight with its shadow: a piece in sight
-is not moved by being taken (but for the files' making room as the terminal
-opens and closes). The wheel over bare ground turns it; over a
-piece the wheel is that piece's own scroll and never the desk's. Turned as
-far as its first piece, the terminal stands at the desk's edge, where the
-band's keys start. (Before: boxes 80 columns wide in columns, one under
-another, the one in hand brought to the middle of the face by a camera; one
-box could be put beside the desk as a second screen.)
+**Turning the desk.** The desk turns along the row, never down. A piece
+pressed while fully in sight stays under the hand. The keyboard and the
+row's map can take a piece to the desk's edge; the same stops fit a narrow
+window. The wheel over a paper scrolls that paper itself, not past it into
+the desk.
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the

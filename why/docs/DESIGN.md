@@ -643,6 +643,12 @@ being worked in.
 
 **A piece's proportions on a desk.**
 
+Forge's document row fits this rule to editing: each sheet stays at the
+same full working height as its neighbors, regardless of the number of
+lines. Their closer half-cell seams, written surface and real scrollbar
+are specified in [PLACES.md](PLACES.md#forge). Look room still starts with
+the real lines; the empty sheet is not empty lines.
+
 - Its top is at y = 72, a cell under the band. Its name stands in the cell over its top-left corner: mono 700 on a
   line of a cell, its folder quiet before it, the dots of the cells it takes under it.
 - It is as tall as its lines, never lower than a cell over the window's foot; what is under that is scrolled to
