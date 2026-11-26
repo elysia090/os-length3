@@ -14,6 +14,8 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await b.store.create('hello', 'standard');
   await b.store.mkdir('hello', 'src');
   await b.store.add('hello', 'src', 'main.c', 'int main(void) {\n    return 1;\n}\n');
+  await b.store.add('hello', 'src', 'boot.c', 'int boot = 0;\n');
+  await b.store.add('hello', 'src', 'zz-tail.c', 'int end = 0;\n');
   await b.store.mkdir('hello', 'issue');
   await b.store.add('hello', 'issue', '001.md', 'Fix: Return an error when output fails\n\nFlush stdout before returning, so a failed write reaches the caller.\n');
   await b.draft.sync('hello');
@@ -70,7 +72,8 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   const foot = page.locator('.git-paper-review');
   const diff = page.getByRole('region',{name:'Diff',exact:true});
   const frame = () => diff.evaluate((el) => {
-    const head = el.querySelector('.git-diff-head')!, paper = el.closest('.git-paper')!;
+    const at = el.getBoundingClientRect(), paper = el.closest('.git-paper')!;
+    const head = [...el.querySelectorAll('.git-diff-head')].find(h => h.getBoundingClientRect().bottom > at.top + 1)!;
     const start = getComputedStyle(head), end = getComputedStyle(el, '::after');
     const wordsAt = (selector: string) => {
       const range = document.createRange();
@@ -78,11 +81,12 @@ test('real Git paper posts only explicitly, and a comment links to the original 
       const {top, height} = range.getBoundingClientRect();
       return top + height / 2;
     };
-    const at = el.getBoundingClientRect(), open = head.getBoundingClientRect();
+    const open = head.getBoundingClientRect();
     return {
       start: [start.borderBottomWidth, start.borderBottomColor, start.inlineSize],
       end: [end.blockSize, end.backgroundColor, end.inlineSize],
       left: [open.left, at.left], startY: open.bottom,
+      viewport: [at.top, at.bottom, at.height],
       gap: paper.querySelector('.git-paper-review')!.getBoundingClientRect().top - at.bottom,
       words: ['.git-total-files', '.git-review-comment', '.git-review-approve'].map(wordsAt),
       overflow: el.scrollHeight - el.clientHeight,
@@ -120,6 +124,8 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await expect(step('Merge')).toBeEnabled();
 
   const longLines = Array.from({length: 24}, (_,n) => '    // ' + n + ' ' + 'keep the changes readable '.repeat(5)).join('\n');
+  await b.store.write('hello', 'src/boot.c', 'int boot = 1;\n');
+  await b.store.write('hello', 'src/zz-tail.c', 'int end = 1;\n');
   await edit(`/* Second submit */\nint main(void) {\n${longLines}\n    return 4;\n}\n`);
   await step('Submit').click();
   await expect(page.getByRole('button',{name:'Version 2',exact:true})).toBeVisible();
@@ -127,11 +133,33 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await page.getByRole('button',{name:'Version 2',exact:true}).click();
   await expect.poll(() => diff.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
   const long = await frame(), pageTop = await page.evaluate(() => scrollY);
+  expect(long.viewport).toEqual(short.viewport);
+  expect(long.words).toEqual(short.words);
+  expect(long.start).toEqual(short.start);
+  const first = diff.getByRole('button', {name:'src/boot.c',exact:true});
+  const last = diff.getByRole('button', {name:'src/zz-tail.c',exact:true});
+  await expect(first).toBeInViewport({ratio:1});
+  await expect(diff.locator('.git-diff-name').first()).toHaveText('src/boot.c');
+  await expect(diff.locator('.git-diff-file').first().locator('.git-diff-line')).toHaveCount(2);
+  await expect(last).not.toBeInViewport();
   await diff.evaluate((el) => { el.scrollTop = 180; el.scrollLeft = 120; });
   await expect.poll(() => diff.evaluate((el) => [el.scrollLeft,el.scrollTop])).toEqual([120,180]);
   expect(await page.evaluate(() => scrollY)).toBe(pageTop);
   rules(await frame());
   expect((await frame()).startY).toBe(long.startY);
+
+  // The leading file is short. The other file's real heading, rows and fold are still reached in the same scrollport.
+  await diff.hover();
+  await page.mouse.wheel(0, 1600);
+  await expect(last).toBeInViewport({ratio:1});
+  expect(await page.evaluate(() => scrollY)).toBe(pageTop);
+  expect((await frame()).viewport).toEqual(short.viewport);
+  await expect(diff.getByRole('button', {name:'After: line 1 in src/zz-tail.c',exact:true})).toBeInViewport({ratio:1});
+  await last.click();
+  await expect(last).toHaveAttribute('aria-expanded', 'false');
+  await last.click();
+  await expect(last).toHaveAttribute('aria-expanded', 'true');
+  await expect(diff.getByRole('button', {name:'After: line 1 in src/zz-tail.c',exact:true})).toBeInViewport({ratio:1});
 
   await expect(page.getByText('return 4;', {exact:true})).toBeVisible();
   await expect(step('Merge')).toBeDisabled();

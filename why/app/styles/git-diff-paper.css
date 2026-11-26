@@ -9,18 +9,22 @@
   position: relative;
   box-sizing: content-box;
   container-type: inline-size;
-  block-size: calc(var(--git-diff-rows) * var(--u) + var(--s2) + 2px);
+  block-size: calc(var(--u) + var(--s2) + 2px);
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--rule) transparent;
 }
+/* One opening line and eleven reading lines, whether the file fills them or not. The closing rule belongs to
+   the reading area, and the one scrollport owns every file. */
+.git-diff-scroll:has(> .git-diff-files) { block-size: calc(12 * var(--u) + var(--s2) + 2px); }
 /* The matching end rule stays inside the reading width, above any scrollbar, while the rows move under it. */
-.git-diff-scroll:has(> .git-diff-file)::after {
+.git-diff-scroll:has(> .git-diff-files)::after {
   content: '';
   position: sticky;
   inset-inline-start: 0;
@@ -33,7 +37,8 @@
   background: var(--rule);
   pointer-events: none;
 }
-.git-diff-file { flex: none; inline-size: max-content; min-inline-size: 100%; }
+/* All files share one width so a short file's name and number gutter can still pin at a horizontal offset. */
+.git-diff-files { flex: none; inline-size: max-content; min-inline-size: 100%; }
 .git-diff-head {
   position: sticky;
   inset: 0 auto auto 0;
