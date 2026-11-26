@@ -1368,19 +1368,20 @@ row, in its own place. Done, the place says what it came to where it is (the
 row's result over the box; the card becomes the Remote's, takes its new name,
 or goes).
 
-- **この端末**: one bar of the host's whole, with this OS's share darker
-  (not an ink fill, which means current), and three figures: this OS, free,
-  total. This OS is counted from allocated blocks, so a sparse file counts
-  what it holds and a file with several hard links counts once; the host's
-  free and total are marked 推定, because other programs change them too.
-- Under it, one box in three columns, as tall as the longest (not a tall
-  empty box when there is little): what is **in this browser**
-  (on this device) at the left, what is **only on the Remote** (fetched with a
-  press; all of it here too, it says so) in the middle, and what **can be
-  freed** at the right (nothing, it says the reason is on each row that
-  stays: not on the Remote yet, a Prompt running in it). In each, **one list, largest first**, of everything this OS holds: each
-  repo, each root of the distribution, each leftover, Home. A row is the
-  thing, its size, and at its end what can be done:
+- **この端末**: one reading at the upper left, the total this OS holds locally.
+  One horizontal strip partitions those same bytes into what can go now,
+  what goes only after sending, what stays, and any separately estimated browser
+  storage. No minimum drawn width pretends a few bytes are a large share.
+  The host's available space and total or quota are independent facts at the
+  other end, marked 推定 only where estimated; when unavailable, neither is
+  drawn as zero. The local parts switch across the same paper: plain words,
+  with only the chosen word underlined.
+- Below it, a narrower left-aligned inventory: **in this browser** (on this
+  device) shows each thing once, with its bytes and the outcome of freeing it.
+  The row's action, and its confirmation, open at that row. **Remote only**
+  follows as a separate group: its contents do not count toward the local
+  strip, and Fetch appears in an item's own actions. A row is the thing, its
+  size, and its actions:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
     has (it comes back when opened), a root that is neither the current one
     nor one a Prompt runs on (the Remote has the release), a temporary this
@@ -1408,8 +1409,9 @@ or goes).
     lift (no Remote) is the one said. Why (and what
     freeing does) is a line of its own under the row's facts, read whole,
     never cut short; a Prompt stopped or started reads it again at once.
-  Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
-  to say what happened, as two things that are not one: what this device
+  When several items can go, 全部空ける at the local heading opens a confirmation
+  with the measured size, the number of things, and whether they must first be
+  sent; cancelling changes nothing. Freeing stays to say what happened, as two things that are not one: what this device
   had allocated and let go (counted from the files' blocks before removal:
   Verified), and the host's free space as it was observed to change and how
   long it took to show (a file still linked from elsewhere or held open is

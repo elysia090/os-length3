@@ -1,39 +1,12 @@
-/* Runtime's storage: this OS's share of the bar, its legend, what can be given back. */
-
-/* Storage: this OS's part the darker share of the bar (not an ink fill, which means current), never too thin to see;
-   everything else's the lighter. */
-/* (The bar is a line of its own, a cell, the bar in its middle: what is under it stays on the grid. Its room under
-   it is the legend's, so the two do not run together.) */
-.device-part .space-meter { display: flex; border-color: var(--rule); margin-top: calc((var(--u) - var(--s2)) / 2); }
-.space-meter + .legend { margin-top: var(--u); }
-.space-meter > span { flex: none; background: var(--edge); }
-.space-meter > span.app { min-width: 3px; background: var(--sub); }
-.legend { margin-top: var(--u); display: flex; flex-wrap: wrap; gap: 0 var(--s5); }
-/* Over the box of three columns, the three figures stand over the three columns (each from its column's own left
-   margin), not bunched at the box's left. (The meter stays on the line every page's first box starts on.) */
-.device-part > .legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0 1px; }
-.device-part > .legend > span { min-width: 0; padding-inline: var(--s4); }
-.device-part > .legend > span + span { padding-inline-start: calc(var(--s4) + 1px); }
-.device-part .legend b { font-variant-numeric: tabular-nums; }
-.device-part .legend small { margin-inline-start: var(--s1); }
-@media (max-width: 900px) {
-  .device-part > .legend { padding-inline: calc(var(--s4) + 1px); gap: var(--s2); }
-  .device-part > .legend > span, .device-part > .legend > span + span { padding-inline: 0; }
-}
-.legend b { font-size: var(--t-word); font-weight: 700; display: block; }
-/* Runtime: each repo's share, what can be given back, Prompts running */
+/* Shared rows used outside Runtime. */
 .usage-prompt { align-items: center; }
 .usage-prompt .button { min-height: var(--h-control); padding-block: 0; }
-.reclaimed { display: grid; gap: 0; margin-bottom: var(--u); }
 .work-act .grow { flex: 1; }
-.legend + .reclaimed { margin-top: var(--u); }
 .row-item[data-room='Keep'] .row-name { color: var(--sub); }
 .remote-join { display: grid; gap: var(--s3); max-width: 560px; }
 .remote-join .line-in { flex: 1; }
 
-/* Forge: a band of repo chips set low, the center (3/4) an endless page of
-   files with a prompt box at its foot, and a narrow side (1/4) that stays out
-   of the way. The only line is the one between the center and the side. */
+/* Forge's original work frame; the desks specialize it in their own styles. */
 .page.page-work { padding: 0; height: var(--inner-h); overflow: hidden; }
 .page.page-work > .work { max-width: none; }
 .work.no-strip { grid-template-rows: minmax(0, 1fr); }

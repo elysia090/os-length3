@@ -13,8 +13,7 @@ import {askFirst} from './repo-off.ts';
 import type {Context} from '../kit/context.ts';
 import {wayOut} from '../../ui/way-out.ts';
 
-// A repo's gear, the same in every list of repos (Home's cards, Runtime's
-// three columns): near a repo (the pointer on it, or the keyboard in it) a
+// A repo's gear, the same in every list of repos (Home's cards and Runtime): near a repo (the pointer on it, or the keyboard in it) a
 // small gear shows at its edge; pressed, it offers what is done to the repo
 // itself from a list, each chosen on its own and never one after the other:
 //
@@ -38,10 +37,14 @@ import {wayOut} from '../../ui/way-out.ts';
 // (repo-list.ts, runtime/device.ts).
 
 interface GearWays {
-  /** A row reading across several columns uses the same directional choice as Places. */
+  /** An inline inventory row offers directional choice as Places does. */
   arrowKeys?: boolean;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
   why(): Promise<string | null>;
+  /** An unsent copy is not yet preserved by Remote. Say what must happen before release. */
+  afterSend?: string;
+  /** Runtime can explicitly retrieve a remote-only copy without opening its editor. */
+  fetch?(): Promise<void>;
   /** Free it from this device (refused: why, said in the ask). */
   free(): Promise<void>;
   /** Freed, renamed or deleted, once the list is put away: the place draws itself again and shows what it came to. */
@@ -59,6 +62,8 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
   const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys);
+  let fetching = false;
+  let fetchError = '';
   /** Done (renamed, freed, deleted): the list is put away and the place drawn again as it is now. */
   const done = () => { show(false); w.freed(); };
 
@@ -80,6 +85,28 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
       const place = menuItem(t('View on Remote'), 'remote');
       place.addEventListener('click', () => { show(false); openRepoPlace(ctx, repo); });
       rows.push(place);
+    }
+    const retrieve = w.fetch;
+    if (!here && retrieve) {
+      const fetch = menuItem(t('Fetch'), 'download');
+      const problem = h('p', {class: 'error small pop-note storage-error', role: 'alert'}, fetchError);
+      fetch.disabled = fetching;
+      fetch.addEventListener('click', async () => {
+        if (fetching) return;
+        fetching = fetch.disabled = true;
+        fetchError = problem.textContent = '';
+        gear.setAttribute('aria-busy', 'true');
+        try { await retrieve(); done(); }
+        catch (e) {
+          fetchError = problem.textContent = errorText(e);
+          fetch.disabled = false;
+          if (list.contains(fetch) && !list.hidden) fetch.focus();
+        } finally {
+          fetching = false;
+          gear.removeAttribute('aria-busy');
+        }
+      });
+      rows.push(fetch, problem);
     }
     if (here && !there) {
       const rename = menuItem(t('Rename'), 'pen');
@@ -118,7 +145,8 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const error = h('p', {class: 'error small', role: 'alert'});
     const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Remove {repo} from device (free space)', {repo})},
       h('p', {class: 'muted small'}, t('{repo} will be removed from this device.', {repo})),
-      h('p', {class: 'muted small'}, t('Preserved on Remote; re-downloads when opened.')), stops ? stopsFirst() : null, error, foot(no, yes));
+      h('p', {class: 'muted small'}, w.afterSend || t('Preserved on Remote; re-downloads when opened.')),
+      w.afterSend ? h('p', {class: 'muted small'}, t('Copies stay on Remote.')) : null, stops ? stopsFirst() : null, error, foot(no, yes));
     no.addEventListener('click', () => { ask.replaceWith(free); free.focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {

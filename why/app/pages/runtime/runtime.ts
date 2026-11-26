@@ -38,27 +38,41 @@ export function runtime(ctx: Context): Node[] {
     {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}], undefined, 'quiet');
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
   let last: Freed | null = null;
-  // Drawn at once from what the core last measured, then, if some of it was that, measured now and drawn again where
-  // it differs (what is drawn the same is left as it is).
-  let drawn = '';
-  const read = (fresh = false): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
-    // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
-    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
-    const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
-    if (now !== drawn) {
-      drawn = now;
-      // A closed menu can be followed by a just-finished sync: keep its real key, in its own column.
-      const at = document.activeElement;
-      const old = at instanceof HTMLElement && holder.contains(at) && at.matches('.repo-gear-button') ? at : null;
-      const col = old?.closest('.space-col')?.getAttribute('aria-labelledby');
-      const key = old?.getAttribute('aria-label');
-      holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
-      if (col && key) holder.querySelector<HTMLElement>(`.space-col[aria-labelledby="${CSS.escape(col)}"] .repo-gear-button[aria-label="${CSS.escape(key)}"]`)
-        ?.focus({preventScroll: true});
-    }
-    if (u.kept && holder.isConnected) read(true);
-  },
-    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
+  let requestedFocus: string | undefined;
+  let drawn = '', generation = 0;
+  let waiting: ReturnType<typeof setTimeout> | undefined;
+  const inHand = () => !!holder.querySelector(
+    '.repo-gear-button[aria-expanded="true"], [aria-busy="true"], .storage-batch-ask');
+  const read = (fresh = false): void => {
+    const g = ++generation;
+    clearTimeout(waiting);
+    const defer = () => { waiting = setTimeout(() => { if (holder.isConnected) read(fresh); }, 350); };
+    if (holder.isConnected && inHand()) { defer(); return; }
+    void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
+      if (g !== generation) return;
+      if (holder.isConnected && inHand()) { defer(); return; }
+      const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
+      if (now !== drawn) {
+        drawn = now;
+        const at = document.activeElement;
+        const onSheet = holder.contains(at);
+        const requested = onSheet || at === document.body ? requestedFocus : undefined;
+        const key = requested ?? (onSheet && at instanceof HTMLElement ? at.dataset.spaceFocus : undefined);
+        requestedFocus = undefined;
+        holder.replaceChildren(device(ctx, u, last, (r, focus) => { last = r; requestedFocus = focus; read(); }));
+        if (key && holder.isConnected && !holder.closest('[hidden]')) {
+          const find = (id: string) => holder.querySelector<HTMLElement>(`[data-space-focus="${CSS.escape(id)}"]`);
+          (find(key) ?? find('here-col'))?.focus({preventScroll: !requested});
+        }
+      }
+      if (u.kept && holder.isConnected) read(true);
+    }, (e) => {
+      if (g !== generation) return;
+      if (holder.isConnected && inHand()) { defer(); return; }
+      drawn = '';
+      holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)}))));
+    });
+  };
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
