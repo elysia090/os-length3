@@ -97,14 +97,26 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await page.evaluate(() => history.back());
   await expect(input).toBeFocused();
   await expect(suggested.getByRole('button')).toHaveCount(3);
-  const at = await input.boundingBox();
-  expect(at!.x + at!.width / 2).toBe(195);
+  const form = stage.getByRole('search'), lensInside = form.locator('svg.mark');
+  const at = (await input.boundingBox())!;
+  const inner = (await lensInside.boundingBox())!;
+  expect(at.x + at.width / 2).toBe(195);
+  await expect(lensInside).toHaveAttribute('aria-hidden', 'true');
+  expect([inner.x - at.x, inner.width, inner.height, at.height]).toEqual([16, 18, 18, 48]);
+  expect(inner.y + inner.height / 2).toBe(at.y + at.height / 2);
   await input.fill('return');
   await expect(suggested).toHaveCount(0);
   const hit = stage.getByRole('button', {name: /src\/main\.c.*return 0/});
   await expect(hit).toBeInViewport({ratio:1});
   expect(await input.boundingBox()).toEqual(at);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
+  // Chrome's native clear button is inside the writing field, 27 px from the right edge.
+  await input.click({position: {x: at.width - 27, y: at.height / 2}});
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+  await expect(suggested.getByRole('button')).toHaveCount(3);
+  expect(await input.boundingBox()).toEqual(at);
+  await input.fill('return');
   await hit.click();
   await expect(forge.editor('src/main.c')).toBeFocused();
   await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 0;');

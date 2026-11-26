@@ -28,15 +28,23 @@
   --ground: var(--nighthawks-paper); --paper: var(--nighthawks-paper);
   --sub: var(--nighthawks-paper-sub); --rule: var(--nighthawks-rule);
   --quiet: var(--sub); --slot: var(--nighthawks-paper-selected);
-  background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-key);
+  background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-field) var(--r-field) var(--r-key) var(--r-key);
   box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
 }
+/* The query is written on the top of one sheet. The rim and shadow belong to the sheet, not a nested field. */
+.search-screen-form { position: relative; }
+.search-screen-form > .mark {
+  position: absolute; z-index: 1; left: var(--s4); top: 50%; translate: 0 -50%;
+  width: 18px; height: 18px; color: var(--sub); pointer-events: none;
+}
 .search-screen-form .search-in {
-  display: block; min-height: calc(2 * var(--u)); padding: 0 var(--s3);
-  border: 0; background: transparent; border-radius: var(--r-key);
+  --grain: var(--nighthawks-paper-grain);
+  display: block; min-height: calc(2 * var(--u)); padding: 0 var(--s4) 0 calc(var(--u) + var(--s4));
+  border: 0; border-radius: var(--r-field) var(--r-field) 0 0; caret-color: var(--ink);
+  background: conic-gradient(var(--grain) 25%, var(--paper) 25% 50%, var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
   font: var(--t-word)/var(--u) var(--sans);
 }
-.search-screen-form .search-in:is(:focus, :focus-visible) { outline-color: var(--rule); }
+.search-screen-form .search-in:is(:focus, :focus-visible) { outline: none; }
 .search-screen-results:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty)) {
   border-top: 1px solid var(--rule); margin: 0; padding: var(--s2);
 }

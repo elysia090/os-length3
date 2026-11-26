@@ -1,4 +1,5 @@
 import {h} from '../../ui/dom.ts';
+import {mark} from '../../ui/icons.ts';
 import {t} from '../../../text/i18n.ts';
 import {onChange, store} from '../../../repo/repos.ts';
 import {shownPath} from '../../../repo/issues.ts';
@@ -18,7 +19,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   input.value = query;
   const back = h('button', {class: 'search-screen-back', type: 'button'}, h('span', {'aria-hidden': 'true'}, '←'), t('Back'));
   back.addEventListener('click', ways.back);
-  const form = h('form', {role: 'search', class: 'search-screen-form'}, input);
+  const form = h('form', {role: 'search', class: 'search-screen-form'}, mark('search'), input);
   const rows = h('div', {class: 'search-screen-matches'});
   const status = h('p', {class: 'search-screen-status', role: 'status'});
   const results = h('section', {class: 'search-screen-results', id: 'repo-search-results', 'aria-label': t('Search results')}, rows, status);
