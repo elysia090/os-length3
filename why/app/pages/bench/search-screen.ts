@@ -1,4 +1,5 @@
 import {h} from '../../ui/dom.ts';
+import {mark} from '../../ui/icons.ts';
 import {t} from '../../../text/i18n.ts';
 import {onChange, store} from '../../../repo/repos.ts';
 import {shownPath} from '../../../repo/issues.ts';
@@ -21,14 +22,17 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   back.addEventListener('click', ways.back);
   const scope = h('select', {class: 'search-screen-repo', 'aria-label': t('Search in')}) as HTMLSelectElement;
   scope.append(new Option(repo, repo));
-  const form = h('form', {role: 'search', class: 'search-screen-form'}, input);
+  const form = h('form', {role: 'search', class: 'search-screen-form'}, mark('search'), input);
   const rows = h('div', {class: 'search-screen-matches'});
   const status = h('p', {class: 'search-screen-status', role: 'status'});
   const results = h('section', {class: 'search-screen-results', id: 'repo-search-results', 'aria-label': t('Search results')}, rows, status);
-  const work = h('div', {class: 'search-screen-work'}, form, results);
+  const paper = h('div', {class: 'search-screen-paper'}, form, results);
   const element = h('main', {class: 'search-screen', 'aria-labelledby': 'repo-search-title'},
-    h('h1', {class: 'sr-only', id: 'repo-search-title'}, t('Search')),
-    h('div', {class: 'search-screen-keys'}, back, scope), work);
+    back, h('div', {class: 'search-screen-content'},
+      h('header', {class: 'search-screen-head'},
+        h('h1', {id: 'repo-search-title'}, t('Search')),
+        scope),
+      paper));
   let files: Promise<Files> | null = null;
   let revision = 0, frame = 0, gone = false;
   let suggesting: false | 'list' | 'first' = false;
@@ -139,12 +143,11 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     if (!asked || input.value.trim() || suggesting) return;
     suggesting = 'list'; again();
   });
-  const inWork = (node: EventTarget | null) => node instanceof Node && (form.contains(node) || results.contains(node));
-  work.addEventListener('focusout', (e) => {
-    if (!inWork(e.relatedTarget)) putAwaySuggestions();
+  paper.addEventListener('focusout', (e) => {
+    if (!(e.relatedTarget instanceof Node && paper.contains(e.relatedTarget))) putAwaySuggestions();
   });
   element.addEventListener('pointerdown', (e) => {
-    if (!inWork(e.target)) putAwaySuggestions();
+    if (!(e.target instanceof Node && paper.contains(e.target))) putAwaySuggestions();
   });
   form.addEventListener('submit', (e) => { e.preventDefault(); choices()[0]?.click(); });
   element.addEventListener('keydown', (e) => {

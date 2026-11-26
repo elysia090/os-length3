@@ -7,13 +7,22 @@
   background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
   color: var(--nighthawks-paper);
 }
-.search-screen-keys {
-  position: absolute; inset: var(--s3) var(--s4) auto;
-  display: flex; justify-content: space-between; align-items: center;
+.search-screen-content {
+  max-width: min(760px, calc(100% - 4 * var(--u)));
+  margin: min(20dvh, calc(7 * var(--u))) auto var(--u);
+  animation: search-arrival calc(140ms * var(--pace)) var(--spring) backwards;
 }
+@keyframes search-arrival { from { transform: translateY(var(--s2)); } }
+@media (prefers-reduced-motion: reduce) { .search-screen-content { animation: none; } }
+/* Set the title once. A different length of scope name can grow to the right without moving it. */
+.search-screen-head {
+  display: grid; grid-template-columns: max-content calc(3 * var(--u) + 2px);
+  min-height: var(--h-row); align-items: baseline; justify-content: center; gap: var(--s3); margin: 0 0 var(--s4);
+}
+.search-screen-head h1 { margin: 0; font: 700 var(--t-head)/1 var(--display); }
 /* The scope is the repo name itself; selecting it keeps the query on the same sheet. */
 .search-screen-repo {
-  width: max-content; min-width: 0; max-width: min(24ch, calc(50vw - 2 * var(--u)));
+  justify-self: start; width: max-content; min-width: 0; max-width: min(24ch, calc(50vw - 2 * var(--u)));
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   border: 0; border-radius: var(--r-key);
   font: var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet);
@@ -30,6 +39,8 @@
     content: ''; flex: none; width: calc(var(--s2) - 2px); height: calc(var(--s2) - 2px);
     border: solid currentColor; border-width: 0 1px 1px 0; translate: 0 -1px; rotate: 45deg;
   }
+  /* The selector is the only sheet in the hand while its choices are out. */
+  .search-screen:has(.search-screen-repo:open) .search-screen-paper { box-shadow: none; }
   .search-screen-repo::picker(select) {
     min-width: calc(5 * var(--u) - var(--s2)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--u)));
     max-height: calc(5 * (var(--u) + var(--s1)) + var(--s1) + 2px);
@@ -50,79 +61,57 @@
   .search-screen-repo option:focus-visible { outline: 1px solid var(--nighthawks-paper-sub); outline-offset: -2px; }
 }
 .search-screen-back {
+  position: absolute; top: var(--s3); left: var(--s4);
   display: inline-flex; align-items: center; gap: var(--s1); min-height: var(--h-row); padding: 0 var(--s2);
   border: 0; border-radius: var(--r-key); background: transparent; color: var(--nighthawks-desk-quiet); cursor: var(--cursor-hand);
   font: var(--t-word)/var(--u) var(--sans);
 }
 .search-screen-back:is(:hover, :focus-visible) { color: var(--nighthawks-paper); outline-color: currentColor; }
-/* Stand one writing line in the middle of the empty desk. The work starts at
-   its left edge and uses the room to the right, never shifting the field. */
-.search-screen-work {
-  --search-measure: min(calc(12 * var(--u)), calc(100% - 2 * var(--u)));
-  display: grid; grid-template-columns: minmax(var(--u), 1fr) var(--search-measure) minmax(var(--u), 1fr);
-  margin-block: max(calc(50dvh - var(--u)), calc(3 * var(--u))) calc(2 * var(--u));
+.search-screen-paper {
+  --ground: var(--nighthawks-paper); --paper: var(--nighthawks-paper);
+  --sub: var(--nighthawks-paper-sub); --grain: var(--nighthawks-paper-grain);
+  --quiet: var(--sub); --slot: var(--nighthawks-paper-selected);
+  /* One continuous grid under both the question and everything it finds, rooted at the paper's own edge. */
+  background: conic-gradient(var(--grain) 25%, var(--paper) 25% 50%, var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
+  color: var(--ink); border: 1px solid var(--ink); border-radius: var(--r-field); overflow: clip;
+  box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
 }
-.search-screen-form { grid-column: 2; min-width: 0; }
+/* The query is written on the top of one sheet. The rim and shadow belong to the sheet, not a nested field. */
+.search-screen-form { position: relative; }
+.search-screen-form > .mark {
+  position: absolute; z-index: 1; left: var(--s4); top: 50%; translate: 0 -50%;
+  width: 18px; height: 18px; color: var(--sub); pointer-events: none;
+}
 .search-screen-form .search-in {
-  display: block; min-height: calc(2 * var(--u)); padding: 0;
-  border: 0; border-block-end: 1px solid var(--nighthawks-desk-disabled); border-radius: 0;
-  background: transparent; color: var(--nighthawks-paper); caret-color: currentColor;
+  display: block; min-height: calc(2 * var(--u)); padding: 0 var(--s4) 0 calc(var(--u) + var(--s4));
+  border: 0; border-radius: 0; caret-color: var(--ink); background: transparent;
   font: var(--t-word)/var(--u) var(--sans);
 }
-.search-screen-form .search-in:placeholder-shown { text-align: center; }
-.search-screen-form .search-in::placeholder { color: var(--nighthawks-desk-quiet); opacity: 1; }
-.search-screen-form .search-in:is(:focus, :focus-visible) {
-  border-block-end-color: var(--nighthawks-desk-quiet); outline: none; background: transparent;
-}
-.search-screen-form .search-in::-webkit-search-cancel-button { background: currentColor; }
-.search-screen-form .search-in:placeholder-shown::-webkit-search-cancel-button { display: none; }
-
-.search-screen-results {
-  grid-column: 2 / -1; min-width: 0; max-width: calc(24 * var(--u));
-  margin: var(--u) var(--u) 0 0; text-align: start;
+.search-screen-form .search-in:is(:focus, :focus-visible) { outline: none; }
+.search-screen-results:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty)) {
+  /* Keep the space where the rule was, not the rule itself. */
+  margin: 0; padding: calc(var(--s2) + 1px) var(--s2) var(--s2);
 }
 .search-screen-status:empty, .search-screen-results:not(:has(.search-screen-matches:not(:empty), .search-screen-status:not(:empty))) { display: none; }
-.search-screen-status { margin: 0; overflow-wrap: anywhere; font: var(--t-word)/var(--u) var(--sans); color: var(--nighthawks-desk-quiet); }
+.search-screen-status { font: var(--t-word)/var(--u) var(--sans); color: var(--sub); }
 .search-screen .found-secs { display: block; }
-.search-screen .found-sec {
-  width: 100%; min-width: 0; max-width: none; padding: 0;
-  outline: none; box-shadow: none; background: transparent; animation: none;
-}
-.search-screen .found-sec > .found-sec-head { display: none; }
-.search-screen .search-suggestions .found-sec-head { position: static; font-weight: 400; }
-.search-screen :is(.search-suggestions .found-sec-head, .sheet-line) { color: var(--nighthawks-desk-quiet); }
+.search-screen .found-sec { width: 100%; max-width: none; padding: 0; outline: none; box-shadow: none; background: transparent; }
+.search-screen .found-sec-head { position: static; padding-inline: var(--s2); color: var(--sub); font-weight: 400; }
 .search-screen .found-sec-rows { max-height: none; overflow: visible; }
-.search-screen .search-screen-results :is(.found-sec .choice, .search-suggestion) {
-  margin: 0; padding: 0; border: 0; border-radius: 0;
-  background: transparent; color: var(--nighthawks-paper);
-}
-.search-screen .search-screen-results .choice:focus-visible,
-.search-screen-results:not(:has(.choice:focus-visible)) .choice:hover,
-.search-screen:has(.search-in:focus) .search-screen-results:not(:has(.choice:hover)) .choice.first {
-  background: color-mix(in srgb, var(--nighthawks-ground) 88%, var(--nighthawks-paper));
-  color: var(--nighthawks-paper);
-}
-.search-screen :is(.found-sec .choice, .search-suggestion):focus-visible {
-  outline: 1px solid var(--nighthawks-desk-quiet); outline-offset: 0;
+.search-screen .choice { margin: 0; padding-inline: var(--s2); }
+/* The highlighted row is ink in the same paper, not a second solid surface that hides its grid. */
+.search-screen .choice:is(:hover, :focus-visible),
+.search-screen:has(.search-in:focus) .choice.first {
+  background: color-mix(in srgb, var(--slot) 28%, var(--paper)); color: var(--ink); mix-blend-mode: multiply;
 }
 .search-screen .search-suggestion {
-  display: block; min-height: var(--u); width: 100%;
-  font: var(--t-word)/var(--u) var(--mono); text-align: start;
-  overflow-wrap: anywhere; cursor: var(--cursor-hand);
+  display: block; min-height: var(--u); width: 100%; border: 0; border-radius: var(--r-key);
+  font: var(--t-word)/var(--u) var(--mono); text-align: left; color: var(--ink);
+  background: transparent; overflow-wrap: anywhere; cursor: var(--cursor-hand);
 }
-.search-screen .sheet-name > .sheet-file { color: inherit; }
-.search-screen .sheet-hit mark {
-  background: transparent; color: inherit; animation: none;
-  text-decoration: underline; text-underline-offset: .18em;
-}
+.search-screen .sheet-hit mark { mix-blend-mode: multiply; }
+.search-screen .sheet-line { color: var(--sub); }
 .search-screen .sheet-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-
-/* On a narrow measure the file is said once. A continuation needs only the
-   snippet and its line number, but keeps the path in the accessible name. */
 @media (max-width: 760px) {
-  .search-screen .sheet-hit.again > .sheet-file {
-    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
-  }
-  .search-screen .sheet-hit.again > :is(.sheet-text, .sheet-line) { grid-row: 1; align-self: start; }
-  .search-screen .sheet-hit.again > .sheet-text { grid-column: 1; }
+  .search-screen-content { max-width: calc(100% - 2 * var(--u)); }
 }

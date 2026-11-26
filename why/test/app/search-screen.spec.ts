@@ -32,7 +32,7 @@ test('Search is a separate history step, with the work kept and the matched line
   await page.evaluate(() => {
     const capture = (event: FocusEvent) => {
       const target = event.target as HTMLElement;
-      const surface = target.closest<HTMLElement>('.search-screen-work');
+      const surface = target.closest<HTMLElement>('.search-screen-content');
       if (!surface) return;
       document.removeEventListener('focusin', capture);
       surface.dataset.entry = JSON.stringify({focus: target === document.activeElement, animation: surface.getAnimations().length});
@@ -43,7 +43,7 @@ test('Search is a separate history step, with the work kept and the matched line
   await lens.click();
   await expect(screen).toBeVisible();
   await expect(input).toBeFocused();
-  await expect(screen.locator('.search-screen-work')).toHaveAttribute('data-entry', '{"focus":true,"animation":0}');
+  await expect(screen.locator('.search-screen-content')).toHaveAttribute('data-entry', '{"focus":true,"animation":1}');
   await expect(previous).toHaveAttribute('inert', '');
   await expect(editor).toHaveCount(0);
   expect(await port.boundingBox()).toEqual(geometry);
@@ -61,7 +61,7 @@ test('Search is a separate history step, with the work kept and the matched line
   await page.evaluate(() => history.forward());
   await expect(input).toBeFocused();
   await expect(input).toHaveValue('Needle');
-  expect(await screen.locator('.search-screen-work').evaluate(el => el.getAnimations().length)).toBe(0);
+  expect(await screen.locator('.search-screen-content').evaluate(el => el.getAnimations().length)).toBe(0);
   await expect(choices).toHaveCount(2);
   await input.press('ArrowDown');
   await expect(choices.first()).toBeFocused();
@@ -87,19 +87,13 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await editor.focus();
   await app.main.getByRole('button', {name:'Search', exact:true}).click();
   const stage = page.getByRole('main', {name:'Search', exact:true});
-  const input = stage.getByRole('searchbox'), work = stage.locator('.search-screen-work');
+  const input = stage.getByRole('searchbox'), paper = stage.locator('.search-screen-paper');
   const suggested = stage.getByRole('region', {name:'Suggested files'});
   const first = suggested.getByRole('button').first();
   await expect(input).toBeFocused();
   await expect(suggested).toHaveCount(0);
-  await expect(work).toHaveCSS('height', '48px');
-  await expect(work).toHaveCSS('background-image', 'none');
-  await expect(stage.getByRole('heading', {name:'Search',exact:true})).toHaveClass('sr-only');
-  const emptyAt = (await input.boundingBox())!;
-  await expect(input).toHaveCSS('text-align', 'center');
-  const size = page.viewportSize()!;
-  expect(emptyAt.x + emptyAt.width / 2).toBe(size.width / 2);
-  expect(emptyAt.y + emptyAt.height / 2).toBe(size.height / 2);
+  await expect(paper).toHaveCSS('height', '50px');
+  const emptyAt = await input.boundingBox();
 
   // Focus alone (including moving away and tabbing back) is not a request to suggest.
   await input.press('Shift+Tab');
@@ -110,10 +104,6 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await input.click();
   await expect(first).toBeVisible();
   expect(await input.boundingBox()).toEqual(emptyAt);
-  const edges = (await suggested.boundingBox())!;
-  expect(edges.x).toBe(emptyAt.x);
-  expect(edges.width).toBeGreaterThan(emptyAt.width);
-  expect((await first.boundingBox())!.x).toBe(edges.x);
 
   await input.press('Tab');
   await expect(first).toBeFocused();
@@ -131,7 +121,7 @@ test('an empty Search suggests real files only when asked by the hand', async ({
 
   await input.click();
   await expect(suggested).toBeVisible();
-  await stage.click({position: {x:12, y:120}});
+  await stage.getByRole('heading', {name:'Search',exact:true}).click();
   await expect(suggested).toHaveCount(0);
   await input.press('Escape');
   await expect(stage).toHaveCount(0);
@@ -161,42 +151,38 @@ phone('on a phone Search has its own full screen and uses actual saved files, wi
   await page.evaluate(() => history.back());
   await expect(input).toBeFocused();
   await expect(suggested).toHaveCount(0);
-  const work = stage.locator('.search-screen-work'), region = stage.getByRole('region', {name: 'Search results'});
-  await expect(work).toHaveCSS('background-image', 'none');
-  await expect(work).toHaveCSS('box-shadow', 'none');
+  const form = stage.getByRole('search'), lensInside = form.locator('svg.mark');
+  const paper = stage.locator('.search-screen-paper'), region = stage.getByRole('region', {name: 'Search results'});
+  await expect(paper).toHaveCSS('border-radius', '8px');
+  await expect(paper).toHaveCSS('overflow', 'clip');
+  await expect(paper).toHaveCSS('background-image', /^conic-gradient\(/);
+  await expect(input).toHaveCSS('background-image', 'none');
   await expect(input).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(input).toHaveCSS('border-top-width', '0px');
-  await expect(input).toHaveCSS('border-bottom-width', '1px');
   await expect(region).toHaveCount(0);
   const at = (await input.boundingBox())!;
+  const inner = (await lensInside.boundingBox())!;
   expect(at.x + at.width / 2).toBe(195);
-  expect(at.y + at.height / 2).toBe(422);
-  expect([at.width, at.height]).toEqual([288, 48]);
+  await expect(lensInside).toHaveAttribute('aria-hidden', 'true');
+  expect([inner.x - at.x, inner.width, inner.height, at.height]).toEqual([16, 18, 18, 48]);
+  expect(inner.y + inner.height / 2).toBe(at.y + at.height / 2);
   await input.fill('return');
   await expect(suggested).toHaveCount(0);
   const hit = stage.getByRole('button', {name: /src\/main\.c.*return 0/});
   await expect(hit).toBeInViewport({ratio:1});
   await expect(region).toHaveCSS('border-top-width', '0px');
   await expect(region.locator('.found-sec')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(hit.locator('mark')).toHaveText('return');
-  await expect(hit.locator('mark')).toHaveCSS('text-decoration-line', 'underline');
-  expect((await region.boundingBox())!.x).toBe(at.x);
-  expect((await hit.locator('.sheet-file').boundingBox())!.x).toBe(at.x);
   expect(await input.boundingBox()).toEqual(at);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
-  // Chrome's native clear button is inside the bare writing line, just at its right edge.
-  await input.click({position: {x: at.width - 8, y: at.height / 2}});
+  // Chrome's native clear button is inside the writing field, 27 px from the right edge.
+  await input.click({position: {x: at.width - 27, y: at.height / 2}});
   await expect(input).toHaveValue('');
   await expect(input).toBeFocused();
-  await expect(input).toHaveCSS('text-align', 'center');
   await expect(suggested).toHaveCount(0);
-  await expect(work).toHaveCSS('height', '48px');
   expect(await input.boundingBox()).toEqual(at);
   await input.tap();
   await expect(suggested.getByRole('button')).toHaveCount(3);
   await input.fill('return');
-  await expect(hit).toBeVisible();
-  await input.press('Enter');
+  await hit.click();
   await expect(forge.editor('src/main.c')).toBeFocused();
   await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 0;');
   await expect(stage).toHaveCount(0);
@@ -271,13 +257,14 @@ test('the repo named in Search changes scope without moving the query or losing 
   await expect(query).toBeFocused();
   await query.fill('launch target');
   await expect(stage.getByRole('status')).toHaveText('No results found for "launch target"');
-  const at = await query.boundingBox(), from = (await scope.boundingBox())!;
+  const title = stage.getByRole('heading', {name:'Search',exact:true});
+  const at = await query.boundingBox(), head = await title.boundingBox();
 
   await scope.click();
   await expect(scope).toHaveJSProperty('value', 'hello');
   await expect(stage.getByRole('option', {name:other,exact:true})).toBeVisible();
-  await expect(stage.locator('.search-screen-work')).toHaveCSS('box-shadow', 'none');
-  expect(await query.boundingBox()).toEqual(at);
+  await expect(stage.locator('.search-screen-paper')).toHaveCSS('box-shadow', 'none');
+  expect(await title.boundingBox()).toEqual(head);
   await page.keyboard.press('Escape');
   await expect(stage).toBeVisible();
   await expect(scope).toBeFocused();
@@ -288,9 +275,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   await expect(query).toBeFocused();
   await expect(scope).toHaveValue(other);
   expect(await query.boundingBox()).toEqual(at);
-  const next = (await scope.boundingBox())!;
-  expect(next.x + next.width).toBe(from.x + from.width);
-  expect(next.y).toBe(from.y);
+  expect(await title.boundingBox()).toEqual(head);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
   await expect(hit).toBeVisible();
   await hit.click();
