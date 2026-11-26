@@ -79,7 +79,56 @@ test('Search is a separate history step, with the work kept and the matched line
   await expect(editor).toHaveValue(working);
 });
 
-test('on a phone Search has its own full screen and uses actual saved files, with no horizontal overflow', async ({app}) => {
+test('an empty Search suggests real files only when asked by the hand', async ({app}) => {
+  const {page, forge} = app;
+  await app.newRepo.make('hello', {template:'C'});
+  const editor = forge.editor('src/main.c');
+  await editor.focus();
+  await app.main.getByRole('button', {name:'Search', exact:true}).click();
+  const stage = page.getByRole('main', {name:'Search', exact:true});
+  const input = stage.getByRole('searchbox'), paper = stage.locator('.search-screen-paper');
+  const suggested = stage.getByRole('region', {name:'Suggested files'});
+  const first = suggested.getByRole('button').first();
+  await expect(input).toBeFocused();
+  await expect(suggested).toHaveCount(0);
+  await expect(paper).toHaveCSS('height', '50px');
+  const emptyAt = await input.boundingBox();
+
+  // Focus alone (including moving away and tabbing back) is not a request to suggest.
+  await input.press('Shift+Tab');
+  await expect(stage.getByRole('button', {name:'Back',exact:true})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(input).toBeFocused();
+  await expect(suggested).toHaveCount(0);
+  await input.click();
+  await expect(first).toBeVisible();
+  expect(await input.boundingBox()).toEqual(emptyAt);
+
+  await input.press('Tab');
+  await expect(first).toBeFocused();
+  await expect(suggested).toBeVisible();
+  await first.press('Escape');
+  await expect(input).toBeFocused();
+  await expect(suggested).toHaveCount(0);
+
+  await input.press('ArrowDown');
+  await expect(first).toBeFocused();
+  await first.press('ArrowUp');
+  await expect(input).toBeFocused();
+  await input.press('Shift+Tab');
+  await expect(suggested).toHaveCount(0);
+
+  await input.click();
+  await expect(suggested).toBeVisible();
+  await stage.getByRole('heading', {name:'Search',exact:true}).click();
+  await expect(suggested).toHaveCount(0);
+  await input.press('Escape');
+  await expect(stage).toHaveCount(0);
+  await expect(editor).toBeFocused();
+});
+
+const phone = test.extend({hasTouch: true});
+phone('on a phone Search has its own full screen and uses actual saved files, with no horizontal overflow', async ({app}) => {
   const {page, forge} = app;
   await page.setViewportSize({width:390,height:844});
   await app.newRepo.make('hello', {template:'C'});
@@ -89,14 +138,18 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await expect(input).toBeFocused();
   await expect(input).toBeInViewport({ratio:1});
   const suggested = stage.getByRole('region', {name:'Suggested files'});
+  await expect(suggested).toHaveCount(0);
+  const initial = await input.boundingBox();
+  await input.tap();
   await expect(suggested.getByRole('button')).toHaveCount(3);
+  expect(await input.boundingBox()).toEqual(initial);
   await expect(suggested.getByRole('button', {name:'Makefile',exact:true})).toBeVisible();
   await expect(suggested.getByRole('button', {name:'src/main.c',exact:true})).toBeVisible();
-  await suggested.getByRole('button', {name:'README.md',exact:true}).click();
+  await suggested.getByRole('button', {name:'README.md',exact:true}).tap();
   await expect(forge.editor('README.md')).toBeFocused();
   await page.evaluate(() => history.back());
   await expect(input).toBeFocused();
-  await expect(suggested.getByRole('button')).toHaveCount(3);
+  await expect(suggested).toHaveCount(0);
   const form = stage.getByRole('search'), lensInside = form.locator('svg.mark');
   const paper = stage.locator('.search-screen-paper'), region = stage.getByRole('region', {name: 'Search results'});
   await expect(paper).toHaveCSS('border-radius', '8px');
@@ -104,7 +157,7 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await expect(paper).toHaveCSS('background-image', /^conic-gradient\(/);
   await expect(input).toHaveCSS('background-image', 'none');
   await expect(input).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(region).toHaveCSS('border-top-width', '0px');
+  await expect(region).toHaveCount(0);
   const at = (await input.boundingBox())!;
   const inner = (await lensInside.boundingBox())!;
   expect(at.x + at.width / 2).toBe(195);
@@ -123,8 +176,10 @@ test('on a phone Search has its own full screen and uses actual saved files, wit
   await input.click({position: {x: at.width - 27, y: at.height / 2}});
   await expect(input).toHaveValue('');
   await expect(input).toBeFocused();
-  await expect(suggested.getByRole('button')).toHaveCount(3);
+  await expect(suggested).toHaveCount(0);
   expect(await input.boundingBox()).toEqual(at);
+  await input.tap();
+  await expect(suggested.getByRole('button')).toHaveCount(3);
   await input.fill('return');
   await hit.click();
   await expect(forge.editor('src/main.c')).toBeFocused();

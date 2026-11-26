@@ -23,14 +23,16 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   const rows = h('div', {class: 'search-screen-matches'});
   const status = h('p', {class: 'search-screen-status', role: 'status'});
   const results = h('section', {class: 'search-screen-results', id: 'repo-search-results', 'aria-label': t('Search results')}, rows, status);
+  const paper = h('div', {class: 'search-screen-paper'}, form, results);
   const element = h('main', {class: 'search-screen', 'aria-labelledby': 'repo-search-title'},
     back, h('div', {class: 'search-screen-content'},
       h('header', {class: 'search-screen-head'},
         h('h1', {id: 'repo-search-title'}, t('Search')),
         h('code', {class: 'search-screen-repo'}, repo)),
-      h('div', {class: 'search-screen-paper'}, form, results)));
+      paper));
   let files: Promise<Files> | null = null;
   let revision = 0, frame = 0, gone = false;
+  let suggesting: false | 'list' | 'first' = false;
   const choices = () => Array.from(rows.querySelectorAll<HTMLButtonElement>('.choice'));
   const fresh = (run: number) => !gone && run === revision;
   async function go(path: string, line: number, words: string, run: number) {
@@ -73,7 +75,8 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
       const paths = root.filter(entry => entry.kind === 'file').map(entry => entry.name);
       for (const path of paths) if (!solid.includes(path) && solid.length < 5) solid.push(path);
     }
-    if (!fresh(run) || !solid.length) return;
+    if (!fresh(run)) return;
+    if (!solid.length) { suggesting = false; return; }
     const heading = t('Suggested files');
     const links = solid.map(path => {
       const item = h('button', {type: 'button', class: 'choice search-suggestion'}, shownPath(path));
@@ -82,6 +85,16 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     });
     rows.replaceChildren(h('section', {class: 'search-suggestions', 'aria-label': heading},
       h('h2', {class: 'found-sec-head'}, heading), ...links));
+    if (suggesting === 'first') {
+      suggesting = 'list';
+      if (document.activeElement === input) links[0].focus();
+    }
+  }
+
+  function putAwaySuggestions() {
+    if (!suggesting) return false;
+    suggesting = false; again();
+    return true;
   }
 
   function again() {
@@ -89,7 +102,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     const words = input.value.trim(), run = ++revision;
     if (!words) {
       status.textContent = ''; rows.replaceChildren(); results.removeAttribute('aria-busy');
-      void suggest(run);
+      if (suggesting) void suggest(run);
       return;
     }
     results.setAttribute('aria-busy', 'true');
@@ -101,18 +114,44 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     again();
   });
   input.addEventListener('input', () => {
+    suggesting = false;
     rows.replaceChildren(); status.textContent = ''; ways.write(input.value); again();
+  });
+  // Chrome's clear button also clicks the input, but clears its value before that click arrives.
+  let pressedEmpty = false;
+  input.addEventListener('pointerdown', () => { pressedEmpty = input.value === ''; });
+  input.addEventListener('click', (e) => {
+    const asked = pressedEmpty || e.detail === 0;
+    pressedEmpty = false;
+    if (!asked || input.value.trim() || suggesting) return;
+    suggesting = 'list'; again();
+  });
+  paper.addEventListener('focusout', (e) => {
+    if (!(e.relatedTarget instanceof Node && paper.contains(e.relatedTarget))) putAwaySuggestions();
+  });
+  element.addEventListener('pointerdown', (e) => {
+    if (!(e.target instanceof Node && paper.contains(e.target))) putAwaySuggestions();
   });
   form.addEventListener('submit', (e) => { e.preventDefault(); choices()[0]?.click(); });
   element.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.isComposing) return;
     if (e.key === 'Escape') {
-      e.preventDefault(); ways.back(); return;
+      e.preventDefault();
+      if (putAwaySuggestions()) input.focus({preventScroll: true});
+      else ways.back();
+      return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'p')) {
       e.preventDefault(); input.focus({preventScroll: true}); input.select(); return;
     }
     const next = choices(), where = next.indexOf(document.activeElement as HTMLButtonElement);
+    if (!next.length && e.target === input && e.key === 'ArrowDown' && !input.value.trim()) {
+      e.preventDefault();
+      const alreadyAsked = !!suggesting;
+      suggesting = 'first';
+      if (!alreadyAsked) again();
+      return;
+    }
     if (!next.length || (where < 0 && e.target !== input)) return;
     const to = e.key === 'ArrowDown' ? next[where + 1] : e.key === 'ArrowUp' && where >= 0 ? next[where - 1] ?? input
       : where >= 0 && e.key === 'Home' ? next[0] : where >= 0 && e.key === 'End' ? next.at(-1) : null;
