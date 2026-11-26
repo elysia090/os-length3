@@ -58,14 +58,24 @@ export function letter(o: LetterOptions): LetterView {
   const heading = h('h2', {}, o.title);
   let who = o.title;
   const direct = h('span', {class: 'inbox-direct', role: 'status', hidden: ''}, t('Direct'));
+  const address = inbox.shown(key);
+  const addressLine = h('p', {class: 'inbox-address'}, address, direct);
   const error = h('p', {class: 'inbox-letter-error', role: 'alert'});
   const days = new Map<number, HTMLElement>();
   let state = th.state;
+  let first = !th.messages.length && state !== 'blocked';
   let input: HTMLTextAreaElement | null = null;
   let live: inbox.Live | null = null;
   let myServers: Promise<Server[]> | null = null;
   let more = 0;
   let unwatch: (() => void) | undefined;
+
+  const writeTo = () => t(first ? 'Write to {who}' : 'Reply to {who}', {who});
+  const addressTag = () => {
+    pane.toggleAttribute('data-first-letter', first);
+    addressLine.hidden = first && who === address && !th.mutual;
+    if (input) input.placeholder = writeTo();
+  };
 
   const serverLink = (id: string, knownWords?: HTMLElement) => {
     const go = h('button', {type: 'button', class: 'inbox-deed', hidden: ''});
@@ -112,6 +122,7 @@ export function letter(o: LetterOptions): LetterView {
 
   function append(list: readonly inbox.Message[], stay = false) {
     if (!list.length) return;
+    if (first) { first = false; addressTag(); }
     const atFoot = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 3;
     messages.querySelector('.inbox-empty')?.remove();
     for (const m of list) {
@@ -131,8 +142,9 @@ export function letter(o: LetterOptions): LetterView {
     if (stay || atFoot) messages.scrollTop = messages.scrollHeight;
   }
   const initial = on.took(th.messages);
+  addressTag();
   append(initial);
-  if (!initial.length) messages.append(h('p', {class: 'inbox-empty'}, t('No messages yet')));
+  if (!initial.length && !first) messages.append(h('p', {class: 'inbox-empty'}, t('No messages yet')));
 
   const unread = (all: readonly inbox.Message[]) => {
     if (all.some((m) => !m.mine && !m.read)) o.read(all.reduce((last, m) => Math.max(last, m.time), 0));
@@ -185,7 +197,7 @@ export function letter(o: LetterOptions): LetterView {
       h('div', {class: 'inbox-ask-acts'}, yes, no), error);
   } else {
     const status = h('p', {class: 'inbox-send-status', role: 'status'});
-    const text = input = h('textarea', {class: 'inbox-reply', rows: '1', placeholder: t('Reply to {who}', {who: o.title}),
+    const text = input = h('textarea', {class: 'inbox-reply', rows: '1', placeholder: writeTo(),
       'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
     const send = action('Send', true);
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -235,8 +247,7 @@ export function letter(o: LetterOptions): LetterView {
     footer = h('div', {class: 'inbox-footer inbox-write'}, h('div', {class: 'inbox-write-line'}, text, send), status, error);
   }
   pane.dataset.state = state;
-  pane.replaceChildren(h('header', {class: 'inbox-top'}, o.indexKey, heading,
-    h('p', {class: 'inbox-address'}, inbox.shown(key), direct)), messages, footer);
+  pane.replaceChildren(h('header', {class: 'inbox-top'}, o.indexKey, heading, addressLine), messages, footer);
   messages.scrollTop = papers.scroll.get(key) ?? 0;
   if (th.mutual) startLive();
   return {
@@ -247,7 +258,7 @@ export function letter(o: LetterOptions): LetterView {
         who = named;
         heading.textContent = named;
         for (const by of messages.querySelectorAll('b[data-peer]')) by.textContent = named;
-        if (input) input.placeholder = t('Reply to {who}', {who: named});
+        addressTag();
       }
       if (row.state !== state) { o.changed(); return; }
       // A stale unread list may describe messages just marked read, so pull only new text or changed state.

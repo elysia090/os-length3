@@ -77,14 +77,15 @@ body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display
   border-radius: var(--r-inbox-paper); outline: 1px solid var(--ink); outline-offset: -1px;
   background-color: var(--paper); color: var(--ink); box-shadow: 6px 6px 0 var(--inbox-shadow);
 }
-/* An open conversation uses one continuous sheet; requests and recipient entry are plain. */
-.inbox-thread[data-kind=letter][data-state=contact]:has(> .inbox-messages) {
+/* Addressing and writing hold the same light as a conversation. An unopened request remains plain. */
+.inbox-thread:is([data-kind=recipient], [data-kind=letter]:has(> .inbox-messages):is([data-state=contact], [data-first-letter])) {
   background-image: conic-gradient(var(--inbox-paper-grain) 25%, var(--paper) 25% 50%, var(--inbox-paper-grain) 50% 75%, var(--paper) 75%);
   background-size: var(--s1) var(--s1);
 }
 .inbox-thread:focus-visible { outline-offset: -1px; outline-width: 1px; }
 .inbox-thread ::selection { color: var(--ink); background: var(--slot); }
 .inbox-top { position: relative; min-height: 113px; padding-block: 28px var(--s3); border-bottom: 1px solid var(--rule); }
+.inbox-thread:is([data-kind=recipient], [data-kind=letter][data-first-letter]) > .inbox-top { border-bottom: 0; }
 .inbox-top h2 {
   margin: 0; color: var(--ink); font: 900 var(--t-inbox-title)/48px var(--display);
   letter-spacing: -.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -128,17 +129,28 @@ body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display
 .inbox-send-status { color: var(--sub); }
 .inbox-send-status:empty, .inbox-letter-error:empty, .inbox-address-error:empty { display: none; }
 
+/* The address slip ends after its one act. It is lifted out of the same place as a full letter. */
+.inbox-thread[data-kind=recipient] { max-block-size: calc(13 * var(--u)); }
 .inbox-recipient {
-  align-self: start; display: grid; width: min(100%, 445px);
-  grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2) var(--s3); padding-block-start: 18px;
+  --address-label: calc(2 * var(--u));
+  align-self: start; display: grid; grid-template-columns: minmax(0, 1fr) 8ch;
+  gap: var(--s2) var(--s3); padding-block-start: var(--u); max-block-size: 100%; overflow: auto;
 }
-.inbox-recipient > label { min-width: 0; display: grid; grid-template-columns: 35px minmax(0, 1fr); align-items: baseline; color: var(--sub); }
+.inbox-recipient > .inbox-deed {
+  align-self: start; min-height: calc(1.5 * var(--u)); text-align: end;
+}
+:lang(ja) .inbox-recipient { grid-template-columns: minmax(0, 1fr) 7em; }
+.inbox-recipient > label {
+  min-width: 0; display: grid; grid-template-columns: var(--address-label) minmax(0, 1fr);
+  align-items: baseline; color: var(--sub);
+}
 .inbox-recipient input {
-  min-width: 0; width: 100%; height: 35px; padding: 0; border: none; border-bottom: 1px solid var(--rule);
+  min-width: 0; width: 100%; height: calc(1.5 * var(--u)); padding: 0; border: 0; border-bottom: 1px solid var(--rule);
   border-radius: 0; background: transparent; outline: none; color: var(--ink);
 }
 .inbox-recipient input:focus-visible { outline: none; border-bottom-color: var(--ink); }
-.inbox-address-error { grid-column: 1 / -1; margin-inline-start: 35px; }
+.inbox-address-note, .inbox-address-error { grid-column: 1 / -1; margin-inline-start: var(--address-label); }
+.inbox-address-note { color: var(--sub); font-size: var(--t-inbox-meta); }
 
 /* Shared 4px bars, no line under them: the held one is light on the dark desk. */
 .inbox-paper-map {

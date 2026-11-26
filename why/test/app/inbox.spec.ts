@@ -175,7 +175,13 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await inbox.newMessage.click();
   const to = inbox.recipient.getByRole('textbox', {name: 'Recipient address'});
   await expect(to).toBeFocused();
-  expect(await grain(inbox.recipient)).toEqual(['none', 'auto']);
+  await expect(to).toHaveAccessibleDescription('Username, address, or 6-digit code');
+  await expect(to).toHaveCSS('border-bottom-width', '1px');
+  await expect(inbox.recipient.locator('.inbox-top')).toHaveCSS('border-bottom-width', '0px');
+  expect(await grain(inbox.recipient)).toEqual([
+    expect.stringMatching(/^conic-gradient\(rgb\(227, 222, 213\)/), '4px 4px',
+  ]);
+  await expect.poll(() => inbox.recipient.boundingBox()).toEqual({x: 312, y: 96, width: 816, height: 312});
   await to.fill('sel');
   await expect(all).toHaveCount(3);
   await all.nth(0).click();
@@ -210,6 +216,63 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await expect(requestRow).toBeVisible();
   await expect(page.locator('#page')).toHaveAttribute('data-place', 'inbox');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+});
+
+test('a first letter waits for the actual thread, then uses the ordinary writing line without sending', async ({signedIn: ada, another}) => {
+  const bo = await another('Bo');
+  const me = await bo.page.request.get('/v1/inbox/me');
+  expect(me.ok()).toBe(true);
+  const {code, addresses: [{address}]} = await me.json() as {code: string; addresses: [{address: string}]};
+  expect(code).toMatch(/^\d{6}$/);
+  const {page, inbox} = ada;
+  const writes: string[] = [];
+  await page.route(/\/v1\/inbox\/(messages|contacts)$/, async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') return route.continue();
+    writes.push(request.url());
+    await route.abort();
+  });
+
+  let asked = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route((url) => decodeURIComponent(url.pathname) === `/v1/inbox/threads/${address}`, async (route) => {
+    asked++;
+    await held;
+    await route.continue();
+  });
+
+  await inbox.named();
+  await inbox.newMessage.click();
+  const to = inbox.recipient.getByRole('textbox', {name: 'Recipient address'});
+  await expect(to).toBeFocused();
+  await to.fill(code);
+  try {
+    await to.press('Enter');
+    await expect.poll(() => asked).toBe(1);
+    await expect(inbox.recipient.getByRole('button', {name: 'Opening', exact: true})).toBeDisabled();
+    await expect(to).toHaveValue(code);
+    await expect(inbox.message).toHaveCount(0);
+  } finally { release(); }
+
+  const letter = inbox.thread(bo.handle);
+  await expect(inbox.message).toBeFocused();
+  await expect(inbox.message).toHaveAttribute('placeholder', `Write to ${bo.handle}`);
+  await expect(letter.locator('.inbox-top')).toHaveCSS('border-bottom-width', '0px');
+  const write = letter.locator('.inbox-write');
+  await expect(write).toHaveCSS('border-top', '1px solid rgb(169, 164, 155)');
+  await expect(letter).toHaveCSS('background-size', '4px 4px');
+  const send = letter.getByRole('button', {name: 'Send', exact: true});
+  await expect(send).toBeHidden();
+  await inbox.message.fill('We can try it tomorrow.');
+  await expect(send).toBeEnabled();
+  const [rule, input, action] = await Promise.all([write.boundingBox(), inbox.message.boundingBox(), send.boundingBox()]);
+  expect(rule!.x).toBe(input!.x);
+  expect(rule!.x + rule!.width).toBe(action!.x + action!.width);
+  expect(action!.y).toBe(input!.y);
+  await expect(inbox.conversations.getByRole('button', {name: bo.handle})).toHaveCount(0);
+  expect(asked).toBe(1);
+  expect(writes).toEqual([]);
 });
 
 test('opening a request from one sender does not join either offered server; explicit acceptance can join both', async ({signedIn: ada, another}) => {

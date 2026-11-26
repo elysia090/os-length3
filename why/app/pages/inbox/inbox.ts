@@ -20,6 +20,7 @@ import {InboxPapers, paperSwitch, recipientPaper} from './papers.ts';
 import {addressStub} from './usernames.ts';
 
 const PLACES = ['Server', 'Inbox'] as const;
+type OpenedLetter = Awaited<ReturnType<typeof inbox.thread>>;
 
 /** Don't carry the other account's drafts or opened names into a new Remote or sign-in. */
 let kept: {scope: string; papers: InboxPapers} | null = null;
@@ -185,13 +186,17 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
   newMessage.addEventListener('click', () => void take(recipientPaper, 'field'));
 
   function recipient(focus: boolean) {
-    const heading = h('header', {class: 'inbox-top inbox-top-recipient'}, h('h2', {}, t('New message')));
+    const heading = h('header', {class: 'inbox-top'}, h('h2', {}, t('New message')));
     const input = h('input', {name: 'recipient', maxlength: '285', 'aria-label': t('Recipient address'),
-      autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
-    const open = h('button', {type: 'submit', class: 'inbox-deed'}, t('Open')) as HTMLButtonElement;
+      'aria-describedby': 'inbox-address-kinds', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const open = h('button', {type: 'submit', class: 'inbox-deed inbox-strong'}, t('Open')) as HTMLButtonElement;
+    const note = h('p', {class: 'inbox-address-note', id: 'inbox-address-kinds'}, t('Username, address, or 6-digit code'));
     const error = h('p', {class: 'inbox-address-error', role: 'alert'}, lookupError);
-    const form = h('form', {class: 'inbox-recipient'}, h('label', {}, h('span', {}, t('To')), input), open, error);
-    const line = () => { open.disabled = finding || !input.value.trim(); };
+    const form = h('form', {class: 'inbox-recipient'}, h('label', {}, h('span', {}, t('To')), input), open, note, error);
+    const line = () => {
+      open.disabled = finding || !input.value.trim();
+      open.textContent = finding ? t('Opening') : t('Open');
+    };
     input.value = papers.to;
     line();
     input.addEventListener('input', () => {
@@ -207,23 +212,38 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
       if (!typed || finding) return;
       const asked = ++entered;
       const onThisPaper = opened;
-      finding = true; line();
+      const current = () => alive() && asked === entered && opened === onThisPaper && papers.active === recipientPaper;
+      const refused = (why: string) => {
+        if (!current()) return;
+        finding = false;
+        lookupError = error.textContent = why;
+        line();
+        input.focus({preventScroll: true});
+        nudge(input);
+      };
+      finding = true;
+      lookupError = error.textContent = '';
+      line();
       const found = await inbox.lookup(typed).catch((e: unknown) => ({reachable: false, why: errorText(e), address: undefined}));
-      if (!alive() || asked !== entered || opened !== onThisPaper || papers.active !== recipientPaper) return;
-      finding = false; line();
+      if (!current()) return;
       if (!found.reachable || !found.address) {
-        lookupError = t('Cannot deliver to {address} ({why})', {address: typed, why: t(found.why ?? '')});
-      } else if (me.addresses.some((a) => a.address === found.address)) {
-        lookupError = t('Cannot message yourself; choose another recipient');
-      } else {
-        papers.to = lookupError = '';
-        papers.closeRecipient();
-        void take(found.address, 'field');
+        refused(t('Cannot deliver to {address} ({why})', {address: typed, why: t(found.why ?? '')}));
         return;
       }
-      error.textContent = lookupError;
-      input.focus({preventScroll: true});
-      nudge(input);
+      if (me.addresses.some((a) => a.address === found.address)) {
+        refused(t('Cannot message yourself; choose another recipient'));
+        return;
+      }
+      try {
+        // Keep the addressed paper in the hand until the actual letter is ready.
+        const ready = await inbox.thread(found.address);
+        if (!current()) return;
+        papers.to = lookupError = '';
+        papers.closeRecipient();
+        void take(found.address, 'field', ready);
+      } catch (e) {
+        refused(t('Could not open the conversation ({why})', {why: errorText(e)}));
+      }
     });
     pane.setAttribute('aria-label', t('New message'));
     pane.replaceChildren(heading, form);
@@ -243,7 +263,7 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
     letterView = null;
   };
 
-  async function take(key: string | null, focus?: 'field' | 'paper') {
+  async function take(key: string | null, focus?: 'field' | 'paper', ready?: OpenedLetter) {
     if (!alive()) return;
     stopLetter();
     const now = opened;
@@ -257,7 +277,7 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
     if (!key) return;
     if (key === recipientPaper) { recipient(focus === 'field'); return; }
     const current = () => alive() && now === opened && papers.active === key;
-    const th = await inbox.thread(key).catch((e: unknown) => e instanceof Error ? e : new Error(errorText(e)));
+    const th = ready ?? await inbox.thread(key).catch((e: unknown) => e instanceof Error ? e : new Error(errorText(e)));
     if (!current()) return;
     pane.setAttribute('aria-label', t('Conversation with {who}', {who: inbox.shown(key)}));
     pane.hidden = false;
