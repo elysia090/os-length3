@@ -5,6 +5,12 @@ import {browserOnRemote} from '../../app/testing/remote.ts';
 import {coreWasmPath} from '../../build/core-wasm.ts';
 import type {Answer} from '../../api/client.ts';
 
+// This paper tests real Chromium hit areas, not the headless default with scrollbars hidden.
+test.use({launchOptions: async ({launchOptions}, use) => {
+  const ignored = launchOptions.ignoreDefaultArgs;
+  await use({...launchOptions, ignoreDefaultArgs: ignored === true ? true : [...(Array.isArray(ignored) ? ignored : []), '--hide-scrollbars']});
+}});
+
 test('real Git paper posts only explicitly, and a comment links to the original immutable diff after another Submit', async ({page}, info) => {
   // The Rust core speaks to a fresh PGlite Remote in the same Node process.
   // Chromium receives the production view via an inert routed page, with
@@ -42,7 +48,7 @@ test('real Git paper posts only explicitly, and a comment links to the original 
     }
   });
   await page.route('**/*', (r) => r.request().url() === entry ?
-    r.fulfill({contentType: 'text/html', body: '<!doctype html><title>Git paper</title><h1 style="margin:0 0 24px;font:700 17px/24px sans-serif">Git</h1><main class="git-flow git-desk" role="main"></main><style>body{padding:24px 48px}</style>'}) : r.abort());
+    r.fulfill({contentType: 'text/html', body: '<!doctype html><title>Git paper</title><h1 style="margin:0 0 24px;font:700 17px/24px sans-serif">Git</h1><main class="git-flow git-desk" role="main"></main><style>html{scrollbar-gutter:stable}body{padding:24px 48px}</style>'}) : r.abort());
   await page.setViewportSize({width:1320,height:800});
   await page.goto(entry);
   await page.addStyleTag({content:String(css?.type === 'asset' ? css.source : '')});
@@ -84,17 +90,17 @@ test('real Git paper posts only explicitly, and a comment links to the original 
     const open = head.getBoundingClientRect();
     return {
       start: [start.borderBottomWidth, start.borderBottomColor, start.inlineSize],
-      end: [end.blockSize, end.backgroundColor, end.inlineSize],
+      end: end.content,
       left: [open.left, at.left], startY: open.bottom,
       viewport: [at.top, at.bottom, at.height],
       gap: paper.querySelector('.git-paper-review')!.getBoundingClientRect().top - at.bottom,
       words: ['.git-total-files', '.git-review-comment', '.git-review-approve'].map(wordsAt),
-      overflow: el.scrollHeight - el.clientHeight,
+      overflow: el.scrollHeight - el.clientHeight, across: el.scrollWidth - el.clientWidth,
     };
   });
   const rules = (size: Awaited<ReturnType<typeof frame>>) => {
     expect(size.start[0]).toBe('1px');
-    expect(size.end).toEqual(size.start);
+    expect(size.end).toBe('none');
     expect(size.left[0]).toEqual(size.left[1]);
     expect(size.gap).toBeGreaterThanOrEqual(6);
     expect(size.words).toEqual([size.words[0],size.words[0],size.words[0]]);
@@ -102,7 +108,7 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await expect(diff.locator('.git-diff-head')).toBeVisible();
   const short = await frame();
   rules(short);
-  expect(short.overflow).toBe(0);
+  expect([short.overflow, short.across]).toEqual([0, 0]);
 
   const footer = await foot.boundingBox();
   await line(2).click(); await line(3).click();
@@ -133,6 +139,27 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await page.getByRole('button',{name:'Version 2',exact:true}).click();
   await expect.poll(() => diff.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
   const long = await frame(), pageTop = await page.evaluate(() => scrollY);
+  // The bottom track keeps its full native hit area while its ink is fine at rest.
+  const track = await diff.evaluate((e: HTMLElement) => {
+    const at = e.getBoundingClientRect(), h = e.offsetHeight - e.clientHeight;
+    return {x: at.left + e.clientWidth ** 2 / (2 * e.scrollWidth), y: at.bottom - 1, h};
+  });
+  expect(track.h).toBe(10);
+  expect(long.across).toBeGreaterThan(100);
+  await page.mouse.move(track.x, track.y);
+  await expect(diff).toHaveAttribute('data-scrollbar-across', '');
+  expect(await frame()).toEqual(long);
+  await page.mouse.down();
+  try {
+    expect((await frame()).viewport).toEqual(long.viewport);
+    await page.mouse.move(track.x + 72, track.y, {steps: 9});
+    await expect.poll(() => diff.evaluate(el => el.scrollLeft)).toBeGreaterThan(80);
+    await page.mouse.move(track.x + 72, track.y - 20);
+    await expect(diff).toHaveAttribute('data-scrollbar-across', '');
+  } finally { await page.mouse.up(); }
+  await expect(diff).not.toHaveAttribute('data-scrollbar-across');
+  await diff.evaluate(el => { el.scrollLeft = 0; });
+  expect(await frame()).toEqual(long);
   expect(long.viewport).toEqual(short.viewport);
   expect(long.words).toEqual(short.words);
   expect(long.start).toEqual(short.start);

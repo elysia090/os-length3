@@ -19,7 +19,9 @@ let held: {el: HTMLElement; press: Animation} | null = null;
 /** The thing that gives: a card as a whole when its body is pressed, a button in it (×, the gear) alone. */
 function pressable(at: EventTarget | null): HTMLElement | null {
   if (!(at instanceof Element) || at.closest(AWAY)) return null;
-  const one = at.closest<HTMLElement>(ONE), whole = at.closest<HTMLElement>(WHOLE);
+  const one = at.closest<HTMLElement>(ONE);
+  // A native scrollbar press targets the diff region. Do not move the track out from under the pointer.
+  const whole = at.closest('.git-diff-scroll') ? null : at.closest<HTMLElement>(WHOLE);
   const el = whole && (!one || !whole.contains(one) || one.matches('.card-open')) ? whole : one;
   if (!el || el.matches(':disabled, [aria-disabled="true"]')) return null;
   return el;

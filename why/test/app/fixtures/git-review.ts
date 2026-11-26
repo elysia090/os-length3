@@ -9,6 +9,7 @@ import {readIssues} from '../../../repo/issues.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {issuePaper, issueSteps, type IssueEvents, type RepoState} from '../../../app/pages/git/issue.ts';
 import {h} from '../../../app/ui/dom.ts';
+import {touch} from '../../../app/ui/touch.ts';
 import '../../../app/styles/index.css';
 
 declare global {
@@ -40,4 +41,5 @@ async function read() {
 useCore((name, args) => window.gitAsk(name, args));
 await loadState(['remote']);
 window.gitPaper = {read};
+touch();
 await read();

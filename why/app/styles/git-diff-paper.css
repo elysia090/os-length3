@@ -20,44 +20,26 @@
   scrollbar-width: thin;
   scrollbar-color: var(--nighthawks-paper-thumb) transparent;
 }
-/* Leave the real track in place; only the horizontal thumb's ink waits for the hand. */
+/* Both tracks remain native. Only their ink and inset change, never the area the pointer can drag. */
 @supports selector(::-webkit-scrollbar) {
   @media not (forced-colors: active) {
     .git-diff-scroll, .git-diff-scroll.scrolling { scrollbar-color: auto; scrollbar-width: auto; }
     .git-diff-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
     .git-diff-scroll::-webkit-scrollbar-track, .git-diff-scroll::-webkit-scrollbar-corner { background: transparent; }
     .git-diff-scroll::-webkit-scrollbar-thumb {
-      border: 2px solid transparent; border-radius: 5px; background: var(--nighthawks-paper-thumb) padding-box;
+      border: 2px solid transparent; border-radius: var(--r-key); background: var(--nighthawks-paper-thumb) padding-box;
     }
-    .git-diff-scroll::-webkit-scrollbar-thumb:horizontal {
-      background-color: var(--git-diff-across-ink, var(--nighthawks-paper-thumb));
-    }
+    .git-diff-scroll::-webkit-scrollbar-thumb:horizontal { border-block-width: 4px; }
     .git-diff-scroll::-webkit-scrollbar-button:horizontal { display: none; }
-    @media (hover: hover) and (pointer: fine) {
-      .git-diff-scroll:not(:hover) { --git-diff-across-ink: transparent; }
-    }
+    .git-diff-scroll[data-scrollbar-across]::-webkit-scrollbar-thumb:horizontal { border-block-width: 2px; }
+    .git-diff-scroll[data-scrollbar-across]::-webkit-scrollbar-thumb:vertical { background-color: transparent; }
   }
 }
 @media (forced-colors: active) {
   .git-diff-scroll { scrollbar-color: auto; scrollbar-width: auto; }
 }
-/* One opening line and eleven reading lines, whether the file fills them or not. The closing rule belongs to
-   the reading area, and the one scrollport owns every file. */
+/* One opening line and eleven reading lines, whether the file fills them or not. */
 .git-diff-scroll:has(> .git-diff-files) { block-size: calc(12 * var(--u) + var(--s2) + 2px); }
-/* The matching end rule stays inside the reading width, above any scrollbar, while the rows move under it. */
-.git-diff-scroll:has(> .git-diff-files)::after {
-  content: '';
-  position: sticky;
-  inset-inline-start: 0;
-  inset-block-end: 0;
-  z-index: 2;
-  flex: none;
-  inline-size: 100cqi;
-  block-size: 1px;
-  margin-block-start: auto;
-  background: var(--rule);
-  pointer-events: none;
-}
 /* All files share one width so a short file's name and number gutter can still pin at a horizontal offset. */
 .git-diff-files { flex: none; inline-size: max-content; min-inline-size: 100%; }
 .git-diff-head {
