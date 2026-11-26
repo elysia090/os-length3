@@ -155,6 +155,7 @@ function repoParts(ctx: Context, again: Redraw, error: HTMLElement) {
       let receipt: Freed | null = null;
       return repoGear(ctx, name, {
         arrowKeys: true,
+        backedHere: item?.room === 'Free',
         afterSend: item?.room === 'SyncFree' ? item.why : undefined,
         fetch: item ? undefined : async () => { await bring(name); },
         why: async () => promptHolds(name) === 'busy' ? t('Locked by an active Prompt')

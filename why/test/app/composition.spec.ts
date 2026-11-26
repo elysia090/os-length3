@@ -35,7 +35,8 @@ const PLACES = {
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   server: {subject: '.server-paper', corner: '.server-sidebar, .server-paper', anchor: '.server-masthead > h1'},
   inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread', anchor: '.inbox-title'},
-  runtime: {subject: 'main#page', corner: '.page-head'},
+  // The Utility has no rail or door: its actual visible caption is the corner's eye-trace anchor.
+  runtime: {subject: 'main#page', corner: '.page-head', anchor: '.page-head > h1'},
   remote: {subject: 'main#page', corner: '.page-head'},
 } as const;
 type Place = keyof typeof PLACES;
@@ -138,6 +139,16 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const totals = el.closest('.git-totals');
     // The transcript is ruled from its reading origin within the paper, not the window edge.
     const transcript = el.closest('.board-talk');
+    // Runtime's utility paper has its own measured rows: a line beside the large number, a host readout,
+    // an inline key and inventory sections. Their first line is inset from the paper's edge, then wraps by a cell.
+    const runtimeLine = el.closest('.page[data-place="runtime"]') && el.closest(
+      '.page-head > h1, .storage-amount > span, .storage-host, .storage-key > div, .storage-caption > h3, '
+      + '.space-what, .space-measure, .space-empty, .reclaimed, .storage-error');
+    const runtimeFirst = runtimeLine ? (() => {
+      const css = getComputedStyle(runtimeLine);
+      const top = runtimeLine.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth);
+      return top + (runtimeLine.matches('.page-head > h1') ? parseFloat(css.lineHeight) : 24) / 2;
+    })() : null;
     const pitch = code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
       : tag ? paper!.getBoundingClientRect().top - pitch / 2
@@ -146,7 +157,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       : totals ? totals.getBoundingClientRect().top + pitch / 2
       : letterLine ? letterLine.getBoundingClientRect().top + pitch / 2
       : homeHead ? homeHead.getBoundingClientRect().top + pitch / 2
-      : transcript ? transcript.getBoundingClientRect().top - transcript.scrollTop + 1 + pitch / 2 : 12;
+      : transcript ? transcript.getBoundingClientRect().top - transcript.scrollTop + 1 + pitch / 2 : runtimeFirst ?? 12;
     // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
     // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
     const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.tl-who > time, .bubble-time') ? 1 : 0;

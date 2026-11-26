@@ -41,6 +41,8 @@ interface GearWays {
   arrowKeys?: boolean;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
   why(): Promise<string | null>;
+  /** A storage row can know an identical Remote copy before the UI's list has refreshed. */
+  backedHere?: boolean;
   /** An unsent copy is not yet preserved by Remote. Say what must happen before release. */
   afterSend?: string;
   /** Runtime can explicitly retrieve a remote-only copy without opening its editor. */
@@ -73,7 +75,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     // On the Remote: as the Remote last listed it, or agreed with this device since (the list is read again only now and then).
     const listed = remoteAll().find((r) => r.name === repo);
     const state = repoState(repo);
-    const there = signedIn && (listed || !here || state?.agreed) ? {offAt: listed?.offAt ?? (state?.where === 'off' ? 1 : null)} : null;
+    const there = signedIn && (listed || !here || state?.agreed || w.backedHere) ? {offAt: listed?.offAt ?? (state?.where === 'off' ? 1 : null)} : null;
     // What a Prompt running here holds back: one with something running in it, everything; one waiting, nothing.
     const holds = promptHolds(repo);
     const busy = holds === 'busy' ? t('A process is currently running in Prompt') : null;

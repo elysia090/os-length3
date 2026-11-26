@@ -85,13 +85,12 @@ export function runtime(ctx: Context): Node[] {
   const restarted = () => { const next = prompts(heard, following); running.replaceWith(next); running = next; };
   page.panel('device').append(holder);
   page.panel('prompts').append(running);
-  // The environments and, on the web, the desktop app one to their right: how this device runs, or becomes the
-  // app. SSH, how it is reached, under the two. (The desktop app is offered on the web; the app itself is it.)
-  page.panel('environments').append(h('div', {class: 'section-row'},
+  // More about the same device, at the same reading edge; the inactive panels stay live.
+  page.panel('environments').append(h('div', {class: 'runtime-leaf runtime-environments'},
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Active environment')), environment()),
-    ...(isNative ? [] : [desktopApp()])), sshSection());
+    isNative ? null : desktopApp(), sshSection()));
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
-  // The Agent's key apart from the dotfiles: a dotfile is the person's, on every device; the key is this device's alone.
+  // The Agent's key is local; dotfiles remain the person's on every device.
   page.panel('agent').append(agentSection());
   const head = pageHead('runtime', false);
   // Runtime keeps the page and its parts; navigation moves from the rail to the same Places as the work desks.

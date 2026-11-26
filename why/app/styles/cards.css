@@ -42,21 +42,6 @@
 .repo-gear-pop .pop-item:disabled { color: var(--sub); }
 @media (prefers-reduced-motion: reduce) { .repo-gear-button { transition: none; } }
 
-/* Runtime's Environments (issue #20, screen ③): the environments a Prompt can run on, in one card as wide as two
-   of Prompts running's side by side: the one in effect at its top (its name, its version, what it is, its digest),
-   then Ubuntu, Debian and Custom one under another, quiet, what can be done (or why not) at the right. The card
-   stands where the desktop app stood, the desktop app one to its right; SSH under the two. A version is set apart
-   from its name in the mono face (the desktop app's too). Narrower than two cards it takes the width it has, and
-   wraps rather than cutting a word off. */
-.version { font: 400 var(--t-word) var(--mono); color: var(--sub); }
-.env-card { gap: var(--s1); }
-.section-row .small-card.env-card { width: calc(2 * 270px + var(--s4)); }
-.env-sha { font: var(--t-word) var(--mono); overflow-wrap: anywhere; }
-.env-rows { display: grid; margin-top: var(--s3); }
-.env-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); min-height: var(--h-control); padding: var(--s1) 0; }
-.env-name { color: var(--sub); font-weight: 700; overflow-wrap: anywhere; }
-.env-note { grid-column: 1; overflow-wrap: anywhere; }
-.env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
 /* A narrow Home: Cancel and Save on a row of their own under the name written, rather than squeezing it. */
 @media (max-width: 640px) { .profile { grid-template-columns: minmax(0, 1fr); gap: var(--s4); } }
 

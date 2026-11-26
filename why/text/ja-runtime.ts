@@ -64,6 +64,8 @@ export default {
   'Observed free space: {sign}{size} ({how} · {ms} ms)': 'デバイスの空き容量（実測）：{sign}{size}（{how} · {ms} ms）',
   'Verified': '確定済み',
   'Retained {what}: {why}': '保持された項目：{what} — {why}',
+  'Left': '左',
+  'Right': '右',
   'Running Prompts': '実行中の Prompt',
   'Stopped · Freed {size}': '停止完了 · {size}を解放',
   'Stop': '停止',

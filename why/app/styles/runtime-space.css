@@ -19,15 +19,15 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
 .place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
 
 /* The local views are one quiet horizontal strip, and the chosen word its only line. */
-#page[data-place='runtime'] .part { background: none; border: 0; border-radius: 0; position: relative; padding-inline: var(--s1); }
+#page[data-place='runtime'] .part { background: none; border: 0; border-radius: 0; position: relative; padding-inline: 0; }
 #page[data-place='runtime'] .parts { gap: var(--s5); padding-inline-start: var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
 #page[data-place='runtime'] .part[aria-selected='true'] { color: var(--ink); }
 #page[data-place='runtime'] .part[aria-selected='true']::after {
-  content: ''; position: absolute; inset: auto var(--s1) 0; block-size: var(--line-frame); background: currentColor;
+  content: ''; position: absolute; inset: auto 0 0; block-size: var(--line-frame); background: currentColor;
 }
 #page[data-place='runtime'] .part:focus-visible { outline-offset: -1px; }
-.page[data-place='runtime']:has(#panel-runtime-device:not([hidden])) > .page-head h1 {
-  font-size: var(--t-word); font-weight: 700; letter-spacing: 0;
+.page[data-place='runtime'] > .page-head h1 {
+  font-family: var(--sans); font-size: var(--t-word); font-weight: 700; letter-spacing: 0;
 }
 
 /* Read the extent in one sweep, then what it means. The denominator is Why's local footprint. */
@@ -74,16 +74,17 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
 .device-part .space-list { border-block-start: 1px solid var(--rule); }
 .device-part .space-empty { margin: 0; padding-block-start: var(--s2); }
 .device-part .space-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) max-content var(--h-control); align-items: baseline;
+  display: grid; grid-template-columns: minmax(0, 1fr) max-content var(--h-control); align-items: start;
   gap: 0 var(--s3); min-block-size: var(--h-control); padding-block: var(--s1);
 }
+.device-part .space-what, .device-part .space-measure { padding-block-start: calc((var(--h-control) - var(--u)) / 2); }
 .device-part .space-what { display: grid; min-width: 0; overflow-wrap: anywhere; }
 .device-part .space-name { font-weight: 700; }
 .device-part .space-name .link-name { font: 400 var(--t-word)/var(--u) var(--mono); }
 .device-part .space-name [role='status']:not(:empty) { display: block; font-weight: 400; }
 .device-part .space-measure { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: var(--s2); }
 .device-part .space-size { white-space: nowrap; font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
-.device-part .space-row > .repo-gear-button { grid-column: 3; grid-row: 1; align-self: center; }
+.device-part .space-row > .repo-gear-button { grid-column: 3; grid-row: 1; }
 .device-part .space-row > .repo-gear-pop { grid-column: 1 / -1; min-width: 0; margin: var(--s1) 0 var(--s3); }
 .device-part .space-row > .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
 .device-part .space-row > .repo-gear-button[aria-expanded='true'] .mark { transform: rotate(.5turn); }

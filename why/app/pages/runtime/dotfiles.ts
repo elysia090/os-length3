@@ -30,7 +30,7 @@ interface BoxWays { paint(open?: string | null, saved?: boolean): void; restarte
  * and Take them over the box runs them here from then on.
  */
 export function dotfilesSection(restarted: () => void, counted: (n: number) => void = () => {}): HTMLElement {
-  const section = h('section', {class: 'section dotfiles-part', 'aria-label': t('Dotfiles')});
+  const section = h('section', {class: 'section runtime-leaf dotfiles-part', 'aria-label': t('Dotfiles')});
   const w: BoxWays = {paint: (open, saved) => paint(open, saved), restarted};
   /** Whose text was open under its row when last drawn ('+' and its name, a new one's): one opened now unfolds. */
   let shown: string | null = null;
@@ -51,7 +51,7 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
     list.append(make);
     if (fresh) list.append(editBox(fresh, '', true, false, w));
     counted(names.length);
-    section.replaceChildren(...(held.length ? [waitingNote(held, () => paint(open))] : []), list);
+    section.replaceChildren(h('h2', {class: 'runtime-lead'}, t('Dotfiles')), ...(held.length ? [waitingNote(held, () => paint(open))] : []), list);
     // Opened (pressed, or New dotfile), its text unfolds under its row rather than standing there in one frame.
     const now = fresh !== null ? `+${fresh}` : open;
     const editor = section.querySelector<HTMLElement>('.dot-editor');
@@ -91,7 +91,6 @@ function fileRow(name: string, text: string, current: boolean, press: () => void
 function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: BoxWays): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const title = h('input', {class: 'line-in mono dot-name', value: name, 'aria-label': t('Name'), spellcheck: 'false'}) as HTMLInputElement;
-  title.disabled = !fresh;
   const body = h('textarea', {class: 'line-in mono dot-text', rows: '12', spellcheck: 'false', 'aria-label': name}) as HTMLTextAreaElement;
   body.value = text;
   const save = button(t('Save'), 'primary');
@@ -108,7 +107,7 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   close.addEventListener('click', () => w.paint());
   const acts = h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save);
   const notes = !fresh && name === LOOK ? themeNotes(text) : null;
-  const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, notes, error, acts);
+  const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), fresh ? title : h('span', {class: 'mono'}, name)), body, notes, error, acts);
   remove.addEventListener('click', () => askRemove(name, box, acts, remove, error, w));
   // Saved while Prompts run: they have what they started with until they start again. Under the box, so Save stays put.
   const now = saved ? running() : [];

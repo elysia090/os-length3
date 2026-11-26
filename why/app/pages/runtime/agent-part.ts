@@ -11,10 +11,11 @@ import {button} from './parts.ts';
 
 /** The Agent's part: the key's line, or the key kept and Remove. `counted` hears whether there is one (the part's count). */
 export function agentSection(counted: (n: number) => void = () => {}): HTMLElement {
-  const section = h('section', {class: 'section agent-part', 'aria-label': t('Agent')});
+  const section = h('section', {class: 'section runtime-leaf agent-part', 'aria-label': t('Agent')});
   const paint = (k: Shown | null) => {
     counted(k ? 1 : 0);
-    section.replaceChildren(h('div', {class: 'agent-box'}, ...(k ? kept(k) : given())),
+    section.replaceChildren(h('h2', {class: 'runtime-lead'}, t('API key')),
+      h('div', {class: 'agent-box'}, ...(k ? kept(k) : given())),
       h('p', {class: 'muted small agent-note'}, h('span', {}, keptWhere(k)),
         h('span', {}, t('Used by UI Agent and inherited by local Prompts.'))));
   };
@@ -42,8 +43,8 @@ function kept(k: Shown): Node[] {
     remove.disabled = true;
     try { await forgetAgentKey(); } catch (e) { remove.disabled = false; error.textContent = errorText(e); }
   });
-  return [h('div', {class: 'agent-line'}, h('b', {}, t('API key')), h('span', {class: 'mono agent-shown'}, k.shown),
-    h('span', {class: 'muted small agent-model'}, k.model), remove), error];
+  return [h('div', {class: 'agent-line'}, h('span', {class: 'agent-stored'},
+    h('span', {class: 'mono agent-shown'}, k.shown), h('span', {class: 'muted small agent-model'}, k.model)), remove), error];
 }
 
 /** No key yet: the line to give one in, Use beside it; while it is tried, the maker is asked which model it opens. */
@@ -70,5 +71,5 @@ function given(): Node[] {
   };
   use.addEventListener('click', () => void go());
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void go(); } });
-  return [h('label', {class: 'agent-line'}, h('b', {}, t('API key')), input, use), said];
+  return [h('div', {class: 'agent-line'}, input, use), said];
 }

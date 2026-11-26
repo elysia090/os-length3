@@ -1313,7 +1313,7 @@ In **parts** (§3), as Remote's page is: この端末 (what it holds, what can g
 from it and come to it), what is running (offered while a Prompt runs, or one
 stopped here says what it gave back), the environments (SSH, the environment
 actually in effect, what runs, not what was asked for, and on the web the
-desktop app, side by side), the dotfiles, and the Agent's key beside them. A part not shown goes on: a
+desktop installer below), Dotfiles, and the Agent’s key. Inactive headings stay plain; only the active view has its short ink rule. A part not shown goes on: a
 Prompt runs, what holds a repo is read again, a dotfile half written stays.
 There is no table of policies: what the device holds is shown as things, and
 each thing says what can be done with it.
@@ -1367,6 +1367,15 @@ wide as the card, over what is under it; in a column that scrolls, under the
 row, in its own place. Done, the place says what it came to where it is (the
 row's result over the box; the card becomes the Remote's, takes its new name,
 or goes).
+
+Each leaf starts at the same reading edge. Environments leads with the current
+root and its digest, other roots in a list, the desktop installer on the web
+below them when available, and SSH beneath. A dotfile's row opens only its
+own text field, not another sheet. Agent has a single masked input or
+abbreviated saved key, with its use and storage explained beside it. Running
+Prompts is offered only while a live session or its receipt is present; each
+row has its own measured memory, actions and network confirmation, with left
+and right named only where the same repo runs both.
 
 - **この端末**: one reading at the upper left, the total this OS holds locally.
   One horizontal strip partitions those same bytes into what can go now,

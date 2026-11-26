@@ -270,7 +270,7 @@ test.describe('narrow Runtime', () => {
   });
 });
 
-test('the environments are one card two wide, the desktop app at its right and SSH under both: why* and its version apart, one Download', async ({signedIn: app}) => {
+test('environments, desktop installer and SSH read in one line of measure: real version and one download', async ({signedIn: app}) => {
   // This checks metadata and layout, not a guest boot or the bundled pack.
   await app.page.route('**/webroot/webroot.json', (r) => r.fulfill({json: {
     version: shipped(), sha256: '0'.repeat(64), root: {name: 'Ricebox'},
@@ -285,15 +285,13 @@ test('the environments are one card two wide, the desktop app at its right and S
   await expect(env.locator('.card-title')).toHaveText(/^Ricebox(?: \d+\.\d+\.\d+)?$/);
   const app_ = panel.getByRole('region', {name: 'Desktop App'});
   await expect(app_).toBeVisible();
-  const [e, d] = [(await env.boundingBox())!, (await app_.locator('.card').boundingBox())!];
-  // Side by side, the environments at the left, ending level.
-  expect(d.x).toBeGreaterThan(e.x + e.width);
-  expect(Math.abs(d.y - e.y)).toBeLessThan(2);
-  // As wide as two of Running Prompts's cards side by side; SSH under the two, not beside them.
-  expect(e.width).toBeGreaterThanOrEqual(2 * 270);
+  const [e, d] = [(await env.boundingBox())!, (await app_.locator('.app-card').boundingBox())!];
   const ssh = (await panel.getByRole('heading', {name: 'SSH'}).boundingBox())!;
-  expect(ssh.y).toBeGreaterThan(Math.max(e.y + e.height, d.y + d.height));
-  expect(Math.abs(ssh.x - e.x)).toBeLessThan(2);
+  // One shared left edge and enough measure for the names: installers and SSH follow, not equal cards.
+  expect([d.x, ssh.x]).toEqual([e.x, e.x]);
+  expect(e.width).toBeGreaterThanOrEqual(24 * 24);
+  expect(d.y).toBeGreaterThan(e.y + e.height);
+  expect(ssh.y).toBeGreaterThan(d.y + d.height);
   // One download: the .deb, which says what it is; no AppImage beside it.
   await expect(app_.getByRole('link')).toHaveCount(1);
   const release = shipped();
@@ -314,6 +312,23 @@ test('the environments are one card two wide, the desktop app at its right and S
   expect(build?.split(' ')[0]).toBe(whyVersion);
   const face = (l: Locator) => l.evaluate((el) => getComputedStyle(el).fontFamily);
   expect(await face(version)).not.toBe(await face(title));
+});
+
+test('the Runtime Agent field stays masked and keeps a draft across the real horizontal tabs', async ({app}) => {
+  await app.runtime.open('Agent');
+  const agent = app.main.getByRole('tabpanel', {name: 'Agent', exact: true});
+  const key = agent.getByLabel('API key');
+  const size = await app.main.getByRole('tablist', {name: 'Runtime'}).boundingBox();
+  await expect(key).toHaveAttribute('type', 'password');
+  await expect(agent.getByRole('button', {name: 'Use'})).toBeDisabled();
+  await key.fill('not-a-key-test');
+  await expect(agent.getByRole('button', {name: 'Use'})).toBeEnabled();
+  await app.runtime.part('This browser').click();
+  await expect(key).toBeHidden();
+  await app.runtime.part('Agent').click();
+  await expect(key).toHaveValue('not-a-key-test');
+  expect(await app.main.getByRole('tablist', {name: 'Runtime'}).boundingBox()).toEqual(size);
+  await key.fill('');
 });
 
 test("a repo's name in Runtime opens it in Forge; its gear offers its card on the Remote, Rename, Free and Delete, and Free says what it does first", async ({signedIn: app}) => {
