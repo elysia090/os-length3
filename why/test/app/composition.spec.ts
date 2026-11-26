@@ -157,9 +157,8 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const c = getComputedStyle(el);
     // Away from the rounded corners, the sheet owns all of this ground-coloured strip.
     return {
-      left: left + Math.max(parseFloat(c.borderTopLeftRadius), parseFloat(c.borderBottomLeftRadius)),
-      right: right - Math.max(parseFloat(c.borderTopRightRadius), parseFloat(c.borderBottomRightRadius)),
-      top, bottom,
+      left, top, right, bottom,
+      inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
   return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper};
@@ -237,13 +236,20 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(lr, `${what}: the lower right (${lr.toFixed(2)} empty) at least as empty as the upper left (${ul.toFixed(2)})`).toBeGreaterThanOrEqual(ul);
   if (!desk) return;
   // The field: the bare ground one body, open to the right or the foot, nothing of it shut in between things.
+  // Forge now has 12px seams between full-height sheets. A full 24px cell cannot witness that open corridor,
+  // so resolve connectivity on smaller samples there; coverage and the lean still use the 24px grid.
+  const pitch = place === 'forge' ? 4 : U;
+  const field = pitch === U ? rows : await emptiness(app.page, pitch);
   // DESIGN §2: a counter inside a sheet belongs to that sheet. A quiet Forge paper uses ground paint, so its
   // wholly contained bare cells do not belong to the desk. Any cell crossing its boundary is still measured as drawn.
-  const ground = f.quietPaper.length ? rows.map((row, j) => [...row].map((cell, i) => {
-    const x = 2 * U + i * U, y = 2 * U + j * U;
-    return cell === 'g' && f.quietPaper.some((p) => x >= p.left && x + U <= p.right && y >= p.top && y + U <= p.bottom) ? 'p' : cell;
-  }).join('')) : rows;
+  const ground = f.quietPaper.length ? field.map((row, j) => [...row].map((cell, i) => {
+    if (cell !== 'g') return cell;
+    const x = 2 * U + i * pitch, y = 2 * U + j * pitch, right = x + pitch, bottom = y + pitch;
+    return f.quietPaper.some(p => x >= p.left && right <= p.right && y >= p.top && bottom <= p.bottom &&
+      ((x >= p.left + p.inset && right <= p.right - p.inset) || (y >= p.top + p.inset && bottom <= p.bottom - p.inset))) ? 'p' : cell;
+  }).join('')) : field;
   const all = fields(ground), bare = all.reduce((n, c) => n + c.n, 0);
+  expect(bare, `${what}: bare ground still visible`).toBeGreaterThan(0);
   expect(all[0]!.n / bare, `${what}: the bare ground one field`).toBeGreaterThanOrEqual(.95);
   expect(all[0]!.open, `${what}: the field open to the window's right or foot`).toBe(true);
   expect(all.filter((c) => !c.edge).reduce((n, c) => n + c.n, 0) / bare, `${what}: no ground trapped between things`).toBeLessThan(.01);
