@@ -162,3 +162,17 @@ test('the same file name, gutters and single inner scroller work at 390px', asyn
   expect(await view.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
+
+test.describe('touch', () => {
+  test.use({hasTouch: true, viewport: {width: 390, height: 844}});
+  test('touch in the gutter marks a line without reaching the surrounding issue swipe', async ({page}) => {
+    await page.evaluate(() => {
+      document.querySelector('main')!.addEventListener('pointerdown', () => { document.body.dataset.swipe = 'started'; });
+    });
+    const line = page.getByRole('button', {name: 'After: line 2 in src/main.c', exact: true});
+    await line.tap();
+    await expect(line).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('body')).not.toHaveAttribute('data-swipe');
+    expect(await page.evaluate(() => window.diffFixture.events)).toEqual([[{path: 'src/main.c', side: 'new', line: 2}]]);
+  });
+});

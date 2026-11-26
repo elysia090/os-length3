@@ -216,6 +216,8 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
     });
   }
 
+  // Touch that starts in the diff belongs to its scroller or gutter, not the issue row's swipe.
+  viewport.addEventListener('pointerdown', (e) => e.stopPropagation());
   viewport.addEventListener('pointermove', (e) => {
     if (!pointer || e.pointerId !== pointer.id) return;
     // Capture keeps handling the drag after the pointer leaves the original button. It can pass over the code.
