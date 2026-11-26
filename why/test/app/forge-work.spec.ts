@@ -746,7 +746,7 @@ test('the keys an editor knows: Ctrl+K and Ctrl+P go to the search, Ctrl+` to th
   await expect(app.forge.search).toBeFocused();
   await app.page.keyboard.press('Control+Backquote');
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(app.forge.piece('term')).toHaveClass(/held/);
+  await expect(app.main.locator('.forge-prompt-slot')).toHaveClass(/\bheld\b/);
 });
 
 

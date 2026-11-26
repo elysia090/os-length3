@@ -282,7 +282,13 @@ test('signed out, a repo is renamed and deleted from its gear, asked in place; F
   await app.answer(ask.getByRole('button', {name: 'Delete', exact: true}), ask);
   await expect(card('trip')).toHaveCount(0);
   await app.rail.go('forge');
-  await expect(app.main.getByRole('button', {name: /^Create your first repo/})).toBeVisible();
+  await expect(app.forge.desk).toHaveCount(0);
+  await app.main.getByRole('button', {name: 'Open Folder', exact: true}).click();
+  const folders = app.page.getByRole('dialog', {name: 'Open Folder', exact: true});
+  await expect(folders.getByRole('status')).toHaveText('No repos yet');
+  await folders.getByRole('button', {name: 'Create your first repo', exact: true}).click();
+  await expect(folders).toBeHidden();
+  await expect(app.page.locator('#page')).toHaveAttribute('data-place', 'new-repo');
 });
 
 test('a repo renamed from its gear keeps its desk, what was half written for it, its search, where one left off and its name in Git', async ({app}) => {
