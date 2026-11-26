@@ -3,16 +3,9 @@
 // person, nearest first: Home (mine), Forge (the work), Server (people), Runtime (the machine); then what is not a
 // place: File and the plug, called up in front of whatever place is shown, and +, which makes a repo.
 //
-// Three pages have no icon. Each is the far side of a place and is reached from it, by the door at the head of that
-// place's band (main.ts), and from it the same door leads back: the door is in one spot both ways, so there and back
-// is two presses without moving the hand.
-//   Git     is Forge's far side: the repo written, then the repo recorded and reviewed.
-//   Remote  is Home's: what is mine here, then where it is kept.
-//   Inbox   is Server's: where many talk, then what was said to one.
-// They are not put on their place's screen: each stays the whole screen it was, a step along from its place. An icon
-// stands on the rail only for a place the day goes to from anywhere; what is gone to from one place has its door
-// there. Purposes are not directories: the filesystem stays an ordinary POSIX tree and never re-implements this
-// classification.
+// Git and Forge are peers on the same work level; both have the Places key. The Remote and Inbox are still each a
+// place's far side, reached by the door at the head of that place: Home's repos where they are kept and Server's
+// conversations. Purposes are not directories; the filesystem is an ordinary POSIX tree.
 
 export type PurposeId =
   | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'server' | 'inbox' | 'plugin'
@@ -32,7 +25,7 @@ export interface Purpose {
   readonly group: 'mine' | 'work' | 'people' | 'machine' | 'tools';
 }
 
-/** Every page, a place's far side after its place. */
+/** Every page, with related pages together. */
 export const PURPOSES: readonly Purpose[] = [
   {id: 'home', label: 'Home', role: 'Profile', group: 'mine',
     detail: 'A public profile page showing your repos and servers.', implemented: true},
@@ -61,9 +54,11 @@ export const NEW_REPO: Purpose = {id: 'new-repo', label: 'New repo', role: 'Crea
   detail: 'Choose a standard template to create a standalone repo.', implemented: true};
 
 /** The place each page with no icon is the far side of. */
-const FAR: Partial<Record<PurposeId, PurposeId>> = {git: 'forge', remote: 'home', inbox: 'server'};
-/** The place a page is in: itself, or the place it is the far side of. Its icon is the rail's for that page. */
-export const placeOf = (id: PurposeId): PurposeId => FAR[id] ?? id;
+const FAR: Partial<Record<PurposeId, PurposeId>> = {remote: 'home', inbox: 'server'};
+/** Whether the page uses the unobtrusive work Places key instead of a permanent rail. */
+export const isWorkPage = (id: PurposeId) => id === 'forge' || id === 'git';
+/** Depth and rail continuity: the two work pages share one rail position, but neither is the other's door. */
+export const placeOf = (id: PurposeId): PurposeId => id === 'git' ? 'forge' : FAR[id] ?? id;
 /** Where the door of `id` leads: from a place to its far side, from a far side back to its place; none where a place has no far side. */
 export function doorOf(id: PurposeId): PurposeId | null {
   if (FAR[id]) return FAR[id]!;
@@ -74,7 +69,7 @@ export function doorOf(id: PurposeId): PurposeId | null {
 export const isFar = (id: PurposeId): boolean => id in FAR;
 
 /** Rail order, top to bottom, as keyboard navigation walks it: the places, then what is not a place. */
-export const RAIL: readonly Purpose[] = [...PURPOSES.filter((p) => !(p.id in FAR)), NEW_REPO];
+export const RAIL: readonly Purpose[] = [...PURPOSES.filter((p) => !(p.id in FAR) && p.id !== 'git'), NEW_REPO];
 
 /** Where a page lies in the world, down from Home: its place's number on the rail. */
 export const depth = (id: PurposeId): number => RAIL.findIndex((p) => p.id === placeOf(id));

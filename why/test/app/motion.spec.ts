@@ -338,32 +338,50 @@ test('going to another place the world goes by: the place left, the place come t
   const U = 24;
   const been = new Set<string>();
   for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
+    // On a work desk the rail is opened through More Places. Measure the press that chooses the
+    // destination, not the press that merely opens a menu.
+    await app.rail.open();
+    await still(app);
+    const destination = app.rail.button(to);
+    await expect(destination).toBeVisible();
+    const from = await app.main.getAttribute('data-place');
     const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);
     // Every frame of the move: how far the place left has gone, the place come to, and the ground's dots.
     const frames = app.page.evaluate(() => new Promise<{t: number; left: number | null; come: number | null; dots: number; place: string}[]>((done) => {
       const out: {t: number; left: number | null; come: number | null; dots: number; place: string}[] = [], t0 = performance.now();
       // When the press went down (on the page's clock, as the frames are).
       addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, place: 'pressed'}); }, {capture: true, once: true});
-      const y = (el: Element | null | undefined) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
+      const y = (el: Element | null) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
+      const page = document.getElementById('page')!;
+      let coming: Element | null = null;
       const step = () => {
-        const page = document.getElementById('page')!;
-        const part = [...page.querySelectorAll('*')].find((e) => e.getAnimations().some((a) => (a.effect as KeyframeEffect | null)?.getKeyframes().some((k) => /translateY/.test(String(k.transform ?? '')))));
-        out.push({t: performance.now() - t0, left: y(document.querySelector('.place-left')), come: y(part), dots: parseFloat(getComputedStyle(document.body).backgroundPositionY) || 0, place: page.dataset.place ?? ''});
-        if (performance.now() - t0 < 800) requestAnimationFrame(step); else done(out);
+        const t = performance.now() - t0;
+        const left = document.querySelector('.place-left');
+        // Look among the playing effects, not every descendant of the page on every measured frame.
+        if (left && !coming?.isConnected) {
+          const effects = document.getAnimations().map((a) => a.effect as KeyframeEffect | null);
+          coming = effects.find((e) => e?.target && page.contains(e.target)
+            && e.getKeyframes().some((k) => /translateY/.test(String(k.transform ?? ''))))?.target ?? null;
+        }
+        out.push({t, left: y(left), come: left ? y(coming) : null, dots: parseFloat(getComputedStyle(document.body).backgroundPositionY) || 0, place: page.dataset.place ?? ''});
+        if (t < 800) requestAnimationFrame(step); else done(out);
       };
       requestAnimationFrame(step);
     }));
-    await app.rail.button(to).click();
+    await destination.click();
     const got = await frames, pressed = got.find((f) => f.place === 'pressed')!.t, all = got.filter((f) => f.place !== 'pressed');
     const moving = all.filter((f) => f.left !== null);
+    const firstDrawn = moving.find((f) => Math.abs(f.left!) > .5);
+    expect(firstDrawn, `${from} to ${to}: the world actually moves`).toBeDefined();
     // Caused by the press (Michotte: a motion is seen as caused by another that starts it within 50 ms): the world off
     // within 50 ms of the press going down, and a frame (what is measured is the frame it is drawn in). (Forge the
     // first time is not yet so, §11: its desk is built first.)
-    if (!(to === 'forge' && !been.has(to))) expect(moving.find((f) => Math.abs(f.left!) > .5)!.t - pressed, `to ${to}: off within 50 ms of the press`).toBeLessThanOrEqual(50 + 1000 / 60);
+    if (!(to === 'forge' && !been.has(to))) expect(firstDrawn!.t - pressed, `${from} to ${to}: off within 50 ms of the press`).toBeLessThanOrEqual(50 + 1000 / 60);
     been.add(to);
     // The place left stays in sight as the world moves, and the one come to follows it at one distance: no gap
     // opens or closes between them, and the ground's dots go as they do.
     expect(moving.length, `to ${to}`).toBeGreaterThan(5);
+    expect(moving.some((f) => f.come !== null), `to ${to}: the incoming page moves as well`).toBe(true);
     for (const f of moving) {
       if (f.come !== null) expect(Math.abs(f.come - dir * far - f.left!), `to ${to}: the two places a window apart`).toBeLessThan(1.5);
       expect(Math.abs(f.dots - f.left!), `to ${to}: the dots with the places`).toBeLessThan(1.5);

@@ -32,22 +32,42 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   expect(tree.x + tree.width).toBeLessThanOrEqual(320);
 });
 
-test('on a phone, Forge\'s band is its keys and the search, whole in the window; the desk is a row turned along, a sheet no wider than the window has room for', async ({app}) => {
+test('on a phone, Forge has one Places key; its menu, summoned Search, and the sheet in hand are whole in the window', async ({app}) => {
+  const {forge, page} = app;
   await app.newRepo.make('trip-notes');
   await app.newRepo.openInForge();
-  await app.page.setViewportSize({width: 390, height: 844});
-  expect(await sideways(app.page), 'Forge').toBeLessThanOrEqual(0);
-  for (const key of await app.forge.tools.getByRole('button').all()) await expect(key).toBeInViewport({ratio: 1});
-  await expect(app.forge.search).toBeInViewport({ratio: 1});
-  const search = (await app.forge.search.boundingBox())!;
-  expect(search.x + search.width).toBeLessThanOrEqual(390);
+  await page.setViewportSize({width: 390, height: 844});
+  expect(await sideways(page), 'Forge').toBeLessThanOrEqual(0);
+  await expect(forge.search).toBeHidden();
+  await expect(forge.placesKey).toBeInViewport({ratio: 1});
+  await forge.placesKey.click();
+  await expect(forge.places).toBeInViewport({ratio: 1});
+  const destinations = forge.places.getByRole('menuitemradio');
+  await expect(destinations).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
+  for (const key of await destinations.all()) await expect(key).toBeInViewport({ratio: 1});
+  const more = forge.places.getByRole('menuitem', {name: 'More Places', exact: true});
+  await expect(more).toBeInViewport({ratio: 1});
+  expect(await sideways(page), 'Places').toBeLessThanOrEqual(0);
+  await more.click();
+  await page.getByRole('navigation', {name: 'Purposes', exact: true}).getByRole('button', {name: 'Search', exact: true}).click();
+  await expect(forge.search).toBeFocused();
+  await expect(forge.search).toBeInViewport({ratio: 1});
+  expect(await sideways(page), 'Search').toBeLessThanOrEqual(0);
   // The file in hand is whole in sight with its shadow, the desk turned to it.
-  await app.forge.editor('README.md').focus();
-  const [d, b] = [(await app.forge.desk.boundingBox())!, (await app.forge.piece('README.md').boundingBox())!];
-  // (As many whole cells as the window has room for with its shadow.)
-  expect(b.width + 12).toBeLessThanOrEqual(d.width);
+  await forge.editor('README.md').focus();
+  await expect(forge.search).toBeHidden();
+  const paper = forge.piece('README.md');
+  const shade = 4;
+  await expect(paper).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+  const [d, b] = [(await forge.desk.boundingBox())!, (await paper.boundingBox())!];
+  // As many whole cells as the desk has room for, with today's thinner shadow wholly in sight too.
+  expect(b.width + shade).toBeLessThanOrEqual(d.width);
   expect(b.width % 24).toBe(0);
-  await expect.poll(async () => { const r = (await app.forge.piece('README.md').boundingBox())!; return r.x >= d.x && r.x + r.width <= d.x + d.width; }).toBe(true);
+  await expect.poll(async () => {
+    const r = (await paper.boundingBox())!;
+    return r.x >= d.x && r.x + r.width + shade <= d.x + d.width
+      && r.y >= d.y && r.y + r.height + shade <= d.y + d.height;
+  }).toBe(true);
 });
 
 test('a profile with a word longer than a phone is wide breaks in the word, never pushing Home sideways', async ({signedIn: app}) => {

@@ -159,7 +159,7 @@ class Part {
 
 /** The pages with no icon on the rail, and the place each is the far side of: reached by the door at the head of that
  * place's band, which in the same spot leads back. */
-const FAR: Partial<Record<Place, Place>> = {git: 'forge', remote: 'home', inbox: 'server'};
+const FAR: Partial<Record<Place, Place>> = {remote: 'home', inbox: 'server'};
 
 /** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
@@ -170,15 +170,35 @@ class Rail extends Part {
     // Its name says more while something is to be seen there ("Unread messages in Inbox", "New posts in server",
     // "Cannot connect to Remote"): the place is a word of it. The rail is named in the language spoken; its places
     // keep their names in both.
-    return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/}).getByRole('button', {name: new RegExp(`(^|\\s)${PLACES[place]}(\\s|$)`, 'i')});
+    return this.navigation.getByRole('button', {name: new RegExp(`(^|\\s)${PLACES[place]}(\\s|$)`, 'i'), includeHidden: true});
+  }
+
+  private get navigation() { return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/, includeHidden: true}); }
+
+  /** The common routes are summoned on either work desk. */
+  async open() {
+    const here = await this.page.locator('#page').getAttribute('data-place');
+    if ((here === 'forge' || here === 'git') && !await this.navigation.isVisible()) {
+      const menu = this.app.forge.places;
+      if (!await menu.isVisible()) await this.app.forge.placesKey.click();
+      await menu.getByRole('menuitem', {name: 'More Places', exact: true}).click();
+    }
   }
 
   async go(place: Place) {
     const at = this.page.locator('#page');
+    const now = await at.getAttribute('data-place');
+    if (place === 'git' || (place === 'forge' && now === 'git')) {
+      if (now !== place) {
+        if (now !== 'forge' && now !== 'git') await this.go('forge');
+        await this.app.forge.use(place === 'git' ? 'Git' : 'Forge');
+      }
+      await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
     const of = FAR[place];
     if (of) {
       // A far side: to its place (unless there, or at the far side already), then through the door.
-      const now = await at.getAttribute('data-place');
       if (now !== place) {
         if (now !== of) await this.go(of);
         await this.door.click();
@@ -186,7 +206,10 @@ class Rail extends Part {
       await expect(at).toHaveAttribute('data-place', place);
       return;
     }
-    await this.button(place).click();
+    if (place !== 'forge' || now !== 'forge') {
+      await this.open();
+      await this.button(place).click();
+    }
     if (place !== 'file' && place !== 'plugin') {
       await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
       await expect(at).toHaveAttribute('data-place', place);
@@ -277,6 +300,14 @@ class NewRepo extends Part {
 
 /** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
+  get placesKey() { return this.main.getByRole('button', {name: 'Places', exact: true}); }
+  get places() { return this.main.getByRole('menu', {name: 'Places', exact: true}); }
+
+  async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
+    if (!await this.places.isVisible()) await this.placesKey.click();
+    await this.places.getByRole('menuitemradio', {name: place, exact: true}).click();
+  }
+
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
   get tools() { return this.main.getByRole('group', {name: 'Tools'}); }
   /** The repo's desk (the one on screen), and a piece on it by its key (a file's path; 'term', the terminal). */
@@ -332,6 +363,7 @@ class Forge extends Part {
 
   /** Search the open repo: what is found opens under the box. */
   async find(query: string) {
+    if (!await this.search.isVisible()) await this.page.keyboard.press('Control+k');
     await this.search.fill(query);
     await expect(this.results).toBeVisible();
     await expect(this.results.getByText('Searching…')).toBeHidden();
@@ -370,6 +402,7 @@ class Forge extends Part {
 
   /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
+    if (!await this.prompt.isVisible()) await this.use('Prompt');
     // Run, as chosen (the box takes up Edit by itself while a file has the keyboard).
     await this.promptBox.press('Alt+1');
     await this.promptBox.press(' ');
@@ -380,6 +413,7 @@ class Forge extends Part {
 
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
+    if (!await this.prompt.isVisible()) await this.use('Prompt');
     await this.promptBox.press('Alt+1');
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');
@@ -429,7 +463,10 @@ class FileTree extends Part {
     // Out is what File's button says, not whether the tree is still seen: put away a moment ago, it fades for a
     // moment while no longer out.
     const file = this.app.rail.button('file');
-    if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+    if (await file.getAttribute('aria-expanded') !== 'true') {
+      await this.app.rail.open();
+      await file.click();
+    }
     await expect(file).toHaveAttribute('aria-expanded', 'true');
     await expect(this.tree).toBeVisible();
   }
@@ -537,11 +574,11 @@ class FileTree extends Part {
   }
 }
 
-/** Git: the issues, each a box with Start, Commit, Push; under it Review and Merge. */
+/** Git: a paper with the work and review, a history below, and Start, Commit, Submit, Merge beside it. */
 class Git extends Part {
   /** The issue's box, by its name as it is shown (#1 Fix：title); its neighbours show only their heads. */
   issue(name: string) { return this.main.getByRole('heading', {name, exact: true, level: 2}); }
-  get review() { return this.main.getByRole('region', {name: 'Review'}); }
+  get review() { return this.main.locator('.git-paper:has(.git-paper-review:visible)'); }
 
   /**
    * An issue made in `repo`: its first line, named like a TODO ("Fix: title"), written on the issue not written yet (the
@@ -550,40 +587,42 @@ class Git extends Part {
    */
   async write(repo: string, first: string, detail = '') {
     await this.app.rail.go('git');
+    await this.folder(repo);
     await this.toNew();
-    // Where it goes is chosen in the one row of repos, as the issues shown are (with one repo, it is that one): once
-    // the repos are read (the piece says where it goes), the row is there if there is a choice.
-    await expect(this.firstLine).toHaveAccessibleDescription(/\S/);
-    const chip = this.repos.getByRole('radio', {name: repo, exact: true});
-    if (await chip.isVisible()) await chip.click();
     await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.firstLine.fill(first);
+    if (detail) await this.detailDraft.fill(detail);
     await this.firstLine.press('Enter');
     const summary = this.main.getByRole('textbox', {name: 'Summary', exact: true});
     await expect(summary).toBeFocused();
-    if (detail) {
-      await summary.fill(detail);
-      await summary.blur();
+    if (detail) await expect(summary).toHaveValue(detail);
+  }
+
+  /** Git's folder before taking up an issue, not a field of the issue. */
+  async folder(repo: string) {
+    await expect(this.main.locator('.issue-slot-new')).toHaveCount(1);
+    const key = this.main.locator('button.git-repo-key');
+    if (await key.isVisible()) {
+      if (await key.getAttribute('aria-label') !== `Git folder: ${repo}`) {
+        await key.click();
+        await this.main.getByRole('menu', {name: 'Git folders'}).getByRole('menuitemradio', {name: repo, exact: true}).click();
+        await expect(key).toHaveAccessibleName(`Git folder: ${repo}`);
+      }
     }
   }
 
-  /** Along the row to its last piece, the issue not written yet: by its bar on the row's map, or the next edge. */
+  /** The one named way to the new paper, above the current issue. */
   async toNew() {
     await expect(this.main.locator('.issue-slot-new')).toHaveCount(1);
-    for (let i = 0; i < 40 && !(await this.firstLine.isVisible()); i++) {
-      const bar = this.main.locator('.issue-column > .row-map').getByRole('button', {name: 'New issue', exact: true});
-      const next = this.main.getByRole('button', {name: 'Next issue', exact: true});
-      if (await bar.isVisible()) await bar.click();
-      else if (await next.isVisible()) await next.click();
-      else await this.page.waitForTimeout(100);
-    }
+    if (!(await this.firstLine.isVisible())) await this.newIssue.click();
     await expect(this.firstLine).toBeVisible();
   }
 
-  /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
-  get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
-  /** The first line of the issue not written yet, while it is in the hand; it says the repo it goes in (its description). */
-  get firstLine() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'First line: Type: Title'}); }
+  get newIssue() { return this.main.getByRole('button', {name: 'New issue', exact: true}); }
+  /** The paper's title and optional details; the title describes its destination. */
+  get firstLine() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'Issue title'}); }
+  get detailDraft() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'Details', exact: true}); }
+  get createIssue() { return this.main.locator('.issue-new-card').getByRole('button', {name: 'Create issue', exact: true}); }
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }
@@ -595,7 +634,7 @@ class Git extends Part {
 
   /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
   section(name: 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
-  /** Start the issue on screen, make the change in Forge, then Commit it: it hands itself in for review. */
+  /** Start the issue, write in Forge, record the commit and explicitly Submit it for review. */
   async handIn(edit: {path: string; text: string}) {
     await this.step('Start').click();
     await expect(this.step('Back to main')).toBeVisible();
@@ -604,6 +643,7 @@ class Git extends Part {
     await this.app.forge.editFile(edit.path, edit.text);
     await this.app.rail.go('git');
     await this.step('Commit').click();
+    await this.step('Submit').click();
     await expect(this.review).toBeVisible();
   }
 }
@@ -734,9 +774,9 @@ class Server extends Part {
   /** The right: who is in it, then the repos they show in it. */
   get side() { return this.view.getByRole('complementary', {name: 'Members and shared repos'}); }
 
-  /** To its page, pressed on the rail. */
+  /** To its page, by the rail (summoned through More Places on a work desk). */
   async open() {
-    await this.app.rail.button('server').click();
+    await this.app.rail.go('server');
     await expect(this.view).toBeVisible();
   }
 

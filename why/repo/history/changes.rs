@@ -15,8 +15,16 @@ pub(super) fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
     let mut out = Vec::new();
     for p in pairs {
         let mut lines = Vec::new();
+        let mut approximate = false;
         if !p.binary {
-            let ops = diff::ops(p.before.as_deref().unwrap_or(""), p.after.as_deref().unwrap_or(""));
+            let before = p.before.as_deref().unwrap_or("");
+            let after = p.after.as_deref().unwrap_or("");
+            let ops = diff::ops(before, after);
+            // The multiset fallback may omit matching middle lines. Its tallies are useful,
+            // but advancing over only the emitted operations would invent line addresses.
+            let count = |t: &str| if t.is_empty() { 0 } else { t.split_terminator('\n').count() };
+            let sites = ops.iter().fold((0, 0), |(l,r),(k,_)| (l + usize::from(*k != Kind::Add), r + usize::from(*k != Kind::Del)));
+            approximate = sites != (count(before), count(after));
             // Three lines either side of a change, as git shows them.
             let keep: Vec<bool> = (0..ops.len()).map(|i| ops[i.saturating_sub(3)..(i + 4).min(ops.len())].iter().any(|(k, _)| *k != Kind::Same)).collect();
             // Line numbers in the old and the new text, counted as the lines go by.
@@ -24,15 +32,18 @@ pub(super) fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
             for (i, (k, t)) in ops.iter().enumerate() {
                 let at = match k { Kind::Del => { old += 1; old } Kind::Add => { new += 1; new } Kind::Same => { old += 1; new += 1; new } };
                 if !keep[i] { continue; }
-                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into(), at: None }); }
-                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string(), at: Some(at) });
+                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into(), at: None, old: None, new: None }); }
+                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string(), at: (!approximate).then_some(at),
+                    old: (!approximate && *k != Kind::Add).then_some(old), new: (!approximate && *k != Kind::Del).then_some(new) });
             }
         }
+        let added = lines.iter().filter(|l| l.kind == "add").count();
+        let removed = lines.iter().filter(|l| l.kind == "del").count();
         let keep = lines.len().min(left);
         let more = lines.len() - keep;
         lines.truncate(keep);
         left -= keep;
-        out.push(FileDiff { path: p.path, status: p.status, binary: p.binary, lines, more });
+        out.push(FileDiff { path: p.path, status: p.status, binary: p.binary, added, removed, approximate, lines, more });
     }
     Ok(out)
 }
@@ -261,6 +272,11 @@ pub struct FileDiff {
     pub status: &'static str,
     pub binary: bool,
     pub lines: Vec<DiffLine>,
+    /// Counts before display truncation.
+    pub added: usize,
+    pub removed: usize,
+    /// The comparison lacks exact positions; its lines cannot be used as review references.
+    pub approximate: bool,
     /// Lines left out past the limit.
     pub more: usize,
 }
@@ -273,6 +289,10 @@ pub struct DiffLine {
     /// Which line it is: in the new text for "add" and "same", in the old for "del".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub at: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new: Option<usize>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -319,3 +339,33 @@ pub(super) fn places(then: &Tree, now: &Tree) -> (Vec<String>, usize) {
 }
 
 
+
+
+#[cfg(test)]
+mod review_positions {
+    use super::*;
+
+    #[test]
+    fn unchanged_context_has_two_coordinates_and_truncated_counts_are_real() {
+        let pairs = vec![Pair {path: "f".into(), status: "modified", binary: false,
+            before: Some("a\nb\nc\n".into()), after: Some("a\nnew\nb\nc\n".into())}];
+        let files = diff_of(pairs, 3).unwrap();
+        let file = &files[0];
+        assert_eq!((file.added, file.removed, file.more), (1,0,1));
+        assert_eq!((file.lines[2].old, file.lines[2].new), (Some(2),Some(3)));
+        assert!(!file.approximate);
+    }
+
+    #[test]
+    fn large_multiset_fallback_never_makes_up_a_line_address() {
+        let middle = "before\n".repeat(1500);
+        let old = format!("start old\n{middle}end old\n");
+        let new = format!("start new\n{middle}end new\n");
+        let pairs = vec![Pair {path: "f".into(), status: "modified", binary: false,
+            before: Some(old), after: Some(new)}];
+        let f = &diff_of(pairs, 2000).unwrap()[0];
+        assert!(f.approximate && !f.lines.is_empty());
+        assert!(f.lines.iter().all(|l| l.old.is_none() && l.new.is_none() && l.at.is_none()));
+        assert_eq!((f.added,f.removed),(2,2));
+    }
+}

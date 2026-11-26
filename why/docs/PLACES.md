@@ -1824,114 +1824,43 @@ half written after reading its neighbours or another page.
   2 min ago"), and Start (Continue here, if it was started)
   or, while it is worked on here, Back to main. Start gives the issue its own
   copy of the repo, which File, Forge and the Prompt show; the layout says
-  this, no sentence explains it. A merged work is done: the repo shows main
-  again on its own, and the copy goes.
-- **Each issue is a column**: its card, and once it is handed in, its Review and
-  Merge under it, so they slide with it; the neighbours show only their
-  cards' heads. The card's weight sits a little high (less room above than
-  below).
-- **Inside the card**, right under its title once it is worked on here:
-  **Commit**, where it stands at the left, the button at the right, down
-  the one edge Start was pressed on (as Merge is under the Review), so the
-  pointer goes down the box, never across it; done, the button's place
-  shows the same word with the done mark (a circle with a check, `done`),
-  and the green says it is done. In its row, what is not committed, its
-  files folded as main's card has them, on the card itself. A commit goes
-  from the device to one's own Remote, and on one's own repo that is all
-  the way the work goes: there it is handed to main as its change by
-  itself, again as the next version, so there is no Push. A push is to a
-  server or another's Remote: a change received from someone else shows
-  Commit and Push done, theirs. Whether the change is in, a switch at the
-  foot's right says, its word before it (Submitted): on while it is in;
-  switched off (Reset) it is taken back, switched on again the commits are
-  handed in anew; it turns at once under the hand, and back if it could
-  not. Not in (taken back, rejected, or commits not handed in), Commit's
-  row says so at its left (Withdrawn; 1 commit not submitted).
-- **The card's foot**: its repo and who started it and when; Start or
-  Continue here at the right. Back to main stands under the card at its
-  left, out of it, as what leaves the work always is. No file name
-  is shown anywhere an issue is. One not worked on here, with no undecided
-  change, has Close at the left instead (whatever work the repo shows, its
-  file is main's, so Close is offered from inside a work too): it will
-  not be done. It goes at once (Reopen brings it back, so nothing is
-  asked) and is listed under Closed. Being closed is the issue's own: its
-  file says so on its last line, after the detail (`Closed：2031-10-17
-  sora`, the day and who), so why (`why issue close REPO#N`, `why issue
-  reopen REPO#N`) and a Prompt see the same, and it is committed on main by
-  itself (Close #3: …, Reopen #3: …), with nothing kept twice.
-- **A diff**, wherever it shows: each file a fold, its name (which opens it)
-  and what was added and removed (+56 −2); each line with which line it is.
-  The first three files are open, the rest wait closed, so a large change
-  reads file by file; it scrolls inside its box.
-- **Review**, shown once there is a change to review: a box of its own
-  under the card, a sheet as the card is (`paper`, a `rule` edge, `ink`
-  while it is in hand: a line being marked, a comment written): the change's diff,
-  where a reviewer marks lines as with a highlighter (`marker`), each file a
-  fold as everywhere (its lines from the box's own edge, not set off to the
-  right of its name); what was
-  said, in order (an approval without words is not shown there); then a
-  comment more, in a field on the sheet (an edge only, no grey over the
-  paper), room for three lines and as tall as its words beyond (Ctrl+Enter
-  or Comment sends
-  it with the marks), and beside Comment, Ask for changes, which sends the
-  same with its verdict (it says something: with nothing written or marked,
-  the field is where to say it), shown in what was said as Asked for
-  changes, as `why review REPO#N changes` is; at the left, Approve as a ○
-  that turns green when pressed.
-- **Merge**, under the Review and not in it: Reject at the left, who
-  approved it, and Merge at the right, primary once the version is
-  approved.
+  this, no sentence explains it. Once merged the repo shows main again.
+  The device's worktree is retained separately, so work another device has
+  not seen is not erased by switching back.
+- **Each issue is a paper and its lower history**: its title at the left,
+  number at the right, and diff beside the summary. The total is at the
+  foot's left; the review's two actions share the diff's edge. The main
+  ledger stays beside the paper and the next issue is a different paper.
+- **Commit** records the work on its own line, using the existing private
+  Remote; it does not offer anything for review. **Submit** publishes the
+  recorded head and its change together as one version. A stale head is
+  refused without leaving a partially submitted change. Further commits
+  do not change a revision already under review.
+- **Back to main** stands under the card at its left, as what leaves the
+  work always is. An issue that will not be done can still be closed and
+  reopened; its own file on main records it, and its name remains available
+  to CLI readers. The active paper does not repeat repo or submission metadata.
+- **A diff** keeps line numbers and counts; a file's name folds it, and the
+  work's column scrolls without moving the summary or footer. A bounded
+  diff says how many lines it has left out. A fallback comparison that
+  cannot address its lines does not pretend to know their positions.
+- **Review** is the paper's own diff. Press or draw over its line numbers
+  (or use the keyboard) to leave a local yellow stroke under the words.
+  Copying the code, marking a line or viewing another revision sends
+  nothing. **Comment** opens its words on the dotted history below. Only
+  an explicit Comment with words writes it; the marked ranges appear at
+  its end, linked to the immutable revision the writer read. An older
+  link never redirects to the same line number in newer source. **Approve**
+  applies to that version alone and does not post a comment or its marks.
+- **Merge** is the ledger's last deed: the offered head needs its own
+  approval, no later work, and no uncommitted work on the submitted line.
+  Main keeps its independent draft; conflicts are refused, and a context switch does not
+  delete the copy. Reject, when used, names the same reviewed version.
+- **main**: files still uncommitted on main are listed on its ledger beside
+  the paper, with their actual counts, rather than drawing a second wide
+  sheet. Existing files open in Forge on main; a removed file is named
+  without pretending it still opens. Commit records the named group on main.
 
-Before Git has read where each repo stands (several of the core's answers
-for each, one after another: a second or more with a dozen repos), Reading…
-stands where the issues will be, not a heading over nothing; come back to,
-what it read last is drawn at once while it is read again, and drawn again
-only if something moved.
-
-Around the issues, each its own section, shown only when it has something:
-main over them (what is in hand comes before what is planned); under them
-what is done with, Committed (on main, from here), Merged and Closed.
-
-- **main**: a card for each repo that shows main and has something not
-  committed there (an edit in Forge, a file added in File: what a person
-  changed themselves; an issue written or closed is committed by itself and
-  never waits here), a
-  sheet on `paper` as an issue's box is, never melting into the ground,
-  standing in the issues' column with the same edges as the issue in full
-  under it and going with it as the row slides, and laid out as an issue's
-  box is: its repo at the top where an issue's name is (a label at the
-  size of the file named under it, not a title: main is said over it, and
-  a word alone at an issue's size looms over the diff), the files under it
-  straight on the card (never a box inside it), and at its foot how many
-  files wait (2 files to commit on main) at the left and Commit at the
-  right, where an issue's next step is. Each file folds at its head (a small triangle, its name, +n
-  −n and the five squares), the first three open and the rest a line each;
-  an issue's own file, where one is shown (a work's Commit row, written by
-  hand there), is its line ("#1 Fix：件名 +3"), shut until opened, so an
-  issue does not stand over the issues as its words again;
-  a long one shows its first 30 lines with "n more lines" under them,
-  pressed to show the rest, so a large change reads file by file and
-  never as a wall. What is opened or shut by hand stays so while the page
-  is drawn again (only by hand: a fold drawn open before it was known to be
-  an issue's is not held open). The issue's Commit row shows its files the same way. With
-  more than three repos waiting in All, each is a row instead (its name
-  at the left, how many files and Commit at the right), so the issues are
-  not a long way down; its name, with a small triangle, opens its files
-  under it in the row and shuts them again (read only then), and one repo
-  shown is its card as above. Commit
-  asks in the card for the line the commit goes by ("Fix：title"), as
-  `why commit REPO "Fix：title"` takes it, Not now at the left and Commit
-  under the pointer; Enter commits the one line, and the card's height goes
-  from its files to the ask and back (280 ms) rather than held at the
-  taller. What is typed is kept with its repo until it is committed or put
-  back. Committed, the card slides off sideways as it fades (340 ms), the
-  room it took closing after it so what is under it comes up, and a line
-  opens under the issues, in Committed: the commit's line, +n −n and its
-  squares, Committed just now at its right, lit as it lands; the last few committed from here stay so, newest first. This is Commit, not an
-  issue made of the changes: an issue hides a branch that starts from
-  main's last commit, and moving main's draft onto one would be a new
-  operation the Remote does not have; a commit on main is already one
-  (`why commit` on main), so the app offers the same.
 - **Merged**: the issues whose change main took, newest first, a row each:
   "#1 Fix：件名", who handed it in and when it was merged; pressed (its
   small triangle says so, as every fold's does), the row opens to the

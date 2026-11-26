@@ -71,7 +71,7 @@ const answered = (id: number, answer: Answer) => {
 /** What only reads this device's files (api/worker.ts READS, less what may ask the Remote): the reader may answer it. */
 const ANYWHERE = new Set(['repo_list', 'repo_names', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get']);
 /** What may wait on the Remote: while one is asked of the worker, what only reads goes to the reader. */
-const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|reset|log|cut)$|change_|changes_list$|work_(lines|start|switch|standings|state)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
+const REMOTE = /^(sync_repo|repo_fetch|home_sync|remote_(?!status$)|history_(push|submit|submit_at|reset|log|line_log|line_diff_at|main_changes|cut)$|change_|changes_list$|work_(lines|start|switch|standings|state)$|issue_commit$|issues_settle$|plan_page$|app_page$)/;
 /** The calls asked of the worker that may wait on the Remote, and how many there are. */
 const remote = new Set<number>();
 let away = 0;

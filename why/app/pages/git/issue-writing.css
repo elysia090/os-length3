@@ -1,0 +1,81 @@
+/* A new issue is the next paper. Its one entry and its return are ground words,
+   outside the paper; the current issue never gets another control inside. */
+.git-desk .issue-create-word {
+  appearance: none;
+  display: inline-block;
+  min-width: 0;
+  min-height: var(--u);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--sub);
+  font: 400 var(--t-word)/var(--u) var(--sans);
+  white-space: nowrap;
+  text-box: normal;
+  cursor: var(--cursor-hand);
+}
+.git-desk .issue-create-word:hover:not(:disabled) { color: var(--ink); text-decoration: underline; }
+.git-desk .issue-create-word:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+.git-desk .issue-create-word:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
+.git-desk .issue-column { position: relative; }
+.git-desk .issue-create-header {
+  position: absolute;
+  inset-inline: 0 calc(2 * var(--peek));
+  top: calc(-1 * var(--u));
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.git-desk .issue-create-header button { pointer-events: auto; background: var(--ground); }
+.git-desk .issue-create-next { margin-inline-start: auto; }
+.git-desk .issue-create-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--u);
+  color: var(--sub);
+  font: 400 var(--t-word)/var(--u) var(--mono);
+}
+.git-desk .issue-create-header [hidden] { display: none; }
+.git-desk .issue-new-unwritten { visibility: hidden; }
+.git-desk .issue-create-form {
+  min-height: calc(18 * var(--u));
+  grid-template-rows: auto auto auto 1fr;
+  align-items: start;
+}
+.git-desk .issue-create-form > .issue-words.issue-big-head { min-height: calc(3 * var(--u)); margin: 0; padding: 0; }
+.git-desk .issue-create-head {
+  display: block;
+  font: 900 var(--t-head)/calc(2 * var(--u)) var(--display);
+  letter-spacing: -.035em;
+}
+.git-desk .issue-detail-draft {
+  display: block;
+  width: min(100%, calc(24 * var(--u)));
+  min-height: calc(5 * var(--u));
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 var(--t-word)/var(--u) var(--sans);
+  resize: none;
+}
+.git-desk .issue-detail-draft:focus { outline: none; }
+.git-desk .issue-detail-draft::placeholder { color: var(--sub); opacity: 1; }
+.git-desk .issue-create-form > .error { grid-row: 3; }
+.git-desk .issue-create-foot {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  align-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--u);
+  color: var(--sub);
+}
+.git-desk .issue-create-submit { margin-inline-start: auto; color: var(--ink); }

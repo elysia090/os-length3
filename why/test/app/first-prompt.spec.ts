@@ -58,7 +58,7 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
       await app.newRepo.make('hello');
       await app.newRepo.openInForge();
     }, false);
-    const warm = await first(async () => { await app.page.reload(); await app.forge.promptBox.waitFor(); }, true);
+    const warm = await first(async () => { await app.page.reload(); await app.settled(); await app.rail.go('forge'); }, true);
     // why itself in that Prompt: translated as it runs, until its translation made ahead of time is ready (it comes after
     // the prompt line), when this Prompt is given it and runs why from it from its next run on.
     let started = Date.now();

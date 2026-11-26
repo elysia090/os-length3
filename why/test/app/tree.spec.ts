@@ -21,15 +21,22 @@ test('File\'s tree has the repos on top and the rest of / under System, shut unt
 
 test('→ on File brings the tree out with the keyboard on its first row', async ({app}) => {
   await app.newRepo.make('tide');
+  // Creation opens Forge. Test the global File key on Home, where the rail is in sight.
+  await app.rail.go('home');
   const file = app.rail.button('file');
+  // /root is structural; the first focusable row is the repo.
+  const first = app.file.name('tide');
+  await expect(file).toBeVisible();
   await file.focus();
+  await expect(file).toBeFocused();
   await app.page.keyboard.press('ArrowRight');
   await expect(file).toHaveAttribute('aria-expanded', 'true');
-  // (/root has no row of its own: the first row is the first repo's.)
-  await expect(app.file.tree.locator('.tree-name').locator('visible=true').first()).toBeFocused();
-  // Back on File with the tree out, → goes into it again.
+  await expect(first).toBeFocused();
+
+  // Back on File with the tree out, → goes into it again rather than toggling it shut.
   await file.focus();
+  await expect(file).toBeFocused();
   await app.page.keyboard.press('ArrowRight');
-  // (/root has no row of its own: the first row is the first repo's.)
-  await expect(app.file.tree.locator('.tree-name').locator('visible=true').first()).toBeFocused();
+  await expect(file).toHaveAttribute('aria-expanded', 'true');
+  await expect(first).toBeFocused();
 });

@@ -88,3 +88,55 @@
 .agent-row.waits .agent-dot, .agent-mark.waits { background: var(--marker); box-shadow: 0 0 0 1px var(--edge) inset; }
 .agent-mark { display: inline-block; margin-inline-start: var(--s1); vertical-align: middle; }
 @media (prefers-reduced-motion: reduce) { .agent-row.working .agent-dot, .agent-mark { animation: none; } }
+
+/* The one sheet in hand. The footer and work column share an edge; the long work scrolls there, not the sheet. */
+.git-desk .issue-box.git-paper {
+  min-height: calc(18 * var(--u));
+  grid-template-columns: calc(11 * var(--u)) minmax(0, 1fr);
+  grid-template-rows: minmax(calc(4 * var(--u)), auto) minmax(calc(12 * var(--u)), 1fr) auto;
+  column-gap: var(--u);
+}
+.git-desk .git-paper > .issue-words { margin: 0; grid-area: 1 / 1 / 2 / -1; }
+.git-desk .git-paper > .issue-words h2 { max-inline-size: min(calc(15 * var(--u)), calc(100% - 2 * var(--u))); text-wrap: wrap; }
+.git-desk .git-paper .issue-big-head:not(.peek) { padding-inline-end: calc(4 * var(--u)); }
+.git-desk .git-paper > .issue-summary-wrap {
+  grid-area: 2 / 1; margin: calc(var(--u) + 1px) var(--u) calc(4 * var(--u)) 0;
+}
+.git-desk .git-paper .issue-summary { text-align: left; color: var(--ink); }
+.git-desk .git-paper > .git-work { grid-area: 2 / 2; min-width: 0; margin: 5px calc(-1 * var(--u)) 0 0; }
+.git-desk .git-paper > .git-totals { align-self: end; grid-area: 2 / 1 / 4 / 2; }
+.git-totals .git-total-numbers { display: flex; gap: .45em; font: 900 var(--t-head)/var(--u) var(--display); }
+.git-totals .git-total-numbers:empty, .git-totals:empty { display: none; }
+.git-total-files { margin: 0; color: var(--sub); font: 400 var(--t-word)/var(--u) var(--sans); }
+.git-desk .git-paper > .git-paper-review { grid-area: 3 / 2; align-self: end; min-height: calc(1.5 * var(--u)); display: flex; gap: 4px; }
+.git-desk .git-paper > .git-paper-review[hidden] { display: none; }
+.git-desk .git-paper .git-review-key { box-sizing: border-box; min-height: calc(1.5 * var(--u)); padding: 0 calc(var(--u) / 2); border-radius: var(--r-key); color: var(--sub); }
+.git-review-approve:not(:disabled) { border: 1px solid var(--ink); color: var(--ink); font-weight: 700; }
+.git-review-key:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
+.git-review-approve.approved::before { content: '• '; color: var(--add); }
+.git-desk .git-paper > .issue-foot { grid-area: 3 / 1; justify-content: start; }
+.git-desk .git-paper:not(.no-work) > .issue-foot { grid-area: 4 / 1 / 5 / -1; }
+.git-desk .git-paper > .error:empty { display: none; }
+.git-main-pending { display: grid; gap: 0; margin: var(--u) calc(var(--u) / 2) 0; min-width: 0; }
+.git-main-label { margin: 0; color: var(--sub); }
+.git-main-files { padding: 0; margin: 0 0 calc(var(--u) / 2); list-style: none; }
+.git-main-files li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px; align-items: baseline; min-height: var(--u); }
+.git-main-file, .git-main-files li > span:first-child {
+  min-width: 0; padding: 0; border: 0; background: none; font: 400 var(--t-word)/var(--u) var(--mono);
+  color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.git-main-file { cursor: var(--cursor-hand); }
+.git-main-count { color: var(--sub); font: 400 var(--t-word)/var(--u) var(--mono); white-space: nowrap; }
+.git-main-commit { width: 100%; min-width: 0; margin: 0; padding: 4px 0; border: 0; border-bottom: 1px solid var(--edge); background: none; color: var(--ink); }
+.git-main-pending > .button { justify-self: start; margin: calc(var(--u) / 4) 0 0; }
+.git-main-pending > .error:empty { display: none; }
+@media (max-width: 920px) {
+  .git-desk .issue-box.git-paper { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; min-height: 0; }
+  .git-desk .git-paper > :is(.issue-words, .issue-summary-wrap, .git-work, .git-totals, .git-paper-review, .issue-foot) { grid-area: auto; }
+  .git-desk .git-paper > .issue-summary-wrap { margin: var(--u) 0; }
+  .git-desk .git-paper > :is(.git-totals, .git-paper-review) { margin-block-start: var(--u); }
+}
+.git-ledger-status { margin: calc(var(--u) / 2) var(--u) 0; color: var(--sub); line-height: var(--u); }
+
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus))::before { display: none; }
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus)) > button { color: var(--quiet); font-weight: 400; }

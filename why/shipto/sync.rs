@@ -115,8 +115,9 @@ pub(super) fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
 }
 
 pub(super) fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
-    let dir = repos.dir(repo)?;
     let (key, line) = key(repos, repo);
+    let repos = repos.on_line(repo, &line)?;
+    let dir = repos.dir(repo)?;
     let path = at(repo, &line, "");
     let mut out = Synced::default();
     let who = account_id();
@@ -237,9 +238,10 @@ pub(super) fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Sy
 /// what changed there, until both hold the same draft.
 pub fn sync(repos: &Repos, repo: &str) -> Result<Synced> {
     let client = Client::open()?;
-    let (key, _) = key(repos, repo);
+    let (key, on) = key(repos, repo);
+    let copy = repos.on_line(repo, &on)?;
     let _held = lock(&key)?;
-    sync_with(&client, repos, repo)
+    sync_with(&client, &copy, repo)
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Default)]

@@ -5,7 +5,6 @@
 //!
 //!   Commit         what is not committed becomes history on the work's line,
 //!                  named after its issue ("Fix：件名"), on one's own Remote;
-//!                  on one's own repo it then hands itself in (Submit)
 //!   Submit         the line's commits become its state there (`push`, the
 //!                  line's own word for it) and go to main as a change; again
 //!                  after more commits, as its next version; Reset takes it
@@ -27,8 +26,8 @@ mod log;
 mod review;
 
 pub use self::changes::{at_head, changed, Changes, changes, diff, DiffLine, FileChange, FileDiff, Folder};
-pub use self::commits::{commit_issue, cut, issue_words, settle_issues};
+pub use self::commits::{commit_issue, cut, cut_on, issue_words, settle_issues};
 pub use self::log::{Cut, line, log, log_of};
 pub(crate) use self::log::progress;
-pub use self::review::{Change, change_diff, changes_of_repo, hand_in, HandIn, merge, merged_seen, push, reject, reset, Review, review, state_word, submit};
+pub use self::review::{Change, change_diff, change_diff_at, change_line_source, changes_of_repo, hand_in, HandIn, merge, merge_at, merged_seen, PinnedReview, push, reject, reject_at, reset, Review, ReviewLine, Revision, review, review_at, state_word, submit, submit_at, work_diff_at};
 pub(crate) use self::review::{listed, remember_merged};

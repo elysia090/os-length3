@@ -31,6 +31,15 @@ async function desk(app: App, what: string, door: boolean) {
     expect((bar.x + bar.width - from.x) % U, `${what}: its band whole cells wide`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
+/** The two work desks replace the permanent frame with the same corner switch. */
+async function workDesk(app: App, place: 'Forge' | 'Git', width: number) {
+  await expect(app.page.getByRole('navigation', {name: 'Purposes', exact: true})).toBeHidden();
+  await expect(app.rail.door).toBeHidden();
+  const key = app.main.getByRole('button', {name: 'Places', exact: true});
+  await expect(key).toBeVisible();
+  expect(await key.boundingBox()).toMatchObject({x: width - 56, y: 12, width: 44, height: 44});
+  await expect(app.main.getByRole('heading', {name: place, exact: true})).toBeVisible();
+}
 /** A sheet: paper from the desk's corner; where it is a place's far side, the door over its corner on the band's row. */
 async function sheet(app: App, what: string, door: boolean) {
   await expect(async () => {
@@ -54,7 +63,8 @@ test('signed out, every place starts at the frame\'s corner: a desk\'s band from
     const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     for (const place of ['home', 'new-repo', 'forge', 'git'] as const) {
       await app.rail.go(place);
-      await desk(app, what(place), place !== 'new-repo');
+      if (place === 'forge' || place === 'git') await workDesk(app, place === 'forge' ? 'Forge' : 'Git', size.width);
+      else await desk(app, what(place), place !== 'new-repo');
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
@@ -106,7 +116,7 @@ test('signed in, the Remote is a sheet from the desk\'s corner still; Server and
     await app.page.setViewportSize(size);
     const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     await app.rail.go('git');
-    await desk(app, what('Git'), true);
+    await workDesk(app, 'Git', size.width);
     await app.rail.go('remote');
     await sheet(app, what('remote'), true);
     await app.rail.go('inbox');

@@ -1,0 +1,96 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {markBasis} from '../../../api/review-lines.ts';
+import {sha256} from '../serve/app.ts';
+import {enc, service} from './testing.ts';
+
+test('Commit remains on the work; Submit publishes one pinned batch; comments and approvals keep their exact revision', async () => {
+  const s = await service();
+  const token = await s.start('Reviewer');
+  const r = '/v1/repos/sample';
+  const post = (route: string, body: unknown, as = token) => s.call('POST', r + route, {token: as, body});
+  const get = (route: string) => s.call('GET', r + route, {token});
+  const put = async (text: string) => {
+    const bytes = enc.encode(text), sha = await sha256(bytes);
+    assert.ok((await s.call('PUT', '/v1/blobs/' + sha, {token, bytes})).status < 300);
+    return sha;
+  };
+  const update = async (line: string, set: Record<string, string>, title: string) => {
+    const q = '?line=' + line;
+    const at = (await get(q)).json;
+    const changed = await s.call('PATCH', r + '/draft' + q, {token, body: {version: at.version ?? 0, set, remove: []}});
+    assert.equal(changed.status, 200, JSON.stringify(changed.json));
+    const ready = (await get(q)).json;
+    const cut = await post('/cuts' + q, {version: ready.version, parent: ready.head, title});
+    assert.equal(cut.status, 201, JSON.stringify(cut.json));
+    return cut.json.id as string;
+  };
+  const base = await update('main', {'issue/001.md': await put('Fix: output\n')}, 'Start');
+  assert.equal((await post('/lines', {issue: 'issue/001.md'})).status, 201);
+  const a = await update('001', {'src/main.c': await put('int main(void) {\n    return 1;\n}\n')}, 'Write a return');
+  const b = await update('001', {'src/main.c': await put('int main(void) {\n    return 0;\n}\n')}, 'Fix status');
+  const draft = () => get('?line=001');
+  assert.deepEqual((await get('/changes')).json, []);
+  assert.equal((await draft()).json.pushed, base);
+  const submit = (head: string, title = 'Fix output') => post('/changes/submit', {head, line: '001', title});
+  assert.equal((await submit(a)).status, 409);
+  assert.equal((await submit(b, '')).status, 400);
+  assert.equal((await draft()).json.pushed, base);
+  const v1 = await submit(b);
+  assert.equal(v1.status, 201, JSON.stringify(v1.json));
+  assert.equal(v1.json.version, 1);
+  assert.equal(v1.json.head, b);
+  assert.equal((await draft()).json.pushed, b);
+  assert.equal((await submit(b)).json.updatedAt, v1.json.updatedAt);
+  const id = v1.json.id as string;
+  const comm = '/changes/' + id + '/reviews/pinned';
+  const merge = '/changes/' + id + '/merge/pinned';
+  const lines = [{path: 'src/main.c', side: 'new', line: 2}];
+  const comment = {version: 1, head: b, verdict: 'comment', note: 'This returns success.', lines, request: crypto.randomUUID()};
+  assert.equal((await post(comm, {...comment, head: a})).status, 409);
+  assert.equal((await post(comm, {...comment, lines: [{path: '../secrets', side: 'new', line: 3}]})).status, 400);
+  for (const m of [{path:'src/main.c',side:'old',line:2}, {path:'src/main.c',side:'new',line:4},
+    {path:'nothing.c',side:'new',line:1}, {path:'issue/001.md',side:'new',line:1}]) {
+    const no = await post(comm, {...comment, lines:[m]});
+    assert.deepEqual([no.status,no.json.error], [400,'A marked line is not present in this review']);
+  }
+  assert.equal((await post(comm, {...comment, lines: Array.from({length: 201}, (_, j) => ({...lines[0], line: j+1}))})).status, 400);
+  assert.equal((await post(comm, {...comment, lines: Array.from({length: 48}, (_, j) => ({...lines[0], path: 'a'.repeat(900), line: j+1}))})).status, 400);
+  assert.equal((await post(comm, {...comment, verdict: 'changes'})).status, 400);
+  assert.equal((await post(comm, {...comment, verdict: 'approve'})).status, 400);
+  assert.equal((await post(comm, {...comment, note: ''})).status, 400);
+  const record = await post(comm, comment);
+  assert.equal(record.status, 201, JSON.stringify(record.json));
+  assert.deepEqual((record.json.reviews as {id:string; marks:string[]}[]).map((review) => [review.id, markBasis(1, review.marks)]),
+    [[comment.request, {basis: {version: 1, head: b, base}, lines}]]);
+  assert.equal((await post(comm, comment)).status, 200);
+  assert.equal((await post(comm, {...comment, note: 'Different'})).status, 409);
+  assert.equal((await post(merge, {version: 1, head: b})).status, 409);
+  const approve = (version: number, head: string) => post(comm, {version, head, note: '', lines: [], verdict: 'approve', request: crypto.randomUUID()});
+  assert.equal((await approve(1,b)).status, 201);
+  const markers = await draft();
+  assert.equal((await s.call('PATCH', r + '/draft?line=001', {token, body:{version:markers.json.version, set:{'unsent.txt':await put('more work')}, remove: []}})).status, 200);
+  const dirty = await post(merge, {version:1,head:b});
+  assert.deepEqual([dirty.status, dirty.json.error],[409,'Commit and submit the remaining work before merging']);
+  const c = await update('001', {'src/main.c': await put('\nint main(void) {\n    return 2;\n}\n')}, 'Move and change the line');
+  const pending = await post(merge, {version:1,head:b});
+  assert.deepEqual([pending.status, pending.json.error],[409,'Submit the latest work before merging']);
+  assert.equal((await draft()).json.head,c);
+  const v2 = await submit(c);
+  assert.equal(v2.json.version, 2);
+  assert.equal(v2.json.head, c);
+  assert.equal((await post(comm, {...comment, request: crypto.randomUUID()})).status, 409);
+  assert.equal((await post(comm, comment)).status, 200);
+  assert.equal((await approve(1,b)).status, 409);
+  assert.equal((await post('/changes/' + id + '/reject/pinned', {version:1,head:b})).status,409);
+  assert.equal((await post(merge, {version: 2, head: b})).status, 409);
+  assert.equal((await post(merge, {version: 2, head: c})).status, 409);
+  const legacy = v2.json.reviews as {id:string; marks:string[]}[];
+  assert.equal(legacy.length, 2);
+  assert.deepEqual(markBasis(1, legacy.find((v) => v.id === comment.request)!.marks)?.basis.head, b);
+  const other = await s.start('Someone else');
+  assert.equal((await post(comm, {...comment, head: c, version: 2}, other)).status, 404);
+  assert.equal((await approve(2,c)).status, 201);
+  assert.equal((await post(merge, {version: 2, head: c})).json.state, 'merged');
+  assert.equal((await approve(2,c)).status, 409);
+});

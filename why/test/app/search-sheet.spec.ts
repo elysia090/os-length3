@@ -14,13 +14,13 @@ for (const width of [390, 500, 760, 1024, 1400]) {
     // (Measured once the paper has come down and is drawn as it stays: on its way, or between two drawings, it is
     // not where it will be.)
     await expect(async () => {
-      // (The sheets lie from the desk's edge, under the band's keys: past the rail, and no further than the page.)
+      // The summoned search shares the desk's left inset, and the results fit inside the entire writing surface.
       const paper = await app.forge.results.boundingBox(), center = await app.main.locator('.center').boundingBox();
       const words = await row.locator('.sheet-text').boundingBox(), keys = await app.main.locator('.band-tools').boundingBox();
       expect(paper && center && words && keys).toBeTruthy();
-      // (From the desk's edge, where the band's door is: two cells in, past the rail.)
-      expect(paper!.x).toBeGreaterThanOrEqual(47);
-      expect(paper!.x).toBeLessThanOrEqual(keys!.x);
+      const inset = width <= 1000 ? 24 : 48;
+      expect(paper!.x).toBeCloseTo(inset, 0);
+      expect(paper!.x).toBeCloseTo(keys!.x, 0);
       expect(paper!.x + paper!.width).toBeLessThanOrEqual(center!.x + center!.width + 1);
       expect(paper!.y + paper!.height).toBeLessThan(900);
       // Two fixed sections and an intrinsic filename track used to leave snippets with zero width.

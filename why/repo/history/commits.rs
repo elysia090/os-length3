@@ -7,7 +7,7 @@ use crate::text::title::named;
 use crate::Result;
 use super::changes::{After, blob, changes_of, head_tree, text};
 use super::log::Cut;
-use super::review::{push, submit, words};
+use super::review::words;
 
 /// Each issue file main's draft holds and its last commit does not (written while signed out, renumbered, or one
 /// whose own commit did not go): committed now, each by itself, by what happened to it; a file gone goes with the
@@ -116,7 +116,7 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
                 let _ = shipto::set_head(&key, &id);
                 return Ok(Some(Cut {
                     id, issue: None, kind: None, title: title.into(), note: String::new(), time: v["time"].as_u64().unwrap_or(0),
-                    folders: c.folders.iter().map(|f| f.folder.clone()).collect(), files: c.files, added: c.added, removed: c.removed, merged: None, handed: None,
+                    folders: c.folders.iter().map(|f| f.folder.clone()).collect(), files: c.files, added: c.added, removed: c.removed, merged: None,
                 }));
             }
             Reply::Conflict(v) => { let _ = shipto::set_head_from(&key, &v); }
@@ -130,12 +130,22 @@ fn cut_paths(repos: &Repos, repo: &str, paths: &[String], title: &str) -> Result
 /// on the line the repo shows, under `issue` (its file in issue/) and named
 /// after it, or named by `line`. Work on an issue commits under that issue.
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
+    cut_on(repos, repo, issue, line, note, None)
+}
+
+/// Cut only on the work line the app read; never submit it here.
+pub fn cut_on(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str, expected: Option<&str>) -> Result<Cut> {
+    let (key, on) = shipto::key(repos, repo);
+    if expected.is_some_and(|it| it != on) {
+        return Err(crate::tr!("The work shown changed; read it before committing", "表示中の作業が変わりました。読み直してからコミットしてください"));
+    }
+    let copy = repos.on_line(repo, &on)?;
+    let repos = &copy;
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
         return Err(crate::tr!("Commit requires a title (e.g. Fix: title)", "コミットにはタイトルが必要です（例：Fix: 件名）"));
     }
     let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (why login)", "コミットは Remote に残ります。先に Remote にサインインしてください（why login）"))?;
-    let (key, on) = shipto::key(repos, repo);
     for _ in 0..4 {
         let s = shipto::sync(repos, repo)?;
         if let Some((path, why)) = s.unsynced.first() {
@@ -156,14 +166,11 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 let id = v["id"].as_str().unwrap_or_default().to_string();
                 // Not kept here: the next sync takes the Remote's head again, which is this commit.
                 let _ = shipto::set_head(&key, &id);
-                // A commit on an issue's work is handed in as it is made: there is no step of its own to push it, and
-                // its change is always its last commit. Its tests run by themselves too (agent/tasks.rs).
-                let handed = if on == crate::repo::lines::MAIN { None } else { push(repos, repo).and_then(|_| submit(repos, repo, "")).ok().map(|c| c.version) };
                 if let Ok(dir) = repos.dir(repo) { crate::agent::tasks::committed(repo, &on, &dir); }
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
                     time: v["time"].as_u64().unwrap_or(0), folders: c.folders.iter().map(|f| f.folder.clone()).collect(),
-                    files: c.files, added: c.added, removed: c.removed, merged: None, handed,
+                    files: c.files, added: c.added, removed: c.removed, merged: None,
                 });
             }
             // Another device moved the draft or committed first: in step again, and once more.

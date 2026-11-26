@@ -39,12 +39,15 @@
 
 import {and, desc, eq, inArray, isNull, ne, SQL, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import type {Bucket} from '../bytes/bucket.ts';
+import {verifyReviewLines} from './review-lines.ts';
 import {HEX, sha256} from '../bytes/digest.ts';
 import type {Tree} from '../bytes/trees.ts';
 import {passkeyJustNow} from '../people/auth.ts';
 import type {Plans} from '../plan/plan.ts';
 import {ago, body, fits as fitsIn, fitting, LIMIT, lock, ms, qualified, refuse, rows, usedBy, UUID, type Db, type Vars} from '../serve/request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, type Modes, type Review} from '../db/schema.ts';
+import {isReviewLine, lineKey, markBasis, PIN, stableMarks} from '../../../api/review-lines.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 import {above as foldersAbove, build, changes, edit, flatBytes, merge, nodeId, type Node, type Three} from '../bytes/trees.ts';
 
@@ -185,7 +188,7 @@ const lineCols = {id: repo.id, off: repo.offAt, name: repo.name, line: line.name
 /** A change as clients read it, its reviews newest first. */
 const changeCols = {id: change.id, line: change.line, kind: change.kind, title: change.title, version: change.version, base: change.base,
   head: change.head, state: change.state, note: change.note, submittedBy: change.submittedBy, updatedAt: change.updatedAt,
-  reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
+  reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 /** What a draft would be with a save laid on it, as its rows say (lineAt): a file and a folder of one name it makes, and what it would take. */
 type After = {clash: string | null; paths: number; bytes: number; files: number};
@@ -212,7 +215,7 @@ const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n
 /** Who did it, as their name is now, as long as what keeps it takes (a provider's name may be longer). */
 const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
 
-export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>) {
+export function repos(d: {db: Db; bucket: Bucket | null; quota?: number; plans: Plans}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
   const fitsUsed = (used: number | undefined, more: number) => fitting(Number(used), more, d.quota);
@@ -898,68 +901,150 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
 
   // Submit change: what the line has pushed, measured against main's last commit. Again after
   // more commits and a push, the same change gets a new version (and reviews of the old one are of the old one).
-  v1.post('/repos/:name/changes', async (c) => {
+  for (const pinned of [false, true]) v1.post(pinned ? '/repos/:name/changes/submit' : '/repos/:name/changes', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const b = await body<{line?: unknown; kind?: unknown; title?: unknown; note?: unknown}>(c);
-    const l = typeof b?.line === 'string' && b.line !== 'main' ? b.line : '';
+    const b = await body<{line?: unknown; head?: unknown; kind?: unknown; title?: unknown; note?: unknown}>(c);
+    const l = typeof b?.line === 'string' && validLine(b.line) && b.line !== 'main' ? b.line : '';
+    if (pinned && (typeof b?.head !== 'string' || !HEX.test(b.head))) refuse(400, {error: 'Submit requires the work head'});
     const words = {kind: typeof b?.kind === 'string' ? b.kind : '', title: typeof b?.title === 'string' ? b.title.trim() : '', note: typeof b?.note === 'string' ? b.note : ''};
     const [out, status] = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = l ? await lineAt(tx, user, name, l) : undefined;
       if (!row) refuse(404, {error: 'Work not found on Remote'});
       on(row.off);
-      if (!row.pushed || row.pushed !== row.head) refuse(409, {error: 'Push required: Changes reflect pushed commits', head: row.head, pushed: row.pushed});
-      if (row.pushed === row.base) refuse(409, {error: 'No commits made yet'});
+      if (pinned && b!.head !== row.head) refuse(409, {error: 'The work changed; read it before submitting', head: row.head});
+      if (!row.head || row.head === row.base) refuse(409, {error: 'No commits made yet'});
+      if (!pinned && row.pushed !== row.head) refuse(409, {error: 'Push required: Changes reflect pushed commits', head: row.head, pushed: row.pushed});
       if (!words.title || words.title.length > LIMIT.words || words.note.length > LIMIT.words || words.kind.length > LIMIT.words) refuse(400, {error: 'Change requires a title (max 2000 characters)'});
       const [was] = await tx.select({id: change.id, state: change.state, head: change.head, version: change.version}).from(change)
         .where(and(eq(change.repoId, row.id), eq(change.line, l)));
       if (was?.state === 'merged') refuse(409, {error: 'This Change is already merged'});
-      const now = {...words, head: row.pushed, base: row.base, state: 'open', submittedBy: whoBy(c), updatedAt: new Date()};
-      if (was) return [await changed(tx, was.id, {...now, version: was.head === row.pushed && was.state === 'open' ? was.version : was.version + 1}), 200] as const;
+      // Submit publishes exactly the displayed work head and its offer in one transaction. A failed offer cannot
+      // leave a work partly published. The comparison also covers a concurrent legacy Push.
+      if (pinned && row.pushed !== row.head) {
+        const moved = await tx.update(line).set({pushed: row.head, updatedAt: sql`now()`})
+          .where(and(lineRow(row.id, l), eq(line.head, row.head))).returning({head: line.head});
+        if (!moved.length) refuse(409, {error: 'The work changed; read it before submitting'});
+      }
+      if (pinned && was?.state === 'open' && was.head === row.head) return [await changeAt(tx, user, name, was.id), 200] as const;
+      const now = {...words, head: row.head, base: row.base, state: 'open', submittedBy: whoBy(c), updatedAt: new Date()};
+      if (was) return [await changed(tx, was.id, {...now, version: was.head === row.head && was.state === 'open' ? was.version : was.version + 1}), 200] as const;
       return [(await tx.insert(change).values({repoId: row.id, userId: user, line: l, ...now}).returning(changeCols))[0], 201] as const;
     });
     return c.json(changeShown(name, out as Change), status);
   });
 
   // Review: of one version; a newer push makes it a review of an older version, and says so.
-  v1.post('/repos/:name/changes/:id/reviews', async (c) => {
+  for (const pinned of [false, true]) v1.post(pinned ? '/repos/:name/changes/:id/reviews/pinned' : '/repos/:name/changes/:id/reviews', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const b = await body<{version?: unknown; verdict?: unknown; note?: unknown; marks?: unknown}>(c);
-    const out = await db.transaction(async (tx: Db) => {
+    const b = await body<{version?: unknown; head?: unknown; verdict?: unknown; note?: unknown; marks?: unknown; lines?: unknown; request?: unknown}>(c);
+    let request: string | undefined;
+    if (pinned) {
+      if (typeof b?.head !== 'string' || !HEX.test(b.head) || typeof b.version !== 'number' ||
+        !Number.isSafeInteger(b.version) || b.version < 1 || typeof b.request !== 'string' || !UUID.test(b.request)) {
+        refuse(400, {error: 'Review requires the displayed version and a request id'});
+      }
+      request = b.request;
+      if (!Array.isArray(b.lines) || b.lines.length > LIMIT.marks || !b.lines.every((m) => isReviewLine(m) && validPath(m.path))) {
+        refuse(400, {error: 'Invalid or too many marked lines'});
+      }
+      if (new Set(b.lines.map(lineKey)).size !== b.lines.length) refuse(400, {error: 'Duplicate marked lines'});
+      const note = typeof b.note === 'string' ? b.note : '';
+      if (b.verdict !== 'comment' && b.verdict !== 'approve') refuse(400, {error: 'verdict'});
+      if (note.length > LIMIT.words || LONE.test(note) || note.includes('\0') ||
+          (b.verdict === 'comment' ? !note.trim() : !!b.lines.length || !!note))
+        refuse(400, {error: 'Comment requires text; approving does not post comments or marks'});
+      if (b.lines.length) {
+        // A completed request is checked for identity under the write lock below. A fresh request
+        // validates its immutable bytes without holding the account lock across R2 reads.
+        const [seen] = await db.select({id: review.id}).from(review).where(and(eq(review.id,request),eq(review.userId,user)));
+        if (!seen) {
+          const before = await changeAt(db,user,name,c.req.param('id'));
+          if (!before) refuse(404, {error: 'Change not found'});
+          on(before.off);
+          if (b.version !== before.version || b.head !== before.head) refuse(409, {version: before.version, head: before.head});
+          if (before.state !== 'open') refuse(409, {state: before.state});
+          if (before.reviews.length >= LIMIT.reviews) refuse(429, {error: 'Review limit reached for this Change'});
+          if (enc.encode(JSON.stringify(stableMarks(before, b.lines))).length > LIMIT.markChars)
+            refuse(400, {error: 'Marked lines exceed the review limit'});
+          await verifyReviewLines(db,d.bucket,user,before.repoId,before,b.lines);
+        }
+      }
+    }
+    const [out, status] = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await changeAt(tx, user, name, c.req.param('id'));
       if (!row) refuse(404, {error: 'Change not found'});
       on(row.off);
-      if (b?.version !== row.version) refuse(409, {version: row.version});
-      if (!['approve', 'changes', 'comment'].includes(String(b?.verdict))) refuse(400, {error: 'verdict'});
-      if (row.reviews.length >= LIMIT.reviews) refuse(429, {error: 'Review limit reached for this Change'});
-      // Lines marked in the diff, as "path:index" (the index of the line in that file's diff), as many as fit.
-      const marks: string[] = [];
-      let chars = 0;
-      for (const m of new Set(Array.isArray(b?.marks) ? b.marks : [])) {
-        if (typeof m !== 'string' || m.length > 1100 || marks.length >= LIMIT.marks || chars + m.length > LIMIT.markChars) continue;
-        marks.push(m);
-        chars += m.length;
+      if (request) {
+        // A retry after a lost answer must not write a second review, even if a newer version has arrived.
+        const [seen] = await tx.select({changeId: review.changeId, version: review.version, verdict: review.verdict, note: review.note, marks: review.marks})
+          .from(review).where(and(eq(review.id, request), eq(review.userId, user)));
+        if (seen) {
+          // The request id belongs to exactly one deed, not another line/review sent while this one was pending.
+          const saved = markBasis(seen.version, seen.marks);
+          const lines = b!.lines;
+          if (!saved || seen.changeId !== row.id || seen.version !== b!.version || saved.basis.head !== b!.head ||
+              seen.verdict !== b!.verdict || seen.note !== b!.note || !Array.isArray(lines) ||
+              !lines.every(isReviewLine) || JSON.stringify(saved.lines.map(lineKey)) !== JSON.stringify(lines.map(lineKey))) {
+            refuse(409, {error: 'This request id already belongs to a different review'});
+          }
+          return [row, 200] as const;
+        }
       }
-      const note = typeof b?.note === 'string' ? b.note.slice(0, LIMIT.words) : '';
-      await fits(tx, user, note.length + JSON.stringify(marks).length);
-      await tx.insert(review).values({changeId: row.id, userId: user, version: row.version, verdict: b!.verdict as Review['verdict'], note, marks, by: whoBy(c)});
-      return (await changeAt(tx, user, name, row.id))!;
+      if (b?.version !== row.version || (pinned && b.head !== row.head))
+        refuse(409, {version: row.version, head: row.head});
+      if (pinned && row.state !== 'open') refuse(409, {state: row.state});
+      const verdict = b?.verdict;
+      if (verdict !== 'approve' && verdict !== 'comment' && (pinned || verdict !== 'changes'))
+        refuse(400, {error: 'verdict'});
+      if (row.reviews.length >= LIMIT.reviews) refuse(429, {error: 'Review limit reached for this Change'});
+      const marks: string[] = [];
+      let note = typeof b?.note === 'string' ? b.note : '';
+      if (pinned && Array.isArray(b?.lines) && b.lines.every(isReviewLine)) {
+        marks.push(...stableMarks(row, b.lines.map(({path, side, line}) => ({path, side, line}))));
+        // jsonb prints separators with a space. Count what is stored and reject, never silently drop a link.
+        if (enc.encode(JSON.stringify(marks)).length + marks.length > LIMIT.markChars) refuse(400, {error: 'Marked lines exceed the review limit'});
+      } else {
+        let chars = 0;
+        for (const m of new Set(Array.isArray(b?.marks) ? b.marks : [])) {
+          if (typeof m !== 'string' || m.startsWith(PIN) || m.length > 1100 || marks.length >= LIMIT.marks || chars + m.length > LIMIT.markChars) continue;
+          marks.push(m);
+          chars += m.length;
+        }
+        note = note.slice(0, LIMIT.words);
+      }
+      await fits(tx, user, pinned ? enc.encode(note + JSON.stringify(marks)).length + marks.length : note.length + JSON.stringify(marks).length);
+      await tx.insert(review).values({id: request, changeId: row.id, userId: user, version: row.version, verdict, note, marks, by: whoBy(c)});
+      return [(await changeAt(tx, user, name, row.id))!, 201] as const;
     });
-    return c.json(changeShown(name, out), 201);
+    return c.json(changeShown(name, out), status);
   });
 
   // Merge: main takes the change, file by file against where the change began; a file both changed is a conflict.
-  v1.post('/repos/:name/changes/:id/merge', async (c) => {
+  for (const pinned of [false, true]) v1.post(pinned ? '/repos/:name/changes/:id/merge/pinned' : '/repos/:name/changes/:id/merge', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const b = await body<{version?: unknown}>(c);
+    const b = await body<{version?: unknown; head?: unknown}>(c);
     const out = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const row = await changeAt(tx, user, name, c.req.param('id'));
       if (!row) refuse(404, {error: 'Change not found'});
       on(row.off);
       if (row.state !== 'open') refuse(409, {error: 'This Change is no longer open', state: row.state});
-      if (b?.version !== row.version) refuse(409, {version: row.version});
+      if (b?.version !== row.version || (pinned && b.head !== row.head)) refuse(409, {version: row.version, head: row.head});
+      if (pinned && !row.reviews.some((r) => r.version === row.version && r.verdict === 'approve' &&
+        (markBasis(r.version, r.marks)?.basis.head ?? row.head) === row.head))
+        refuse(409, {error: 'Approve this version before merging'});
+      if (pinned) {
+        const work = await lineAt(tx,user,name,row.line,{commit:'draft'});
+        if (!work || work.head !== row.head || work.pushed !== row.head)
+          refuse(409, {error: 'Submit the latest work before merging'});
+        const was = work.headModes ?? {}, now = work.modes ?? {};
+        const changedModes = [...new Set([...Object.keys(was), ...Object.keys(now)])].some((p) => was[p] !== now[p]);
+        const clean = work.rows != null ? !work.rows.length :
+          (await rows<{same: boolean}>(tx, sql`select ${JSON.stringify(work.draft)}::jsonb = cut_tree(${work.id}, ${row.head}) as same`))[0]?.same;
+        if (changedModes || !clean) refuse(409, {error: 'Commit and submit the remaining work before merging'});
+      }
       const main = await lineAt(tx, user, name, 'main', {commit: true});
       if (!main) refuse(404, {error: 'Repo not found on Remote'});
       const words = {merged: row.head, kind: row.kind, title: row.title, issue: issueOf(row.line), note: row.note, added: 0, removed: 0};
@@ -1049,17 +1134,23 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     return c.json(out);
   });
 
-  // Reject (the receiver does not take it) and Reset (the one who submitted it takes it back).
+  // Reject/Reset. The app's explicit deed names exactly the offered revision, checked in the same transaction.
   for (const [verb, state] of [['reject', 'rejected'], ['reset', 'reset']] as const) {
-    v1.post(`/repos/:name/changes/:id/${verb}`, async (c) => {
+    for (const pinned of [false, true]) v1.post(`/repos/:name/changes/:id/${verb}${pinned ? '/pinned' : ''}`, async (c) => {
       const user = c.get('userId'), name = c.req.param('name');
-      const row = await changeAt(db, user, name, c.req.param('id'));
-      if (!row) return c.json({error: 'Change not found'}, 404);
-      on(row.off);
-      const b = await body<{note?: unknown}>(c);
-      const note = typeof b?.note === 'string' && b.note ? {note: b.note.slice(0, LIMIT.words)} : {};
-      const done = row.state === 'open' && await changed(db, row.id, {state, ...note, updatedAt: new Date()}, eq(change.state, 'open'));
-      return done ? c.json(changeShown(name, done)) : c.json({error: 'This Change is no longer open', state: (await changeAt(db, user, name, row.id))?.state ?? row.state}, 409);
+      const b = await body<{note?: unknown; version?: unknown; head?: unknown}>(c);
+      const done = await db.transaction(async (tx) => {
+        await lock(tx, user);
+        const row = await changeAt(tx, user, name, c.req.param('id'));
+        if (!row) refuse(404, {error: 'Change not found'});
+        on(row.off);
+        if (pinned && (row.version !== b?.version || row.head !== b.head))
+          refuse(409, {version: row.version, head: row.head});
+        if (row.state !== 'open') refuse(409, {error: 'This Change is no longer open', state: row.state});
+        const note = typeof b?.note === 'string' && b.note ? {note: b.note.slice(0, LIMIT.words)} : {};
+        return (await changed(tx, row.id, {state, ...note, updatedAt: new Date()}, eq(change.state, 'open')))!;
+      });
+      return c.json(changeShown(name, done));
     });
   }
 }

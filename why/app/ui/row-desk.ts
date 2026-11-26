@@ -32,7 +32,7 @@ const MAP = 12;
  * on a row is reached by scrolling alone. Drawn again by `paint` (as the desk turns, or its pieces change); `turned`:
  * how far the desk is turned along the row (how far `stage` is scrolled, unless the row is moved another way).
  */
-export function rowMap(stage: HTMLElement, pieces: () => Piece[], turned: () => number = () => stage.scrollLeft): {element: HTMLElement; paint(): void} {
+export function rowMap(stage: HTMLElement, pieces: () => Piece[], turned: () => number = () => stage.scrollLeft, shadow = SHADE): {element: HTMLElement; paint(): void} {
   const sight = h('span', {class: 'row-sight', 'aria-hidden': 'true'});
   const element = h('div', {class: 'row-map', role: 'group', hidden: ''}, sight);
   let drawn = '';
@@ -40,7 +40,7 @@ export function rowMap(stage: HTMLElement, pieces: () => Piece[], turned: () => 
     const all = pieces(), face = stage.clientWidth, last = all[all.length - 1];
     const whole = last ? last.x + last.w : 0;
     // All of it in sight (with the last piece's shadow): nothing to say.
-    if (!last || !face || whole + SHADE <= face) { element.hidden = true; return; }
+    if (!last || !face || whole + shadow <= face) { element.hidden = true; return; }
     element.hidden = false;
     const by = Math.min(1 / MAP, (face - 2 * CELL) / whole);
     const key = JSON.stringify([by, all.map((p) => [p.x, p.w, p.held, p.name])]);

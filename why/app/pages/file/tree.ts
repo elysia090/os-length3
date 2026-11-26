@@ -7,10 +7,10 @@ import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
-import {onChange, store} from '../../../repo/repos.ts';
+import {onChange} from '../../../repo/repos.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../../prompt/system.ts';
-import {fileDeeds, joined, split} from '../kit/file-deeds.ts';
+import {fileDeeds, fileDeleteAsk, joined, moveFile, split, type Deeds} from '../kit/file-deeds.ts';
 import type {Writing} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 
@@ -53,6 +53,7 @@ interface FileTreeEvents {
   current(): string | null;
   /** The file Forge is reading in that repo, marked too. */
   currentFile(): string | null;
+  closedDesk?(): void;
 }
 
 /** One outlined triangle pointing down; CSS turns it to point right while closed. */
@@ -77,8 +78,10 @@ export class FileTree {
   private root: HTMLElement;
   private events: FileTreeEvents;
   private trigger: HTMLElement | null = null;
+  private deskRepo: string | null = null;
+  private building = 0;
   /** The menu of one row, while it is out, and the row's name to go back to. */
-  private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement} | null = null;
+  private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement; inline?: () => void} | null = null;
   /** Each folder's way to be read again, open, by its row. */
   private folders = new WeakMap<HTMLElement, () => Promise<void>>();
   /** A row being carried by the pointer, to be let go on a folder of its repo. */
@@ -97,6 +100,10 @@ export class FileTree {
     // A sheet of paper named "/" over its corner (styles: .tree::before), as a file's sheet is named on the desk; its
     // rows are what is in "/", scrolled inside it where they are more than the window is tall.
     this.element = h('nav', {class: 'tree file-tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
+    const close = h('button', {type: 'button', class: 'tree-desk-close', hidden: ''}, t('Close')) as HTMLButtonElement;
+    close.addEventListener('click', () => this.close());
+    this.element.append(close);
+    this.deskClose = close;
     scrollMarks(this.element);
     // What it holds is read while nothing else is being done, so the first press brings it out whole at once (read
     // then, it came a fifth of a second after the press, the world already going out of focus behind nothing).
@@ -115,10 +122,16 @@ export class FileTree {
     // to File only when it was in the tree or on File.
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || event.isComposing || !this.isOpen) return;
+      // The docked tree does not own Escape in the document, switcher or other overlays.
+      if (this.onDesk && !this.element.contains(event.target as Node)) return;
       event.preventDefault();
       event.stopPropagation();
       // The topmost first: a row's menu goes, and the keyboard back to its row.
-      if (this.pop) { const back = this.pop.name; this.unpop(); back.focus(); return; }
+      if (this.pop) {
+        if (this.pop.element.hasAttribute('aria-busy')) return;
+        const back = this.pop.name;
+        this.unpop(); back.focus(); return;
+      }
       const at = document.activeElement;
       const back = !!at && (this.element.contains(at) || at === this.trigger);
       this.close();
@@ -126,20 +139,51 @@ export class FileTree {
     }, true);
     this.element.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
-      if (to && !this.element.contains(to) && to !== this.trigger) this.close();
+      if (!this.onDesk && to && !this.element.contains(to) && to !== this.trigger) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
     // (A press that just misses the tree, or a row's menu out beside it, is still theirs: ui/near.ts.)
     keepNear(() => (this.isOpen ? this.pop?.element ?? this.element : null));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
-      if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();
+      if (!this.element.contains(at) && !this.trigger?.contains(at)) {
+        if (this.onDesk) this.unpop(); else this.close();
+      }
       else if (this.pop && !this.pop.element.contains(at) && !this.pop.more.contains(at)) this.unpop();
     });
   }
 
   /** Called up and being read for the first time: out as soon as what it holds is read. */
   private coming = false;
+  private deskClose: HTMLButtonElement;
+
+  get onDesk() { return this.deskRepo !== null; }
+
+  /** The same File owner, presented as the open repo's Files sheet, not a veil over the editor. */
+  openDesk(repo: string, focus = false) {
+    if (this.deskRepo === repo && this.isOpen) {
+      if (focus) this.root.querySelector<HTMLElement>('.tree-name')?.focus({preventScroll: true});
+      return;
+    }
+    if (this.deskRepo !== repo) {
+      this.close(false);
+      this.deskRepo = repo;
+      this.root.setAttribute('aria-label', repo);
+      this.element.setAttribute('aria-label', t('Files in {name}', {name: repo}));
+      this.element.classList.add('on-forge-desk', 'open', 'settled');
+      this.deskClose.hidden = false;
+      this.root.replaceChildren(note(t('Loading…'), 0));
+    }
+    void this.build().then(() => {
+      const current = document.activeElement;
+      if (focus && this.deskRepo === repo && this.element.classList.contains('open') &&
+        (!current || current === document.body || current.closest('[hidden]') || this.element.contains(current))) {
+        this.root.querySelector<HTMLElement>('.tree-name')?.focus({preventScroll: true});
+      }
+    });
+  }
+
+  closeDesk() { if (this.onDesk) this.close(false); }
 
   get isOpen() { return this.coming || this.element.classList.contains('open'); }
 
@@ -148,7 +192,10 @@ export class FileTree {
     this.trigger = button;
     button.setAttribute('aria-controls', 'file-tree');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('click', (event) => { if (this.isOpen) this.close(); else this.open(event.detail === 0); });
+    button.addEventListener('click', (event) => {
+      if (this.onDesk) { this.close(); this.open(event.detail === 0); }
+      else if (this.isOpen) this.close(); else this.open(event.detail === 0);
+    });
     // → from File goes into the tree, out at its right (brought out first if it was not): ↓ and ↑ stay the rail's.
     button.addEventListener('keydown', (event) => {
       if (event.key !== 'ArrowRight' || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -189,12 +236,23 @@ export class FileTree {
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
 
-  close() {
+  close(notify = true) {
+    const fromDesk = this.onDesk;
+    if (fromDesk) {
+      ++this.building;
+      this.deskRepo = null;
+      this.root.replaceChildren();
+      this.root.setAttribute('aria-label', '/');
+      this.element.setAttribute('aria-label', 'File（/）');
+      this.element.classList.remove('on-forge-desk');
+      this.deskClose.hidden = true;
+    }
     this.unpop();
     this.coming = false;
     this.element.classList.remove('open', 'settled');
     this.veil.out(false);
     this.trigger?.setAttribute('aria-expanded', 'false');
+    if (fromDesk && notify) this.events.closedDesk?.();
   }
 
   /** Mark the repo Forge shows. */
@@ -245,13 +303,24 @@ export class FileTree {
    */
   private build(): Promise<void> {
     this.said.textContent = '';
+    const generation = ++this.building;
+    const repo = this.deskRepo;
+    if (repo !== null) {
+      const rows = document.createElement('ul');
+      this.add({path: `/root/${repo}`, name: repo, kind: 'dir'}, rows, -1);
+      const read = this.reading ? new Promise<void>((done) => this.read.push(done)) : Promise.resolve();
+      return read.then(() => {
+        if (generation === this.building && this.deskRepo === repo) this.root.replaceChildren(...rows.childNodes);
+      });
+    }
     return list('/').then(async (top) => {
+      if (generation !== this.building) return;
       const rows = document.createElement('ul');
       const rest = top.filter((e) => e.origin !== 'repos');
       for (const e of top) if (e.origin === 'repos') this.add(e, rows, 0);
       if (rest.length) rows.append(this.system(rest));
       if (this.reading) await new Promise<void>((done) => this.read.push(done));
-      this.root.replaceChildren(...rows.childNodes);
+      if (generation === this.building) this.root.replaceChildren(...rows.childNodes);
     }, () => {});
   }
 
@@ -335,13 +404,16 @@ export class FileTree {
       return;
     }
 
-    let expanded = home || expandedPaths.has(e.path);
+    const deskRoot = isRepo && this.deskRepo === e.name && depth === -1;
+    if (deskRoot) item.classList.add('tree-desk-root');
+    let expanded = deskRoot || home || expandedPaths.has(e.path);
     // (The triangle is not drawn in the tree's sheet, a folder says it is one by its name's end: the name opens and
     // closes it. From the keyboard → and ← do it on the name.)
     const toggle = h('button', {class: 'tree-toggle', type: 'button', tabindex: '-1'}) as HTMLButtonElement;
     toggle.append(triangle());
     const name = h('button', {class: 'tree-name', type: 'button', 'data-path': e.path}, e.name);
     if (isRepo) {
+      if (deskRoot) name.append(h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/'));
       name.dataset.repo = at.repo;
       if (at.repo === this.events.current()) name.setAttribute('aria-current', 'page');
     }
@@ -402,7 +474,20 @@ export class FileTree {
     const more = h('button', {type: 'button', class: 'tree-more', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
       'aria-label': t('Actions for {name}', {name: e.name})}, mark('down'));
     row.append(more);
-    const open = (focus: boolean) => { if (this.pop?.more === more) this.unpop(); else this.menu(row, name, more, e, at, dir, focus); };
+    const open = (focus: boolean, deed?: string) => {
+      if (!deed && this.pop?.more === more) this.unpop();
+      else this.menu(row, name, more, e, at, dir, focus, deed);
+    };
+    if (this.onDesk) {
+      const quick = h('span', {class: at.path ? 'tree-quick' : 'tree-quick tree-quick-root'});
+      const labels = at.path ? [['Rename', 'pen'], ['Delete', 'trash']] : [['New file', 'new-file'], ['New folder', 'new-folder']];
+      for (const [label, deed] of labels) {
+        const button = h('button', {class: 'tree-quick-item', type: 'button', tabindex: '-1'}, t(label));
+        button.addEventListener('click', () => open(true, deed));
+        quick.append(button);
+      }
+      row.append(quick);
+    }
     more.addEventListener('click', (event) => open(event.detail === 0));
     row.addEventListener('contextmenu', (event) => { event.preventDefault(); if (this.pop?.more !== more) open(false); });
     name.addEventListener('keydown', (event) => {
@@ -461,18 +546,21 @@ export class FileTree {
    * `path` of `repo` moved to `to` (renamed, or carried to another folder): an open folder stays open where it went,
    * the repo is read again with every folder down to it open, and it lands lit there with the keyboard on it.
    */
-  private async moved(repo: string, path: string, to: string) {
+  private async moved(repo: string, path: string, to: string, showing = () => true) {
     const was = `/root/${repo}/${path}`, now = `/root/${repo}/${to}`;
     if (to !== path) {
-      await store.move(repo, path, to);
+      await moveFile(repo, path, to);
       for (const p of [...expandedPaths]) if (p === was || p.startsWith(`${was}/`)) { expandedPaths.delete(p); expandedPaths.add(now + p.slice(was.length)); }
     }
     const parts = to.split('/');
     for (let i = 0; i < parts.length; i++) expandedPaths.add(`/root/${[repo, ...parts.slice(0, i)].join('/')}`);
+    if (!showing()) return;
+    const owner = this.deskRepo;
     this.unpop();
     await this.again(this.nameAt(`/root/${repo}`)?.closest('li') ?? null);
     // Its open folders are read each by itself: it is there once the last of them is.
     if (this.reading) await new Promise<void>((done) => this.read.push(done));
+    if (owner !== this.deskRepo) return;
     this.settle(this.nameAt(now));
     if (to !== path) this.landed(now);
   }
@@ -481,9 +569,10 @@ export class FileTree {
   private unpop() {
     if (!this.pop) return;
     this.pop.more.setAttribute('aria-expanded', 'false');
-    const gone = this.pop.element;
-    putAway(gone, () => gone.remove());
+    const {element: gone, inline} = this.pop;
     this.pop = null;
+    if (inline) { inline(); gone.remove(); }
+    else putAway(gone, () => gone.remove());
   }
 
   /**
@@ -523,16 +612,31 @@ export class FileTree {
    * is: its name over what can be done. A row pressed becomes the field or
    * the ask in its own place.
    */
-  private menu(row: HTMLElement, name: HTMLElement, more: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean, focus: boolean) {
+  private menu(row: HTMLElement, name: HTMLElement, more: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean, focus: boolean, deed?: string) {
     this.unpop();
     const item = row.closest('li') as HTMLElement;
+    const presented = this.deskRepo;
+    const owned = () => presented === null || (this.deskRepo === presented && row.isConnected && this.pop?.element === pop);
     const parent = item.parentElement?.closest('li') as HTMLElement | null;
     /** A folder of the repo as the tree knows it (its absolute path) and its row. */
     const abs = (folder: string) => `/root/${at.repo}${folder ? `/${folder}` : ''}`;
-    const pop = fileDeeds({repo: at.repo, path: at.path, name: e.name, dir,
+    let pop: HTMLElement;
+    const askDelete = () => {
+      const ask = fileDeleteAsk(deeds, () => { this.unpop(); name.focus({preventScroll: true}); }, undefined, true);
+      this.unpop();
+      pop = ask.element;
+      row.classList.add('tree-row-asking');
+      row.append(pop);
+      more.setAttribute('aria-expanded', 'true');
+      this.pop = {element: pop, name, more, inline: () => row.classList.remove('tree-row-asking')};
+      ask.focus();
+    };
+    const deeds: Deeds = {repo: at.repo, path: at.path, name: e.name, dir,
+      ...(this.onDesk ? {askDelete} : {}),
       // Made in a folder: the folder open from now, not once it is written (a row drawn meanwhile is drawn open).
       opening: (folder) => expandedPaths.add(abs(folder)),
       made: async (made, file) => {
+        if (!owned()) return;
         this.unpop();
         // A new file is the one to work on: the tree goes and the caret is in it.
         if (file) { this.events.choose(at.repo, made, 'name'); return; }
@@ -540,19 +644,32 @@ export class FileTree {
         this.settle(this.nameAt(abs(made)));
         this.landed(abs(made));
       },
-      move: (to) => this.moved(at.repo, at.path, to),
-      reverted: () => this.unpop(),
+      move: (to) => this.moved(at.repo, at.path, to, owned),
+      reverted: () => { if (owned()) this.unpop(); },
       removed: async () => {
+        if (!owned()) return;
         for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
         // The rows under it come up into its place, from where they stood.
         const gap = item.getBoundingClientRect().height;
-        const place = [...item.parentElement?.children ?? []].indexOf(item);
+        const siblings = [...item.parentElement?.children ?? []];
+        const place = siblings.indexOf(item);
+        const neighbor = (siblings[place + 1] ?? siblings[place - 1])
+          ?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.dataset.path;
         this.unpop();
         await this.again(parent);
+        if (this.deskRepo !== presented) return;
         closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
-        this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
+        this.settle((presented && neighbor ? this.nameAt(neighbor) : null)
+          ?? parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
       },
-      back: () => {}});
+      back: () => {
+        // A shortcut did not open a menu for Cancel to return to.
+        if (!deed || !owned()) return;
+        this.unpop();
+        name.focus({preventScroll: true});
+      }};
+    if (this.onDesk && deed === 'trash') { askDelete(); return; }
+    pop = fileDeeds(deeds);
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
     // Two cells from the tree's edge (one past its shadow), its top the row's: a sheet as the tree is, the row's name
@@ -570,7 +687,8 @@ export class FileTree {
     if (low > 0) pop.style.top = `${Math.max(2 * cell, r.top - low)}px`;
     more.setAttribute('aria-expanded', 'true');
     this.pop = {element: pop, name, more};
-    if (focus) pop.querySelector<HTMLElement>('.pop-item')?.focus();
+    if (deed) pop.querySelector<HTMLButtonElement>(`[data-deed="${deed}"]`)?.click();
+    else if (focus) pop.querySelector<HTMLElement>('.pop-item')?.focus();
   }
 }
 

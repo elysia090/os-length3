@@ -22,15 +22,25 @@ test('a file edited is saved, and its own menu offers to put it back as it was a
   expect(await app.file.revertable('hello', 'README.md'), 'changed: put back').toBe(true);
 });
 
-test('the search finds a line and opens the file there, the line washed and the caret on it', async ({signedIn: app}) => {
-  await app.forge.find('puts');
-
-  // What was found is said a kind at a time, how many beside each: one file.
-  await expect(app.forge.results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
-  await app.forge.hit(/puts\("hello"\);/).click();
-
-  await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
+test('summoned search opens a found line by pointer or keyboard, washed and with the caret on it', async ({signedIn: app}) => {
+  const editor = app.forge.editor('src/main.c');
+  const row = () => app.forge.hit(/puts\("hello"\);/);
+  const open = async (choose: () => Promise<void>) => {
+    await expect(app.forge.search).toBeHidden();
+    await app.forge.find('puts');
+    // What was found is said a kind at a time, how many beside each: one file.
+    await expect(app.forge.results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
+    await choose();
+    await expect(editor).toBeFocused();
+    await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
+    await expect(app.forge.search).toBeHidden();
+  };
+  await open(() => row().click());
+  await open(async () => {
+    await app.forge.search.press('ArrowDown');
+    await expect(row()).toBeFocused();
+    await row().press('Enter');
+  });
 });
 
 test('a file put back from its own menu is as it was at the last commit, and its menu offers it no more', async ({signedIn: app}) => {
@@ -81,13 +91,15 @@ test('a file saved on another device while written here is asked about, and Keep
   await expect(app.forge.fileState('README.md')).toBeHidden();
 });
 
-test('Escape out of an empty search gives the keyboard back to what had it', async ({signedIn: app}) => {
-  await app.forge.promptBox.focus();
-  await app.forge.search.click();
-  await app.forge.search.fill('hello');
+test('Escape out of an empty search gives the keyboard back to the Prompt that had it', async ({signedIn: app}) => {
+  await app.forge.use('Prompt');
+  await expect(app.forge.promptBox).toBeFocused();
+  await app.forge.find('hello');
   await app.page.keyboard.press('Escape');
   await expect(app.forge.search).toHaveValue('');
+  await expect(app.forge.search).toBeFocused();
   await app.page.keyboard.press('Escape');
+  await expect(app.forge.search).toBeHidden();
   await expect(app.forge.promptBox).toBeFocused();
 });
 
@@ -120,26 +132,50 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   await expect(app.forge.editor('big.txt')).toHaveCount(0);
 });
 
-test('the band\'s keys put away what they bring out by the same press: the files key\'s menu (and the pointer gone off it), and the terminal', async ({signedIn: app}) => {
+test('Places puts away its menus, and the Prompt shortcut returns to the paper in hand', async ({signedIn: app}) => {
   await app.newRepo.make('keys', {template: 'C'});
   await app.rail.go('forge');
-  const acts = app.main.locator('.band-acts');
-  await acts.click();
-  await expect(acts).toHaveAttribute('aria-expanded', 'true');
-  await acts.click();
-  await expect(acts).toHaveAttribute('aria-expanded', 'false');
-  await expect(app.page.locator('.band-deeds')).toHaveCount(0);
-  await acts.click();
-  await expect(acts).toHaveAttribute('aria-expanded', 'true');
-  await app.page.mouse.move(900, 600);
-  await expect(acts).toHaveAttribute('aria-expanded', 'false');
-  // The terminal out, and put away again: the piece that was in the hand is taken up again.
-  const was = await app.main.locator('section.desk:not([hidden]) .desk-box.held').getAttribute('data-key');
-  expect(was).not.toBe('term');
-  const term = app.page.getByRole('button', {name: 'Terminal', exact: true}).first();
-  await term.click();
-  await expect(app.forge.piece('term')).toHaveClass(/held/);
-  await term.click();
-  await expect(app.forge.piece(was!)).toHaveClass(/held/);
-  await expect(app.forge.piece('term')).not.toHaveClass(/held/);
+  const {placesKey: key, places} = app.forge;
+  const readme = app.forge.editor('README.md');
+  await readme.focus();
+  await expect(app.forge.piece('README.md')).toHaveClass(/held/);
+  await key.click();
+  await expect(key).toHaveAttribute('aria-expanded', 'true');
+  await expect(places.getByRole('menuitemradio', {name: 'Forge', exact: true})).toBeFocused();
+  await key.click();
+  await expect(key).toHaveAttribute('aria-expanded', 'false');
+  await expect(places).toBeHidden();
+  await key.click();
+  await app.page.keyboard.press('Escape');
+  await expect(key).toBeFocused();
+  await expect(places).toBeHidden();
+
+  const deeds = app.page.getByRole('menu', {name: 'README.md', exact: true});
+  const showDeeds = async () => {
+    await app.rail.open();
+    await app.page.getByRole('button', {name: 'Files: New, Rename, Delete', exact: true}).click();
+    await expect(deeds.getByRole('menuitem', {name: 'New file'})).toBeFocused();
+    await expect(key).toHaveAttribute('aria-expanded', 'true');
+  };
+  await showDeeds();
+  await key.click();
+  await expect(deeds).toBeHidden();
+  await expect(key).toHaveAttribute('aria-expanded', 'false');
+  await showDeeds();
+  await deeds.hover();
+  await app.page.mouse.move(8, 400);
+  await expect(deeds).toBeHidden();
+  await expect(key).toHaveAttribute('aria-expanded', 'false');
+
+  await readme.focus();
+  await expect(app.forge.piece('README.md')).toHaveClass(/held/);
+  const promptSlot = app.main.locator('.forge-prompt-slot');
+  await expect(promptSlot).toBeHidden();
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(promptSlot).toHaveClass(/held/);
+  await expect(app.forge.promptBox).toBeFocused();
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(promptSlot).toBeHidden();
+  await expect(promptSlot).not.toHaveClass(/held/);
+  await expect(readme).toBeFocused();
 });

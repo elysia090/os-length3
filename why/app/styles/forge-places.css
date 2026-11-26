@@ -1,0 +1,143 @@
+/* Forge's own plane. The place switch and temporary tools never claim a grid cell. */
+body.forge-place {
+  --forge-origin: 48px;
+  --forge-top: 90px;
+  --forge-slot: 630px;
+  --forge-slot-width: min(360px, calc(100vw - var(--forge-slot) - 24px));
+  padding: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+body.forge-place > #page[data-place='forge'] { padding: 0; margin: 0; height: 100dvh; min-height: 0; width: 100%; grid-column: 1; }
+body.work-places > .rail { display: none; }
+/* Git keeps the same left measure when the permanent rail is put away. */
+body.work-places > #page[data-place='git'] { grid-column: 2; }
+#page[data-place='forge'] > .forge-layout {
+  box-sizing: border-box; width: 100%; height: 100%; max-width: none; min-height: 0; padding: 0; margin: 0;
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+}
+.forge-layout.work.bench > .center { grid-column: 1; grid-row: 1 / -1; min-width: 0; min-height: 0; padding: 0; margin: 0; }
+.forge-layout .desk-room { margin: calc(var(--forge-top) - 24px) 0 0 var(--forge-origin); }
+.forge-layout .desk { inset-inline-end: 0; }
+.forge-layout .desk-room > .desk { translate: none; }
+/* The document desk shows one switch per piece, without the separate viewport underline. */
+.forge-layout .desk-room[data-place='Forge'] > .row-map > .row-sight { display: none; }
+/* Search is still the real reference reader, summoned as a tool, not a strip. */
+.forge-layout.work.bench > .bar { display: none; }
+.forge-layout.work.bench.forge-searching > .bar { display: flex; position: absolute; top: 12px; left: var(--forge-origin); width: min(576px, calc(100% - var(--forge-origin) - 60px)); height: 36px; z-index: 12; }
+.forge-layout .band-tools .search-results { left: 0; top: 52px; }
+.forge-title, .git-title { position: absolute; z-index: 1; margin: 0; padding-inline-end: 8px;
+  background: var(--ground); color: var(--ink); font: 700 var(--t-word)/24px var(--sans); pointer-events: none; }
+.forge-title { top: 24px; left: var(--forge-origin); }
+.git-title { top: calc(var(--u) - var(--outer-top)); left: 0; }
+.forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: var(--t-word); padding-block: var(--sheet-inset-y); box-shadow: none; }
+.forge-layout .desk :is(.gutter, .code) { font-size: var(--t-word); }
+/* The scrollable area and the blank space under its last line use the same paper insets. */
+.forge-layout .desk-file { --file-content-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); max-height: var(--file-content-height); }
+.forge-layout .desk-file.long { height: var(--file-content-height); }
+.forge-layout .desk-file.long > .sheet { padding-bottom: calc(var(--file-content-height) - var(--ahead, 0px)); }
+.forge-layout .desk-file-head > .file-read-notice:not(:empty) { align-self: flex-start; min-height: var(--line); line-height: var(--line); }
+.forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
+.forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: var(--t-word); }
+.forge-layout .desk-close { margin-block-end: 6px; }
+/* The desk remembers its selected paper, but only the hand exposes its actions. */
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-close { display: none; }
+.forge-layout .desk-room:not([data-place='Forge']) .desk-box[data-beside] { visibility: hidden; }
+.forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) { box-shadow: 4px 4px 0 var(--ink); }
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held,
+.forge-layout .desk .desk-box.leaving:not(.held),
+body:has(.forge-document-menu) .forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) {
+  background: var(--ground); outline-color: var(--edge); color: var(--sub); box-shadow: none; }
+.forge-layout .desk-box:not(.held) > .desk-label,
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held > .desk-label,
+body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: var(--sub); font-weight: 400; }
+
+.forge-places-key { position: fixed; top: 12px; right: 12px; z-index: 19; width: 44px; height: 44px; display: grid; place-items: center;
+  border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); cursor: var(--cursor-hand); }
+.forge-places-key > :is(svg, .mark) { width: 16px; height: 16px; }
+.forge-places-key[aria-expanded='true'] { background: var(--paper); outline: 1px solid var(--ink); outline-offset: -7px; }
+.forge-menu { position: fixed; z-index: 24; display: grid; min-width: 112px; max-width: calc(100vw - 12px); padding: 4px;
+  max-height: calc(100dvh - 12px); overflow: auto; border: 1px solid var(--ink); border-radius: var(--r-field); color: var(--ink); background: var(--paper);
+  font: 400 var(--t-word)/19px var(--mono); }
+.forge-places { right: 12px; top: 58px; }
+.forge-menu hr { margin: 3px 5px; border: 0; border-top: 1px solid var(--rule); }
+.forge-menu-item { width: 100%; min-height: 28px; padding: 3px 8px; border: 0; border-radius: var(--r-key); text-align: left; background: transparent;
+  font: inherit; color: inherit; cursor: var(--cursor-hand); }
+.forge-menu-item:is(:hover, :focus-visible):not(:disabled) { background: var(--slot); outline-offset: -2px; }
+.forge-menu-item:disabled { color: var(--sub); cursor: var(--cursor-arrow); }
+.forge-places [role='menuitemradio'],
+.forge-document-menu:has([role='menuitemcheckbox']) .forge-menu-item { padding-inline-start: 26px; position: relative; }
+.forge-menu [aria-checked='true']::before { content: '✓'; position: absolute; left: 8px; }
+.forge-folders { min-width: min(250px, calc(100vw - 12px)); }
+.forge-folder-status, .forge-menu-status { padding: 3px 8px; color: var(--sub); }
+.forge-folder-status:empty, .forge-menu-status:empty { display: none; }
+.forge-empty { position: fixed; inset: 0; }
+.forge-open-folder { padding: 3px 6px; border: 0; color: var(--ink); background: var(--ground); cursor: var(--cursor-hand);
+  font: 400 var(--t-word)/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; }
+
+/* The app's existing routes and tools still exist. They are visible only when requested on a work desk. */
+.forge-route-tools { display: none; }
+body.work-places.forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
+  height: auto; max-height: calc(100dvh - 74px); padding: 5px; flex-direction: column; gap: 0; background: var(--paper);
+  border: 1px solid var(--ink); border-radius: var(--r-field); font: 400 var(--t-word)/19px var(--mono); }
+body.forge-routes .rail-tabs { display: grid; gap: 0; padding: 0; }
+body.forge-routes .rail-item { width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 8px; min-height: 28px; flex: none; }
+body.forge-routes .rail-item .rail-tag { position: static; opacity: 1; translate: none; padding: 0; background: transparent; color: inherit; font: inherit; }
+body.forge-routes .rail-me { order: 2; }
+body.forge-routes .me-pop { left: auto; right: 100%; }
+body.forge-routes .forge-route-tools:not(:empty) { display: grid; border-top: 1px solid var(--rule); font: inherit; }
+
+/* The existing Prompt/session in its own slot. The component's palette (including ANSI) is unchanged. */
+.forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
+  --line: 19px;
+  --tallest: min(380px, calc(100dvh - var(--forge-top) - 24px));
+  left: calc(var(--forge-slot) - var(--forge-origin)); top: 24px;
+  width: var(--forge-slot-width) !important; max-height: calc(100dvh - var(--forge-top)); box-shadow: none; z-index: 6;
+}
+.forge-layout .forge-prompt-slot > .desk-term.stand { padding: 6px; }
+.forge-layout .forge-term-tag { display: flex; gap: 8px; align-items: center; color: var(--sub); }
+.forge-layout .forge-prompt-slot.held > .forge-term-tag { background: var(--ground); color: var(--ink); font-weight: 700; }
+.forge-layout .forge-prompt-slot .term-out:has(.vt-screen) { overflow-x: auto; }
+.forge-layout .forge-prompt-slot .vt-screen { min-width: 80ch; }
+
+/* Only the chosen repo is in this view of the existing File tree; the global File command still has its full root. */
+.file-tree.on-forge-desk { position: fixed; z-index: 7; --tree-top: var(--forge-top); top: var(--forge-top); left: var(--forge-slot);
+  width: var(--forge-slot-width); padding: 6px; outline-color: var(--ink); box-shadow: none; }
+.file-tree.on-forge-desk::before { content: none; }
+.file-tree.on-forge-desk > .tree-children { padding: 0; }
+.file-tree.on-forge-desk .tree-desk-root > .tree-row { position: absolute; left: 0; right: 56px; bottom: calc(100% + 6px); padding: 0 6px; margin: 0; }
+.file-tree.on-forge-desk .tree-desk-root > .tree-row > .tree-name { flex: 0 1 auto; min-width: 0; }
+.file-tree.on-forge-desk .tree-row { --in: calc(max(0, var(--depth, 0)) * 15px); min-height: 24px; margin: 0; }
+.file-tree.on-forge-desk .tree-row:not(:has(> .tree-more[aria-expanded='true'])) { color: var(--ink); background: transparent; }
+.file-tree.on-forge-desk .tree-name { font: 400 var(--t-word)/19px var(--mono); min-height: 24px; }
+.file-tree.on-forge-desk .tree-desk-root > .tree-row .tree-name { font-weight: 700; }
+.file-tree.on-forge-desk .tree-toggle { width: max(var(--in), 1px); }
+.file-tree.on-forge-desk .tree-quick { display: flex; flex: none; gap: 8px; padding: 0 4px; visibility: hidden; }
+.file-tree.on-forge-desk .tree-quick-root, .file-tree.on-forge-desk .tree-row:hover .tree-quick,
+.file-tree.on-forge-desk .tree-quick:focus-within { visibility: visible; }
+.file-tree.on-forge-desk .tree-quick-item, .tree-desk-close { padding: 0; min-height: 24px; border: 0; color: inherit; background: transparent;
+  font: 400 var(--t-word)/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: var(--cursor-hand); }
+.tree-desk-close { position: absolute; bottom: 100%; right: 6px; }
+.file-tree.on-forge-desk .tree-more { visibility: hidden; }
+.file-tree.on-forge-desk .tree-more[aria-expanded='true'] { visibility: visible; }
+body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tree.on-forge-desk { background: var(--ground); outline-color: var(--edge); }
+/* A Files deed asks in the row whose file it will affect, not in a second place. */
+.file-tree.on-forge-desk .tree-row-asking > :not(.tree-file-ask) { display: none; }
+.file-tree.on-forge-desk .tree-file-ask { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;
+  padding-inline-start: var(--in, 0px); font: 400 var(--t-word)/19px var(--mono); color: var(--ink); }
+.file-tree.on-forge-desk .tree-file-ask > span { overflow-wrap: anywhere; }
+.file-tree.on-forge-desk .tree-file-ask > .error { flex-basis: 100%; margin: 0; font: inherit; }
+.file-tree.on-forge-desk .tree-file-ask > .button { border: 0; min-height: 24px; padding: 0; font: inherit;
+  text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+/* Outline/key states must not replace the final destructive word's warning colour. */
+:is(.tree-file-ask, .pop-ask) .button.file-delete-confirm:not(:disabled) { color: var(--off); }
+:is(.tree-file-ask, .pop-ask) .button.file-delete-confirm:not(:disabled):is(:hover, :focus-visible) { color: var(--off); border-color: var(--off); }
+.file-tree.on-forge-desk > .tree-pop { box-shadow: none; }
+@media (hover: none) {
+  .file-tree.on-forge-desk .tree-quick:not(.tree-quick-root) { display: none; }
+  .file-tree.on-forge-desk .tree-more { visibility: visible; min-width: 32px; min-height: 32px; }
+}
+@media (max-width: 1000px) {
+  body.forge-place { --forge-origin: 24px; --forge-slot: 24px; --forge-slot-width: calc(100vw - 48px); }
+  .forge-layout .desk-room:is([data-place='Prompt'], [data-place='Files']) > :is(.desk, .row-map) { visibility: hidden; }
+}
+.file-tree.on-forge-desk:has(.tree-row-asking) :is(.tree-quick-root, .tree-desk-close) { visibility: hidden; }

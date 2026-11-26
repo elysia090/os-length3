@@ -176,11 +176,24 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
 
         "history_changes" => to(history::changes(&repos()?, &a.s("repo")?)?),
         "history_changed" => to(history::changed(&repos()?, &a.s("repo")?)?),
-        "history_diff" => to(history::diff(&repos()?, &a.s("repo")?, DIFF_LIMIT)?),
+        "history_main_changes" => to(history::changes(&repos()?.on_main(), &a.s("repo")?)?),
+        "history_line_diff_at" => to(history::work_diff_at(&a.s("repo")?, &a.s("on")?, &a.s("head")?, DIFF_LIMIT)?),
+        "history_line_log" => {
+            let line = a.s("on")?;
+            if !crate::repo::lines::valid(&line) { return Err(crate::tr!("Invalid work line", "作業の名前が無効です")); }
+            to(history::log_of(&a.s("repo")?, &line, 50)?)
+        }
+        "history_diff" => {
+            let (repos, repo) = (repos()?, a.s("repo")?);
+            let on: Option<String> = a.opt("on")?;
+            let copy = repos.on_line(&repo, &on.unwrap_or_else(|| repos.line(&repo)))?;
+            to(history::diff(&copy, &repo, DIFF_LIMIT)?)
+        }
         "history_at_head" => to(history::at_head(&repos()?, &a.s("repo")?, &a.s("path")?)?),
         "history_cut" => {
             let issue = a.opt("issue")?.map(|f: String| format!("issue/{}", f.trim_start_matches("issue/")));
-            to(history::cut(&repos()?, &a.s("repo")?, issue.as_deref(), &a.s("line")?, &a.s("note")?)?)
+            let expected = a.opt::<String>("on")?;
+            to(history::cut_on(&repos()?, &a.s("repo")?, issue.as_deref(), &a.s("line")?, &a.s("note")?, expected.as_deref())?)
         }
         "history_log" => to(history::log(&repos()?, &a.s("repo")?, 50)?),
         // An issue's own file committed on main by itself, as it was just written ("new", "change", "close", "reopen");
@@ -189,6 +202,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "issues_settle" => to(history::settle_issues(&repos()?, &a.s("repo")?)?),
         "history_push" => to(history::push(&repos()?, &a.s("repo")?)?),
         "history_submit" => to(history::submit(&repos()?, &a.s("repo")?, &a.s("note")?)?),
+        "history_submit_at" => to(history::submit_at(&repos()?, &a.s("repo")?, &a.s("on")?, &a.s("head")?, &a.s("note")?)?),
         "history_reset" => to(history::reset(&repos()?, &a.s("repo")?)?),
         "work_start" => to(work::start(&repos()?, &a.s("repo")?, &a.s("issue")?)?),
         "work_switch" => to(work::switch(&repos()?, &a.s("repo")?, &a.s("line")?)?),
@@ -202,6 +216,14 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "change_review" => to(history::review(&a.s("repo")?, &a.s("id")?, &a.s("verdict")?, &a.s("note")?, &a.list("marks")?)?),
         "change_merge" => to(history::merge(&a.s("repo")?, &a.s("id")?)?),
         "change_reject" => to(history::reject(&a.s("repo")?, &a.s("id")?, &a.s("note")?)?),
+        "change_review_at" => to(history::review_at(&a.s("repo")?, &a.s("id")?, history::PinnedReview {
+            expected: a.get("expected")?, verdict: a.s("verdict")?, note: a.s("note")?,
+            lines: a.get("lines")?, request: a.s("request")?,
+        }, DIFF_LIMIT)?),
+        "change_merge_at" => to(history::merge_at(&repos()?, &a.s("repo")?, &a.s("id")?, &a.get("expected")?)?),
+        "change_reject_at" => to(history::reject_at(&a.s("repo")?, &a.s("id")?, &a.get("expected")?, &a.s("note")?)?),
+        "change_diff_at" => to(history::change_diff_at(&a.s("repo")?, &a.s("id")?, &a.get("expected")?, DIFF_LIMIT)?),
+        "change_line_source" => to(history::change_line_source(&a.s("repo")?, &a.s("id")?, &a.get("expected")?, &a.get("line")?)?),
         "change_diff" => to(history::change_diff(&a.s("repo")?, &a.s("id")?, DIFF_LIMIT)?),
         _ => Err(crate::tr!("There is no command {}", "{} というコマンドはありません", name)),
     }

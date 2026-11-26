@@ -23,7 +23,7 @@ const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {},
 
 /** The sections round the issues: main's over them, and under them what is done with, each its own section. */
 export class Sections {
-  readonly main = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
+  readonly main = h('section', {class: 'section main-part', 'aria-label': t('Not committed'), hidden: ''});
   private readonly merged = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
   private readonly closed = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
   /** Those under the issues, in their order. */
@@ -35,10 +35,8 @@ export class Sections {
    */
   draw({dirty, merged, closed}: Laid, filter: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void, moving = false) {
     const was = this.under.map((s) => (s.hidden ? null : [...s.children]));
-    // (What main has not committed is not drawn: work is done on an issue.)
-    void dirty; void states;
-    this.main.hidden = true;
-    this.main.replaceChildren();
+    this.main.hidden = !dirty.length;
+    this.main.replaceChildren(...dirty.map((repo) => mainWork(repo, states, events, again)));
     this.merged.hidden = !merged.length;
     this.merged.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     this.closed.hidden = !closed.length;
@@ -83,8 +81,46 @@ function landing(row: HTMLElement, key: string, fresh: boolean, kind = 'landing'
   if (into) row.style.animationDelay = `${-into}ms`;
 }
 
-/** main's part drawn again: nothing is drawn there now (what main has not committed is not shown). */
+/** Kept by repo, so drawing again on this desk does not close the line being written. */
 export function opened(_part: HTMLElement) {}
+
+function mainWork(repo: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void): HTMLElement {
+  const files = h('ul', {class: 'git-main-files'});
+  const error = h('p', {class: 'error', role: 'alert'});
+  const title = h('input', {class: 'git-main-commit', 'aria-label': t('Commit title'), placeholder: t('Commit title')}) as HTMLInputElement;
+  const cut = button(t('Commit'));
+  const record = async () => {
+    if (held(cut)) return;
+    busy(cut, true);
+    error.textContent = '';
+    try {
+      await git.cut(repo, null, title.value, '', 'main');
+      again();
+    } catch (e) {
+      busy(cut, false);
+      error.textContent = errorText(e);
+    }
+  };
+  cut.addEventListener('click', () => void record());
+  title.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void record(); });
+  const n = states.get(repo)?.uncommitted ?? 0;
+  void git.mainChanges(repo).then((diff) => {
+    if (!diff.connected) return;
+    const shown = diff.folders.flatMap((f) => f.files).filter((f) => !f.path.startsWith('issue/'));
+    files.replaceChildren(...shown.map((f) => {
+      const path = f.status === 'removed' ? h('span', {}, f.path) :
+        h('button', {type: 'button', class: 'git-main-file', 'data-path': f.path}, f.path);
+      if (path instanceof HTMLButtonElement) path.addEventListener('click', () => {
+        void git.work(repo).then((active) => {
+          if (active.line === 'main') events.open(repo, f.path);
+          else error.textContent = t('Read main before opening its uncommitted file');
+        }, (e) => { error.textContent = errorText(e); });
+      });
+      return h('li', {}, path, h('span', {class: 'git-main-count'}, f.binary ? t('Binary') : `+${f.added} −${f.removed}`));
+    }));
+  }, (e) => { error.textContent = errorText(e); });
+  return h('div', {class: 'git-main-pending'}, h('p', {class: 'git-main-label'}, t('Not committed'), ' · ', String(n)), files, title, cut, error);
+}
 
 /** "#3 Fix：title", the number quiet, as an issue's head writes it. */
 const named = (n: number | null, kind: string | null, title: string) => h('span', {class: 'done-name'},

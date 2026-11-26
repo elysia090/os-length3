@@ -20,6 +20,158 @@ pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> 
     diff_of(pairs(Some(&client), After::Remote(&client), &then, &now)?, limit)
 }
 
+/// The identity the user read, not whatever version happens to be latest when a command runs.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub struct Revision {
+    pub version: i64,
+    pub head: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Side { Old, New }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ReviewLine {
+    pub path: String,
+    pub side: Side,
+    pub line: usize,
+}
+
+const PIN: &str = "why.line/1:";
+
+#[derive(Deserialize)]
+struct ReviewBasis {
+    #[serde(flatten)]
+    revision: Revision,
+    base: Option<String>,
+    lines: Vec<ReviewLine>,
+}
+
+fn pinned_basis(r: &Review) -> Option<ReviewBasis> {
+    let [mark] = r.marks.as_slice() else { return None };
+    let b: ReviewBasis = serde_json::from_str(mark.strip_prefix(PIN)?).ok()?;
+    let digest = |s: &str| s.len() == 64 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    (b.revision.version == r.version && digest(&b.revision.head) && b.base.as_deref().is_none_or(digest) &&
+        b.lines.len() <= 200 && b.lines.iter().all(|l| !l.path.is_empty() && l.path.len() <= 4096 &&
+            l.line > 0 && l.path.split('/').all(|x| !x.is_empty() && x != "." && x != ".."))).then_some(b)
+}
+
+fn change_raw(client: &Client, repo: &str, id: &str) -> Result<Change> {
+    let v = client.json("GET", &format!("/v1/repos/{repo}/changes"), None)?;
+    let list: Vec<Change> = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    list.into_iter().find(|c| c.id == id).ok_or_else(|| crate::tr!("Change not found", "該当する Change はありません"))
+}
+
+fn stored_base(c: &Change, expected: &Revision) -> Result<Option<String>> {
+    if c.head == expected.head && c.version == expected.version { return Ok(c.base.clone()); }
+    c.reviews.iter().filter_map(pinned_basis).find(|b| b.revision == *expected)
+        .map(|b| b.base)
+        .ok_or_else(|| crate::tr!("This review version is not available", "このレビューの版を読み出せません"))
+}
+
+fn pinned_diff(client: &Client, repo: &str, base: Option<&str>, head: &str, limit: usize) -> Result<Vec<FileDiff>> {
+    let (then, now) = differ(client, repo, base, head)?;
+    diff_of(pairs(Some(client), After::Remote(client), &then, &now)?, limit)
+}
+
+/// Read a batch on a work before it is offered for review. It is bounded as any other diff.
+pub fn work_diff_at(repo: &str, on: &str, head: &str, limit: usize) -> Result<Vec<FileDiff>> {
+    if !crate::repo::lines::valid(on) || on == crate::repo::lines::MAIN { return Err(crate::tr!("Invalid work line", "作業の名前が無効です")); }
+    let line = shipto::line(repo, on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
+    if line.head.as_deref() != Some(head) { return Err(crate::tr!("The work shown changed; read it before committing", "表示中の作業が変わりました。読み直してからコミットしてください")); }
+    pinned_diff(&Client::open()?, repo, line.base.as_deref(), head, limit)
+}
+
+/// Read a submitted revision or one pinned by a persisted review. Do not let a client supply arbitrary cut pairs.
+pub fn change_diff_at(repo: &str, id: &str, expected: &Revision, limit: usize) -> Result<Vec<FileDiff>> {
+    let client = Client::open()?;
+    let c = change_raw(&client, repo, id)?;
+    let base = stored_base(&c, expected)?;
+    pinned_diff(&client, repo, base.as_deref(), &expected.head, limit)
+}
+
+/// Read the real file in a pinned diff (on the old side for a removal). No working-copy substitution.
+pub fn change_line_source(repo: &str, id: &str, expected: &Revision, line: &ReviewLine) -> Result<String> {
+    let client = Client::open()?;
+    let c = change_raw(&client, repo, id)?;
+    let base = stored_base(&c, expected)?;
+    if !c.reviews.iter().filter_map(pinned_basis).any(|b| b.revision == *expected && b.lines.contains(line)) {
+        return Err(crate::tr!("This line is not in the recorded review", "この行は記録されたレビューにありません"));
+    }
+    let (then, now) = differ(&client, repo, base.as_deref(), &expected.head)?;
+    let side = match line.side { Side::Old => then, Side::New => now };
+    let sha = side.get(&line.path).and_then(Option::as_deref)
+        .ok_or_else(|| crate::tr!("This file is not in the recorded change", "このファイルは記録された変更にありません"))?;
+    let source = super::changes::text(&super::changes::blob(&client, sha)?)
+        .ok_or_else(|| crate::tr!("This file is not text", "このファイルはテキストではありません"))?;
+    if line.line == 0 || source.split_terminator('\n').nth(line.line - 1).is_none_or(|text| text.trim().is_empty()) {
+        return Err(crate::tr!("A marked line is not present in this review", "指定行がこのレビューにありません"));
+    }
+    Ok(source)
+}
+
+/// What a person records against one displayed version, with an id for safe retry.
+pub struct PinnedReview {
+    pub expected: Revision,
+    pub verdict: String,
+    pub note: String,
+    pub lines: Vec<ReviewLine>,
+    pub request: String,
+}
+
+/// A review of the displayed version. A mark must be present in that diff, as shown in the product.
+pub fn review_at(repo: &str, id: &str, review: PinnedReview, limit: usize) -> Result<Change> {
+    let PinnedReview { expected, verdict, note, lines, request } = review;
+    if !matches!(verdict.as_str(), "approve" | "comment") || lines.len() > 200 || note.chars().count() > 2000 {
+        return Err(crate::tr!("Invalid review", "レビューが無効です"));
+    }
+    if !lines.is_empty() {
+        let client = Client::open()?;
+        let c = change_raw(&client, repo, id)?;
+        let base = stored_base(&c, &expected)?;
+        let files = pinned_diff(&client, repo, base.as_deref(), &expected.head, limit)?;
+        if !lines.iter().all(|m| files.iter().any(|f| f.path == m.path && !f.binary && f.lines.iter().any(|l| {
+            !l.text.trim().is_empty() && match m.side {
+                Side::Old => l.old == Some(m.line),
+                Side::New => l.new == Some(m.line),
+            }
+        }))) { return Err(crate::tr!("A marked line is not present in this review", "指定行がこのレビューにありません")); }
+    }
+    // The Remote tests the identity again under the same lock as the mutation, also for approvals without marks.
+    let v = change_call(repo, id, "reviews/pinned", serde_json::json!({
+        "version": expected.version, "head": expected.head, "verdict": verdict, "note": note, "lines": lines, "request": request,
+    }))?;
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
+pub fn merge_at(repos: &Repos, repo: &str, id: &str, expected: &Revision) -> Result<Change> {
+    let client = Client::open()?;
+    let c = change_raw(&client, repo, id)?;
+    if c.version == expected.version && c.head == expected.head {
+        let work = crate::repo::lines::worktree(repo, &c.line);
+        if work.is_dir() {
+            let copy = repos.on_line(repo, &c.line)?;
+            let key = shipto::key_of(repo, &c.line);
+            let local = shipto::local_tree_fresh(&copy.dir(repo)?);
+            let recorded = super::changes::head_tree(&client, repo, &key, Some(&expected.head))?;
+            if !local.unsynced.is_empty() || local.tree != recorded {
+                return Err(crate::tr!("Commit and submit the remaining work before merging", "残りの作業をコミットして提出してから Merge してください"));
+            }
+        }
+    }
+    let v = change_call(repo, id, "merge/pinned", serde_json::json!({"version": expected.version, "head": expected.head}))?;
+    let merged: Change = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    crate::agent::tasks::issue_over(repo, &merged.issue);
+    remember_merged(repo, std::iter::once(merged.issue.clone()));
+    Ok(merged)
+}
+
+pub fn reject_at(repo: &str, id: &str, expected: &Revision, note: &str) -> Result<Change> {
+    let v = change_call(repo,id,"reject/pinned",serde_json::json!({"version":expected.version,"head":expected.head,"note":note}))?;
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
 /// Reset: take back the change the work handed in (its author's decision).
 pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
     let on = repos.line(repo);
@@ -73,6 +225,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
         Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "Change に新しい版があります（第{}版）。先にそれを見てください", v["version"])),
+        Reply::Conflict(v) if v["state"].is_null() => Err(crate::shipto::refused_in(409, &v)),
         Reply::Conflict(v) => {
             // A Latin word stands a space apart from the Japanese before it (bug: もうMerge 済み).
             let state = state_word(v["state"].as_str().unwrap_or("?"));
@@ -116,6 +269,29 @@ impl HandIn {
     /// Nothing new was handed in: main already had this very version.
     pub fn same(&self) -> bool {
         self.pushed.is_none() && self.before.as_ref().is_some_and(|b| b.state == "open" && b.version == self.change.version)
+    }
+}
+
+/// Submit the recorded head seen by the caller. The Remote publishes the line and its offer transactionally.
+pub fn submit_at(repos: &Repos, repo: &str, on: &str, head: &str, note: &str) -> Result<Change> {
+    if on == crate::repo::lines::MAIN || repos.line(repo) != on {
+        return Err(crate::tr!("The work shown changed; read it before submitting", "表示中の作業が変わりました。読み直してから提出してください"));
+    }
+    let copy = repos.on_line(repo, on)?;
+    let (kind, title, _) = words(&copy, repo, None, "")?;
+    let client = Client::open()?;
+    let v = client.call("POST", &format!("/v1/repos/{repo}/changes/submit"), Some(serde_json::json!({
+        "line": on, "head": head, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim(),
+    })))?;
+    match v {
+        Reply::Ok(v) => {
+            // The deed succeeded. Reading the diff/folders is separate, and cannot turn that success into an error.
+            let c: Change = serde_json::from_value(v).map_err(|e| e.to_string())?;
+            crate::agent::tasks::handed_in(repo, &c.line, &c.issue, &c.title);
+            Ok(c)
+        }
+        Reply::Conflict(v) => Err(crate::shipto::refused_in(409, &v)),
+        Reply::NotFound(_) => Err(crate::tr!("The Remote cannot submit this work", "Remote はこの作業を提出できません")),
     }
 }
 
@@ -219,6 +395,8 @@ pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Review {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub version: i64,
     /// "approve", "changes" or "comment".
     pub verdict: String,

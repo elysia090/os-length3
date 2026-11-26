@@ -3,6 +3,7 @@ import {h} from '../ui/dom.ts';
 import {setWindowTitle} from '../../api/tauri.ts';
 import {icon} from '../ui/icons.ts';
 import {placeholder} from '../pages/kit/common.ts';
+import type {ForgePlace} from '../pages/kit/places.ts';
 import type {Context, Writing} from '../pages/kit/context.ts';
 import {currentProfile, home, startEditing} from '../pages/home/home.ts';
 import {Me} from '../pages/me/me.ts';
@@ -22,7 +23,7 @@ import {getState, loadState, onState} from '../../home/state.ts';
 import {inEffect} from '../../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../../text/i18n.ts';
-import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {depth, doorOf, isFar, isWorkPage, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
@@ -120,6 +121,9 @@ const ctx: Context = {
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
+  forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
+  forgePlace(place) { return select('forge', false, false, place); },
+  morePlaces(anchor, tools) { if (isWorkPage(current)) openMorePlaces(anchor, tools); },
   get repo() { return openRepo; },
   get leftOff() {
     try {
@@ -140,11 +144,14 @@ onRenamed((from, to) => {
 // File lays the tree of "/" over the page; it never replaces the page. A
 // file chosen there is the one to work on: the tree goes and the caret is in it.
 const fileTree = new FileTree({
-  choose: (repo, path, file) => { if (file) fileTree.close(); ctx.openRepo(repo, path, file); },
+  choose: (repo, path, file) => { if (file && !fileTree.onDesk) fileTree.close(); ctx.openRepo(repo, path, file); },
+  closedDesk: () => forgeOf?.closeFiles(),
   current: () => (current === 'forge' ? openRepo : null),
   currentFile: () => (current === 'forge' ? readingPath : null),
 });
 document.body.append(fileTree.element);
+fileTree.element.addEventListener('focusin', () => { if (fileTree.onDesk) forgeOf?.takeFilesPane(); });
+fileTree.element.addEventListener('pointerdown', () => { if (fileTree.onDesk) forgeOf?.takeFilesPane(); });
 // A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
 keepFocus();
 touch();
@@ -209,7 +216,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
 }
 
 /**
- * The door: at the head of the band, the way from a place to its far side (Forge to Git, Home to the Remote, Server
+ * The door: at the head of the band, the way from a place to its far side (Home to the Remote, Server
  * to Inbox) and, in the same spot, the way back. It is the window's, not the page's: one key at the desk's corner on
  * the band's row, the page's own band (where it has one) going on from it. It says what waits where it leads.
  */
@@ -241,11 +248,14 @@ document.addEventListener('pointerdown', (event) => {
 /** Newer navigation supersedes unresolved loading; animation never delays the destination or input. */
 let asked = 0;
 /** `id` gone to; `stepped`, by Back or Forward (the window's history is already there: no new step). */
-function select(id: PurposeId, quiet = false, stepped = false): Promise<void> {
+function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlace): Promise<void> {
   const bringing = brought(id), mine = ++asked;
-  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped); });
+  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped, place); });
+  closeMorePlaces(false);
+  if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
   stopStage($('page'));
+  if (id === 'forge' && place) forgeOf?.placeNext(place);
   draw(id, quiet, stepped);
   return Promise.resolve();
 }
@@ -291,7 +301,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   // (To a place's far side, or back from it: along, not down. The two are one place.)
   const along = placeOf(from) === placeOf(id);
   const arrived = !opened || quiet || from === id ? null
-    : along ? travel($('page'), isFar(id) ? 1 : -1, 'x') : travel($('page'), Math.sign(depth(id) - depth(from)) || 1);
+    : along ? travel($('page'), isFar(id) || id === 'git' ? 1 : -1, 'x') : travel($('page'), Math.sign(depth(id) - depth(from)) || 1);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -303,6 +313,8 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   // Where the ink is: the page's own place, or the one whose tree, servers or area is out over it.
   const inkWas = where(inked(expanded()));
   current = id;
+  document.body.classList.toggle('forge-place', id === 'forge');
+  document.body.classList.toggle('work-places', isWorkPage(id));
   // A step in the window's history: the first place the OS opens on is the step it is at (read again after a reload,
   // it is that one still); every other place gone to, a step on from it (unless Back or Forward came to it).
   if (first) history.replaceState({...(history.state as object | null), place: id}, '');
@@ -314,7 +326,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (isFar(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();
@@ -389,6 +401,36 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...RAIL.map((p) => railButton(p.id)));
+
+// On a work desk the same rail and personal controls are brought out by More Places, not by a second router.
+const forgeRail = document.querySelector<HTMLElement>('body > .rail')!;
+const forgeTools = h('div', {class: 'forge-route-tools'});
+forgeRail.append(forgeTools);
+let forgeAnchor: HTMLElement | null = null;
+function openMorePlaces(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]) {
+  forgeAnchor = anchor;
+  forgeTools.replaceChildren(...tools.map(({label, run}) => {
+    const key = h('button', {type: 'button', class: 'forge-menu-item'}, label);
+    key.addEventListener('click', () => { closeMorePlaces(); run(); });
+    return key;
+  }));
+  document.body.classList.add('forge-routes');
+  forgeRail.querySelector<HTMLElement>('.rail-item')?.focus({preventScroll: true});
+}
+function closeMorePlaces(back = true) {
+  if (!forgeAnchor) return;
+  const anchor = forgeAnchor; forgeAnchor = null;
+  document.body.classList.remove('forge-routes');
+  if (back && anchor.isConnected && !anchor.closest('[hidden]')) anchor.focus({preventScroll: true});
+}
+document.addEventListener('pointerdown', (event) => {
+  const at = event.target as Node;
+  if (!forgeRail.contains(at) && !fileTree.element.contains(at)) closeMorePlaces(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (!forgeAnchor || event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+  event.preventDefault(); closeMorePlaces();
+});
 // Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
 // off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
 const tagAt = (e: Event) => {

@@ -14,7 +14,7 @@ import {across, emptiness, emptyIn} from './weigh.ts';
 //   weight        the weight of what is drawn lies left of the world's middle, the room ahead to the right, and the
 //                 lower right of the world at least as empty as its upper left
 
-const U = 24, F = 2 * U;
+const U = 24, F = 2 * U, PAPER_TOP = 90, PAPER_INSET = 12, LINE = 19, SHADOW = 4;
 type Box = [number, number, number, number];
 type Rest = {pieces: Record<string, Box>; held: string; caret: {top: number; foot: number; ahead: number; letter: number} | null; lower: number; upper: number; H: number};
 
@@ -81,18 +81,24 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     await app.forge.editor('README.md').focus();
     r = await at('README taken by the keyboard');
     expect(r.held).toBe('README.md');
-    expect(r.pieces['README.md']!.slice(0, 2), 'README at the edge, on the horizon').toEqual([F, 3 * U]);
+    expect(r.pieces['README.md']!.slice(0, 2), 'README at the edge, on the horizon').toEqual([F, PAPER_TOP]);
     await page.keyboard.press('Control+End');
     await page.keyboard.type('Plan the trip.');
     const lines = Math.ceil(size.height / U) + 6;
+    const tallPaperFoot = size.height - U - 6;
     for (let i = 1; i <= lines; i++) {
       await page.keyboard.press('Enter');
       await page.keyboard.type(`A line written, number ${i}.`);
       if (i % 4 && i !== lines) continue;
       r = await at(`line ${i} written`);
       // Writing moves nothing but the line written: the piece where it stood, growing by whole lines from its top.
-      expect(r.pieces['README.md']!.slice(0, 2), `line ${i}: README where it stood`).toEqual([F, 3 * U]);
-      expect(r.pieces['README.md']![3] % U, `line ${i}: README whole lines tall`).toBe(0);
+      expect(r.pieces['README.md']!.slice(0, 2), `line ${i}: README where it stood`).toEqual([F, PAPER_TOP]);
+      const paperHeight = r.pieces['README.md']![3];
+      const shortPaper = 2 * PAPER_INSET + (i + 2) * LINE;
+      // A short paper fits its rendered lines; the browser may round the text area's scroll height up by two pixels.
+      // A long paper stands to the foot. The change of height never moves its name or its neighbours.
+      expect((paperHeight >= shortPaper && paperHeight <= shortPaper + 2) || paperHeight === tallPaperFoot - PAPER_TOP,
+        `line ${i}: short paper fits its lines, or the long paper stands at the foot (${paperHeight}px)`).toBe(true);
       // Look room: the line written never in the lower third.
       expect(r.caret!.foot, `line ${i}: the line written out of the lower third`).toBeLessThanOrEqual(r.lower + .5);
     }
@@ -106,7 +112,7 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     expect(r.caret!.ahead / r.caret!.letter, 'along a long line: its next fifteen letters in sight').toBeGreaterThanOrEqual(15 - .1);
     await page.keyboard.press('End');
     // Longer than the lower third: it stands to the foot (a cell over the window's), the last line at the third.
-    expect(r.pieces['README.md']![1] + r.pieces['README.md']![3], 'a long file stands to the foot').toBe(size.height - U);
+    expect(r.pieces['README.md']![1] + r.pieces['README.md']![3], 'a long file stands to the foot').toBe(tallPaperFoot);
     expect(r.lower - r.caret!.foot, 'the last line written at the lower third').toBeLessThan(U);
     expect(await across(page), 'written: the weight left of the middle').toBeLessThan(0);
     const lean = async (when: string) => {
@@ -120,8 +126,7 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     expect(r.caret!.top, 'going back: the line out of the upper third').toBeGreaterThanOrEqual(r.upper - .5);
     await page.keyboard.press('Control+Home');
     r = await at('to the top');
-    // (A cell of paper over its first line, DESIGN §3: whole cells.)
-    expect(r.caret!.top, 'at the top: its first line').toBe(4 * U);
+    expect(r.caret!.top, 'the first line starts inside the paper’s inset').toBe(PAPER_TOP + PAPER_INSET);
     // The next piece pressed where it lies: it stays under the hand. (Only where it is whole in sight beside README.)
     const next = Object.entries(r.pieces).find(([k, b]) => k !== 'README.md' && b[0] > F && b[0] + b[2] + U / 2 <= size.width);
     if (next) {
@@ -138,17 +143,19 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     r = await at('the next by a key');
     expect(r.held, 'the next by a key').not.toBe(before);
     expect(r.pieces[r.held]?.[0], `${r.held} by a key: at the desk's edge`).toBe(F);
-    // The terminal running: at the edge, its last line (where its work is) out of the lower third.
+    // Prompt's own slot takes the hand without moving the document row. Its latest output stays above the lower third.
+    const papers = r.pieces;
     await app.forge.startPrompt('hello');
     await app.forge.run('seq 1 60');
-    await expect(app.forge.prompt).toContainText('60');
+    const output = app.forge.prompt.locator('.term-out');
+    await expect.poll(() => output.innerText()).toMatch(/(?:^|\n)59\s*\n60(?:\n|$)/);
     r = await at('the terminal ran');
-    expect(r.held).toBe('term');
-    const term = r.pieces.term!;
-    expect(term[0], 'the terminal at the edge').toBe(F);
-    expect(term[1] + term[3] - U, 'the terminal\'s last line out of the lower third').toBeLessThanOrEqual(r.lower + .5);
-    expect(await across(page), 'running: the weight left of the middle').toBeLessThan(0);
-    await lean('running');
+    expect(r.pieces).toEqual(papers);
+    const slot = app.main.locator('.forge-prompt-slot');
+    await expect(slot).toHaveClass(/held/);
+    const term = (await slot.boundingBox())!, printed = (await output.boundingBox())!;
+    expect([term.x, term.y], 'the terminal stays in its own slot').toEqual([630, PAPER_TOP]);
+    expect(printed.y + printed.height, 'the terminal’s last visible line is above the lower third').toBeLessThanOrEqual(r.lower + .5);
   });
 }
 
@@ -159,9 +166,9 @@ test('the window made narrower and wider again: the piece in hand stays at the d
   await app.forge.editor('README.md').focus();
   for (const size of [{width: 1024, height: 768}, {width: 390, height: 844}, {width: 1536, height: 864}]) {
     await app.page.setViewportSize(size);
-    await expect.poll(() => app.page.evaluate(() => {
+    await expect.poll(() => app.page.evaluate((shadow) => {
       const h = document.querySelector<HTMLElement>('section.desk:not([hidden]) .desk-box.held')!.getBoundingClientRect();
-      return [Math.round(h.left), h.right + 12 <= innerWidth];
-    }), {message: `at ${size.width}`}).toEqual([48, true]);
+      return [Math.round(h.left), h.right + shadow <= innerWidth];
+    }, SHADOW), {message: `at ${size.width}`}).toEqual([size.width <= 1000 ? U : F, true]);
   }
 });

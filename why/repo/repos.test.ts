@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import shared from './templates.json' with {type: 'json'};
-import {isIssues, plainPart, renamed, shownEntries, templateFiles, validName, type Template} from './repos.ts';
+import {isIssues, Observed, plainPart, renamed, shownEntries, templateFiles, validName, type Change, type RepoStore, type Template} from './repos.ts';
 
 test('repo names match the native rule', () => {
   assert.ok(validName('my-repo_1.0'));
@@ -30,4 +30,29 @@ test('a repo\'s issues are not among its files where files are shown: its issue/
   assert.deepEqual(shownEntries('issue', [e('001.md', 'file')]), []);
   assert.deepEqual(shownEntries('docs', [e('issue')]).map((x) => x.name), ['issue']);
   for (const [path, is] of [['issue', true], ['issue/001.md', true], ['issues', false], ['docs/issue', false], ['', false]] as const) assert.equal(isIssues(path), is, path);
+});
+
+test('outside probes announce the pending path synchronously and never publish a superseded read', async () => {
+  const calls: string[] = [];
+  let release!: () => void;
+  const delayed = new Promise<void>((r) => { release = r; });
+  let reads = 0;
+  const store = new Observed({
+    read: async () => {
+      calls.push('read');
+      if (++reads === 1) { await delayed; return {text: 'old', size: 3, truncated: false}; }
+      return {text: 'new', size: 3, truncated: false};
+    },
+  } as unknown as RepoStore);
+  store.changes.addEventListener('paths-changing', () => calls.push('notice'));
+  store.changes.addEventListener('change', (e) => {
+    const c = (e as CustomEvent<Change>).detail;
+    if (c.what === 'file') calls.push(c.text);
+  });
+  const old = store.changedPaths('repo', ['src/main.c']);
+  assert.deepEqual(calls, ['notice', 'read']);
+  await store.changedPaths('repo', ['src/main.c']);
+  release();
+  await old;
+  assert.deepEqual(calls, ['notice', 'read', 'notice', 'read', 'new']);
 });

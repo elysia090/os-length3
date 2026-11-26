@@ -52,7 +52,7 @@ export function counts(ops: Op[]): {added: number; removed: number} {
 }
 
 /** A diff line; `at` is which line it is (in the new text, or the old for a removed one). */
-export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number }
+export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number; old?: number; new?: number }
 
 /** Three lines either side of each change, as git shows them. */
 export function hunks(ops: Op[]): {lines: DiffLine[]; more: number} {
@@ -63,7 +63,7 @@ export function hunks(ops: Op[]): {lines: DiffLine[]; more: number} {
     const at = o.kind === 'del' ? ++old : o.kind === 'add' ? ++now : (++old, ++now);
     if (!keep[i]) return;
     if (i > 0 && !keep[i - 1]) lines.push({kind: 'hunk', text: '…'});
-    lines.push({kind: o.kind, text: o.text, at});
+    lines.push({kind: o.kind, text: o.text, at, ...(o.kind !== 'add' ? {old} : {}), ...(o.kind !== 'del' ? {new: now} : {})});
   });
   return {lines: lines.slice(0, 400), more: Math.max(0, lines.length - 400)};
 }

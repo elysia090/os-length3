@@ -7,8 +7,8 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //
 //   one lens        nothing in sight is drawn scaled, zoomed or in perspective
 //   one horizon     the subject's edges on the grid
-//   one subject     one shadow cast in focus, the one light's: 12 px right and down
-//   the frame       under what is called up, the rail and the band stay over the world, in focus
+//   one subject     one shadow cast in focus: 12 px right/down on sheets, 4 px on Forge's paper
+//   the frame       under what is called up, the available frame controls stay in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
 //   look room       on a desk screen, the room ahead of the subject (to its right, the way the row runs) at least the
@@ -30,9 +30,9 @@ const NAME = 33.0124, PERSON = 66.0248;
 const PLACES = {
   home: {subject: '.home-own > .section', corner: '.home-own'},
   'new-repo': {subject: '.nr-box', corner: '.new-repo'},
-  // (Forge's desk may rest with the terminal, the row's first piece, at its edge while a file is in the hand (§6).)
-  forge: {subject: '.desk-box.held', corner: '.desk-box'},
-  git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card'},
+  // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
+  forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
+  git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   // (Server's desk may rest with a board before the one in hand at its edge (§6): a board of the room is what it is.)
   server: {subject: '.slide.full', corner: '.server-side, .slide'},
   inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread'},
@@ -42,7 +42,7 @@ const PLACES = {
 type Place = keyof typeof PLACES;
 
 /** What a frame holds, by numbers: run in the page. */
-function frame({subject, corner}: {subject: string; corner: string}) {
+function frame({subject, corner, anchor}: {subject: string; corner: string; anchor?: string}) {
   const W = innerWidth, H = innerHeight;
   const veil = document.querySelector<HTMLElement>('.page-veil.out');
   const inSight = (el: Element) => {
@@ -105,9 +105,29 @@ function frame({subject, corner}: {subject: string; corner: string}) {
     if (head && [...head.querySelectorAll('*')].some((k) => /Display/.test(getComputedStyle(k).fontFamily))) continue;
     const range = document.createRange();
     range.selectNodeContents(n);
+    // Forge's compact code and its name have their own lines inside or immediately above the paper.
+    // A Git diff similarly aligns to its sticky header or scrolled file lines. Check their local grids, not exemptions.
+    const paper = el.closest('.forge-layout .desk .desk-box:not([data-kind])');
+    const code = !!paper && !!el.closest('.desk-file > .sheet');
+    const tag = !!paper && !!el.closest('.desk-label');
+    const diffHead = el.closest('.git-diff-head'), diffLines = el.closest('.git-diff-lines');
+    const totals = el.closest('.git-totals');
+    // A board's transcript stands on its foot; the trailing, 1px scroll target is not part of a line.
+    const foot = el.closest('.board-talk > .timeline')?.querySelector(':scope > .tl-foot-mark');
+    const pitch = code ? 19 : 24;
+    const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
+      : tag ? paper!.getBoundingClientRect().top - 6 - pitch / 2
+      : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
+      : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
+      : totals ? totals.getBoundingClientRect().top + pitch / 2
+      : foot ? foot.getBoundingClientRect().top - pitch / 2 : 12;
+    // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
+    // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
+    const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.tl-who > time, .bubble-time') ? 1 : 0;
     for (const b of range.getClientRects()) {
       if (b.width < 2 || b.top < 48 || b.left < 48 || b.bottom > H || b.right > W) continue;
-      const off = (((b.top + b.height / 2) % 24) + 24) % 24 - 12;
+      const line = b.top + b.height / 2 + baseline - first;
+      const off = line - pitch * Math.round(line / pitch);
       if (Math.abs(off) > 1) offGrid.push(`"${n.textContent!.trim().slice(0, 24)}" ${off > 0 ? '+' : ''}${off.toFixed(1)}`);
     }
   }
@@ -115,8 +135,9 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const at = document.elementFromPoint(84, 96);
   const landed = !!at?.closest(corner);
-  // How far that is from where the hand was: the place's square on the rail, or the door to a far side.
-  const from = document.querySelector('.door:not([hidden])') ?? document.querySelector('.rail .rail-item[aria-current="page"]');
+  // How far that is from the place's visible name, rail control, or door to a far side.
+  const from = anchor ? all.find((el) => el.matches(anchor))
+    : all.find((el) => el.matches('.door')) ?? all.find((el) => el.matches('.rail .rail-item[aria-current="page"]'));
   const fr = from?.getBoundingClientRect(), lr = at?.closest(corner)?.getBoundingClientRect();
   const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
     Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;
@@ -128,10 +149,20 @@ function frame({subject, corner}: {subject: string; corner: string}) {
     const r = range.getBoundingClientRect();
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
-  // The frame over what is called up: the band's keys stand over the veil.
-  const bar = document.querySelector<HTMLElement>('.band-tools')?.closest<HTMLElement>('.home-band, .bar') ?? null;
-  const frameOver = !veil || !bar || Number(getComputedStyle(bar).zIndex) > Number(getComputedStyle(veil).zIndex);
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid};
+  // The frame over what is called up: the available controls, not a hidden band's old bounding box.
+  const frameControl = all.find((el) => el.matches('body.forge-routes > .rail, #page[data-place="forge"] .forge-places-key'));
+  const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
+  const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
+    const {left, top, right, bottom} = el.getBoundingClientRect();
+    const c = getComputedStyle(el);
+    // Away from the rounded corners, the sheet owns all of this ground-coloured strip.
+    return {
+      left: left + Math.max(parseFloat(c.borderTopLeftRadius), parseFloat(c.borderBottomLeftRadius)),
+      right: right - Math.max(parseFloat(c.borderTopRightRadius), parseFloat(c.borderBottomRightRadius)),
+      top, bottom,
+    };
+  });
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -142,7 +173,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual([U / 2, U / 2, 0]);
+    const shade = place === 'forge' && !called ? 4 : U / 2;
+    expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual([shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
       expect(f.cast.length, `${what}: the shadow is the subject's (${JSON.stringify(f.cast)})`).toBe(1);
@@ -150,13 +182,15 @@ async function shot(app: App, place: Place, size: {width: number; height: number
       expect([Math.abs(x! - f.subject!.x) < 1, Math.abs(y! - f.subject!.y) < 1], `${what}: the shadow is the subject's`).toEqual([true, true]);
       // One horizon: the subject stands on the grid (whole cells from the window's top left).
       for (const [edge, v] of [['left', f.subject!.x], ['top', f.subject!.y]] as const) {
-        expect(Math.abs(v - U * Math.round(v / U)), `${what}: the subject's ${edge} (${v}) on a line of the grid`).toBeLessThan(1);
+        // Forge's paper starts at y=90; the name and the ground still keep the window grid.
+        const origin = place === 'forge' && edge === 'top' ? 90 : 0;
+        expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
       }
       expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
       // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
       expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
     } else {
-      expect(f.frameOver, `${what}: the band over the veil, in focus`).toBe(true);
+      expect(f.frameOver, `${what}: the frame control over the veil, in focus`).toBe(true);
     }
     // Every line of words on a cell of the grid (DESIGN §3, whole cells).
     expect(f.offGrid, `${what}: lines of words off the grid`).toEqual([]);
@@ -203,7 +237,13 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(lr, `${what}: the lower right (${lr.toFixed(2)} empty) at least as empty as the upper left (${ul.toFixed(2)})`).toBeGreaterThanOrEqual(ul);
   if (!desk) return;
   // The field: the bare ground one body, open to the right or the foot, nothing of it shut in between things.
-  const all = fields(rows), bare = all.reduce((n, c) => n + c.n, 0);
+  // DESIGN §2: a counter inside a sheet belongs to that sheet. A quiet Forge paper uses ground paint, so its
+  // wholly contained bare cells do not belong to the desk. Any cell crossing its boundary is still measured as drawn.
+  const ground = f.quietPaper.length ? rows.map((row, j) => [...row].map((cell, i) => {
+    const x = 2 * U + i * U, y = 2 * U + j * U;
+    return cell === 'g' && f.quietPaper.some((p) => x >= p.left && x + U <= p.right && y >= p.top && y + U <= p.bottom) ? 'p' : cell;
+  }).join('')) : rows;
+  const all = fields(ground), bare = all.reduce((n, c) => n + c.n, 0);
   expect(all[0]!.n / bare, `${what}: the bare ground one field`).toBeGreaterThanOrEqual(.95);
   expect(all[0]!.open, `${what}: the field open to the window's right or foot`).toBe(true);
   expect(all.filter((c) => !c.edge).reduce((n, c) => n + c.n, 0) / bare, `${what}: no ground trapped between things`).toBeLessThan(.01);
@@ -222,10 +262,20 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
   await app.newRepo.make('garden');
   await app.git.write('hello', 'Fix: Say hello louder', 'It whispers; it should say it out loud.');
   await app.git.step('Start').click();
+  await expect(app.git.step('Back to main')).toBeVisible();
   // (And a second, written after it, in hand: a row, the box in full the last of it.)
   await app.git.write('hello', 'Feat: A second greeting');
   await app.rail.go('forge');
-  await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
+  const readme = app.forge.editor('README.md');
+  const text = '# hello\n\nHELLO.\n';
+  await expect(app.main.getByRole('region', {name: 'Files in hello', exact: true})).toBeVisible();
+  await expect(readme).toHaveValue('# hello\n');
+  await app.forge.editFile('README.md', text);
+  // A fresh view confirms the fixture has saved the edit in the selected repo, not merely echoed a draft.
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('forge');
+  await expect(readme).toHaveValue(text);
   await app.server.make('Trip', `${app.handle}-trip`);
   await app.server.makeBoard('Packing');
   await app.server.post('Packing', 'Who brings the tent?');
@@ -239,6 +289,13 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
     for (const place of Object.keys(PLACES) as Place[]) {
       await app.rail.go(place);
       if (place === 'forge') await app.forge.editor('README.md').focus();
+      if (place === 'inbox') {
+        const thread = app.inbox.thread(bo.handle);
+        if (!await thread.isVisible() || !await thread.evaluate((e) => e.getBoundingClientRect().right <= innerWidth + 1)) {
+          await app.inbox.conversation(bo.handle).click();
+        }
+        await expect(thread.getByText('are you coming on Saturday?', {exact: true})).toBeInViewport({ratio: .8});
+      }
       await shot(app, place, size);
     }
     // What is called up comes in front, and the frame stays over the world in focus.
