@@ -19,6 +19,8 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
 .forge-layout .desk-room { margin: calc(var(--forge-top) - 24px) 0 0 var(--forge-origin); }
 .forge-layout .desk { inset-inline-end: 0; }
 .forge-layout .desk-room > .desk { translate: none; }
+/* The document desk shows one switch per piece, without the separate viewport underline. */
+.forge-layout .desk-room[data-place='Forge'] > .row-map > .row-sight { display: none; }
 /* Search is still the real reference reader, summoned as a tool, not a strip. */
 .forge-layout.work.bench > .bar { display: none; }
 .forge-layout.work.bench.forge-searching > .bar { display: flex; position: absolute; top: 12px; left: var(--forge-origin); width: min(576px, calc(100% - var(--forge-origin) - 60px)); height: 36px; z-index: 12; }
