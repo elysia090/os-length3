@@ -153,7 +153,7 @@ const ctx: Context = {
           else void select(id);
         },
       })),
-      ...(current === 'home' ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
+      ...((current === 'home' || current === 'runtime') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
       {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
     ];
   },
@@ -375,7 +375,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (id === 'home' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (id === 'home' || id === 'runtime' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();

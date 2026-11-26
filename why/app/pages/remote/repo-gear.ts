@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
-import {mark} from '../../ui/icons.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from '../kit/common.ts';
-import {keepOut, nudge, putAway} from '../../ui/glide.ts';
+import {nudge} from '../../ui/glide.ts';
+import {rowActions} from '../kit/row-actions.ts';
 import {store, validName} from '../../../repo/repos.ts';
 import {forget, remoteAll, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
@@ -38,6 +38,8 @@ import {wayOut} from '../../ui/way-out.ts';
 // (repo-list.ts, runtime/device.ts).
 
 interface GearWays {
+  /** A row reading across several columns uses the same directional choice as Places. */
+  arrowKeys?: boolean;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
   why(): Promise<string | null>;
   /** Free it from this device (refused: why, said in the ask). */
@@ -45,8 +47,6 @@ interface GearWays {
   /** Freed, renamed or deleted, once the list is put away: the place draws itself again and shows what it came to. */
   freed(): void;
 }
-
-let open: (() => void) | null = null;
 
 const note = (text: string) => h('p', {class: 'muted small pop-note'}, text);
 /** What a Prompt with nothing running in it comes to, said in the ask of a deed that lets its repo go. */
@@ -58,24 +58,7 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  * copy of it is on this device (false: only on the Remote).
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
-  const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': t('Actions for {name}', {name: repo})}, mark('down')) as HTMLButtonElement;
-  const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('Actions for {name}', {name: repo}), hidden: ''});
-
-  const away = (e: Event) => {
-    const mine = (n: Node | null) => !!n && (gear.contains(n) || list.contains(n));
-    if (e instanceof KeyboardEvent ? e.key !== 'Escape' : mine(e.target as Node)) return;
-    const inside = mine(document.activeElement);
-    show(false);
-    if (e instanceof KeyboardEvent) { e.stopPropagation(); if (inside) gear.focus(); }
-  };
-  const show = (on: boolean) => {
-    if (on) { open?.(); open = () => show(false); } else if (open) open = null;
-    if (on) { keepOut(list); list.hidden = false; } else putAway(list, () => { list.hidden = true; });
-    gear.setAttribute('aria-expanded', String(on));
-    for (const k of ['pointerdown', 'keydown'] as const) (on ? document.addEventListener : document.removeEventListener).call(document, k, away, true);
-    if (on) fill();
-  };
+  const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys);
   /** Done (renamed, freed, deleted): the list is put away and the place drawn again as it is now. */
   const done = () => { show(false); w.freed(); };
 
@@ -230,8 +213,5 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     askFirst(list, del, repo, kind, here, {done: end, ended: end, keyed: () => {}}, async () => { if (here) await deleteHere(stops); });
   };
 
-  gear.addEventListener('click', (e) => { e.stopPropagation(); show(gear.getAttribute('aria-expanded') !== 'true'); });
-  // Inside a card that is pressed as a whole, the gear and its list are the gear's own.
-  list.addEventListener('click', (e) => e.stopPropagation());
   return {gear, list};
 }

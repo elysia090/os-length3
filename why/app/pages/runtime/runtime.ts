@@ -6,6 +6,7 @@ import {connection} from '../../../shipto/connection.ts';
 import {deviceStateKey} from './device-state.ts';
 import {readSpace} from '../../../device/space.ts';
 import {pageHead, parts} from '../kit/common.ts';
+import {placesMenu} from '../kit/places.ts';
 import type {Context} from '../kit/context.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -34,7 +35,7 @@ import {agentSection} from './agent-part.ts';
 export function runtime(ctx: Context): Node[] {
   const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
     {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Running Prompts')},
-    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
+    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}], undefined, 'quiet');
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
   let last: Freed | null = null;
   // Drawn at once from what the core last measured, then, if some of it was that, measured now and drawn again where
@@ -44,7 +45,17 @@ export function runtime(ctx: Context): Node[] {
     // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
     if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
     const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
-    if (now !== drawn) { drawn = now; holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })); }
+    if (now !== drawn) {
+      drawn = now;
+      // A closed menu can be followed by a just-finished sync: keep its real key, in its own column.
+      const at = document.activeElement;
+      const old = at instanceof HTMLElement && holder.contains(at) && at.matches('.repo-gear-button') ? at : null;
+      const col = old?.closest('.space-col')?.getAttribute('aria-labelledby');
+      const key = old?.getAttribute('aria-label');
+      holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
+      if (col && key) holder.querySelector<HTMLElement>(`.space-col[aria-labelledby="${CSS.escape(col)}"] .repo-gear-button[aria-label="${CSS.escape(key)}"]`)
+        ?.focus({preventScroll: true});
+    }
     if (u.kept && holder.isConnected) read(true);
   },
     (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
@@ -68,6 +79,9 @@ export function runtime(ctx: Context): Node[] {
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
   // The Agent's key apart from the dotfiles: a dotfile is the person's, on every device; the key is this device's alone.
   page.panel('agent').append(agentSection());
-  return [pageHead('runtime'), h('div', {class: 'part-bar'}, page.switch),
+  const head = pageHead('runtime', false);
+  // Runtime keeps the page and its parts; navigation moves from the rail to the same Places as the work desks.
+  placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? []);
+  return [head, h('div', {class: 'part-bar'}, page.switch),
     page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles'), page.panel('agent')];
 }

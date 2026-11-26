@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
-import {isNative, rootFetch, rootHere, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../../api/host.ts';
+import {isNative, rootFetch, rootHere, rootStatus, type Certainty, type Freed, type Item, type RootStatus, type Space} from '../../../api/host.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {bring, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
@@ -10,6 +10,9 @@ import {syncWord} from '../remote/repo-card.ts';
 import {repoGear} from '../remote/repo-gear.ts';
 import {errorText} from '../../../api/errors.ts';
 import {button} from './parts.ts';
+import {askFoot, menuItem, SETTLE} from '../kit/common.ts';
+import {rowActions} from '../kit/row-actions.ts';
+import {promptHolds} from '../bench/sessions.ts';
 
 // Runtime's This device (This browser, on the web): what the OS holds here.
 //
@@ -34,8 +37,22 @@ function meter(total: number, free: number, mine: number, label: string) {
   return h('div', {class: 'meter space-meter', role: 'img', 'aria-label': label}, app, other);
 }
 
-const figure = (value: string, word: string, note = '') =>
-  h('span', {}, h('b', {}, value), word, note ? h('small', {class: 'muted'}, ` ${note}`) : null);
+const figure = (value: string, word: string, caveat = false) =>
+  h('span', caveat ? {'aria-describedby': 'runtime-storage-estimate'} : {}, h('b', {}, value), word);
+
+function capacity(u: Space) {
+  const measured = u.host !== 'Unknown' && u.host_total > 0;
+  const note = !measured ? t('Storage capacity unavailable') : u.host === 'Estimated' ? t('Estimated') : '';
+  return [
+    measured ? meter(u.host_total, u.host_free, u.allocated, t('{os} of {total} used by this OS', {os: bytes(u.allocated), total: bytes(u.host_total)}))
+      : h('div', {class: 'meter space-meter', role: 'img', 'aria-label': t('Storage capacity unavailable')}),
+    h('div', {class: 'legend'},
+      figure(bytes(u.allocated), t('This OS')),
+      figure(measured ? bytes(u.host_free) : '—', t('Available'), !!note),
+      figure(measured ? bytes(u.host_total) : '—', isNative ? t('Total') : t('Quota'), !!note),
+      note ? h('p', {id: 'runtime-storage-estimate', class: 'muted small space-caveat'}, note) : null),
+  ];
+}
 
 /** One column of the box: a heading with its total, its rows, and what goes at its foot. */
 function column(id: string, title: string, total: number | null, rows: Node[], empty: string, foot: Node[] = []): HTMLElement {
@@ -62,30 +79,22 @@ const thing = (name: Node | string, size: number | null, note: string, act?: Nod
  * the last 空ける did stays in view while the figures are read again.
  */
 export function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | null) => void): HTMLElement {
-  const total = u.host_total || 1;
   const error = h('p', {class: 'error', role: 'alert'});
-  const go = (ids: string[], held: HTMLButtonElement[]) => {
-    for (const b of held) b.disabled = true;
-    void free(ids).then(again, (e) => {
-      for (const b of held) b.disabled = false;
-      error.textContent = errorText(e);
-    });
+  const go = (ids: string[], control: HTMLButtonElement) => {
+    control.disabled = true;
+    void free(ids).then(again, (e) => { control.disabled = false; error.textContent = errorText(e); });
   };
   const repo = repoParts(ctx, again);
   const here = hereRows(u, repo);
-  const freeCol = freeColumn(u, repo, go);
+  const freeCol = freeColumn(u, repo, go, again);
   const remoteCol = remoteColumn(repo, again, error);
   return h('section', {class: 'section device-part', 'aria-label': isNative ? t('This device') : t('This browser')},
-    meter(total, u.host_free, u.allocated, t('{os} of {total} used by this OS', {os: bytes(u.allocated), total: bytes(u.host_total)})),
-    h('div', {class: 'legend'},
-      figure(bytes(u.allocated), t('This OS')),
-      figure(bytes(u.host_free), t('Available'), known(u.host)),
-      figure(bytes(u.host_total), isNative ? t('Total') : t('Allocated'), known(u.host))),
+    ...capacity(u),
     ...(last ? [result(last)] : []),
-    // What is here, what is on the Remote, then what can be freed.
+    // What is here, the part of it that can go, then what is only on the Remote.
     h('div', {class: 'space-box'},
-      column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('No repos yet')),
-      remoteCol, freeCol),
+      column('here-col', isNative ? t('On this device') : t('In this browser'), null, here, t('No repos yet')),
+      freeCol, remoteCol),
     error);
 }
 
@@ -106,9 +115,15 @@ function repoParts(ctx: Context, again: (r: Freed | null) => void): RepoParts {
       return b;
     },
     gear: (name, why, away = false) => repoGear(ctx, name, {
-      why: async () => why,
+      arrowKeys: true,
+      why: async () => promptHolds(name) === 'busy' ? t('Locked by an active Prompt') : why,
       // Freed from its row: what it came to is said over the box, as Free all's is, and the columns read again.
-      free: async () => { const r = await free([`repo:${name}`]); if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]); freed = r; },
+      free: async () => {
+        if (promptHolds(name)) throw new Error(t('Locked by an active Prompt'));
+        const r = await free([`repo:${name}`]);
+        if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]);
+        freed = r;
+      },
       freed: () => again(freed),
     }, !away),
   };
@@ -119,47 +134,84 @@ function hereRows(u: Space, repo: RepoParts): HTMLElement[] {
   return u.items.map((i) => {
     const isRepo = i.id.startsWith('repo:');
     const repoNote = isRepo ? syncWord(repoState(i.what)) : '';
-    // why is a command's name, written as code is (in the sans face its l reads as a capital I).
-    const name = isRepo ? repo.name(i.what) : i.id === 'why' ? h('code', {class: 'mono'}, i.what) : i.what;
-    return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
-      i.room === 'Keep' ? i.why : '', isRepo ? repo.gear(i.what, i.room === 'Keep' ? i.why : null) : undefined);
+    // Normal repos need no repeated type, file count or sync label. An exception still says what is happening.
+    const other = i.id === 'other', home = i.id === 'home';
+    const name = isRepo ? repo.name(i.what) : other ? t('Other (estimated)')
+      : i.id === 'why' ? h('code', {class: 'mono'}, i.what) : i.what;
+    const note = isRepo ? (repoNote === t('Synced') ? '' : repoNote) : other ? '' : home ? t('Settings and TODO') : i.detail;
+    const reason = !home && i.room === 'Keep' ? i.why : '';
+    return thing(name, i.allocated, note, null, reason, isRepo ? repo.gear(i.what, reason || null) : undefined);
   });
 }
 
 /**
- * Can be freed: Free; a repo's changes go to the Remote first, as they would anyway. Free all at its foot when there
- * is more than one; `go` frees what it is given, holding the buttons given while it does.
+ * One command on its row, the same as a repo's other deeds in Files. Reasons that differ are read in the row;
+ * a synced repo's ordinary restoration is said once at the foot, even when there is only one such repo.
  */
-function freeColumn(u: Space, repo: RepoParts, go: (ids: string[], held: HTMLButtonElement[]) => void): HTMLElement {
+function freeColumn(u: Space, repo: RepoParts, go: (ids: string[], control: HTMLButtonElement) => void,
+  again: (r: Freed) => void): HTMLElement {
   const freeable = u.items.filter((i) => i.room !== 'Keep');
-  const buttons: HTMLButtonElement[] = [];
   const going = freeable.map((i) => {
-    const b = button(t('Free space'));
-    buttons.push(b);
-    b.addEventListener('click', () => go([i.id], [b]));
     const isRepo = i.id.startsWith('repo:');
-    return thing(isRepo ? repo.name(i.what) : i.what, i.allocated, '', b, i.why, isRepo ? repo.gear(i.what, null) : undefined);
+    const reason = !isRepo || i.room === 'SyncFree' ? i.why : '';
+    return thing(isRepo ? repo.name(i.what) : i.what, i.allocated, '', null, reason,
+      isRepo ? repo.gear(i.what, null) : releaseActions(i, again));
   });
-  const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
-  all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
-  // Nothing to free, the reason is each one's own (not on the Remote yet, a Prompt in it): said on its row.
-  return column('free-col', t('Reclaimable space'), u.freeable, going, t('No reclaimable space; items indicate retention reasons'),
-    freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos remain on Remote and redownload when opened.')), all] : []);
+  const backed = freeable.some((i) => i.id.startsWith('repo:'));
+  const all = h('button', {class: 'button', type: 'button', ...(backed ? {'aria-describedby': 'runtime-remote-retention'} : {})}, t('Free all')) as HTMLButtonElement;
+  all.addEventListener('click', () => go(freeable.map((i) => i.id), all));
+  const foot = [
+    ...(freeable.length > 1 ? [all] : []),
+    ...(backed ? [h('p', {id: 'runtime-remote-retention', class: 'muted small release-note'}, t('Copies stay on Remote.'))] : []),
+  ];
+  return column('free-col', t('Reclaimable space'), going.length > 1 ? u.freeable : null, going, t('Nothing to free'), foot);
+}
+
+/** Native roots and caches keep a real single-item command; no repo or Remote is claimed for them. */
+function releaseActions(i: Item, committed: (r: Freed) => void) {
+  const popup = rowActions(i.what, () => {
+    const {list, show} = popup;
+    const deed = menuItem(t('Free space'), 'free');
+    list.replaceChildren(deed);
+    deed.focus();
+    deed.addEventListener('click', () => {
+      const foot = askFoot(deed, list);
+      const no = button(t('Cancel'), 'small-button');
+      const yes = button(t('Free space'), 'small-button primary');
+      const problem = h('p', {class: 'error small', role: 'alert'});
+      const word = t('Free the local storage for {what}?', {what: i.what});
+      const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': word},
+        h('p', {}, word), i.why ? h('p', {class: 'muted small'}, i.why) : null, problem, foot(no, yes));
+      no.addEventListener('click', () => { ask.replaceWith(deed); deed.focus(); });
+      const shown = performance.now();
+      yes.addEventListener('click', async () => {
+        if (yes.disabled || performance.now() - shown < SETTLE) return;
+        yes.disabled = no.disabled = true;
+        try { const receipt = await free([i.id]); show(false); committed(receipt); }
+        catch (e) { problem.textContent = errorText(e); yes.disabled = no.disabled = false; }
+      });
+      deed.replaceWith(ask);
+      no.focus();
+    });
+  }, true);
+  return popup;
 }
 
 /** On the Remote: what can come here, each with Fetch; in the app, the release root too when it is not installed. */
 function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: HTMLElement): HTMLElement {
-  const coming: Node[] = remoteOnly().map((r) => {
+  const repos = remoteOnly();
+  const coming: Node[] = repos.map((r) => {
     const b = button(t('Fetch'));
     b.addEventListener('click', async () => {
       b.disabled = true;
       try { await bring(r.name); again(null); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
     });
-    return thing(repo.name(r.name), r.bytes, t('repo · downloads then opens'), b, '', repo.gear(r.name, t('Remote-only: no local storage to free'), true));
+    return thing(repo.name(r.name), r.bytes, '', b, '', repo.gear(r.name, t('Remote-only: no local storage to free'), true));
   });
-  // What is only there, not all it holds: its size is what would come here.
-  const col = column('remote-col', t('Remote only'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
-    connection() ? t('Fully synced locally') : t('Sign in to view Remote data'));
+  // Say a combined amount only for several repos. A single row has already said its own amount.
+  const total = repos.length > 1 ? repos.reduce((n, r) => n + r.bytes, 0) : null;
+  const col = column('remote-col', t('Remote only'), total, coming,
+    connection() ? t('Nothing to fetch') : t('Sign in to view Remote data'));
   // The release root is fetched only where Prompts run on it; elsewhere they run translated, and why comes as it is read.
   void rootHere().then((here) => (here.native ? rootStatus() : null)).then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = errorText(e); });
   return col;
@@ -192,7 +244,7 @@ function result(r: Freed): HTMLElement {
   const seen = r.reflected_ms === null ? (isNative ? t('Not yet reflected on device') : '')
     : t('Observed free space: {sign}{size} ({how} · {ms} ms)', {sign: change >= 0 ? '+' : '−', size: bytes(Math.abs(change)), how: known(r.host_change) || t('Verified'), ms: r.reflected_ms});
   return h('div', {class: 'reclaimed', role: 'status'},
-    r.removed.length ? h('p', {}, h('b', {}, t('Released {size} of local storage', {size: bytes(r.freed)})), ` · ${tn('{n} item', '{n} items', r.removed.length)}`) : null,
+    r.removed.length ? h('p', {}, t('Released {size}', {size: bytes(r.freed)}), ` · ${tn('{n} item', '{n} items', r.removed.length)}`) : null,
     seen ? h('p', {class: 'muted small'}, seen) : null,
     ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, t('Retained {what}: {why}', {what: id.replace(/^(repo|root|path):/, '').split('/').at(-1) ?? id, why}))));
 }

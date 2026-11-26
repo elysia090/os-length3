@@ -5,19 +5,21 @@
 /* (Inside the box's edge, a cell of paper over its lines, as a sheet's: the edge's own pixel in it.) */
 .space-col { display: flex; flex-direction: column; min-width: 0; padding: calc(var(--u) - 1px) var(--s4) var(--u); }
 .space-col + .space-col { border-left: 1px solid var(--rule); }
-.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--u); font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
+.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
 .space-col > h3 b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.space-list { display: grid; align-content: start; gap: var(--u); flex: 1; overflow-y: auto; }
+.space-list { display: grid; align-content: start; gap: var(--s4); flex: 1; overflow-y: auto; }
 /* A row: what a thing takes is on its name's line against its column's right edge, as the column's total is over
    it (the figures of a column are one right-aligned column); what is said of it runs the column's width under its
    name; what is done to it (Free space) is under that, against the same edge. Its gear, come at a touch, is on the
    name's line beside what it takes. */
 .space-row { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--s3); padding: 0; }
 .space-what { display: grid; min-width: 0; flex: 1 0 100%; }
-.space-name { padding-right: calc(4 * var(--u)); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.space-row:has(> .repo-gear-button) .space-name { padding-right: calc(6 * var(--u)); }
+.space-name { padding-inline-end: calc(3 * var(--u)); text-align: start; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Leave actual room for the gear and figure; a long name wraps inside the remaining measure. */
+.space-row:has(> .repo-gear-button) .space-name { padding-inline-end: calc(3 * var(--u) + var(--h-control) + var(--s1)); }
+.space-name > .link-name { display: inline-block; vertical-align: top; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-row > .repo-gear-button { position: absolute; right: calc(3 * var(--u)); top: 0; }
-.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: calc((2 * var(--u) - var(--h-control)) / 2); } /* (a key in a field of two cells) */
+.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: var(--s1) 0; }
 .space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
 .space-size { position: absolute; right: 0; top: 0; font-size: var(--t-word); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--u); }
@@ -25,3 +27,65 @@
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: var(--cursor-hand); }
 .link-name:hover { border-radius: var(--r-key); color: var(--ink); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
+
+/* This place takes the common desk and a single paper. The rail is put away, not the paper's existing grid track. */
+body:has(> #page[data-place='runtime']) { background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u); }
+body:has(> #page[data-place='runtime']) > .rail { display: none; }
+#page[data-place='runtime'] { grid-column: 2; }
+:is(#page, .place-left > .page)[data-place='runtime'] {
+  --paper: var(--nighthawks-paper);
+  --ground: var(--paper); /* reverse ink on this sheet, not the desk behind it */
+  --sub: var(--nighthawks-paper-sub);
+  --quiet: var(--nighthawks-paper-thumb);
+  --edge: var(--nighthawks-desk-disabled);
+  --rule: var(--nighthawks-rule);
+  --raised: var(--nighthawks-paper-grain);
+  --slot: var(--nighthawks-paper-selected);
+  box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow);
+}
+#page[data-place='runtime'] .forge-places-key { --places-down: var(--nighthawks-shadow); color: var(--nighthawks-desk-quiet); }
+#page[data-place='runtime'] .forge-places-key:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--paper); }
+#page[data-place='runtime'] .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
+.place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-places) { display: none; }
+.page[data-place='runtime'] .space-meter > span.app { background: var(--ink); }
+.page[data-place='runtime'] .legend { color: var(--sub); }
+.page[data-place='runtime'] .legend b { color: var(--ink); }
+
+/* One paper bears the weight. The part mark merely names the leaf it shows. */
+#page[data-place='runtime'] .part[aria-selected='true'] {
+  background: var(--raised); border-color: transparent; color: var(--ink);
+}
+.device-part .legend :is(span:not(:first-child) b, .space-caveat) { color: var(--sub); font-weight: 400; }
+.device-part .legend b { font-family: var(--mono); }
+.device-part .space-caveat { grid-column: 2 / -1; padding-inline-start: calc(var(--s4) + 1px); }
+.device-part .reclaimed { color: var(--sub); }
+
+/* Each column is a distinct question. Rows have one baseline for name and measure, no private rule. */
+.device-part .space-col > h3 { margin-bottom: var(--s1); }
+.device-part .space-list { gap: 0; flex-basis: auto; overflow: visible; }
+.device-part .space-row { min-block-size: var(--h-control); padding-block: var(--s1); }
+.device-part .space-col > h3 b { color: var(--sub); font: 400 var(--t-word)/var(--u) var(--mono); }
+.device-part .space-size { top: var(--s1); font-family: var(--mono); }
+.device-part .space-name:has(> .link-name) { font: 400 var(--t-word)/var(--u) var(--mono); }
+.device-part .space-name, .device-part .space-name > .link-name {
+  white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+}
+.device-part .space-name > .link-name { font-weight: inherit; }
+
+/* The only lifted thing is the menu while its own row is in hand. Its owner stays where it was. */
+#page[data-place='runtime']:has(.device-part .space-row > .repo-gear-button[aria-expanded='true']) { box-shadow: none; }
+.device-part .space-row:has(> .repo-gear-button[aria-expanded='true']) .space-name { font-weight: 700; }
+.device-part .space-row > .repo-gear-button[aria-expanded='true'] { color: var(--ink); }
+.device-part .space-row > .repo-gear-button[aria-expanded='true'] .mark { transform: rotate(.5turn); }
+.device-part .space-row > .repo-gear-pop {
+  flex-basis: calc(100% - var(--s3)); min-inline-size: 0; margin-block: var(--s1) var(--s3); padding-block: var(--s2);
+  box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow);
+}
+.device-part .space-row > .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
+.device-part :is(.space-row,.space-foot) > button.button {
+  border-color: transparent; background: none; margin-inline-start: auto; padding-inline: 0;
+  min-height: var(--h-control); text-decoration: underline; text-underline-offset: var(--s1);
+}
+.device-part .space-foot { display: grid; gap: 0; }
+.device-part .space-foot .release-note { margin: 0; }
+@media (max-width: 900px) { .device-part .space-caveat { padding-inline-start: 0; } }

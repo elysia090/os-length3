@@ -183,7 +183,7 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()
+    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox' || here === 'runtime') && !await this.navigation.isVisible()
       && await this.app.forge.placesKey.isVisible();
   }
 
@@ -227,7 +227,7 @@ class Rail extends Part {
     }
     if (place !== 'forge' || now !== 'forge') {
       // Forge offers the repo's Files, not the global filesystem. The latter still starts at Home's File.
-      if (place === 'file' && await this.usesPlaces()) await this.go('home');
+      if (place === 'file' && now !== 'runtime' && await this.usesPlaces()) await this.go('home');
       await (await this.destination(place)).click();
     }
     if (place !== 'file' && place !== 'plugin') {

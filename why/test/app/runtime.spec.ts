@@ -68,8 +68,8 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   await expect(app.main.getByRole('tabpanel', {name: /^This browser/})).toBeVisible();
   await expect(app.runtime.dotfiles).toBeHidden();
-  // Chosen, ink; the others have no fill or edge of their own until the pointer is on them.
-  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(23, 22, 21)');
+  // The chosen leaf is marked in the paper, not a second ink-filled object.
+  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(227, 222, 213)');
   for (const p of ['Environments', 'Dotfiles'] as const) {
     await expect(app.runtime.part(p)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(app.runtime.part(p)).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
@@ -106,22 +106,115 @@ test("what is in this browser adds up to the total over it: what the browser cou
   // Nothing written yet: Home's settings are nothing, and the browser counts its keeping of the OS all the same.
   await app.runtime.open('This browser');
   const here = app.main.getByRole('region', {name: /^In this browser/});
-  await expect(here.getByText('Other', {exact: true})).toBeVisible();
+  await expect(here.getByText('Other (estimated)', {exact: true})).toBeVisible();
   const read = (s: string) => {
     const [n, unit] = s.trim().split(' ');
     const by = ({B: 1, KB: 1e3, MB: 1e6, GB: 1e9} as Record<string, number>)[unit];
     // What it is to within the figure's last place.
     return {n: Number(n) * by, within: (n.includes('.') ? .05 : .5) * by};
   };
-  const total = read(await here.getByRole('heading').locator('b').innerText());
+  const total = read(await app.main.locator('.legend > span').first().locator('b').innerText());
   const rows = (await here.locator('.space-size').allInnerTexts()).map(read);
   const sum = rows.reduce((a, r) => a + r.n, 0);
   expect(Math.abs(sum - total.n)).toBeLessThanOrEqual(rows.reduce((a, r) => a + r.within, total.within));
-  // The total said over the box is the one beside the bar.
-  await expect(app.main.locator('.legend > span').first().locator('b')).toHaveText(await here.getByRole('heading').locator('b').innerText());
+  // The total is told once, beside the bar; the list is what adds up to it.
+  await expect(here.getByRole('heading').locator('b')).toHaveCount(0);
+});
+
+test('Runtime keeps that device, its reclaimable copies, then Remote in sight and in focus order', async ({signedIn: app}) => {
+  for (const name of ['sidecar', 'field-notes', 'small-hours']) await app.newRepo.make(name);
+  await app.runtime.open('This browser');
+  const {page, main} = app;
+  const here = main.getByRole('region', {name: 'In this browser'});
+  const frees = main.getByRole('region', {name: /^Reclaimable space/});
+  const remote = main.getByRole('region', {name: /^Remote only/});
+  const repos = (c: Locator) => c.locator('.space-list .link-name').allTextContents();
+  const order = async () => {
+    await expect(main.locator('.space-box > .space-col')).toHaveCount(3);
+    expect(await main.locator('.space-box > .space-col').evaluateAll(es => es.map(e => e.getAttribute('aria-labelledby'))))
+      .toEqual(['here-col', 'free-col', 'remote-col']);
+    const local = await repos(here), free = await repos(frees);
+    expect(local.filter((name) => free.includes(name))).toEqual(free);
+  };
+  await expect(frees.getByRole('button', {name: 'field-notes', exact: true})).toBeVisible();
+  await order();
+  // Free a copy and verify order after the actual local/Remote redraw.
+  await frees.getByRole('button', {name: 'Actions for field-notes', exact: true}).press('Enter');
+  await frees.getByRole('menuitem', {name: 'Remove from device (free space)', exact: true}).click();
+  const ask = frees.getByRole('group', {name: 'Remove field-notes from device (free space)'});
+  await app.answer(ask.getByRole('button', {name: 'Free space', exact: true}), ask);
+  const backed = remote.getByRole('button', {name: 'field-notes', exact: true});
+  await expect(backed).toBeVisible();
+  await order();
+  await frees.getByRole('button', {name: 'Free all', exact: true}).focus();
+  await page.keyboard.press('Tab');
+  await expect(backed).toBeFocused();
+  const key = main.getByRole('button', {name: 'Places', exact: true});
+  await key.press('Enter');
+  await main.getByRole('menuitem', {name: 'File', exact: true}).click();
+  await expect(app.file.tree).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(key).toBeFocused();
+});
+
+test('one reclaimable repo offers its Free command in its row menu; Escape takes back the ask', async ({signedIn: app}) => {
+  await app.newRepo.make('field-notes');
+  await app.runtime.open('This browser');
+  const panel = app.main.getByRole('tabpanel', {name: /^This browser/});
+  const right = panel.getByRole('region', {name: /^Reclaimable space/});
+  await expect(right.getByRole('button', {name:'Free space',exact:true})).toHaveCount(0);
+  await expect(right.getByText('Copies stay on Remote.',{exact:true})).toHaveCount(1);
+  await expect(panel.getByText('Estimated',{exact:true})).toHaveCount(1);
+  const gear = right.getByRole('button', {name:'Actions for field-notes',exact:true});
+  await gear.press('Enter');
+  const menu = right.getByRole('menu', {name:'Actions for field-notes',exact:true});
+  const move = menu.getByRole('menuitem', {name:'Remove from device (free space)',exact:true});
+  await expect(menu.getByRole('menuitem',{name:'View on Remote',exact:true})).toBeFocused();
+  await expect(move).toBeEnabled();
+  // Before the first sync the same menu can also offer Rename, so follow the visible options.
+  const options = await menu.getByRole('menuitem').count();
+  for (let i = 0; i < options; i++) {
+    await app.page.keyboard.press('ArrowDown');
+    if (await move.evaluate((el) => el === document.activeElement)) break;
+  }
+  await expect(move).toBeFocused();
+  await app.page.keyboard.press('Enter');
+  const ask = right.getByRole('group',{name:'Remove field-notes from device (free space)'});
+  await expect(ask).toBeVisible();
+  await app.page.keyboard.press('Escape');
+  await expect(ask).toHaveCount(0);
+  await expect(move).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(gear).toBeFocused();
+  await expect(panel.getByRole('region',{name:/^In this browser/}).getByRole('button',{name:'field-notes',exact:true})).toBeVisible();
+});
+
+test.describe('narrow Runtime', () => {
+  test.use({viewport: {width: 390, height: 844}, hasTouch: true, isMobile: true});
+  test('the row menu fits and answers a real touch, without hover', async ({signedIn: app}) => {
+    await app.newRepo.make('touch-notes');
+    await app.runtime.open('This browser');
+    const free = app.main.getByRole('region', {name: /^Reclaimable space/});
+    await expect(free.getByText('Copies stay on Remote.')).toBeVisible();
+    const gear = free.getByRole('button', {name: 'Actions for touch-notes', exact: true});
+    await gear.tap({timeout: 7000});
+    const command = free.getByRole('menuitem', {name: 'Remove from device (free space)', exact: true});
+    await expect(command).toBeEnabled();
+    await expect(gear).toHaveAttribute('aria-expanded', 'true');
+    await command.tap({timeout: 7000});
+    const ask = free.getByRole('group', {name: 'Remove touch-notes from device (free space)'});
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', {name: 'Cancel', exact: true}).tap({timeout: 7000});
+    await expect(ask).toHaveCount(0);
+    await expect(command).toBeFocused();
+  });
 });
 
 test('the environments are one card two wide, the desktop app at its right and SSH under both: why* and its version apart, one Download', async ({signedIn: app}) => {
+  // This checks metadata and layout, not a guest boot or the bundled pack.
+  await app.page.route('**/webroot/webroot.json', (r) => r.fulfill({json: {
+    version: shipped(), sha256: '0'.repeat(64), root: {name: 'Ricebox'},
+  }}));
   // The Remote has the release's files, as a deploy puts them there. (Signed in, so SSH is there to be under them.)
   await app.page.route('**/v1/desktop/**', (r) => (r.request().method() === 'HEAD' ? r.fulfill({status: 200, body: ''}) : r.continue()));
   await app.runtime.open('Environments');
@@ -168,7 +261,7 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   await app.runtime.open('This browser');
   const panel = app.main.getByRole('tabpanel', {name: /^This browser/});
   const here = panel.getByRole('region', {name: /^In this browser/});
-  await expect(here).toContainText('Synced');
+  await expect(panel.getByRole('region', {name: 'Reclaimable space'}).getByRole('button', {name: 'notes', exact: true})).toBeVisible();
   // Shown in Forge, written to by nobody: no Prompt holds it.
   await expect(here).not.toContainText('Locked by an active Prompt');
   const gear = here.getByRole('button', {name: 'Actions for notes'});

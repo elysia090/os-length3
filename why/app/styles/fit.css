@@ -18,12 +18,6 @@
 .server-center .slide:not([aria-current='true']), .slide-track > .server-side { height: auto; max-height: 100%; align-self: flex-start; }
 .server-center .slide:not([aria-current='true']) > .board-card { flex: none; }
 
-/* (Runtime's account is a ruled form on its sheet, and stays one: a frame, three columns of one height, its lines the
-   quiet rule's. Only this was off: its three figures stand over its three columns, each from its column's own left
-   margin, to the pixel, where they stood eleven px left of the second and twenty-three of the third.) */
-.device-part > .legend { padding: 0; }
-.device-part > .legend > * { padding-left: calc(var(--s4) + 1px); }
-
 /* A board not in the hand is its name and nothing round it: a name on the ground, as a repo's is on Home, as wide as
    the name, pressed to take it up. No sheet stands empty between the room's own sheet and the board worked in, and
    the row is packed close: the room's sheet, the names before, the board in the hand, the names after. Each name is
