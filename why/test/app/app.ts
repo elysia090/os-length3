@@ -11,6 +11,7 @@
 
 import {expect, type Locator, type Page} from '@playwright/test';
 import TEMPLATES from '../../repo/templates.json' with {type: 'json'};
+import ja from '../../text/ja.ts';
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
@@ -24,6 +25,9 @@ export const handleOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+
 
 /** `text` as a regular expression that matches it literally. */
 export const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** An exact label at one of the localized Places entry points. */
+const placeLabel = (label: string) => new RegExp(`^(${escape(label)}|${escape(ja[label] ?? label)})$`);
 
 export class App {
   readonly page: Page;
@@ -177,14 +181,19 @@ class Rail extends Part {
 
   private get navigation() { return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/, includeHidden: true}); }
 
-  /** The common routes are summoned on either work desk. */
-  async open() {
+  private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    if ((here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()) {
-      const menu = this.app.forge.places;
-      if (!await menu.isVisible()) await this.app.forge.placesKey.click();
-      await menu.getByRole('menuitem', {name: 'More Places', exact: true}).click();
-    }
+    return (here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()
+      && await this.app.forge.placesKey.isVisible();
+  }
+
+  /** The actual destination is in the rail or the one Places menu, depending on the current desk. */
+  async destination(place: Place) {
+    if (!await this.usesPlaces()) return this.button(place);
+    const menu = this.app.forge.places;
+    if (!await menu.isVisible()) await this.app.forge.placesKey.click();
+    const name = placeLabel(PLACES[place]);
+    return menu.getByRole('menuitem', {name}).or(menu.getByRole('menuitemradio', {name}));
   }
 
   async go(place: Place) {
@@ -209,14 +218,9 @@ class Rail extends Part {
       return;
     }
     if (place !== 'forge' || now !== 'forge') {
-      const direct = place === 'server' && now === 'inbox' && await this.app.forge.placesKey.isVisible();
-      if (direct) {
-        if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
-        await this.app.forge.places.getByRole('menuitemradio', {name: 'Server', exact: true}).click();
-      } else {
-        await this.open();
-        await this.button(place).click();
-      }
+      // Forge offers the repo's Files, not the global filesystem. The latter still starts at Home's File.
+      if (place === 'file' && await this.usesPlaces()) await this.go('home');
+      await (await this.destination(place)).click();
     }
     if (place !== 'file' && place !== 'plugin') {
       await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
@@ -227,12 +231,15 @@ class Rail extends Part {
 
 /** The person's own icon at the foot of the rail, and its menu. */
 class MeMenu extends Part {
-  get button() { return this.page.getByRole('button', {name: 'Me', exact: true}); }
-  get menu() { return this.page.getByRole('menu', {name: 'Me'}); }
+  get button() { return this.page.getByRole('button', {name: placeLabel('Me')}); }
+  get menu() { return this.page.getByRole('menu', {name: placeLabel('Me')}); }
 
   async openMenu() {
-    await this.app.rail.open();
-    await this.button.click();
+    if (await this.button.isVisible()) await this.button.click();
+    else {
+      if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
+      await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Account')}).click();
+    }
     await expect(this.menu).toBeVisible();
   }
 
@@ -309,12 +316,12 @@ class NewRepo extends Part {
 
 /** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
-  get placesKey() { return this.main.getByRole('button', {name: 'Places', exact: true}); }
-  get places() { return this.main.getByRole('menu', {name: 'Places', exact: true}); }
+  get placesKey() { return this.main.getByRole('button', {name: placeLabel('Places')}); }
+  get places() { return this.main.getByRole('menu', {name: placeLabel('Places')}); }
 
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
     if (!await this.places.isVisible()) await this.placesKey.click();
-    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: place, exact: true}).click();
+    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: placeLabel(place)}).click();
   }
 
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
@@ -480,8 +487,7 @@ class FileTree extends Part {
     // moment while no longer out.
     const file = this.app.rail.button('file');
     if (await file.getAttribute('aria-expanded') !== 'true') {
-      await this.app.rail.open();
-      await file.click();
+      await this.app.rail.go('file');
     }
     await expect(file).toHaveAttribute('aria-expanded', 'true');
     await expect(this.tree).toBeVisible();
@@ -768,8 +774,8 @@ class Inbox extends Part {
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
   async names() {
-    await this.app.rail.open();
-    await this.page.getByRole('button', {name: 'Your usernames', exact: true}).click();
+    if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
+    await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
   }
 
   /** The Inbox has its automatically claimed address and stands ready to write. */
@@ -802,7 +808,7 @@ class Server extends Part {
   /** The right: who is in it, then the repos they show in it. */
   get side() { return this.view.getByRole('complementary', {name: 'Members and shared repos'}); }
 
-  /** To its page, by the rail (summoned through More Places on a work desk). */
+  /** To its page, by the rail or the Places menu on a work desk. */
   async open() {
     await this.app.rail.go('server');
     await expect(this.view).toBeVisible();

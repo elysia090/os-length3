@@ -1,5 +1,5 @@
 import type {PurposeId} from '../../host/purposes.ts';
-import type {ForgePlace} from './places.ts';
+import type {ForgePlace, PlaceCommand} from './places.ts';
 import type {Carry} from '../../ui/glide.ts';
 
 /**
@@ -25,8 +25,8 @@ export interface Context {
   forgeFiles?(repo: string | null, focus?: boolean): void;
   /** Go through the shell's Forge route, with the named place in hand when its repo is ready. */
   forgePlace?(place: ForgePlace): Promise<void>;
-  /** The shell's existing places and tools, opened on demand instead of a permanent rail. */
-  morePlaces?(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]): void;
+  /** The shell's existing places and tools not already offered on this desk. */
+  placeCommands?(omit: readonly PurposeId[]): readonly PlaceCommand[];
   /** The repo Forge shows, if any. */
   readonly repo: string | null;
   /** The file last read in Forge, kept from one visit to the next: where the person left off. */

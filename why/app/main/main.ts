@@ -123,7 +123,19 @@ const ctx: Context = {
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
-  morePlaces(anchor, tools) { if (isWorkPage(current) || current === 'inbox') openMorePlaces(anchor, tools); },
+  placeCommands(omit) {
+    return [
+      ...RAIL.filter(p => p.id !== 'file' && !omit.includes(p.id)).map(({id, label}) => ({
+        label,
+        onPress: id !== 'plugin',
+        run: () => {
+          if (id === 'plugin') togglePlugins();
+          else void select(id);
+        },
+      })),
+      {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
+    ];
+  },
   get repo() { return openRepo; },
   get leftOff() {
     try {
@@ -165,6 +177,11 @@ scrollbars();
 // once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
 const worn = () => { wear(inEffect()[LOOK]); };
 onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
+function togglePlugins() {
+  const there = current === 'git' || current === 'home';
+  if (!there) select('home');
+  setPluginsOpen(!there || !pluginsOpen());
+}
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
@@ -187,11 +204,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
     plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'git' || current === 'home')));
     plugState();
     onPlugins(() => plugState());
-    button.addEventListener('click', () => {
-      const there = current === 'git' || current === 'home';
-      if (!there) select('home');
-      setPluginsOpen(!there || !pluginsOpen());
-    });
+    button.addEventListener('click', togglePlugins);
     button.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }
     });
@@ -251,7 +264,7 @@ let asked = 0;
 function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlace): Promise<void> {
   const bringing = brought(id), mine = ++asked;
   if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped, place); });
-  closeMorePlaces(false);
+  me.leavePlaces();
   if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
   stopStage($('page'));
@@ -402,35 +415,6 @@ $('rail-me').append(me.element);
 
 $('rail-tabs').append(...RAIL.map((p) => railButton(p.id)));
 
-// On a work desk the same rail and personal controls are brought out by More Places, not by a second router.
-const forgeRail = document.querySelector<HTMLElement>('body > .rail')!;
-const forgeTools = h('div', {class: 'forge-route-tools'});
-forgeRail.append(forgeTools);
-let forgeAnchor: HTMLElement | null = null;
-function openMorePlaces(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]) {
-  forgeAnchor = anchor;
-  forgeTools.replaceChildren(...tools.map(({label, run}) => {
-    const key = h('button', {type: 'button', class: 'forge-menu-item'}, label);
-    key.addEventListener('click', () => { closeMorePlaces(); run(); });
-    return key;
-  }));
-  document.body.classList.add('forge-routes');
-  forgeRail.querySelector<HTMLElement>('.rail-item')?.focus({preventScroll: true});
-}
-function closeMorePlaces(back = true) {
-  if (!forgeAnchor) return;
-  const anchor = forgeAnchor; forgeAnchor = null;
-  document.body.classList.remove('forge-routes');
-  if (back && anchor.isConnected && !anchor.closest('[hidden]')) anchor.focus({preventScroll: true});
-}
-document.addEventListener('pointerdown', (event) => {
-  const at = event.target as Node;
-  if (!forgeRail.contains(at) && !fileTree.element.contains(at)) closeMorePlaces(false);
-});
-document.addEventListener('keydown', (event) => {
-  if (!forgeAnchor || event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
-  event.preventDefault(); closeMorePlaces();
-});
 // Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
 // off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
 const tagAt = (e: Event) => {

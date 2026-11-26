@@ -183,7 +183,7 @@ class Forge {
       if (place === 'Git') void ctx.go('git');
       else if (place === 'Prompt') this.promptWindow(!!this.prompt.hidden,true);
       else this.selectPlace(place);
-    }, () => this.more());
+    }, () => ctx.placeCommands?.(['forge']) ?? []);
     this.switcher.set('Forge', false);
     this.promptPaper = new PromptPaper(this.center,this.work,()=>this.promptWindow(false,true));
     this.prompt.addEventListener('focusin', () => this.hand('Prompt'));
@@ -433,16 +433,6 @@ class Forge {
     this.hand(place);
     this.ctx.forgeFiles?.(place==='Files'?repo:null,focus);
     if(focus&&place==='Forge')this.deskOf(repo).desk.focusHeld();
-  }
-
-  private more() {
-    this.ctx.morePlaces?.(this.switcher.key, [
-      {label: t('Open Folder'), run: () => this.folders(this.switcher.key)},
-      ...(this.now.repo ? [
-        {label: t('Search'), run: () => this.work.find()},
-        {label: t('Files: New, Rename, Delete'), run: () => this.deeds(this.switcher.key)},
-      ] : []),
-    ]);
   }
 
   private closeStart() {

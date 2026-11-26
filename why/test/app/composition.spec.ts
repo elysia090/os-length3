@@ -153,7 +153,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
   // The frame over what is called up: the available controls, not a hidden band's old bounding box.
-  const frameControl = all.find((el) => el.matches('body.forge-routes > .rail, #page[data-place="forge"] .forge-places-key'));
+  const frameControl = all.find((el) => el.matches('body > .rail'));
   const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
   const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
     const {left, top, right, bottom} = el.getBoundingClientRect();
@@ -308,10 +308,10 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
       }
       await shot(app, place, size);
     }
-    // What is called up comes in front, and the frame stays over the world in focus.
-    await app.rail.go('forge');
+    // The global File tree is called up from Home; its rail stays over the world in focus.
+    await app.rail.go('home');
     await app.file.openTree();
-    await shot(app, 'forge', size, true);
+    await shot(app, 'home', size, true);
     await app.page.keyboard.press('Escape');
   }
 });

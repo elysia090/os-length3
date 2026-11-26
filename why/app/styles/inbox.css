@@ -6,7 +6,7 @@ body:has(> .page.page-inbox > .inbox-shell) {
 }
 .place-left > .page.page-inbox:has(> .inbox-shell) { background: var(--inbox-desk) var(--inbox-dots) 0 0 / var(--u) var(--u); }
 body:has(> .page.page-inbox > .inbox-shell) > .door,
-body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display: none; }
+body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
 .page.page-inbox:has(> .inbox-shell) { padding: 0; margin: 0; height: 100dvh; min-width: 0; }
 .page.page-inbox:has(> .inbox-shell) > .page-head { display: none; }
 .page.page-inbox > .inbox-shell {
@@ -18,7 +18,6 @@ body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display
   position: relative; width: 100%; max-width: none; height: 100%;
 }
 .inbox-shell .forge-places-key { background: var(--inbox-desk); color: var(--paper); }
-.inbox-shell .forge-places-key[aria-expanded=true] { background: var(--paper); color: var(--ink); }
 .inbox-shell .forge-places-key:focus-visible { outline-color: var(--paper); }
 .inbox-title { position: absolute; inset: var(--u) auto auto var(--inbox-edge); color: var(--paper); font: 700 var(--t-word)/var(--u) var(--sans); }
 .inbox-page {

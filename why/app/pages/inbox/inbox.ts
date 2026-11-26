@@ -93,7 +93,7 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
 
   holder.replaceChildren(title, desk, maps.element, names);
   menus = placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
-    () => ctx.morePlaces?.(menus.key, [{label: t('Your usernames'), run: showNames}]));
+    () => [{label: 'Your usernames', run: showNames}, ...(ctx.placeCommands?.(['server']) ?? [])]);
 
   const unread = (th: inbox.Thread) => th.unread > 0 && th.last.time > (readThrough.get(th.address) ?? -1);
   const updateIndex = () => {

@@ -60,6 +60,8 @@ test('a file added since the last commit goes when it is put back', async ({sign
 
   await app.file.revert('hello', 'scratch.txt', 'Not present in latest commit; removing');
 
+  await app.file.close();
+  await app.rail.go('forge');
   await expect(app.forge.editor('scratch.txt')).toHaveCount(0);
   await app.file.openTree();
   await expect(app.file.name('scratch.txt')).toHaveCount(0);
@@ -150,21 +152,9 @@ test('Places puts away its menus, and the Prompt shortcut returns to the paper i
   await expect(key).toBeFocused();
   await expect(places).toBeHidden();
 
-  const deeds = app.page.getByRole('menu', {name: 'README.md', exact: true});
-  const showDeeds = async () => {
-    await app.rail.open();
-    await app.page.getByRole('button', {name: 'Files: New, Rename, Delete', exact: true}).click();
-    await expect(deeds.getByRole('menuitem', {name: 'New file'})).toBeFocused();
-    await expect(key).toHaveAttribute('aria-expanded', 'true');
-  };
-  await showDeeds();
   await key.click();
-  await expect(deeds).toBeHidden();
-  await expect(key).toHaveAttribute('aria-expanded', 'false');
-  await showDeeds();
-  await deeds.hover();
-  await app.page.mouse.move(8, 400);
-  await expect(deeds).toBeHidden();
+  await readme.click();
+  await expect(places).toBeHidden();
   await expect(key).toHaveAttribute('aria-expanded', 'false');
 
   await readme.focus();

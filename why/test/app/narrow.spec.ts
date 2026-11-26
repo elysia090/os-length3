@@ -46,11 +46,10 @@ test('on a phone, Forge has one Places key; its menu, summoned Search, and the s
   await expect(destinations).toHaveText(['Forge', 'Files', 'Git']);
   await expect(forge.places.getByRole('menuitem', {name: 'Prompt', exact: true})).toBeInViewport({ratio: 1});
   for (const key of await destinations.all()) await expect(key).toBeInViewport({ratio: 1});
-  const more = forge.places.getByRole('menuitem', {name: 'More Places', exact: true});
-  await expect(more).toBeInViewport({ratio: 1});
+  await expect(forge.places.getByRole('menuitem', {name: 'Home', exact: true})).toBeInViewport({ratio: 1});
   expect(await sideways(page), 'Places').toBeLessThanOrEqual(0);
-  await more.click();
-  await page.getByRole('navigation', {name: 'Purposes', exact: true}).getByRole('button', {name: 'Search', exact: true}).click();
+  await forge.placesKey.press('Escape');
+  await page.keyboard.press('Control+k');
   await expect(forge.search).toBeFocused();
   await expect(forge.search).toBeInViewport({ratio: 1});
   expect(await sideways(page), 'Search').toBeLessThanOrEqual(0);

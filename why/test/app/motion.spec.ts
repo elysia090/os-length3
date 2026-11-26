@@ -338,11 +338,9 @@ test('going to another place the world goes by: the place left, the place come t
   const U = 24;
   const been = new Set<string>();
   for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
-    // On a work desk the rail is opened through More Places. Measure the press that chooses the
-    // destination, not the press that merely opens a menu.
-    await app.rail.open();
+    // Measure the actual destination's press, not the press that opens the Places menu.
+    const destination = await app.rail.destination(to);
     await still(app);
-    const destination = app.rail.button(to);
     await expect(destination).toBeVisible();
     const from = await app.main.getAttribute('data-place');
     const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);

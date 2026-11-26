@@ -199,7 +199,7 @@ class GitPage {
       if (place === 'Git') return;
       if (this.at) ctx.remember(this.at);
       if (ctx.forgePlace) void ctx.forgePlace(place); else void ctx.go('forge');
-    }, () => ctx.morePlaces?.(this.places.key, this.at ? [{label: t('Search'), run: () => this.workbench.find()}] : []));
+    }, () => ctx.placeCommands?.(['forge']) ?? []);
     this.places.set('Git', false);
     this.drawKnown();
     this.load();

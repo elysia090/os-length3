@@ -48,7 +48,6 @@ body:has(> #page[data-place='git']) {
 }
 .git-layout .git-desk .issue-card .issue-name { color: var(--paper); }
 .git-layout .git-desk .issue-card .issue-name > i { color: var(--git-desk-sub); }
-.git-layout .forge-places-key[aria-expanded='true'] { color: var(--git-paper-ink); outline-color: currentColor; }
 /* Added/deleted lines in the merged list are already tinted, even though the list itself is on the desk. */
 .git-layout .done-diff .diff-line:is(.add, .del) { --sub: var(--git-paper-sub); color: var(--git-paper-ink); }
 
@@ -57,7 +56,7 @@ body:has(> #page[data-place='git']) {
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
 .work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 .work.bench.band-bench > .center { overflow: visible; }
-/* Search remains available via More Places, / and the keyboard, not a permanent band across the title. */
+/* The lens and keyboard summon Search; no permanent band crosses the title. */
 .work.bench.git-layout > .bar > .band-tools { margin-inline-start: calc(4 * var(--u));
   width: min(calc(24 * var(--u)), calc(100% - 7 * var(--u))); }
 .git-layout > .bar > .band-tools:not(:focus-within) { opacity: 0; pointer-events: none; }

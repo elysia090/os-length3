@@ -233,9 +233,8 @@ test('a narrow window searches from the box as a wide one does, and Escape puts 
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.page.setViewportSize({width: 552, height: 800});
   await expect(app.forge.results).toBeHidden();
-  // Ask for Search through Places; nothing drops until something is typed.
-  await app.rail.open();
-  await app.page.getByRole('button', {name: 'Search', exact: true}).click();
+  // Ask for the band's existing search with its keyboard shortcut; nothing drops until something is typed.
+  await app.page.keyboard.press('Control+k');
   await expect(app.forge.search).toBeFocused();
   await expect(app.forge.results).toBeHidden();
   await app.forge.search.fill('Written');
@@ -272,8 +271,7 @@ test('what is searched lines up sideways: the one in hand fills the box, the sea
 test('the plug opens a plain plugin area on Home, over what waits there, and closes it; Forge is all desk and has none, so from there it goes to Home with it out', async ({app}) => {
   const area = app.main.getByRole('region', {name: 'Plugins', exact: true});
   await expect(area).toHaveCount(0);
-  await app.rail.open();
-  await app.rail.button('plugin').click();
+  await app.rail.go('plugin');
   await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
   await expect(area).toBeVisible();
   // With none installed it is a plain area, no words in it (issue #45).
@@ -297,8 +295,7 @@ test('the plug opens a plain plugin area on Home, over what waits there, and clo
 test('the plug says the area is out only where it is, and Escape on it puts the area away', async ({app}) => {
   const area = app.main.getByRole('region', {name: 'Plugins', exact: true});
   const plug = app.rail.button('plugin');
-  await app.rail.open();
-  await plug.click();
+  await app.rail.go('plugin');
   await expect(area).toBeVisible();
   // Runtime has no plugin area: the plug is not shown out there, and the area waits for Home.
   await app.rail.go('runtime');
@@ -314,50 +311,44 @@ test('the plug says the area is out only where it is, and Escape on it puts the 
   await expect(plug).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('the files tool from More Places brings out the deeds for the document in hand in Forge, and does them there', async ({app}) => {
-  // What is read now: the Makefile, gone to from File (the page opens at its first file, the README).
-  await app.file.open('hello', 'Makefile');
-  await app.rail.go('forge');
-  // The real file command is in More Places, not a second persistent bar.
-  const files = app.page.getByRole('button', {name: 'Files: New, Rename, Delete', exact: true});
-  const open = async () => { await app.rail.open(); await files.click(); };
-  // The global tree can leave the catalogue out until the reader goes into the document.
-  await app.forge.editor('Makefile').click();
-  await expect(files).toBeHidden();
-  await expect(app.main.getByRole('navigation', {name: 'repo'})).toHaveCount(0);
-  await open();
-  // Its menu, under it, here: File stays where it is.
-  const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
-  await expect(menu).toBeVisible();
-  await expect(app.file.tree).toBeHidden();
+test('the repo Files row keeps its real deeds without a second command in Places', async ({app}) => {
+  await app.forge.use('Files');
+  const files = app.page.getByRole('tree', {name: 'hello', exact: true});
+  const src = files.getByRole('treeitem', {name: 'src', exact: true});
+  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'Open src', exact: true}).click();
+  const action = async (name: string) => {
+    if (!await files.isVisible()) await app.forge.use('Files');
+    const row = files.getByRole('button', {name, exact: true});
+    await row.press('Shift+F10');
+    const menu = app.page.getByRole('menu', {name, exact: true});
+    await expect(menu).toBeVisible();
+    await expect(menu).not.toHaveAttribute('aria-busy', 'true');
+    return {row, menu};
+  };
+  const {menu, row} = await action('main.c');
   await expect(menu.getByRole('menuitem')).toHaveText(['New file', 'New folder', 'Rename', 'Delete']);
-  const under = (await app.forge.placesKey.boundingBox())!, at = (await menu.boundingBox())!;
-  expect(at.y).toBeGreaterThan(under.y + under.height - 1);
   await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
-  await app.page.keyboard.press('Escape');
+  await menu.getByRole('menuitem', {name: 'New file'}).press('Escape');
   await expect(menu).toBeHidden();
-  await expect(app.forge.placesKey).toBeFocused();
+  await expect(row).toBeFocused();
 
-  // A new file from there is made at once in the folder of the file read now, with its ending, and is the one to
-  // work on; its name is written in its head.
-  await app.file.open('hello', 'src/main.c');
-  await app.rail.go('forge');
-  await open();
-  const near = app.page.getByRole('menu', {name: 'main.c', exact: true});
+  // Made by the file's folder, its ending is kept and the new name is written in its own sheet.
+  const {menu: near} = await action('main.c');
   await near.getByRole('menuitem', {name: 'New file'}).click();
   await expect(app.main.getByRole('textbox', {name: 'New name', exact: true})).toBeFocused();
   await expect(near).toBeHidden();
   await app.forge.rename('src/untitled.c', 'util.c');
   await expect(app.forge.editor('src/util.c')).toBeFocused();
 
-  // Renamed (a path moves it), it is shown where it went.
-  await open();
-  const util = app.page.getByRole('menu', {name: 'util.c', exact: true});
+  // Reopen the repo's catalogue after editing the new name. A path renamed from its row moves the actual file.
+  await app.forge.use('Forge');
+  await app.forge.use('Files');
+  const {menu: util} = await action('util.c');
   await util.getByRole('menuitem', {name: 'Rename'}).click();
   await util.getByRole('textbox').fill('lib/util.c');
   await util.getByRole('textbox').press('Enter');
   await expect(app.forge.editor('lib/util.c')).toBeVisible();
-  await expect(app.file.tree).toBeHidden();
+  await expect(util).toBeHidden();
 });
 
 test('Prompt keeps its own steady material when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {

@@ -201,8 +201,8 @@ accept its sender; Accept may also join any server invitations still eligible fr
 single piece of paper. Open more than one and the marks at the desk's foot switch between just those opened.
 
 New message → brings out the recipient paper, outside the index. Opening an address takes up its letter; Back or
-Escape puts the recipient paper away without losing what was written. The Places key at the upper right takes you
-to Server or to the shell's other places and tools. Your usernames is in More Places. Signed out, or with no name
+Escape puts the recipient paper away without losing what was written. The Places key at the upper right gives
+Server, Inbox, Your usernames and the shell's other destinations in one scrolling list. Signed out, or with no name
 yet, the same single deed as the Remote's appears instead.
 
 ### What is said: a transcript
@@ -581,23 +581,19 @@ The row runs on past the window's right edge, and the piece cut by that edge
 says so: there is more that way. Nothing is under a piece and nothing over
 it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
-**The band.** Three keys in a row from the rail's corner (120 px from the
-window's left, on the row of the rail's first place), two cells tall: the
-terminal's (`>_`), the files' (a page with +) and the search. One material
-for the three: an outline in ink (1.5 px), nothing in it, the corner a key's
-(10 px); six pixels apart, packed and not joined. Together they are as wide
-as the terminal's sheet under them (14 cells), so the band and the first
-piece are one column, hung from the rail's corner, and nothing of the band
-floats. Under the pointer or the keyboard a key is paper ringed in ink
-(2 px), as a place touched in the rail is. Home has the same three, in the
-same place. Against the right edge, on the keys' row, stands the name of what
-is in hand (the file's, or the shell's prompt), in the display face, its
-capitals a cell tall: the one large word of the page, right-aligned by its
-ink, smaller where the band has no room for it and gone under 1100 px.
-(Before: keys three cells tall, the terminal's five wide in ink with its mark
-in green and the others slots, the name's capitals two cells tall: the band
-was heavier than the desk it stands over, and took the page's hierarchy.
-Before that: small outlined tools, a pill for each repo out, and ⊕.)
+**At the corner.** At 12 px from the upper and right edges is the
+44 px Places key. Its mark is 18 px.
+The two windows in the Places mark do not change when pressed; the key
+sinks into 28 px of the desk and the menu is the paper. Prompt, Forge,
+Files, Git, Home, Server, Runtime, Plugin, New repo and Account are on one
+scrolling list. Five lines of 28 px fit in the ordinary menu, four in a window
+360 px tall or less when there is room. Arrow keys, Home and End bring the
+focused line into view, and Escape puts the list away. Files is the current
+repo's tree, with actions on its rows. The whole filesystem is still File
+on Home's rail. With no repo, Open Folder is the empty desk's own first move.
+
+Search still opens on request by its keyboard shortcuts; it does not take a
+standing strip of the desk.
 
 **The terminal.** Prompt opens a companion on the right of the same
 Forge desk. It does not choose another place, cover a file, or take its
@@ -710,31 +706,10 @@ own desk, as it was left, from one visit to the next (which sheets, in what
 order, which in hand); a desk never worked at begins with its terminal and
 its README, the README in hand.
 
-Where you work. The top line starts with its tools, square as a field: >_,
-which puts the Prompt up at the desk's foot with the keyboard in its line, and
-away again (inked while it is up); the files tool, a page with +;
-and the search, 220 px with its lens, saying only Search (/ goes to it from
-anywhere nothing is written in; on a phone it folds to its lens and opens to
-be written in). The repos out to work on run as pills after them, the pills,
-their parts and ⊕ square-cornered as the tools are. The right pane holds the
-runs alone; its switch lies at the foot, its middle level with the person's at
-the rail's foot. Put away, the pane closes as a wipe and the center takes the
-whole width; the band and its search stay where they are, the switch too, the
-way back, and what the pane showed comes back with it. The files tool, pressed,
-brings out the deeds for the file read now (New file and New folder
-beside it, Rename, which moves it given a path, Delete; the repo's own with
-none read) under it, in Forge, as a bar dropped from under the band, dmenu's:
-ink, square, a band's row high, its left edge the tool's, a band's gap under
-it, the path they act on quiet at its head (/root/garden/README.md), the deed
-chosen in the paper's colours, the whole height of the bar; the desk moves down
-by its room as it drops, in the same move, so nothing on the desk is ever under
-it, and comes back up as it goes. A name asked for or a Delete to be sure of is
-asked in its place on the bar, in the same letters (a name on a line, no white
-field), never carrying one off to File; a deed chosen,
-the deeds are gone at once, nothing fading over what it did; a new file
-is made at once, as Shift+N makes it, its name written over first; one renamed
-or moved is shown where it went. What the search finds drops from under the
-band as a sheet across the desk, inked and shadowed as a box is, only once
+File deeds belong to their rows in Files, not to the places at the corner.
+A new file is made at once, as Shift+N makes it, its name written over first;
+one renamed or moved is shown where it went. What the search finds appears as a
+sheet across the desk, inked and shadowed as a box is, only once
 something is typed and what is found for it is ready: it comes down with it
 already in it, never let down empty and filled a frame later, and what is in it
 stays until what is found for the next key is ready (pressed with nothing
@@ -2423,8 +2398,8 @@ space so nothing moves, the row's name over its corner, a row per deed in
 the code face (20 px), the first heavy, no marks and no rule; Delete is in
 `off` red under the pointer or the keyboard. A folder, the repo's own row too, has
 New file and New folder, made in it; a file has them too, made beside it in
-its folder (the same deeds Forge's files button brings out under itself for
-the file read now); a file or folder has Rename and Delete (a
+its folder (the same deeds the repo's Files gives on its rows); a file or folder
+has Rename and Delete (a
 repo is not renamed or deleted here: its gear is where that is, § Runtime, A
 repo in a list). New file asks nothing: it is made at once, named as
 nothing there is yet (untitled, with the ending of the file it is made
