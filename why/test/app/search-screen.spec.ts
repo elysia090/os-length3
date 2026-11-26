@@ -258,11 +258,18 @@ test('the repo named in Search changes scope without moving the query or losing 
   await query.fill('launch target');
   await expect(stage.getByRole('status')).toHaveText('No results found for "launch target"');
   const title = stage.getByRole('heading', {name:'Search',exact:true});
-  const at = await query.boundingBox(), head = await title.boundingBox();
+  const at = (await query.boundingBox())!, head = (await title.boundingBox())!;
+  const corner = (await scope.boundingBox())!;
+  expect(head.x + head.width / 2).toBe(at.x + at.width / 2);
+  expect(corner.x).toBeGreaterThan(head.x + head.width);
+  expect(corner.y + corner.height).toBeLessThan(head.y);
 
   await scope.click();
   await expect(scope).toHaveJSProperty('value', 'hello');
-  await expect(stage.getByRole('option', {name:other,exact:true})).toBeVisible();
+  const nextScope = stage.getByRole('option', {name:other,exact:true});
+  await expect(nextScope).toBeVisible();
+  const optionAt = (await nextScope.boundingBox())!;
+  expect(optionAt.y + optionAt.height).toBeLessThan(at.y);
   await expect(stage.locator('.search-screen-paper')).toHaveCSS('box-shadow', 'none');
   expect(await title.boundingBox()).toEqual(head);
   await page.keyboard.press('Escape');
@@ -276,6 +283,9 @@ test('the repo named in Search changes scope without moving the query or losing 
   await expect(scope).toHaveValue(other);
   expect(await query.boundingBox()).toEqual(at);
   expect(await title.boundingBox()).toEqual(head);
+  const chosen = (await scope.boundingBox())!;
+  expect(chosen.x + chosen.width).toBe(corner.x + corner.width);
+  expect(chosen.y).toBe(corner.y);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
   await expect(hit).toBeVisible();
   await hit.click();

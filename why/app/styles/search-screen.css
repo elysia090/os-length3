@@ -14,15 +14,18 @@
 }
 @keyframes search-arrival { from { transform: translateY(var(--s2)); } }
 @media (prefers-reduced-motion: reduce) { .search-screen-content { animation: none; } }
-/* Set the title once. A different length of scope name can grow to the right without moving it. */
+/* Search stands over its paper independently of the two keys at the desk's edges. */
 .search-screen-head {
-  display: grid; grid-template-columns: max-content calc(3 * var(--u) + 2px);
-  min-height: var(--h-row); align-items: baseline; justify-content: center; gap: var(--s3); margin: 0 0 var(--s4);
+  display: grid; place-items: start center; min-height: calc(var(--h-row) + 2px); margin: 0 0 var(--s4);
+}
+.search-screen-keys {
+  position: absolute; inset: var(--s3) var(--s4) auto;
+  display: flex; justify-content: space-between; align-items: center;
 }
 .search-screen-head h1 { margin: 0; font: 700 var(--t-head)/1 var(--display); }
 /* The scope is the repo name itself; selecting it keeps the query on the same sheet. */
 .search-screen-repo {
-  justify-self: start; width: max-content; min-width: 0; max-width: min(24ch, calc(50vw - 2 * var(--u)));
+  width: max-content; min-width: 0; max-width: min(24ch, calc(50vw - 2 * var(--u)));
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   border: 0; border-radius: var(--r-key);
   font: var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet);
@@ -61,7 +64,6 @@
   .search-screen-repo option:focus-visible { outline: 1px solid var(--nighthawks-paper-sub); outline-offset: -2px; }
 }
 .search-screen-back {
-  position: absolute; top: var(--s3); left: var(--s4);
   display: inline-flex; align-items: center; gap: var(--s1); min-height: var(--h-row); padding: 0 var(--s2);
   border: 0; border-radius: var(--r-key); background: transparent; color: var(--nighthawks-desk-quiet); cursor: var(--cursor-hand);
   font: var(--t-word)/var(--u) var(--sans);

@@ -28,10 +28,9 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   const results = h('section', {class: 'search-screen-results', id: 'repo-search-results', 'aria-label': t('Search results')}, rows, status);
   const paper = h('div', {class: 'search-screen-paper'}, form, results);
   const element = h('main', {class: 'search-screen', 'aria-labelledby': 'repo-search-title'},
-    back, h('div', {class: 'search-screen-content'},
-      h('header', {class: 'search-screen-head'},
-        h('h1', {id: 'repo-search-title'}, t('Search')),
-        scope),
+    h('div', {class: 'search-screen-keys'}, back, scope),
+    h('div', {class: 'search-screen-content'},
+      h('header', {class: 'search-screen-head'}, h('h1', {id: 'repo-search-title'}, t('Search'))),
       paper));
   let files: Promise<Files> | null = null;
   let revision = 0, frame = 0, gone = false;

@@ -597,9 +597,10 @@ it comes in. The editor shortcuts still open the quick in-place search;
 neither puts a permanent search strip on the working desk. The centered
 paper starts as the field alone. A press on the empty field or Down asks
 for real file suggestions, the desk's first. Typed words instead find
-paths, lines and excerpts. The repo name beside Search chooses another
-repo kept here; the same words stay in the same field. Escape puts away
-open choices first; Escape again, or Back, gives the work its keyboard
+paths, lines and excerpts. Back is on the upper left; the repo name
+on the upper right chooses another repo kept here, without moving or
+clearing the field. Escape puts away open choices first; Escape again,
+or Back, gives the work its keyboard
 and selection back. Enter or a press on a match goes to the saved line
 in Forge; browser Back revisits the search, with its scope and query.
 The entry moves only its own contents a small step in 140 ms, or no
