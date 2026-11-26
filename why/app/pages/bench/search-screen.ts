@@ -7,21 +7,24 @@ import {stillAt} from '../../../repo/search.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 
 interface Ways {
-  scope(repo: string): string[];
+  scope(repo: string | null): string[];
   back(): void;
   write(query: string): void;
   open(repo: string, path: string, line: number): void;
 }
 
 /** One repo's search, in its own place. The result rows use the same source and matcher as Home's Reference. */
-export function searchScreen(repo: string, query: string, opened: string[], ways: Ways) {
-  const input = h('input', {class: 'search-in', type: 'search', 'aria-label': t('Search this repo'),
-    'aria-controls': 'repo-search-results', placeholder: t('Search this repo'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+export function searchScreen(repo: string | null, query: string, opened: string[], ways: Ways) {
+  const sayScope = () => t(repo ? 'Search this repo' : 'No repo to search');
+  const nameScope = () => t(repo ? 'Search this repo' : 'Search');
+  const input = h('input', {class: 'search-in', type: 'search', 'aria-label': nameScope(),
+    'aria-controls': 'repo-search-results', placeholder: sayScope(), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
   input.value = query;
   const back = h('button', {class: 'search-screen-back', type: 'button'}, h('span', {'aria-hidden': 'true'}, '←'), t('Back'));
   back.addEventListener('click', ways.back);
   const scope = h('select', {class: 'search-screen-repo', 'aria-label': t('Search in')}) as HTMLSelectElement;
-  scope.append(new Option(repo, repo));
+  scope.hidden = !repo;
+  if (repo) scope.append(new Option(repo, repo));
   const form = h('form', {role: 'search', class: 'search-screen-form'}, mark('search'), input);
   const rows = h('div', {class: 'search-screen-matches'});
   const status = h('p', {class: 'search-screen-status', role: 'status'});
@@ -102,9 +105,10 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   function again() {
     cancelAnimationFrame(frame);
     const from = repo, words = input.value.trim(), run = ++revision;
-    if (!words) {
-      status.textContent = ''; rows.replaceChildren(); results.removeAttribute('aria-busy');
-      if (suggesting) void suggest(from, run);
+    if (!from || !words) {
+      status.textContent = from || !words ? '' : t('No repo to search');
+      rows.replaceChildren(); results.removeAttribute('aria-busy');
+      if (from && suggesting) void suggest(from, run);
       return;
     }
     results.setAttribute('aria-busy', 'true');
@@ -120,11 +124,18 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
     rows.replaceChildren();
     status.textContent = '';
   };
-  scope.addEventListener('change', () => {
-    if (!scope.value || scope.value === repo) return;
-    repo = scope.value;
+  function lookIn(next: string | null) {
+    if (next === repo) return;
+    repo = next;
+    input.placeholder = sayScope();
+    input.setAttribute('aria-label', nameScope());
+    scope.hidden = !repo;
     opened = ways.scope(repo); files = null; empty();
     again();
+  }
+  scope.addEventListener('change', () => {
+    if (!scope.value) return;
+    lookIn(scope.value);
     // A select closes and returns focus to its key after issuing change. Give the hand back to the query then.
     requestAnimationFrame(() => {
       if (!gone && document.activeElement === scope) input.focus({preventScroll: true});
@@ -139,7 +150,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
   input.addEventListener('click', (e) => {
     const asked = pressedEmpty || e.detail === 0;
     pressedEmpty = false;
-    if (!asked || input.value.trim() || suggesting) return;
+    if (!repo || !asked || input.value.trim() || suggesting) return;
     suggesting = 'list'; again();
   });
   paper.addEventListener('focusout', (e) => {
@@ -163,7 +174,7 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
       e.preventDefault(); input.focus({preventScroll: true}); input.select(); return;
     }
     const next = choices(), where = next.indexOf(document.activeElement as HTMLButtonElement);
-    if (!next.length && e.target === input && e.key === 'ArrowDown' && !input.value.trim()) {
+    if (repo && !next.length && e.target === input && e.key === 'ArrowDown' && !input.value.trim()) {
       e.preventDefault();
       const alreadyAsked = !!suggesting;
       suggesting = 'first';
@@ -181,8 +192,10 @@ export function searchScreen(repo: string, query: string, opened: string[], ways
       input.focus({preventScroll: true}); input.select(); again();
       void store.names().then(names => {
         if (gone) return;
-        scope.replaceChildren(...Array.from(new Set([repo, ...names]), name => new Option(name, name)));
-        scope.value = repo;
+        const current = repo && names.includes(repo) ? repo : names[0] ?? null;
+        scope.replaceChildren(...Array.from(new Set(current ? [current, ...names] : []), name => new Option(name, name)));
+        scope.value = current ?? '';
+        lookIn(current);
       }, () => {});
     },
     close() { gone = true; cancelAnimationFrame(frame); unwatch(); element.remove(); },

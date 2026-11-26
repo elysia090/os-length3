@@ -1,5 +1,5 @@
 import type {PurposeId} from '../../host/purposes.ts';
-import type {ForgePlace, PlaceCommand} from './places.ts';
+import type {ForgePlace, PlaceCommand, SearchDesk} from './places.ts';
 import type {Carry} from '../../ui/glide.ts';
 
 /**
@@ -9,7 +9,7 @@ import type {Carry} from '../../ui/glide.ts';
 export type Writing = boolean | 'end' | 'name' | {at: number};
 
 /** What a page may ask of the shell. */
-export interface Context {
+export interface Context extends SearchDesk {
   /** Go to `id`: settles once its page is drawn (a page may pan in a frame later). */
   go(id: PurposeId): Promise<void>;
   /** Open a repo in Forge, at `path` inside it if given (at `line` of it); with `write`, the caret goes into that file
@@ -25,12 +25,8 @@ export interface Context {
   forgeFiles?(repo: string | null, focus?: boolean): void;
   /** Go through the shell's Forge route, with the named place in hand when its repo is ready. */
   forgePlace?(place: ForgePlace): Promise<void>;
-  /** Search this repo in its own screen, coming back to the work just left. */
-  searchRepo?(repo: string, origin?: Element | null, rejoin?: () => HTMLElement | null): void;
   /** The shell's existing places and tools not already offered on this desk. */
   placeCommands?(omit: readonly PurposeId[]): readonly PlaceCommand[];
-  /** The repo Forge shows, if any. */
-  readonly repo: string | null;
   /** The file last read in Forge, kept from one visit to the next: where the person left off. */
   readonly leftOff: {repo: string; path: string; at: number | null} | null;
   rerender(): void;

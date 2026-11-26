@@ -110,7 +110,8 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
 :is(.forge-places-key, .forge-search-key) > .mark { width: 18px; height: 18px; }
 .forge-search-key { right: 56px; }
 .forge-search-key[hidden] { display: none; }
-:is(.forge-layout, .git-layout) :is(.forge-search-key, .forge-places-key:not([aria-expanded='true'])):focus-visible {
+.forge-search-key:focus-visible,
+:is(.forge-layout, .git-layout) .forge-places-key:not([aria-expanded='true']):focus-visible {
   outline: 1px solid currentColor; outline-offset: -7px;
 }
 body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-search-key, .forge-places-key[aria-expanded='false']),

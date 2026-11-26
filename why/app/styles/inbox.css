@@ -17,7 +17,7 @@ body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
   --inbox-inset: calc(1.5 * var(--u));
   position: relative; width: 100%; max-width: none; height: 100%;
 }
-.inbox-shell .forge-places-key { background: var(--inbox-desk); color: var(--paper); }
+.inbox-shell :is(.forge-places-key, .forge-search-key) { background: var(--inbox-desk); color: var(--paper); }
 .inbox-shell .forge-places-key:focus-visible { outline-color: var(--paper); }
 .inbox-title { position: absolute; inset: var(--u) auto auto var(--inbox-edge); color: var(--paper); font: 700 var(--t-word)/var(--u) var(--sans); }
 .inbox-page {
@@ -179,7 +179,7 @@ body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
   .inbox-page { grid-template-columns: var(--inbox-paper-width); }
   .inbox-thread { grid-column: 1; }
   .inbox-page[data-narrow=index] > .inbox-thread, .inbox-page[data-narrow=paper] > .inbox-index { display: none; }
-  .inbox-over { top: -52px; right: 42px; }
+  .inbox-over { top: -52px; right: 86px; }
   .inbox-index-key { display: block; position: absolute; inset: 4px 0 auto auto; font-size: var(--t-inbox-meta); }
 }
 @media (max-width: 519px) {

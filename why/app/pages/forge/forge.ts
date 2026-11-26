@@ -14,7 +14,7 @@ import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, moveFile, renaming, split, untitled} from '../kit/file-deeds.ts';
 import {openFolder} from './open-folder.ts';
-import {workPlaces, type ForgePlace} from '../kit/places.ts';
+import {deskSearch, workPlaces, type ForgePlace} from '../kit/places.ts';
 import {pointerMenu, type BesideOption} from './document-menu.ts';
 import {PromptPaper} from './prompt-paper.ts';
 import '../../styles/forge-prompt.css';
@@ -185,9 +185,7 @@ class Forge {
       if (place === 'Git') void ctx.go('git');
       else if (place === 'Prompt') this.promptWindow(!!this.prompt.hidden,true);
       else this.selectPlace(place);
-    }, () => ctx.placeCommands?.(['forge']) ?? [], (origin) => {
-      if (this.now.repo) ctx.searchRepo?.(this.now.repo, origin);
-    });
+    }, () => ctx.placeCommands?.(['forge']) ?? [], deskSearch(ctx, () => this.now.repo));
     this.switcher.set('Forge', false);
     this.promptPaper = new PromptPaper(this.center,this.work,()=>this.promptWindow(false,true));
     this.prompt.addEventListener('focusin', () => this.hand('Prompt'));

@@ -6,7 +6,7 @@ import {expect, test} from './fixtures.ts';
 //   one degree      the frame is 2 cells (48 px, about 1° at arm's length) every way, on every screen
 //   receding        it takes no more of a desk screen than film's safe-action margin does (13.5%)
 //   one square      every place of the rail a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at 2 px
-//   constant        the rail the same where it stands; on work desks, a single Places key, beside Search when available
+//   constant        the rail the same where it stands; corners pair Search and Places even before a repo exists
 //   two sides       no work through the top strip, or through the desk's left measure (one cell in narrow Forge)
 //   quiet           at rest the frame's marks and words are the frame's quiet colour, its lines the quiet line, nothing
 //                   in it filled with ink; ink only on the place one is in and what is chosen there
@@ -14,8 +14,9 @@ import {expect, test} from './fixtures.ts';
 const U = 24, F = 2 * U;
 const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 1366, height: 768}, {width: 1024, height: 768}, {width: 390, height: 844}, {width: 320, height: 568}];
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
-const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)', FRAME_EDGE = 'rgb(110, 109, 106)';
-const CORNER = {forge: 'rgb(193, 190, 176)', git: 'rgb(193, 190, 176)', inbox: 'rgb(239, 235, 227)'} as const;
+const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)';
+const QUIET = 'rgb(193, 190, 176)', PAPER = 'rgb(239, 235, 227)';
+const CORNER: Partial<Record<typeof PLACES[number], string>> = {home: QUIET, forge: QUIET, git: QUIET, inbox: PAPER, runtime: QUIET};
 
 /** The frame as it stands now: run in the page. */
 function framed() {
@@ -29,9 +30,10 @@ function framed() {
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
   const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .forge-places-key, .forge-search-key, .sr-only';
-  // Forge takes a smaller left measure when the full rail is away on a narrow desk. The top strip is unchanged.
+  // A narrow desk can use one cell of left margin; the top strip does not change.
   const place = document.getElementById('page')?.dataset.place;
-  const left = (place === 'forge' || place === 'inbox') && matchMedia('(max-width: 999px)').matches ? 24 : F;
+  const one = place === 'home' ? 600 : place === 'forge' || place === 'inbox' ? 999 : 0;
+  const left = W <= one ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
     if (el.closest(own) || !shown(el) || el.children.length) continue;
@@ -109,7 +111,7 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
         if (f.door) expect(f.door, `${what}: the door`).toEqual([F, 6, F, 36]);
         // Constant: the rail the same in every place.
         const now = JSON.stringify(f.places.map((p) => [p.label, p.box, p.mark]));
-        if (place === 'forge' || place === 'git' || place === 'inbox') {
+        if (CORNER[place]) {
           expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
           expect(f.door, `${what}: no second way beside the Places key`).toBeNull();
           const key = (label: 'Places' | 'Search', right: number) => ({
@@ -117,9 +119,7 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
             mark: [size.width - right - 31, 25, 18, 18],
             expanded: label === 'Places' ? 'false' : null, color: CORNER[place], inked: false,
           });
-          const places = key('Places', 12);
-          expect(f.corners, `${what}: one quiet corner at rest`).toEqual(
-            place === 'inbox' ? [places] : [key('Search', 56), places]);
+          expect(f.corners, `${what}: Search and Places share one quiet corner`).toEqual([key('Search', 56), key('Places', 12)]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {
           expect(f.corners, `${what}: only the permanent rail here`).toHaveLength(0);
@@ -135,19 +135,20 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
   }
 });
 
-test('the frame is ink only under the hand: the band\'s line while its search is written in, a place\'s mark under the pointer', async ({signedIn: app}) => {
-  // (A repo to search in: with none the search is not there to be written in.)
-  await app.newRepo.make('hello');
+test('the frame is ink only under the hand: the corner and the rail each answer where pressed', async ({signedIn: app}) => {
   await app.rail.go('home');
-  const band = app.main.locator('.home-band .band-tools');
-  const line = () => band.evaluate((el) => getComputedStyle(el).outlineColor);
+  const search = app.main.getByRole('button', {name: 'Search', exact: true}), places = app.forge.placesKey;
   await app.page.mouse.move(800, 600);
-  await expect.poll(line).toBe(FRAME_EDGE);
-  await app.main.locator('.home-band .search-in').focus();
-  await expect.poll(line).toBe(INK);
+  await expect(search).toHaveCSS('color', QUIET);
+  await expect(places).toHaveCSS('color', QUIET);
+  await search.hover();
+  await expect(search).toHaveCSS('color', PAPER);
+  await expect(places).toHaveCSS('color', QUIET);
+
+  await app.rail.go('remote');
   const forge = app.rail.button('forge');
-  await app.page.locator('body').click({position: {x: 900, y: 700}});
-  await expect.poll(() => forge.evaluate((el) => getComputedStyle(el).color)).toBe(FRAME);
+  await app.page.mouse.move(800, 600);
+  await expect(forge).toHaveCSS('color', FRAME);
   await forge.hover();
-  await expect.poll(() => forge.evaluate((el) => getComputedStyle(el).color)).toBe(INK);
+  await expect(forge).toHaveCSS('color', INK);
 });

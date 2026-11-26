@@ -1,12 +1,12 @@
 import {searchScreen} from '../pages/bench/search-screen.ts';
 import {onRenamed, rekey} from '../../repo/repos.ts';
 
-/** Search is a real history step of a particular work desk, not a permanent purpose or shared URL. */
-interface Visit { repo: string; origin: string; place: string; query: string; carry: () => void }
+/** Search is a real history step of one desk, not a permanent purpose or shared URL. */
+interface Visit { repo: string | null; origin: string | null; place: string; query: string; carry: () => void }
 interface Trail {
   surfaces(): HTMLElement[];
   files(repo: string): string[];
-  restore(repo: string, place: string): void;
+  restore(repo: string | null, place: string): void;
   open(repo: string, path: string, line: number): void;
   name(): void;
 }
@@ -22,9 +22,11 @@ function keep(origin: Element | null, rejoin?: () => HTMLElement | null) {
     if (at.scrollTop || at.scrollLeft || at.scrollHeight > at.clientHeight || at.scrollWidth > at.clientWidth)
       scroll.push([at, at.scrollLeft, at.scrollTop]);
   }
+  const reachable = (el: HTMLElement | null | undefined): el is HTMLElement =>
+    !!el?.isConnected && !el.closest('[hidden], [inert]') && !!el.getClientRects().length;
   return () => {
-    const back = from?.isConnected ? from : rejoin?.();
-    if (!back || back.closest('[hidden], [inert]') || !back.getClientRects().length) return;
+    const back = reachable(from) ? from : rejoin?.();
+    if (!reachable(back)) return;
     back.focus({preventScroll: true});
     if (writing?.first != null && writing.last != null && (back instanceof HTMLTextAreaElement || back instanceof HTMLInputElement) && writing.value === back.value)
       back.setSelectionRange(writing.first, writing.last, writing.direction ?? undefined);
@@ -56,10 +58,10 @@ export class SearchTrail {
   get open() { return this.live !== null; }
 
   /** Don't store the repo or query in the address, or the browser's saved history. */
-  start(repo: string, place: string, origin: Element | null, rejoin?: () => HTMLElement | null) {
+  start(repo: string | null, place: string, origin: Element | null, rejoin?: () => HTMLElement | null) {
     if (this.live) return;
     const id = `${this.here}:${++this.next}`;
-    this.visits.set(id, {repo, origin: repo, place, query: this.queries.get(repo) ?? '', carry: keep(origin, rejoin)});
+    this.visits.set(id, {repo, origin: repo, place, query: (repo && this.queries.get(repo)) || '', carry: keep(origin, rejoin)});
     if (this.visits.size > 24) this.visits.delete(this.visits.keys().next().value!);
     history.pushState({place, search: id}, '');
     this.enter(id);
@@ -76,7 +78,7 @@ export class SearchTrail {
     this.leave(false);
     const visit = this.visits.get(id);
     if (!visit) return;
-    const files = (repo: string) => [...this.way.files(repo), ...(this.opened.get(repo) ?? [])];
+    const files = (repo: string | null) => repo ? [...this.way.files(repo), ...(this.opened.get(repo) ?? [])] : [];
     const screen = searchScreen(visit.repo, visit.query, files(visit.repo), {
       scope: (repo) => { visit.repo = repo; return files(repo); },
       back: () => {
@@ -84,7 +86,7 @@ export class SearchTrail {
         this.leaving = true;
         history.back();
       },
-      write: (query) => { visit.query = query; this.queries.set(visit.repo, query); },
+      write: (query) => { visit.query = query; if (visit.repo) this.queries.set(visit.repo, query); },
       open: (repo, path, line) => {
         if (this.leaving || visit.repo !== repo) return;
         this.opened.set(repo, [...new Set([path, ...(this.opened.get(repo) ?? [])])].slice(0, 5));

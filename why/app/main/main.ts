@@ -100,7 +100,7 @@ const searchTrail = new SearchTrail({
   surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
   files: repo => forgeOf?.searchPaths(repo) ?? [],
   restore(repo, place) {
-    if (place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
+    if (repo && place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
   },
   open(repo, path, line) {
     searchTrail.leave(false);
@@ -139,7 +139,7 @@ const ctx: Context = {
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
-    if (current !== 'home' && !isWorkPage(current)) return;
+    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime'] as const).some((desk) => current === desk)) return;
     ++asked;
     searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
   },

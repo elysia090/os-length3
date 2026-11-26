@@ -13,10 +13,28 @@ export interface PlaceCommand {
   onPress?: boolean;
 }
 
+type Find = (origin: Element | null) => void;
+
+export interface SearchDesk {
+  /** The repo in the hand, if any; an empty search can still look for an actual local scope. */
+  readonly repo: string | null;
+  searchRepo?(repo: string | null, origin?: Element | null, rejoin?: () => HTMLElement | null): void;
+}
+interface PlaceKeys<K> {
+  action?(place: K): boolean;
+  find?: Find;
+}
+
 let made = 0;
 
-/** One key and keyboard convention, with real routes supplied by the desk. */
-export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void, extra: () => readonly PlaceCommand[], action: (place: K) => boolean = () => false) {
+/** Route the corner key to the same Search, using the repo of the desk in hand, if any. */
+export function deskSearch(ctx: SearchDesk, repo: () => string | null = () => ctx.repo): Find {
+  return (origin) => ctx.searchRepo?.(repo(), origin, () => document.querySelector<HTMLElement>('#page .forge-search-key'));
+}
+
+/** One set of corner keys and keyboard conventions. This desk supplies the routes. */
+export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void,
+  extra: () => readonly PlaceCommand[], {action = () => false, find}: PlaceKeys<K> = {}) {
   const id = `work-places-${++made}`;
   const key = h('button', {class: 'forge-places-key', type: 'button', 'aria-label': t('Places'), 'aria-haspopup': 'menu',
     'aria-controls': id, 'aria-expanded': 'false'}, mark('places')) as HTMLButtonElement;
@@ -104,24 +122,29 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     }
     if (e.key === 'Tab') close(true);
   });
+  if (find) {
+    const search = h('button', {class: 'forge-search-key', type: 'button', 'aria-label': t('Search')}, mark('search'));
+    // The mouse usually takes focus from the paper before click. Return to that paper, not to the key by mistake.
+    let pressed: Element | null = null;
+    search.addEventListener('pointerdown', (event) => { if (event.isPrimary && event.button === 0) pressed = document.activeElement; });
+    search.addEventListener('pointercancel', () => { pressed = null; });
+    search.addEventListener('click', (event) => {
+      const before = event.detail !== 0 ? pressed : document.activeElement;
+      pressed = null;
+      close();
+      find(before && before !== document.body && !before.closest('[hidden], [inert]') ? before : search);
+    });
+    owner.append(search);
+  }
   owner.append(key, menu);
   return {key, set, close, drop: () => close()};
 }
 
 /** Document and issue desks use the same routes. */
-export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, extra: () => readonly PlaceCommand[], find: (origin?: Element | null) => void) {
+export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, extra: () => readonly PlaceCommand[], find: Find) {
   const promptIsAction = owner.classList.contains('forge-layout');
-  const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, extra, (place) => promptIsAction && place === 'Prompt');
-  const search = h('button', {class: 'forge-search-key', type: 'button', 'aria-label': t('Search'), hidden: ''}, mark('search'));
-  let pressed: Element | null = null;
-  search.addEventListener('pointerdown', (event) => { if (event.isPrimary && event.button === 0) pressed = document.activeElement; });
-  search.addEventListener('pointercancel', () => { pressed = null; });
-  search.addEventListener('click', (event) => {
-    menu.close(); find(event.detail !== 0 ? pressed : document.activeElement); pressed = null;
-  });
-  owner.insertBefore(search, menu.key);
+  const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, extra, {action: (place) => promptIsAction && place === 'Prompt', find});
   return {...menu, set: (place: WorkPlace, hasRepo: boolean) => {
-    search.hidden = !hasRepo;
     menu.set(place, (destination) => hasRepo || (destination !== 'Prompt' && destination !== 'Files'));
   }};
 }

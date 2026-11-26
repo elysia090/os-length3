@@ -43,10 +43,10 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
   --slot: var(--nighthawks-paper-selected);
   box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow);
 }
-#page[data-place='runtime'] .forge-places-key { --places-down: var(--nighthawks-shadow); color: var(--nighthawks-desk-quiet); }
-#page[data-place='runtime'] .forge-places-key:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--paper); }
+#page[data-place='runtime'] :is(.forge-places-key, .forge-search-key) { --places-down: var(--nighthawks-shadow); color: var(--nighthawks-desk-quiet); }
+#page[data-place='runtime'] :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--paper); }
 #page[data-place='runtime'] .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
-.place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-places) { display: none; }
+.place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
 .page[data-place='runtime'] .space-meter > span.app { background: var(--ink); }
 .page[data-place='runtime'] .legend { color: var(--sub); }
 .page[data-place='runtime'] .legend b { color: var(--ink); }

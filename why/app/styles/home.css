@@ -5,7 +5,7 @@
    the window's right edge. */
 .page:has(> .home-layout) { --body-left: 0px; padding: 0; }
 .page > .home-layout { position: relative; max-width: none; }
-/* No band or rail on the portrait. The same single Places key used by the working desks is enough here. */
+/* No band or rail on the portrait. The common corner keys leave the portrait free. */
 :is(body:has(> #page[data-place='home'] > .home-portrait), .place-left > .page[data-place='home']) {
   background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
 }
@@ -16,8 +16,8 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   container: home-portrait / inline-size;
   padding: calc(2 * var(--u) - var(--outer-top)) 0 0 calc(2 * var(--u) - var(--outer));
 }
-.home-portrait .forge-places-key { color: var(--nighthawks-desk-quiet); }
-.home-portrait .forge-places-key:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
+.home-portrait :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
+.home-portrait :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
 .home-portrait .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
 @media (max-width: 600px) { .page > .home-portrait { --name-cap: 2.25; padding-inline-start: calc(var(--u) - var(--outer)); } }
 /* The first capitals still stand together on the room's line; note and destinations have different depth. */

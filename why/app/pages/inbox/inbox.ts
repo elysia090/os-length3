@@ -11,7 +11,7 @@ import {whole} from '../../ui/whole.ts';
 import {pageHead} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {takeNext} from '../kit/next.ts';
-import {placesMenu} from '../kit/places.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
 import {signInBox, signInLead, signInPlace} from '../kit/sign-in.ts';
 import {unreachedError, unreachedPlace} from '../kit/unreached.ts';
@@ -20,6 +20,12 @@ import {InboxPapers, paperSwitch, recipientPaper} from './papers.ts';
 import {addressStub} from './usernames.ts';
 
 const PLACES = ['Server', 'Inbox'] as const;
+const inboxPlaces = (holder: HTMLElement, ctx: Context, showNames?: () => void) =>
+  placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
+    () => [
+      ...(showNames ? [{label: 'Your usernames', run: showNames}] : []),
+      ...(ctx.placeCommands?.(['server']) ?? []),
+    ], {find: deskSearch(ctx)});
 type OpenedLetter = Awaited<ReturnType<typeof inbox.thread>>;
 
 /** Don't carry the other account's drafts or opened names into a new Remote or sign-in. */
@@ -27,6 +33,11 @@ let kept: {scope: string; papers: InboxPapers} | null = null;
 
 export function inboxPage(ctx: Context): Node[] {
   const holder = h('div', {class: 'inbox-holder'});
+  const beforeDesk = (...nodes: Node[]) => {
+    holder.classList.remove('inbox-shell');
+    holder.replaceChildren(...nodes);
+    inboxPlaces(holder, ctx);
+  };
   let stopDesk: (() => void) | null = null;
   let reading = 0;
   const paint = async () => {
@@ -36,20 +47,17 @@ export function inboxPage(ctx: Context): Node[] {
     const from = connection();
     if (!from) {
       kept = null;
-      holder.classList.remove('inbox-shell');
-      holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you claim a username to receive reviews and questions.')), signInBox(() => void paint())));
+      beforeDesk(signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you claim a username to receive reviews and questions.')), signInBox(() => void paint())));
       return;
     }
     const me = await inbox.me().catch((e: unknown) => e instanceof Error ? e : new Error(errorText(e)));
     if (asked !== reading || !holder.isConnected) return;
     if (me instanceof Error) {
-      holder.classList.remove('inbox-shell');
-      holder.replaceChildren(unreachedError(me) ? unreachedPlace(t('Conversations will reappear once Remote responds'), () => void paint()) : h('p', {class: 'error'}, errorText(me)));
+      beforeDesk(unreachedError(me) ? unreachedPlace(t('Conversations will reappear once Remote responds'), () => void paint()) : h('p', {class: 'error'}, errorText(me)));
       return;
     }
     if (!me.addresses.length) {
-      holder.classList.remove('inbox-shell');
-      holder.replaceChildren(signInPlace(t('Claim username'), addressStub(me, () => void paint(), () => goToPlan(ctx)).holder));
+      beforeDesk(signInPlace(t('Claim username'), addressStub(me, () => void paint(), () => goToPlan(ctx)).holder));
       return;
     }
     const scope = JSON.stringify([from.url, me.account]);
@@ -85,15 +93,13 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
   const pane = h('section', {class: 'inbox-thread', tabindex: '-1', hidden: ''});
   const desk = h('div', {class: 'inbox-page'}, rows, over, pane);
   const names = h('div', {class: 'inbox-names', hidden: ''});
-  let menus: ReturnType<typeof placesMenu<typeof PLACES[number]>>;
   const stub = addressStub(me, again, () => goToPlan(ctx), () => { names.hidden = true; });
   names.append(stub.holder);
   const showNames = () => { names.hidden = false; stub.open(); };
   const maps = paperSwitch(papers, (key) => key === recipientPaper ? t('New message') : t('Conversation with {who}', {who: name(key)}), (key) => void take(key));
 
   holder.replaceChildren(title, desk, maps.element, names);
-  menus = placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
-    () => [{label: 'Your usernames', run: showNames}, ...(ctx.placeCommands?.(['server']) ?? [])]);
+  const menus = inboxPlaces(holder, ctx, showNames);
 
   const unread = (th: inbox.Thread) => th.unread > 0 && th.last.time > (readThrough.get(th.address) ?? -1);
   const updateIndex = () => {

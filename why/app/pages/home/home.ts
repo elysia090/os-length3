@@ -24,7 +24,7 @@ import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
 import {nudge} from '../../ui/glide.ts';
 import {whole} from '../../ui/whole.ts';
-import {placesMenu} from '../kit/places.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -76,16 +76,14 @@ export function home(ctx: Context): Node[] {
   return [portrait(main, ctx, listed)];
 }
 
-/** Home is not a toolbar. What is written stays at rest, and the existing Places key is its only frame. */
+/** Home is not a toolbar. The common corner keys leave its writing at rest. */
 function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
   const layout = h('div', {class: 'home-layout home-portrait'}, main);
   let repo = ctx.repo;
   void listed.then((repos) => {
     if (repos && !repos.some((r) => r.name === repo)) repo = repos[0]?.name ?? null;
   });
-  function find(anchor: Element | null) {
-    if (repo) ctx.searchRepo?.(repo, anchor, () => document.querySelector('#page .home-portrait .forge-places-key'));
-  }
+  const find = deskSearch(ctx, () => repo);
   const places = placesMenu(layout, ['Home'], 'Home', () => {}, () => {
     const at = repo;
     return [
@@ -96,15 +94,14 @@ function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
       {label: 'Remote', run: () => void ctx.go('remote')},
       {label: 'Runtime', run: () => void ctx.go('runtime')},
       ...(at ? [
-        {label: 'Search', run: (key: HTMLElement) => find(key)},
         {label: 'Prompt', run: () => { void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); }},
       ] : []),
       ...(ctx.placeCommands?.(['home', 'forge', 'server', 'runtime', 'new-repo']) ?? []),
     ];
-  });
+  }, {find});
   function keys(event: KeyboardEvent) {
     if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
-    if (!repo || !(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || layout.closest('[inert]')) return;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || layout.closest('[inert]')) return;
     const k = event.key.toLowerCase();
     if (((k === 'k' || k === 'p') && !event.shiftKey) || (k === 'f' && event.shiftKey)) {
       event.preventDefault();

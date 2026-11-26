@@ -6,7 +6,7 @@ import {connection} from '../../../shipto/connection.ts';
 import {deviceStateKey} from './device-state.ts';
 import {readSpace} from '../../../device/space.ts';
 import {pageHead, parts} from '../kit/common.ts';
-import {placesMenu} from '../kit/places.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
 import type {Context} from '../kit/context.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -81,7 +81,7 @@ export function runtime(ctx: Context): Node[] {
   page.panel('agent').append(agentSection());
   const head = pageHead('runtime', false);
   // Runtime keeps the page and its parts; navigation moves from the rail to the same Places as the work desks.
-  placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? []);
+  placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? [], {find: deskSearch(ctx)});
   return [head, h('div', {class: 'part-bar'}, page.switch),
     page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles'), page.panel('agent')];
 }
