@@ -172,7 +172,8 @@ test('the real shell reaches Git and back from one corner, including browser his
     await expect(root.getByRole('heading', {name: 'Forge', exact: true})).toBeVisible();
     await expect(rail).toBeHidden();
     await key.click();
-    await expect(places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
+    await expect(places.getByRole('menuitemradio')).toHaveText(['Forge', 'Files', 'Git']);
+    await expect(places.getByRole('menuitem', {name: 'Prompt', exact: true})).toBeEnabled();
     await expect(peer('Forge')).toHaveAttribute('aria-checked', 'true');
     await peer('Git').click();
     await expect(root).toHaveAttribute('data-place', 'git');
@@ -200,7 +201,8 @@ test('the real shell reaches Git and back from one corner, including browser his
     await expect(tree).toBeHidden();
     await choose('Prompt');
     await expect(root).toHaveAttribute('data-place', 'forge');
-    await expect(root.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
+    await expect(root.getByRole('heading', {name: 'Forge', exact: true, level: 1})).toBeVisible();
+    await expect(root.getByRole('heading', {name: 'Prompt', exact: true, level: 2})).toBeVisible();
     await expect(root.getByRole('textbox', {name: 'Prompt input', exact: true})).toBeFocused();
     await choose('Git');
     await expect(root).toHaveAttribute('data-place', 'git');
@@ -226,7 +228,8 @@ test('with no managed repo, Forge and Git remain peers without offering Files or
     const places = root.getByRole('menu', {name: 'Places', exact: true});
     await expect(root.getByRole('button', {name: 'Open Folder', exact: true})).toBeVisible();
     await key.click();
-    for (const name of ['Files', 'Prompt']) await expect(places.getByRole('menuitemradio', {name, exact: true})).toBeDisabled();
+    await expect(places.getByRole('menuitemradio', {name: 'Files', exact: true})).toBeDisabled();
+    await expect(places.getByRole('menuitem', {name: 'Prompt', exact: true})).toBeDisabled();
     await places.getByRole('menuitemradio', {name: 'Git', exact: true}).click();
     await expect(root).toHaveAttribute('data-place', 'git');
     await expect(root.getByRole('button', {name: /Create your first repo/})).toBeVisible();

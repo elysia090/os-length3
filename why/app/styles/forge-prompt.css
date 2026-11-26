@@ -1,8 +1,8 @@
 /* The shell is a companion of the same Forge desk. Its material begins at the document edge. */
 body.forge-place .forge-layout .desk-room[data-prompt-open] {
-  --prompt-edge: 24px;
+  --prompt-bay-inset: 24px;
   --prompt-paper: min(580px, max(244px, calc(53% - 112px)));
-  --prompt-tool: min(800px, calc(100% - var(--prompt-paper) - 12px - var(--prompt-edge)));
+  --prompt-tool: min(800px, calc(100% - var(--prompt-paper) - 12px - var(--prompt-bay-inset)));
 }
 body.forge-place .forge-layout .desk-room[data-prompt-open] > .desk {
   inset-inline-end: calc(100% - var(--prompt-paper));
@@ -12,14 +12,14 @@ body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
   --line: 18px;
   --term-inset: 12px;
   --term-text-start: 24px;
-  --prompt-band: 22px;
+  --prompt-band-height: 22px;
   --term-scroll-width: 8px;
   --term-visible-rows: 20;
   --tallest: min(calc(var(--term-visible-rows) * var(--line) + 2 * var(--term-inset)), calc(100dvh - var(--forge-top) - 48px));
   font: var(--t-word)/var(--line) var(--mono);
   width: var(--prompt-tool) !important;
-  left: auto; right: var(--prompt-edge);
-  top: calc(24px - var(--prompt-band) - 1px); /* header stands above Forge's paper edge */
+  left: auto; right: var(--prompt-bay-inset);
+  top: calc(24px - var(--prompt-band-height) - 1px); /* header stands above Forge's paper edge */
   border-radius: 0;
   outline: 1px solid var(--prompt-edge);
   z-index: 6;
@@ -48,7 +48,7 @@ body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot.hel
 /* Two real directions at the ends. The MV's three fine rules become an ordered rail:
    one section per open shell, darker where the hand is, press another to go straight there. */
 body.forge-place .terminal-paper-head {
-  height: var(--prompt-band); box-sizing: border-box; display: grid;
+  height: var(--prompt-band-height); box-sizing: border-box; display: grid;
   grid-template-columns: var(--term-text-start) auto minmax(0,1fr) var(--term-text-start);
   align-items: center;
   background: var(--prompt-band); color: var(--prompt-ink);
@@ -123,10 +123,10 @@ body.forge-place .forge-layout .row-piece:focus-visible { outline-color: var(--s
   /* The same companion lies below the paper when a useful right bay does not fit. */
   body.forge-place .forge-layout .desk-room[data-prompt-open] {
     --prompt-narrow-top: min(310px,42dvh);
-    --prompt-tool: calc(100% - var(--prompt-edge));
+    --prompt-tool: calc(100% - var(--prompt-bay-inset));
   }
   body.forge-place .forge-layout .desk-room[data-prompt-open] > .desk {
-    inset-inline-end: 0;
+    inset-inline-end: var(--forge-origin);
     inset-block-end: calc(100% - var(--prompt-narrow-top) + var(--forge-top) + var(--s1));
   }
   body.forge-place .forge-layout .desk-room[data-prompt-open] > .row-map {
@@ -135,7 +135,7 @@ body.forge-place .forge-layout .row-piece:focus-visible { outline-color: var(--s
   body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
     top: calc(var(--prompt-narrow-top) - var(--forge-top) + var(--u));
     --tallest: min(calc(var(--term-visible-rows) * var(--line) + 2 * var(--term-inset)),
-      calc(100dvh - var(--prompt-narrow-top) - var(--prompt-band) - var(--s2)));
+      calc(100dvh - var(--prompt-narrow-top) - var(--prompt-band-height) - var(--s2)));
   }
 }
 

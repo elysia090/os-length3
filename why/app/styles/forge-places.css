@@ -184,6 +184,7 @@ body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tr
   :is(body.forge-place, .place-left > .page[data-place='forge']) {
     --forge-origin: 24px; --forge-slot: 24px; --forge-slot-width: calc(100vw - 48px);
   }
+  .forge-layout .desk { inset-inline-end: var(--forge-origin); }
   .forge-layout .desk-room[data-place='Files'] > :is(.desk, .row-map) { visibility: hidden; }
 }
 .file-tree.on-forge-desk:has(.tree-row-asking) :is(.tree-quick-root, .tree-desk-close) { visibility: hidden; }
