@@ -1,7 +1,7 @@
 //! Work on an issue: a line of its own on the Remote (a branch) and a copy of its own here (a worktree, repo/lines.rs),
 //! neither of which the person names or manages. Choosing to work on an issue makes both and puts that copy where
 //! the repo is seen (/root/<repo> in File, Forge and the Prompt); going back to main puts main's copy there again;
-//! a work merged is finished, its copy here given back.
+//! a merged work is detached; local copies are retained for deliberate recovery or cleanup.
 
 use crate::history::{Change, changes_of_repo, listed};
 use crate::repo::lines::{current, line_for, MAIN, set_current, valid, worktree};
@@ -64,28 +64,20 @@ fn show(repos: &Repos, repo: &str, line: &str) -> Result<()> {
     set_current(repo, MAIN)
 }
 
-/// A work whose change was merged is done: what it holds is on the Remote (its line's draft
-/// and commits), so the repo shows main again if it showed the work, and its copy here goes.
-/// Returns the bytes given back.
-pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
-    if line == MAIN || !valid(line) { return Ok(0); }
-    let at = worktree(repo, line);
-    if !at.is_dir() { return Ok(0); }
-    if current(repo) == line {
-        if shipto::connection().is_some() { shipto::sync(repos, repo)?; }
+/// Detach a finished work. It may still hold unsent edits, including from another
+/// device's merge or a process writing after the commit; a status read never removes it.
+fn finish(repo: &str, line: &str) -> Result<()> {
+    if line != MAIN && valid(line) && current(repo) == line {
         set_current(repo, MAIN)?;
         crate::agent::tasks::back_on_main(repo);
     }
-    let size = crate::fs::size::allocated(&at);
-    fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
-    shipto::forget_line(repo, line)?;
-    Ok(size)
+    Ok(())
 }
 
-/// Merge, and the work is done: the repo shows main again, and the work's copy here goes.
-pub fn merge_and_finish(repos: &Repos, repo: &str, line: &str) -> Result<Change> {
+/// Merge and detach the work without discarding anything this device holds.
+pub fn merge_and_finish(_repos: &Repos, repo: &str, line: &str) -> Result<Change> {
     let c = crate::history::merge(repo, line)?;
-    finish(repos, repo, &c.line)?;
+    finish(repo, &c.line)?;
     crate::history::remember_merged(repo, std::iter::once(c.issue.clone()));
     Ok(c)
 }
@@ -138,23 +130,14 @@ pub struct Standing {
 
 /// `work`, from the repo's lines and changes as the Remote just answered them (`asked`), when they were asked already.
 fn work_from(repos: &Repos, repo: &str, asked: Option<(&[crate::shipto::Line], &[Change])>) -> Result<Work> {
-    // A work merged (here or on another device) is done: back to main, and its copy goes. The changes are asked of
-    // the Remote only when there is a copy here: with none, there is nothing to let go of, and the work shown is main
-    // (most repos, most of the time), which Forge and Git asked about each time they drew the repo.
-    let copies = crate::repo::lines::worktrees(repo);
-    let mut listed = asked.map(|(_, changes)| changes.to_vec());
-    if !copies.is_empty() {
-        let list = match &listed { Some(l) => Ok(l.clone()), None => changes_of_repo(repo) };
-        let merged: Vec<&str> = list.iter().flatten().filter(|c| c.state == "merged").map(|c| c.line.as_str()).collect();
-        for (line, _) in &copies {
-            // A merged work's copy that cannot go now is tried again the next time the issues are read.
-            if merged.contains(&line.as_str()) { let _ = finish(repos, repo, line); }
-        }
-        listed = list.ok();
-    }
+    // Main needs no per-work read. A merged work is detached but its local files are never removed here.
     let on = repos.line(repo);
-    if on == crate::repo::lines::MAIN {
-        return Ok(Work { line: on, issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None });
+    let on_main = || Work { line: MAIN.into(), issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None };
+    if on == MAIN { return Ok(on_main()); }
+    let listed = match asked { Some((_, changes)) => changes.to_vec(), None => changes_of_repo(repo)? };
+    if listed.iter().any(|c| c.state == "merged" && c.line == on) {
+        finish(repo, &on)?;
+        return Ok(on_main());
     }
     // The work's line as the Remote answered it with the others, or asked of it.
     let l = match asked.and_then(|(lines, _)| lines.iter().find(|x| x.line == on)) {
@@ -162,8 +145,7 @@ fn work_from(repos: &Repos, repo: &str, asked: Option<(&[crate::shipto::Line], &
         None => crate::shipto::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?,
     };
     let (commits, unpushed) = crate::history::progress(repo, &l)?;
-    // The list read above, when it was: what was let go of meanwhile was merged, never the work shown.
-    let change = match listed { Some(list) => list, None => changes_of_repo(repo)? }.into_iter().find(|c| c.line == on);
+    let change = listed.into_iter().find(|c| c.line == on);
     Ok(Work { line: on, issue: Some(l.issue), started_by: l.started_by, started_at: l.started_at, commits, unpushed, change })
 }
 

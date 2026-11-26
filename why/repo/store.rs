@@ -68,6 +68,7 @@ pub struct Repos {
     /// Whether a repo here is seen through the work it is on (repo/history/work.rs):
     /// the person's repos on the host are; a Prompt's /root and tests are not.
     lines: bool,
+    selected: Option<(String, String)>,
 }
 
 impl Repos {
@@ -82,7 +83,14 @@ impl Repos {
 
     /// The same repos seen on main, whatever work each shows now: an issue is main's (its file is read, written and
     /// committed there), so it is the same issue from the work on it as from anywhere else.
-    pub fn on_main(&self) -> Repos { Repos { root: self.root.clone(), lines: false } }
+    pub fn on_main(&self) -> Repos { Repos { root: self.root.clone(), lines: false, selected: None } }
+
+    /// A command keeps the copy it was invoked on even if the visible work switches during a Remote wait.
+    pub(crate) fn on_line(&self, repo: &str, on: &str) -> Result<Repos> {
+        self.repo(repo)?;
+        if !crate::repo::lines::valid(on) { return Err(tr!("Invalid work line", "作業の名前が無効です")); }
+        Ok(Repos { root: self.root.clone(), lines: self.lines, selected: Some((repo.into(), on.into())) })
+    }
 
     pub fn new(root: PathBuf) -> Result<Repos> {
         // Inside the Prompt the repos are the guest's /root; on the host
@@ -92,11 +100,14 @@ impl Repos {
         } else {
             fs::create_dir_all(&root).map_err(|e| io_error(root.display(), &e))?;
         }
-        Ok(Repos { root, lines: false })
+        Ok(Repos { root, lines: false, selected: None })
     }
 
     /// The line of work `name` shows now: main, or an issue's (repo/history/work.rs).
     pub fn line(&self, name: &str) -> String {
+        if let Some((_, on)) = self.selected.as_ref().filter(|(repo, _)| repo == name) {
+            return on.clone();
+        }
         if self.lines { crate::repo::lines::current(name) } else { crate::repo::lines::MAIN.into() }
     }
 
@@ -104,10 +115,7 @@ impl Repos {
     /// worktree of the issue it is being worked on for.
     pub fn place(&self, name: &str) -> Result<PathBuf> {
         let main = self.repo(name)?;
-        if !self.lines {
-            return Ok(main);
-        }
-        let line = crate::repo::lines::current(name);
+        let line = self.line(name);
         Ok(if line == crate::repo::lines::MAIN { main } else { crate::repo::lines::worktree(name, &line) })
     }
 

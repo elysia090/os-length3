@@ -51,7 +51,10 @@ struct ReviewBasis {
 fn pinned_basis(r: &Review) -> Option<ReviewBasis> {
     let [mark] = r.marks.as_slice() else { return None };
     let b: ReviewBasis = serde_json::from_str(mark.strip_prefix(PIN)?).ok()?;
-    (b.revision.version == r.version).then_some(b)
+    let digest = |s: &str| s.len() == 64 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    (b.revision.version == r.version && digest(&b.revision.head) && b.base.as_deref().is_none_or(digest) &&
+        b.lines.len() <= 200 && b.lines.iter().all(|l| !l.path.is_empty() && l.path.len() <= 4096 &&
+            l.line > 0 && l.path.split('/').all(|x| !x.is_empty() && x != "." && x != ".."))).then_some(b)
 }
 
 fn change_raw(client: &Client, repo: &str, id: &str) -> Result<Change> {
@@ -70,6 +73,14 @@ fn stored_base(c: &Change, expected: &Revision) -> Result<Option<String>> {
 fn pinned_diff(client: &Client, repo: &str, base: Option<&str>, head: &str, limit: usize) -> Result<Vec<FileDiff>> {
     let (then, now) = differ(client, repo, base, head)?;
     diff_of(pairs(Some(client), After::Remote(client), &then, &now)?, limit)
+}
+
+/// Read a batch on a work before it is offered for review. It is bounded as any other diff.
+pub fn work_diff_at(repo: &str, on: &str, head: &str, limit: usize) -> Result<Vec<FileDiff>> {
+    if !crate::repo::lines::valid(on) || on == crate::repo::lines::MAIN { return Err(crate::tr!("Invalid work line", "作業の名前が無効です")); }
+    let line = shipto::line(repo, on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
+    if line.head.as_deref() != Some(head) { return Err(crate::tr!("The work shown changed; read it before committing", "表示中の作業が変わりました。読み直してからコミットしてください")); }
+    pinned_diff(&Client::open()?, repo, line.base.as_deref(), head, limit)
 }
 
 /// Read a submitted revision or one pinned by a persisted review. Do not let a client supply arbitrary cut pairs.
@@ -92,8 +103,12 @@ pub fn change_line_source(repo: &str, id: &str, expected: &Revision, line: &Revi
     let side = match line.side { Side::Old => then, Side::New => now };
     let sha = side.get(&line.path).and_then(Option::as_deref)
         .ok_or_else(|| crate::tr!("This file is not in the recorded change", "このファイルは記録された変更にありません"))?;
-    super::changes::text(&super::changes::blob(&client, sha)?)
-        .ok_or_else(|| crate::tr!("This file is not text", "このファイルはテキストではありません"))
+    let source = super::changes::text(&super::changes::blob(&client, sha)?)
+        .ok_or_else(|| crate::tr!("This file is not text", "このファイルはテキストではありません"))?;
+    if line.line == 0 || source.split_terminator('\n').nth(line.line - 1).is_none_or(|text| text.trim().is_empty()) {
+        return Err(crate::tr!("A marked line is not present in this review", "指定行がこのレビューにありません"));
+    }
+    Ok(source)
 }
 
 /// A review of the displayed version. A mark must be present in that diff, as shown in the product.
@@ -108,8 +123,8 @@ pub fn review_at(repo: &str, id: &str, expected: &Revision, verdict: &str, note:
         let files = pinned_diff(&client, repo, base.as_deref(), &expected.head, limit)?;
         if !lines.iter().all(|m| files.iter().any(|f| f.path == m.path && !f.binary && f.lines.iter().any(|l| {
             !l.text.trim().is_empty() && match m.side {
-                Side::Old => l.kind == "del" && l.old == Some(m.line),
-                Side::New => l.kind != "del" && l.new == Some(m.line),
+                Side::Old => l.old == Some(m.line),
+                Side::New => l.new == Some(m.line),
             }
         }))) { return Err(crate::tr!("A marked line is not present in this review", "指定行がこのレビューにありません")); }
     }
@@ -120,12 +135,31 @@ pub fn review_at(repo: &str, id: &str, expected: &Revision, verdict: &str, note:
     serde_json::from_value(v).map_err(|e| e.to_string())
 }
 
-pub fn merge_at(repo: &str, id: &str, expected: &Revision) -> Result<Change> {
+pub fn merge_at(repos: &Repos, repo: &str, id: &str, expected: &Revision) -> Result<Change> {
+    let client = Client::open()?;
+    let c = change_raw(&client, repo, id)?;
+    if c.version == expected.version && c.head == expected.head {
+        let work = crate::repo::lines::worktree(repo, &c.line);
+        if work.is_dir() {
+            let copy = repos.on_line(repo, &c.line)?;
+            let key = shipto::key_of(repo, &c.line);
+            let local = shipto::local_tree_fresh(&copy.dir(repo)?);
+            let recorded = super::changes::head_tree(&client, repo, &key, Some(&expected.head))?;
+            if !local.unsynced.is_empty() || local.tree != recorded {
+                return Err(crate::tr!("Commit and submit the remaining work before merging", "残りの作業をコミットして提出してから Merge してください"));
+            }
+        }
+    }
     let v = change_call(repo, id, "merge/pinned", serde_json::json!({"version": expected.version, "head": expected.head}))?;
     let merged: Change = serde_json::from_value(v).map_err(|e| e.to_string())?;
     crate::agent::tasks::issue_over(repo, &merged.issue);
     remember_merged(repo, std::iter::once(merged.issue.clone()));
     Ok(merged)
+}
+
+pub fn reject_at(repo: &str, id: &str, expected: &Revision, note: &str) -> Result<Change> {
+    let v = change_call(repo,id,"reject/pinned",serde_json::json!({"version":expected.version,"head":expected.head,"note":note}))?;
+    serde_json::from_value(v).map_err(|e| e.to_string())
 }
 
 /// Reset: take back the change the work handed in (its author's decision).
@@ -233,7 +267,8 @@ pub fn submit_at(repos: &Repos, repo: &str, on: &str, head: &str, note: &str) ->
     if on == crate::repo::lines::MAIN || repos.line(repo) != on {
         return Err(crate::tr!("The work shown changed; read it before submitting", "表示中の作業が変わりました。読み直してから提出してください"));
     }
-    let (kind, title, _) = words(repos, repo, None, "")?;
+    let copy = repos.on_line(repo, on)?;
+    let (kind, title, _) = words(&copy, repo, None, "")?;
     let client = Client::open()?;
     let v = client.call("POST", &format!("/v1/repos/{repo}/changes/submit"), Some(serde_json::json!({
         "line": on, "head": head, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim(),

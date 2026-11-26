@@ -295,34 +295,64 @@ test('an issue is worked on in its own copy; commits wait for explicit Submit be
   // The repo shows the work's copy: what main has, as of its last commit.
   assert.equal((await history.work('notes')).line, '001');
   assert.equal(await text('notes', 'issue/001.md'), 'Fix：落ちる\n');
-  await store.add('notes', '', 'fix.txt', 'fixed\n');
+  await store.add('notes', '', 'fix.txt', 'fixed first\n');
   const c = await history.cut('notes', null, '', 'first');
   assert.deepEqual([c.kind, c.title, c.issue], ['Fix', '落ちる', 'issue/001.md']);
+  await store.write('notes', 'fix.txt', 'fixed first\nfixed again\n');
+  const second = await history.cut('notes', null, '', 'second');
   const w = await history.work('notes');
-  assert.deepEqual([w.line, w.commits, w.unpushed, w.change], ['001', 1, 1, null]);
+  assert.deepEqual([w.line, w.commits, w.unpushed, w.change], ['001', 2, 2, null]);
   assert.deepEqual(await history.changesOf('notes'), []);
-  await history.submitAt('notes', w.line, c.id);
+  assert.deepEqual((await history.workDiffAt('notes', '001', second.id))[0].lines.map((l) => l.new), [1, 2]);
+  await assert.rejects(history.submitAt('notes', w.line, c.id), /changed|変わ/);
+  await history.submitAt('notes', w.line, second.id);
   const ch = (await history.changesOf('notes'))[0];
   assert.deepEqual([ch.version, ch.state, ch.folders, ch.files], [1, 'open', [''], 1]);
-  const reviewed = await history.review('notes', ch, 'approve', 'good');
+  const ref = {path: 'fix.txt', side: 'new' as const, line: 2};
+  const note = await history.reviewAt('notes', ch, 'comment', crypto.randomUUID(), 'Second line', [ref]);
+  assert.equal(note.reviews[0].verdict, 'comment');
+  await assert.rejects(history.reviewAt('notes', ch, 'comment', crypto.randomUUID(), 'Absent', [{...ref, line: 3}]), /not present/);
+  await assert.rejects(history.mergeAt('notes', ch), /Approve/);
+  const reviewed = await history.reviewAt('notes', ch, 'approve', crypto.randomUUID());
   assert.equal(reviewed.reviews[0].verdict, 'approve');
-  const d = await history.changeDiff('notes', ch);
-  assert.deepEqual(d.map((f) => [f.path, f.status]), [['fix.txt', 'added']]);
+  await store.write('notes', 'fix.txt', 'fixed\n');
+  await assert.rejects(history.mergeAt('notes', ch), /remaining work/);
+  const third = await history.cut('notes', null, '', 'third');
+  assert.equal((await history.changesOf('notes'))[0].head, second.id);
+  await assert.rejects(history.mergeAt('notes',ch), /remaining work|latest work/);
+  await history.submitAt('notes', w.line, third.id);
+  const latest = (await history.changesOf('notes'))[0];
+  assert.equal(latest.version, 2);
+  await assert.rejects(history.reviewAt('notes', ch, 'approve', crypto.randomUUID()), /newer version/);
+  await assert.rejects(history.mergeAt('notes', latest), /Approve/);
+  assert.deepEqual((await history.changeDiffAt('notes', ch.id, ch))[0].lines.map((l) => l.text), ['fixed first', 'fixed again']);
+  assert.deepEqual((await history.changeDiffAt('notes', latest.id, latest))[0].lines.map((l) => l.text), ['fixed']);
+  assert.equal(await history.lineSource('notes', ch.id, ch, ref), 'fixed first\nfixed again\n');
+  await history.reviewAt('notes', latest, 'approve', crypto.randomUUID());
   // main does not have it until it is merged.
   await history.switchWork('notes', 'main');
   assert.ok(!(await names('notes')).includes('fix.txt'));
-  const merged = await history.merge('notes', (await history.changesOf('notes'))[0]);
+  const merged = await history.mergeAt('notes', latest);
   assert.equal(merged.state, 'merged');
   await draft.sync('notes');
   assert.equal(await text('notes', 'fix.txt'), 'fixed\n');
-  // The merged work's copy here goes the next time where the repo stands is read. After that, on main with no copy,
-  // that asks the Remote nothing; and a change listed again asks for neither of its commits' trees.
+  // Where the repo stands never removes a worktree, including edits from a second device while main is shown.
+  // On main it asks the Remote nothing; a listed change doesn't ask for either tree again.
   assert.equal((await history.work('notes')).line, 'main');
   asked.length = 0;
   assert.equal((await history.work('notes')).line, 'main');
   assert.deepEqual(asked, []);
   assert.deepEqual((await history.changesOf('notes')).map((x) => [x.state, x.folders, x.files]), [['merged', [''], 1]]);
   assert.deepEqual(asked, ['/v1/repos/notes/changes']);
+  // Another writer could still write into the now-detached worktree. A read of standing must not delete it.
+  await history.switchWork('notes', '001');
+  await store.add('notes', '', 'kept-work.txt', 'kept on this device\n');
+  assert.equal((await history.work('notes')).line, 'main');
+  await history.switchWork('notes', '001');
+  assert.equal(await text('notes', 'kept-work.txt'), 'kept on this device\n');
+  assert.equal((await history.work('notes')).line, 'main');
+  assert.equal(await text('notes', 'kept-work.txt').catch(() => null), null);
+
 });
 
 test('a page asks the Remote only what moved, and reads again only that', async () => {

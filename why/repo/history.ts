@@ -19,14 +19,15 @@ export interface Folder { folder: string; files: FileChange[]; added: number; re
 export interface Changes { connected: boolean; folders: Folder[]; files: number; added: number; removed: number }
 export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null }
 export type {DiffLine} from './linediff.ts';
-export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number; added?: number; removed?: number }
+export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number; added?: number; removed?: number; approximate?: boolean }
 
 export const changes = (repo: string) => core<Changes>('history_changes', {repo});
 /** How many files `changes` would list, none of them read for their lines. */
 export const mainChanges = (repo: string) => core<Changes>('history_main_changes', {repo});
+export const workDiffAt = (repo: string, on: string, head: string) => core<FileDiff[]>('history_line_diff_at', {repo, on, head});
 export const logOf = (repo: string, on: string) => core<Cut[]>('history_line_log', {repo, on});
 export const changed = (repo: string) => core<number>('history_changed', {repo});
-export const diff = (repo: string) => core<FileDiff[]>('history_diff', {repo});
+export const diff = (repo: string, on?: string) => core<FileDiff[]>('history_diff', {repo,on});
 export const log = (repo: string) => core<Cut[]>('history_log', {repo});
 
 /** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
@@ -104,3 +105,5 @@ export const changeDiffAt = (repo: string, id: string, expected: Revision): Prom
   core<FileDiff[]>('change_diff_at', {repo, id, expected: revisionOf(expected)});
 export const lineSource = (repo: string, id: string, expected: Revision, line: ReviewLine): Promise<string> =>
   core<string>('change_line_source', {repo, id, expected: revisionOf(expected), line});
+export const rejectAt = (repo: string, c: Change, note = ''): Promise<Change> =>
+  core<Change>('change_reject_at', {repo, id: c.id, expected: revisionOf(c), note});

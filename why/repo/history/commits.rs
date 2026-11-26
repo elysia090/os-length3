@@ -139,15 +139,14 @@ pub fn cut_on(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: 
     if expected.is_some_and(|it| it != on) {
         return Err(crate::tr!("The work shown changed; read it before committing", "表示中の作業が変わりました。読み直してからコミットしてください"));
     }
+    let copy = repos.on_line(repo, &on)?;
+    let repos = &copy;
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
         return Err(crate::tr!("Commit requires a title (e.g. Fix: title)", "コミットにはタイトルが必要です（例：Fix: 件名）"));
     }
     let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (why login)", "コミットは Remote に残ります。先に Remote にサインインしてください（why login）"))?;
     for _ in 0..4 {
-        if repos.line(repo) != on {
-            return Err(crate::tr!("The work shown changed; read it before committing", "表示中の作業が変わりました。読み直してからコミットしてください"));
-        }
         let s = shipto::sync(repos, repo)?;
         if let Some((path, why)) = s.unsynced.first() {
             return Err(crate::tr!("Something cannot be sent to the Remote ({}: {}); make it sendable, then commit", "Remote に送れないものがあります（{}: {}）。送れるようにしてから Commit してください", path, why));

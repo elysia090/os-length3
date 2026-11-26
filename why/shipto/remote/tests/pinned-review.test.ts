@@ -49,6 +49,11 @@ test('Commit remains on the work; Submit publishes one pinned batch; comments an
   const comment = {version: 1, head: b, verdict: 'comment', note: 'This returns success.', lines, request: crypto.randomUUID()};
   assert.equal((await post(comm, {...comment, head: a})).status, 409);
   assert.equal((await post(comm, {...comment, lines: [{path: '../secrets', side: 'new', line: 3}]})).status, 400);
+  for (const m of [{path:'src/main.c',side:'old',line:2}, {path:'src/main.c',side:'new',line:4},
+    {path:'nothing.c',side:'new',line:1}, {path:'issue/001.md',side:'new',line:1}]) {
+    const no = await post(comm, {...comment, lines:[m]});
+    assert.deepEqual([no.status,no.json.error], [400,'A marked line is not present in this review']);
+  }
   assert.equal((await post(comm, {...comment, lines: Array.from({length: 201}, (_, j) => ({...lines[0], line: j+1}))})).status, 400);
   assert.equal((await post(comm, {...comment, lines: Array.from({length: 48}, (_, j) => ({...lines[0], path: 'a'.repeat(900), line: j+1}))})).status, 400);
   assert.equal((await post(comm, {...comment, verdict: 'changes'})).status, 400);
@@ -63,13 +68,21 @@ test('Commit remains on the work; Submit publishes one pinned batch; comments an
   assert.equal((await post(merge, {version: 1, head: b})).status, 409);
   const approve = (version: number, head: string) => post(comm, {version, head, note: '', lines: [], verdict: 'approve', request: crypto.randomUUID()});
   assert.equal((await approve(1,b)).status, 201);
+  const markers = await draft();
+  assert.equal((await s.call('PATCH', r + '/draft?line=001', {token, body:{version:markers.json.version, set:{'unsent.txt':await put('more work')}, remove: []}})).status, 200);
+  const dirty = await post(merge, {version:1,head:b});
+  assert.deepEqual([dirty.status, dirty.json.error],[409,'Commit and submit the remaining work before merging']);
   const c = await update('001', {'src/main.c': await put('\nint main(void) {\n    return 2;\n}\n')}, 'Move and change the line');
+  const pending = await post(merge, {version:1,head:b});
+  assert.deepEqual([pending.status, pending.json.error],[409,'Submit the latest work before merging']);
+  assert.equal((await draft()).json.head,c);
   const v2 = await submit(c);
   assert.equal(v2.json.version, 2);
   assert.equal(v2.json.head, c);
   assert.equal((await post(comm, {...comment, request: crypto.randomUUID()})).status, 409);
   assert.equal((await post(comm, comment)).status, 200);
   assert.equal((await approve(1,b)).status, 409);
+  assert.equal((await post('/changes/' + id + '/reject/pinned', {version:1,head:b})).status,409);
   assert.equal((await post(merge, {version: 2, head: b})).status, 409);
   assert.equal((await post(merge, {version: 2, head: c})).status, 409);
   const legacy = v2.json.reviews as {id:string; marks:string[]}[];

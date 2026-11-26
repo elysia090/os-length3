@@ -154,7 +154,7 @@ export function createApp(d: Deps) {
   const v1 = new Hono<Vars>();
   v1.use('*', signedIn(d.auth, d.origins, d.sessionKept));
   files({db, bucket, raw: d.bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
-  repos({db, quota: d.quota, plans: plan}, v1);
+  repos({db, bucket, quota: d.quota, plans: plan}, v1);
   homeRoutes({db}, v1);
   const names = inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
   servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan, proven: names.proven}, v1, app);
