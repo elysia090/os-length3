@@ -8,7 +8,9 @@ body.forge-place {
   grid-template-columns: minmax(0, 1fr);
 }
 body.forge-place > #page[data-place='forge'] { padding: 0; margin: 0; height: 100dvh; min-height: 0; width: 100%; grid-column: 1; }
-body.forge-place > .rail, body.forge-place > #door { display: none; }
+body.work-places > .rail { display: none; }
+/* Git keeps the same left measure when the permanent rail is put away. */
+body.work-places > #page[data-place='git'] { grid-column: 2; }
 #page[data-place='forge'] > .forge-layout {
   box-sizing: border-box; width: 100%; height: 100%; max-width: none; min-height: 0; padding: 0; margin: 0;
   grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -21,8 +23,10 @@ body.forge-place > .rail, body.forge-place > #door { display: none; }
 .forge-layout.work.bench > .bar { display: none; }
 .forge-layout.work.bench.forge-searching > .bar { display: flex; position: absolute; top: 12px; left: var(--forge-origin); width: min(576px, calc(100% - var(--forge-origin) - 60px)); height: 36px; z-index: 12; }
 .forge-layout .band-tools .search-results { left: 0; top: 52px; }
-.forge-title { position: absolute; z-index: 1; top: 24px; left: var(--forge-origin); margin: 0; padding-inline-end: 8px;
+.forge-title, .git-title { position: absolute; z-index: 1; margin: 0; padding-inline-end: 8px;
   background: var(--ground); color: var(--ink); font: 700 17px/24px var(--sans); pointer-events: none; }
+.forge-title { top: 24px; left: var(--forge-origin); }
+.git-title { top: calc(var(--u) - var(--outer-top)); left: 0; }
 .forge-layout .desk .desk-box { --line: 19px; --sheet-inset-y: 12px; font-size: 16px; padding-block: var(--sheet-inset-y); box-shadow: none; }
 .forge-layout .desk :is(.gutter, .code) { font-size: 16px; }
 .forge-layout .desk-file { max-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y)); }
@@ -64,9 +68,9 @@ body:has(.forge-document-menu) .forge-layout .desk-box > .desk-label { color: va
 .forge-open-folder { padding: 3px 6px; border: 0; color: var(--ink); background: var(--ground); cursor: var(--cursor-hand);
   font: 400 16px/19px var(--mono); text-decoration: underline; text-underline-offset: 3px; }
 
-/* The app's existing routes and tools still exist. They are visible only when requested in Forge. */
+/* The app's existing routes and tools still exist. They are visible only when requested on a work desk. */
 .forge-route-tools { display: none; }
-body.forge-place.forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
+body.work-places.forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
   height: auto; max-height: calc(100dvh - 74px); padding: 5px; flex-direction: column; gap: 0; background: var(--paper);
   border: 1px solid var(--ink); border-radius: 6px; font: 400 16px/19px var(--mono); }
 body.forge-routes .rail-tabs { display: grid; gap: 0; padding: 0; }
@@ -74,7 +78,7 @@ body.forge-routes .rail-item { width: 100%; display: flex; align-items: center; 
 body.forge-routes .rail-item .rail-tag { position: static; opacity: 1; translate: none; padding: 0; background: transparent; color: inherit; font: inherit; }
 body.forge-routes .rail-me { order: 2; }
 body.forge-routes .me-pop { left: auto; right: 100%; }
-body.forge-routes .forge-route-tools { display: grid; border-top: 1px solid var(--rule); font: inherit; }
+body.forge-routes .forge-route-tools:not(:empty) { display: grid; border-top: 1px solid var(--rule); font: inherit; }
 
 /* The existing Prompt/session in its own slot. The component's palette (including ANSI) is unchanged. */
 .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {

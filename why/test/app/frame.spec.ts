@@ -6,7 +6,7 @@ import {expect, test} from './fixtures.ts';
 //   one degree      the frame is 2 cells (48 px, about 1° at arm's length) every way, on every screen
 //   receding        it takes no more of a desk screen than film's safe-action margin does (13.5%)
 //   one square      every place of the rail a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at 2 px
-//   constant        the rail the same, to the pixel, in every place
+//   constant        the rail the same where it stands; on work desks, only the Places key
 //   two sides       nothing of the world is seen in the frame's strips (the top two cells, the left two)
 //   quiet           at rest the frame's marks and words are the frame's quiet colour, its lines the quiet line, nothing
 //                   in it filled with ink; ink only on the place one is in and what is chosen there
@@ -27,7 +27,7 @@ function framed() {
     return {label: b.getAttribute('aria-label') ?? '', box: box(b), mark: box(mark), stroke: path ? getComputedStyle(path).strokeWidth : '', colour: getComputedStyle(b).color, current: b.getAttribute('aria-current') === 'page'};
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
-  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .sr-only';
+  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .forge-places-key, .sr-only';
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
     if (el.closest(own) || !shown(el) || el.children.length) continue;
@@ -99,8 +99,13 @@ test('the frame is the camera\'s: one degree, receding, one square, the same in 
         if (f.door) expect(f.door, `${what}: the door`).toEqual([F, 6, F, 36]);
         // Constant: the rail the same in every place.
         const now = JSON.stringify(f.places.map((p) => [p.label, p.box, p.mark]));
-        rail ??= now;
-        expect(now, `${what}: the rail as in every other place`).toBe(rail);
+        if (place === 'forge' || place === 'git') {
+          expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
+          await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
+        } else {
+          rail ??= now;
+          expect(now, `${what}: the permanent rail as on the other places`).toBe(rail);
+        }
         // Two sides: nothing of the world seen in the frame's strips.
         expect(f.intrudes, `${what}: the world in the frame`).toEqual([]);
         // Quiet: nothing of the frame in ink at rest but what is chosen.

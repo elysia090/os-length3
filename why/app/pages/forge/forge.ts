@@ -15,7 +15,7 @@ import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, moveFile, renaming, split, untitled} from '../kit/file-deeds.ts';
 import {openFolder} from './open-folder.ts';
-import {workPlaces, type WorkPlace} from './places.ts';
+import {workPlaces, type ForgePlace} from './places.ts';
 import type {BesideOption} from './document-menu.ts';
 
 /**
@@ -42,6 +42,9 @@ export function revealNext(path: string, write: Writing = false, line = 0, from:
 
 /** The terminal asked for with the repo (Home's band's >_): once Forge is drawn for it, the keyboard is in its Prompt. */
 let termAsked = false;
+/** A peer picked from Git's Places, for the next entry to the existing Forge desk. */
+let placeAsked: ForgePlace | null = null;
+export function placeNext(place: ForgePlace) { placeAsked = place; }
 export function termNext() { termAsked = true; }
 /** The file deeds asked for with the repo (Home's band's files button): once Forge is drawn for it, out under its own. */
 let deedsAsked = false;
@@ -111,7 +114,7 @@ class Forge {
   private readonly switcher: ReturnType<typeof workPlaces>;
   private readonly prompt: HTMLElement;
   private readonly title: HTMLElement;
-  private placeInHand: WorkPlace = 'Forge';
+  private placeInHand: ForgePlace = 'Forge';
   private folderOut: (() => void) | null = null;
   private startOut: HTMLElement | null = null;
   private readonly listening = new AbortController();
@@ -152,7 +155,9 @@ class Forge {
       }});
     this.element = this.work.element;
     this.element.classList.add('forge-layout');
-    this.switcher = workPlaces(this.element, (place) => this.selectPlace(place), () => this.more());
+    this.switcher = workPlaces(this.element, (place) => {
+      if (place === 'Git') void ctx.go('git'); else this.selectPlace(place);
+    }, () => this.more());
     this.switcher.set('Forge', false);
     this.prompt = h('div', {class: 'desk-box forge-prompt-slot', 'data-kind': 'term', hidden: ''},
       h('div', {class: 'desk-label forge-term-tag'}, t('Prompt')), this.work.terminal!);
@@ -338,13 +343,13 @@ class Forge {
 
   private visible() { return this.element.isConnected && !this.element.closest('[hidden]'); }
 
-  private hand(place: WorkPlace) {
+  private hand(place: ForgePlace) {
     this.center.dataset.hand = place;
     this.prompt.classList.toggle('held', place === 'Prompt');
   }
 
   /** A separate slot over the existing desk, not a piece inserted before its documents. */
-  private selectPlace(place: WorkPlace, focus = true) {
+  private selectPlace(place: ForgePlace, focus = true) {
     const repo = this.now.repo;
     if (!repo) return;
     this.placeInHand = place;
@@ -362,7 +367,7 @@ class Forge {
   }
 
   private more() {
-    this.ctx.forgeNavigation?.(this.switcher.key, [
+    this.ctx.morePlaces?.(this.switcher.key, [
       {label: t('Open Folder'), run: () => this.folders(this.switcher.key)},
       ...(this.now.repo ? [
         {label: t('Search'), run: () => this.work.find()},
@@ -630,14 +635,15 @@ class Forge {
   /** Come back to the same opened repo; do not silently choose another on a bare desk. */
   enter() {
     this.work.settle();
-    const visit = ++this.visits;
-    void store.names().then((repos) => { if (visit === this.visits) this.choose(repos); }, () => {
+    const visit = ++this.visits, place = placeAsked;
+    placeAsked = null;
+    void store.names().then((repos) => { if (visit === this.visits) this.choose(repos, place); }, () => {
       if (visit === this.visits && !this.now.repo) this.none();
     });
   }
 
   /** The repos here are `all`: the desks of those still here are kept, and one of them is worked on. */
-  private choose(all: string[]) {
+  private choose(all: string[], place: ForgePlace | null) {
     const {ctx} = this;
     for (const name of [...this.desks.keys()]) if (!all.includes(name)) {
       const gone = this.desks.get(name)!;
@@ -658,7 +664,8 @@ class Forge {
       const now = document.activeElement;
       const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
       this.show(ctx.repo, at.path, at.write, at.line, !elsewhere && !termAsked);
-      if (termAsked && !elsewhere) this.work.toPrompt();
+      if (place) this.selectPlace(place, !elsewhere);
+      else if (termAsked && !elsewhere) this.work.toPrompt();
       // Out under Forge's own files button once the page has come to rest (measured where it stands, not on the way).
       if (deedsAsked && !elsewhere) {
         const root = document.documentElement, visit = this.visits, repo = ctx.repo;
@@ -672,7 +679,9 @@ class Forge {
       return;
     }
     const open = this.now.repo && all.includes(this.now.repo) ? this.now.repo : ctx.repo && all.includes(ctx.repo) ? ctx.repo : undefined;
-    if (open) this.show(open); else this.none();
+    if (!open) { this.none(); return; }
+    this.show(open);
+    if (place) this.selectPlace(place);
   }
 }
 

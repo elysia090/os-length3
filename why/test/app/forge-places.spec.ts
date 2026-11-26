@@ -64,7 +64,7 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(page.getByRole('navigation', {name: 'Purposes', exact: true})).toBeHidden();
   await expect(forge.prompt).toBeHidden();
   await forge.placesKey.click();
-  await expect(forge.places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files']);
+  await expect(forge.places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
   await forge.use('Prompt');
   await expect(forge.promptBox).toBeFocused();
   await expect(forge.prompt).toBeVisible();

@@ -1,4 +1,5 @@
 import type {PurposeId} from '../../host/purposes.ts';
+import type {ForgePlace} from '../forge/places.ts';
 import type {Carry} from '../../ui/glide.ts';
 
 /**
@@ -22,8 +23,10 @@ export interface Context {
   remember(name: string): void;
   /** Present the existing File tree inside Forge without a modal veil; null puts that pane away. */
   forgeFiles?(repo: string | null, focus?: boolean): void;
-  /** The shell's existing places and displaced tools, opened on demand instead of a permanent rail. */
-  forgeNavigation?(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]): void;
+  /** Go through the shell's Forge route, with the named place in hand when its repo is ready. */
+  forgePlace?(place: ForgePlace): Promise<void>;
+  /** The shell's existing places and tools, opened on demand instead of a permanent rail. */
+  morePlaces?(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]): void;
   /** The repo Forge shows, if any. */
   readonly repo: string | null;
   /** The file last read in Forge, kept from one visit to the next: where the person left off. */

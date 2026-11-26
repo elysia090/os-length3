@@ -15,7 +15,8 @@ const issues: Record<string, Record<string, string>> = {
 const requests: Array<{name: string; repo?: string}> = [];
 const violations: string[] = [];
 const query = new URLSearchParams(location.search);
-const repos = query.has('single') ? ['hello'] : Object.keys(issues);
+const repos = query.has('empty') ? [] : query.has('single') ? ['hello'] : Object.keys(issues);
+const shell = query.has('shell');
 const place = document.querySelector('main')!;
 let here = query.get('repo') ?? 'hello';
 let delay: Promise<void> | null = null;
@@ -24,6 +25,8 @@ useCore(async (name, args) => {
   const repo = typeof args.repo === 'string' ? args.repo : undefined;
   requests.push({name, repo});
   if (name === 'repo_names') return {ok: repos};
+  if (name === 'repo_list') return {ok: repos.map(name => ({name, files: 1, bytes: 20, modified: 0, kept: true}))};
+  if (name === 'dotfiles_in_effect') return {ok: []};
   if (name === 'state_get' || name === 'agent_key') return {ok: null};
   if (name === 'agents') return {ok: []};
   if (name === 'repo_tree' && repo && repo in issues) {
@@ -32,8 +35,9 @@ useCore(async (name, args) => {
     if (args.path === 'issue' && args.main === true) {
       return {ok: Object.entries(issues[repo]!).map(([name, text]) => ({name, kind: 'file', size: text.length}))};
     }
-    return {ok: []};
+    return {ok: args.path === '' ? [{name: 'README.md', kind: 'file', size: 8}] : []};
   }
+  if (name === 'repo_read' && repo && args.path === 'README.md') return {ok: {text: `# ${repo}\n`, size: repo.length + 3, truncated: false}};
   if (name === 'repo_read' && repo && args.main === true) {
     const text = issues[repo]?.[String(args.path).replace(/^issue\//, '')];
     if (text !== undefined) return {ok: {text, size: text.length, truncated: false}};
@@ -65,4 +69,12 @@ window.gitFoldersFixture = {
   releaseAtlas() { release?.(); delay = release = null; },
   open(repo, issue) { showIssue(repo, issue); mount(); },
 };
-mount();
+if (shell) {
+  // This is the real shell that owns history and dispatches both pages and the file tree. No app startup worker.
+  const rail = document.querySelector('nav')!;
+  rail.className = 'rail';
+  rail.removeAttribute('aria-hidden');
+  localStorage.setItem('why.os.purpose', 'forge');
+  if (repos.length) localStorage.setItem('why.os.repo', here);
+  await import('../../app/main/main.ts');
+} else mount();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {DEFAULT_PURPOSE, depth, doorOf, isFar, NEW_REPO, placeOf, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose} from './purposes.ts';
+import {DEFAULT_PURPOSE, depth, doorOf, isFar, isWorkPage, NEW_REPO, placeOf, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose} from './purposes.ts';
 
 test('the rail lists the places by how far they are from the person, then what is not a place; Git, Remote and Inbox have no icon', () => {
   assert.deepEqual(RAIL.map((p) => p.label), ['Home', 'Forge', 'Server', 'Runtime', 'File', 'Plugin', 'New repo']);
@@ -10,8 +10,8 @@ test('the rail lists the places by how far they are from the person, then what i
   for (const id of ['git', 'remote', 'inbox'] as const) assert.ok(!RAIL.some((p) => p.id === id) && purpose(id).id === id);
 });
 
-test('a page with no icon is the far side of a place: its door leads there and the same door leads back', () => {
-  for (const [far, place] of [['git', 'forge'], ['remote', 'home'], ['inbox', 'server']] as const) {
+test('a true far side of a place: its door leads there and the same door leads back', () => {
+  for (const [far, place] of [['remote', 'home'], ['inbox', 'server']] as const) {
     assert.equal(placeOf(far), place);
     assert.equal(placeOf(place), place);
     assert.equal(doorOf(place), far);
@@ -22,6 +22,15 @@ test('a page with no icon is the far side of a place: its door leads there and t
   }
   for (const id of ['runtime', 'file', 'plugin', 'new-repo'] as const) assert.equal(doorOf(id), null);
   assert.deepEqual(RAIL.map((p) => depth(p.id)), RAIL.map((_, i) => i));
+});
+
+test('Git and Forge share one work level, not a door', () => {
+  assert.ok(isWorkPage('git') && isWorkPage('forge') && !isWorkPage('remote'));
+  assert.equal(placeOf('git'), 'forge');
+  assert.equal(depth('git'), depth('forge'));
+  assert.equal(isFar('git'), false);
+  assert.equal(doorOf('git'), null);
+  assert.equal(doorOf('forge'), null);
 });
 
 test('only the built pages claim real state', () => {

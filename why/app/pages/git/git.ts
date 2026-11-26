@@ -6,6 +6,7 @@ import {issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
 import {onChange, onRenamed, rekey, store} from '../../../repo/repos.ts';
+import {workPlaces} from '../forge/places.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import {icon} from '../../ui/icons.ts';
@@ -148,6 +149,7 @@ class GitPage {
   private readonly row: IssueRow;
   private readonly sections = new Sections();
   private readonly workbench: Bench;
+  private readonly places: ReturnType<typeof workPlaces>;
   private repos: string[] = [];
   /** The repo looked at: the reference and the Prompt point at it. */
   private at: string | null = null;
@@ -191,10 +193,17 @@ class GitPage {
     };
     this.workbench = this.bench();
     this.element = this.workbench.element;
+    this.element.classList.add('git-layout');
+    this.element.prepend(h('h1', {class: 'git-title'}, t('Git')));
+    this.places = workPlaces(this.element, (place) => {
+      if (place === 'Git') return;
+      if (this.at) ctx.remember(this.at);
+      if (ctx.forgePlace) void ctx.forgePlace(place); else void ctx.go('forge');
+    }, () => ctx.morePlaces?.(this.places.key, this.at ? [{label: t('Search'), run: () => this.workbench.find()}] : []));
+    this.places.set('Git', false);
     this.drawKnown();
     this.load();
     this.watch();
-    this.element.prepend(h('h1', {class: 'sr-only'}, t('Git')));
   }
 
   /** The named main sheet at the left, the paper in hand beside it, and the record below. */
@@ -221,6 +230,7 @@ class GitPage {
     if (this.at !== repo) this.workbench.setRepo(repo);
     this.at = repo;
     this.folders.show(this.repos, repo);
+    this.places.set('Git', !!repo);
     if (repo && remember) this.ctx.remember(repo);
   }
 

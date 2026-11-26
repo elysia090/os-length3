@@ -12,13 +12,14 @@ import {build} from 'vite';
 import type {} from './entry.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const fonts = fileURLToPath(new URL('../../app/public', import.meta.url));
+const assets = fileURLToPath(new URL('../../app/public', import.meta.url));
 const output = await mkdtemp(join(tmpdir(), 'why-git-folders-test-'));
 const origin = 'http://git-folders.test';
-const mime: Record<string, string> = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2'};
+const mime: Record<string, string> = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg'};
 let browser: Browser;
 before(async () => {
   await build({configFile: false, root, publicDir: false, logLevel: 'error',
+    define: {'import.meta.env.VITE_LENGTH3_REMOTE': '""'},
     resolve: {alias: {
       './spawn.ts': fileURLToPath(new URL('../../api/spawn.desktop.ts', import.meta.url)),
       './terminal.ts': fileURLToPath(new URL('terminal.fixture.ts', import.meta.url)),
@@ -34,12 +35,14 @@ async function open(query = '') {
   await page.addInitScript(() => Object.defineProperty(globalThis, 'Worker', {
     value: class { constructor() { throw new Error('Worker in isolated Git fixture'); } }
   }));
+  const outside: string[] = [];
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
-    if (url.origin !== origin) { await route.abort(); return; }
+    if (url.origin !== origin) { outside.push(url.origin); await route.abort(); return; }
+    if (url.pathname === '/v1/about') { await route.fulfill({json: {providers: []}}); return; }
     const path = url.pathname === '/' ? '/index.html' : url.pathname;
     try {
-      const body = await readFile(join(path.startsWith('/fonts/') ? fonts : output, path));
+      const body = await readFile(join(/^\/(?:fonts|sounds)\//.test(path) ? assets : output, path));
       await route.fulfill({status: 200, contentType: mime[extname(path)] ?? 'application/octet-stream', body});
     } catch { await route.fulfill({status: 404, body: ''}); }
   });
@@ -49,6 +52,7 @@ async function open(query = '') {
   const close = async () => {
     const violations = await page.evaluate(() => window.gitFoldersFixture?.violations);
     await page.close();
+    assert.deepEqual(outside, []);
     assert.deepEqual(errors, []);
     assert.deepEqual(violations, []);
   };
@@ -153,4 +157,81 @@ test('a deep link belongs to its actual repo; a lone repo does not offer a menu'
     await expect(single.page.locator('.git-repo-name')).toHaveText('hello/');
     await expect(folder(single.page, 'hello')).toHaveCount(0);
   } finally { await single.close(); await close(); }
+});
+
+test('the real shell reaches Git and back from one corner, including browser history and More Places', async () => {
+  const {page, close} = await open('?shell');
+  try {
+    const root = page.locator('#page');
+    const key = root.getByRole('button', {name: 'Places', exact: true});
+    const places = root.getByRole('menu', {name: 'Places', exact: true});
+    const peer = (name: string) => places.getByRole('menuitemradio', {name, exact: true});
+    const rail = page.getByRole('navigation', {name: 'Purposes', exact: true});
+    const choose = async (name: string) => { await key.click(); await peer(name).click(); };
+    await expect(root).toHaveAttribute('data-place', 'forge');
+    await expect(root.getByRole('heading', {name: 'Forge', exact: true})).toBeVisible();
+    await expect(rail).toBeHidden();
+    await key.click();
+    await expect(places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
+    await expect(peer('Forge')).toHaveAttribute('aria-checked', 'true');
+    await peer('Git').click();
+    await expect(root).toHaveAttribute('data-place', 'git');
+    await expect(root.getByRole('heading', {name: 'Git', exact: true})).toBeVisible();
+    assert.deepEqual(await key.boundingBox(), {x: 1264, y: 12, width: 44, height: 44});
+    await expect(page.locator('#door')).toBeHidden();
+    await expect(paper(page)).toContainText('Fix first frame');
+    await key.click();
+    await expect(peer('Git')).toBeFocused();
+    await expect(peer('Git')).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
+    await expect(key).toBeFocused();
+    await expect(places).toBeHidden();
+    // Back/Forward traverse the real shell, not a second page selector.
+    await page.goBack();
+    await expect(root).toHaveAttribute('data-place', 'forge');
+    await page.goForward();
+    await expect(root).toHaveAttribute('data-place', 'git');
+    await choose('Files');
+    await expect(root).toHaveAttribute('data-place', 'forge');
+    const tree = page.getByRole('tree', {name: 'hello', exact: true});
+    await expect(tree.getByRole('button', {name: 'README.md', exact: true})).toBeVisible();
+    await choose('Git');
+    await expect(root).toHaveAttribute('data-place', 'git');
+    await expect(tree).toBeHidden();
+    await choose('Prompt');
+    await expect(root).toHaveAttribute('data-place', 'forge');
+    await expect(root.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
+    await expect(root.getByRole('textbox', {name: 'Prompt input', exact: true})).toBeFocused();
+    await choose('Git');
+    await expect(root).toHaveAttribute('data-place', 'git');
+    await key.click();
+    await places.getByRole('menuitem', {name: 'More Places', exact: true}).click();
+    await expect(rail).toBeVisible();
+    await rail.getByRole('button', {name: 'Search', exact: true}).click();
+    const search = root.getByRole('searchbox', {name: 'Search this repo', exact: true});
+    await expect(search).toBeFocused();
+    await expect(rail).toBeHidden();
+    await key.click();
+    await places.getByRole('menuitem', {name: 'More Places', exact: true}).click();
+    await rail.getByRole('button', {name: 'Home', exact: true}).click();
+    await expect(root).toHaveAttribute('data-place', 'home');
+  } finally { await close(); }
+});
+
+test('with no managed repo, Forge and Git remain peers without offering Files or Prompt', async () => {
+  const {page, close} = await open('?shell&empty');
+  try {
+    const root = page.locator('#page');
+    const key = root.getByRole('button', {name: 'Places', exact: true});
+    const places = root.getByRole('menu', {name: 'Places', exact: true});
+    await expect(root.getByRole('button', {name: 'Open Folder', exact: true})).toBeVisible();
+    await key.click();
+    for (const name of ['Files', 'Prompt']) await expect(places.getByRole('menuitemradio', {name, exact: true})).toBeDisabled();
+    await places.getByRole('menuitemradio', {name: 'Git', exact: true}).click();
+    await expect(root).toHaveAttribute('data-place', 'git');
+    await expect(root.getByRole('button', {name: /Create your first repo/})).toBeVisible();
+    await key.click();
+    await places.getByRole('menuitemradio', {name: 'Forge', exact: true}).click();
+    await expect(root.getByRole('button', {name: 'Open Folder', exact: true})).toBeVisible();
+  } finally { await close(); }
 });

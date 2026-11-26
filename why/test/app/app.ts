@@ -159,7 +159,7 @@ class Part {
 
 /** The pages with no icon on the rail, and the place each is the far side of: reached by the door at the head of that
  * place's band, which in the same spot leads back. */
-const FAR: Partial<Record<Place, Place>> = {git: 'forge', remote: 'home', inbox: 'server'};
+const FAR: Partial<Record<Place, Place>> = {remote: 'home', inbox: 'server'};
 
 /** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
@@ -175,9 +175,10 @@ class Rail extends Part {
 
   private get navigation() { return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/, includeHidden: true}); }
 
-  /** The common routes are summoned when Forge is the current place. */
+  /** The common routes are summoned on either work desk. */
   async open() {
-    if (await this.page.locator('#page').getAttribute('data-place') === 'forge' && !await this.navigation.isVisible()) {
+    const here = await this.page.locator('#page').getAttribute('data-place');
+    if ((here === 'forge' || here === 'git') && !await this.navigation.isVisible()) {
       const menu = this.app.forge.places;
       if (!await menu.isVisible()) await this.app.forge.placesKey.click();
       await menu.getByRole('menuitem', {name: 'More Places', exact: true}).click();
@@ -186,21 +187,26 @@ class Rail extends Part {
 
   async go(place: Place) {
     const at = this.page.locator('#page');
-    const of = FAR[place];
-    if (of) {
-      // A far side: to its place (unless there, or at the far side already), then through the door.
-      const now = await at.getAttribute('data-place');
+    const now = await at.getAttribute('data-place');
+    if (place === 'git' || (place === 'forge' && now === 'git')) {
       if (now !== place) {
-        if (now !== of) await this.go(of);
-        if (place === 'git') {
-          await this.open();
-          await this.navigation.getByRole('button', {name: 'Git', exact: true}).click();
-        } else await this.door.click();
+        if (now !== 'forge' && now !== 'git') await this.go('forge');
+        await this.app.forge.use(place === 'git' ? 'Git' : 'Forge');
       }
       await expect(at).toHaveAttribute('data-place', place);
       return;
     }
-    if (place !== 'forge' || await at.getAttribute('data-place') !== 'forge') {
+    const of = FAR[place];
+    if (of) {
+      // A far side: to its place (unless there, or at the far side already), then through the door.
+      if (now !== place) {
+        if (now !== of) await this.go(of);
+        await this.door.click();
+      }
+      await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
+    if (place !== 'forge' || now !== 'forge') {
       await this.open();
       await this.button(place).click();
     }
@@ -297,7 +303,7 @@ class Forge extends Part {
   get placesKey() { return this.main.getByRole('button', {name: 'Places', exact: true}); }
   get places() { return this.main.getByRole('menu', {name: 'Places', exact: true}); }
 
-  async use(place: 'Prompt' | 'Forge' | 'Files') {
+  async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
     if (!await this.places.isVisible()) await this.placesKey.click();
     await this.places.getByRole('menuitemradio', {name: place, exact: true}).click();
   }
