@@ -96,66 +96,76 @@ test('every issue stays in the row while one is worked on', async ({signedIn: ap
   await expect(app.git.step('Resume here')).toBeVisible();
 });
 
-test('the issue not written yet is the row\'s last piece: with none open it is in the hand at the desk\'s edge, written on at once, nothing to confirm or put back, and what is half written in it stays', async ({signedIn: app}) => {
+test('with no issues the first paper is ready to write, and an unfinished issue stays across places', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
+  await expect(app.git.createIssue).toBeDisabled();
   await app.git.firstLine.fill('Fix: Say hello louder');
-  // Nothing to press first, nothing to confirm or to put back; main's sheet has only the steps it will have.
-  await expect(app.main.getByRole('button', {name: /^(Create|Create issue|Cancel|Save)$/})).toHaveCount(0);
+  await app.git.detailDraft.fill('People at the back cannot hear it.');
+  await expect(app.git.createIssue).toBeEnabled();
   await expect(app.main.locator('.git-side .switch-line')).toHaveText(['Start', 'Commit', 'Submit', 'Merge']);
   await app.rail.go('home');
   await app.rail.go('git');
   await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
+  await expect(app.git.detailDraft).toHaveValue('People at the back cannot hear it.');
 });
 
-test('beside an issue in full, the row ends in the issue not written yet; gone to, its first line has the keyboard, and Escape with nothing written goes back', async ({signedIn: app}) => {
+test('the named way to a new issue is outside the paper and Escape goes back to the same issue', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
-  await app.git.write('hello', 'Fix: Say hello louder');
-  await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
-  // Under main's steps there is nothing to write on: a new issue is where a new thing in a row is, at its end.
+  await app.git.write('hello', 'Fix: One');
+  await app.git.write('hello', 'Fix: Two');
+  await app.git.bar(1).click();
+  await expect(app.git.issue('#1 Fix：One')).toBeVisible();
   await expect(app.main.locator('.git-side input, .git-side textarea')).toHaveCount(0);
-  await expect(app.main.locator('.issue-slot-new')).toContainText('New issue');
-  await app.main.getByRole('button', {name: 'Next issue', exact: true}).click();
+  await expect.poll(() => app.git.newIssue.evaluate((b) => {
+    const card = b.closest('.issue-column')!.querySelector('.issue-slot[aria-current=true] .issue-card')!;
+    return b.getBoundingClientRect().bottom - card.getBoundingClientRect().top;
+  })).toBeLessThanOrEqual(1);
+  await app.git.newIssue.click();
   await expect(app.git.firstLine).toBeFocused();
   await expect(app.git.firstLine).toHaveAccessibleDescription('hello');
+  await app.git.firstLine.fill('Fix: Three');
+  await app.git.detailDraft.fill('In the same repo.');
   await app.page.keyboard.press('Escape');
-  await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
+  await expect(app.git.issue('#1 Fix：One')).toBeVisible();
+  await expect(app.git.newIssue).toBeFocused();
   await expect(app.git.firstLine).toHaveCount(0);
+  await app.git.newIssue.click();
+  await expect(app.git.firstLine).toHaveValue('Fix: Three');
+  await expect(app.git.detailDraft).toHaveValue('In the same repo.');
+  await app.git.createIssue.click();
+  await expect(app.git.issue('#3 Fix：Three')).toBeVisible();
+  await expect(app.main.getByRole('textbox', {name: 'Summary', exact: true})).toHaveValue('In the same repo.');
+  await expect(app.git.step('Start')).toBeEnabled();
+  await expect(app.git.step('Back to main')).toHaveCount(0);
 });
 
-
-// The box an issue is written in, and the one row of repos above it.
-
-test('a new issue\'s repo is chosen in the one row of repos; Enter on its first line makes it, and the keyboard goes on into its summary', async ({app}) => {
-  for (const r of ['notes', 'tide-tables', 'website-redesign', 'data-pipeline', 'design-system', 'infra-terraform']) await app.newRepo.make(r);
+test('a draft belongs to its own folder; Enter creates explicitly and keeps its detail', async ({app}) => {
+  for (const r of ['notes', 'tide-tables']) await app.newRepo.make(r);
   await app.rail.go('git');
-  await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
-  // One row: every chip on one line, however many there are.
-  const tops = await app.git.repos.getByRole('radio').evaluateAll((all) => all.map((c) => Math.round(c.getBoundingClientRect().top)));
-  expect(new Set(tops).size).toBe(1);
-  await expect(app.main.getByRole('radiogroup')).toHaveCount(1);
-  // The one at the far end is reached by the keyboard, and, chosen, is where it goes; All leaves that as it was.
-  const last = app.git.repos.getByRole('radio', {name: 'tide-tables', exact: true});
-  await last.focus();
-  await expect(last).toBeInViewport();
-  await last.press('Enter');
+  await app.git.folder('tide-tables');
+  await app.git.toNew();
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide-tables');
-  await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
-  await expect(app.git.firstLine).toHaveAccessibleDescription('tide-tables');
+  await app.git.firstLine.fill('Fix: The table wraps');
+  await app.git.detailDraft.fill('At 320 px.');
 
-  // A line with no title makes nothing: said under it, the line kept.
+  await app.git.folder('notes');
+  await app.git.toNew();
+  await expect(app.git.firstLine).toHaveAccessibleDescription('notes');
+  await expect(app.git.firstLine).toHaveValue('');
   await app.git.firstLine.fill('Fix:');
   await app.git.firstLine.press('Enter');
   await expect(app.main.locator('.issue-new-card').getByRole('alert')).toHaveText('Enter a title on the first line');
   await expect(app.git.issues).toContainText('No issues yet');
 
-  await app.git.firstLine.fill('Fix: The table wraps');
+  await app.git.folder('tide-tables');
+  await app.git.toNew();
+  await expect(app.git.firstLine).toHaveValue('Fix: The table wraps');
+  await expect(app.git.detailDraft).toHaveValue('At 320 px.');
   await app.git.firstLine.press('Enter');
   await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
-  // Its detail is right under the title, above Commit: the keyboard there, written on, and kept as it is left.
   const summary = app.main.getByRole('textbox', {name: 'Summary', exact: true});
   await expect(summary).toBeFocused();
-  await app.page.keyboard.insertText('At 320 px.');
   await expect(summary).toHaveValue('At 320 px.');
 });
 

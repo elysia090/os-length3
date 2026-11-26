@@ -581,40 +581,43 @@ class Git extends Part {
    */
   async write(repo: string, first: string, detail = '') {
     await this.app.rail.go('git');
+    await this.folder(repo);
     await this.toNew();
-    // Where it goes is chosen in the one row of repos, as the issues shown are (with one repo, it is that one): once
-    // the repos are read (the piece says where it goes), the row is there if there is a choice.
-    await expect(this.firstLine).toHaveAccessibleDescription(/\S/);
-    const chip = this.repos.getByRole('radio', {name: repo, exact: true});
-    if (await chip.isVisible()) await chip.click();
     await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.firstLine.fill(first);
+    if (detail) await this.detailDraft.fill(detail);
     await this.firstLine.press('Enter');
     const summary = this.main.getByRole('textbox', {name: 'Summary', exact: true});
     await expect(summary).toBeFocused();
-    if (detail) {
-      await summary.fill(detail);
-      await summary.blur();
+    if (detail) await expect(summary).toHaveValue(detail);
+  }
+
+  /** Git's folder before taking up an issue, not a field of the issue. */
+  async folder(repo: string) {
+    await expect(this.main.locator('.issue-slot-new')).toHaveCount(1);
+    const key = this.main.locator('button.git-repo-key');
+    if (await key.isVisible()) {
+      if (await key.getAttribute('aria-label') !== `Git folder: ${repo}`) {
+        await key.click();
+        await this.main.getByRole('menu', {name: 'Git folders'}).getByRole('menuitemradio', {name: repo, exact: true}).click();
+        await expect(key).toHaveAccessibleName(`Git folder: ${repo}`);
+      }
     }
   }
 
-  /** Along the row to its last piece, the issue not written yet: by its bar on the row's map, or the next edge. */
+  /** The one named way to the new paper, above the current issue. */
   async toNew() {
     await expect(this.main.locator('.issue-slot-new')).toHaveCount(1);
-    for (let i = 0; i < 40 && !(await this.firstLine.isVisible()); i++) {
-      const bar = this.main.locator('.issue-column > .row-map').getByRole('button', {name: 'New issue', exact: true});
-      const next = this.main.getByRole('button', {name: 'Next issue', exact: true});
-      if (await bar.isVisible()) await bar.click();
-      else if (await next.isVisible()) await next.click();
-      else await this.page.waitForTimeout(100);
-    }
+    if (!(await this.firstLine.isVisible())) await this.newIssue.click();
     await expect(this.firstLine).toBeVisible();
   }
 
-  /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
-  get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
-  /** The first line of the issue not written yet, while it is in the hand; it says the repo it goes in (its description). */
-  get firstLine() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'First line: Type: Title'}); }
+  get repos() { return this.main.getByRole("radiogroup", {name: "repo"}); }
+  get newIssue() { return this.main.getByRole('button', {name: 'New issue', exact: true}); }
+  /** The paper's title and optional details; the title describes its destination. */
+  get firstLine() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'Issue title'}); }
+  get detailDraft() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'Details', exact: true}); }
+  get createIssue() { return this.main.locator('.issue-new-card').getByRole('button', {name: 'Create issue', exact: true}); }
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }

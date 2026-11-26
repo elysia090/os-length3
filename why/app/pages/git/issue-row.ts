@@ -4,13 +4,11 @@ import {after, still} from '../../ui/glide.ts';
 import type {Issue} from '../../../repo/issues.ts';
 import {rowMap} from '../../ui/row-desk.ts';
 
-// Git's issues not merged yet, as large boxes side by side, as every desk rests (DESIGN §2, §6): the one in full at
-// the row's edge, the next ahead of it to the right, its edge showing; those before it out of sight, said by the row's
-// map at the window's foot. Last, so too, the issue not written yet (`tail`), where a new thing in a row always is: a
-// new board at a server's row's end, a new repo after Home's repos. The next's edge is the way to it (hover lifts it; → and a finger's swipe do the same; ←
-// and the map go back), and the track slides there. The keyboard stays on the same part of the box as one goes along.
-// (Before, the box in full stood between its neighbours, the last at the row's far end: the subject pushed right, the
-// room behind it larger than the room ahead, the weight of the shot right of its middle.)
+// Issues are neighbours on the same desk. The new issue is at the end of this
+// row, with one named way to its empty paper on the ground over the current one.
+const issueKey = (issue: Issue) => `${issue.repo}/${issue.file}`;
+/** The issue from which a repo's draft was opened, even after leaving Git. */
+const origins = new Map<string, string>();
 
 /** What the row needs of the page it is in. */
 interface RowWays {
@@ -41,12 +39,24 @@ export class IssueRow {
   private readonly track = h('div', {class: 'issue-track'});
   private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
+  private readonly create = h('button', {type: 'button', class: 'issue-create-word issue-create-next',
+    'aria-label': t('New issue')}, `${t('New issue')} →`) as HTMLButtonElement;
+  private readonly returnToIssue = h('button', {type: 'button', class: 'issue-create-word issue-create-back',
+    'aria-label': t('Previous issue')}) as HTMLButtonElement;
+  private readonly writingName = h('span', {class: 'issue-create-name'}, this.returnToIssue, h('span', {}, t('New issue')));
   private shown: Issue[] = [];
   private k = 0;
   /** The box in full before the last move (-1 once drawn anew). */
   private was = -1;
   /** The neighbours' cards are as tall as the current one, so the row reads as one line of boxes. */
-  private readonly sized = new ResizeObserver(([e]) => this.track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
+  private readonly sized = new ResizeObserver(([e]) => {
+    const card = e.target as HTMLElement;
+    requestAnimationFrame(() => {
+      if (!card.isConnected || card.parentElement?.getAttribute('aria-current') !== 'true') return;
+      const height = `${card.offsetHeight}px`;
+      if (this.track.style.getPropertyValue('--card-h') !== height) this.track.style.setProperty('--card-h', height);
+    });
+  });
   private readonly ways: RowWays;
   /** The row's map, at the window's foot: a bar an issue, the one in full in ink. */
   readonly map = rowMap(this.stage, () => this.pieces(), () => this.turned());
@@ -57,25 +67,32 @@ export class IssueRow {
     this.prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
     this.next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
     this.stage.append(this.track, this.prev, this.next);
-    this.column = h('div', {class: 'issue-column'}, this.stage, this.map.element);
+    this.create.hidden = this.writingName.hidden = true;
+    this.column = h('div', {class: 'issue-column'},
+      h('div', {class: 'issue-create-header'}, this.writingName, this.create), this.stage, this.map.element);
     new ResizeObserver(() => this.map.paint()).observe(this.stage);
     this.prev.addEventListener('click', () => this.go(this.k - 1, true));
     this.next.addEventListener('click', () => this.go(this.k + 1, true));
+    this.create.addEventListener('click', () => this.go(this.shown.length, true));
+    this.returnToIssue.addEventListener('click', () => this.back());
     // A finger swiped along the row (sideways more than down, and far enough) goes to the box beside, as its edge
     // pressed does: on a phone the edges are a sliver, and a swipe is what a hand tries first.
     let from: {x: number; y: number; id: number} | null = null;
-    this.stage.addEventListener('pointerdown', (e) => { from = e.pointerType === 'touch' ? {x: e.clientX, y: e.clientY, id: e.pointerId} : null; });
+    this.stage.addEventListener('pointerdown', (e) => {
+      from = e.pointerType === 'touch' && !(e.target as Element | null)?.closest('input, textarea, [contenteditable]')
+        ? {x: e.clientX, y: e.clientY, id: e.pointerId} : null;
+    });
     this.stage.addEventListener('pointercancel', () => { from = null; });
     this.stage.addEventListener('pointerup', (e) => {
       if (!from || e.pointerId !== from.id) return;
       const dx = e.clientX - from.x, dy = e.clientY - from.y;
       from = null;
-      if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) this.go(this.k + (dx < 0 ? 1 : -1), true);
+      if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) this.nudge(dx < 0 ? 1 : -1);
     });
     this.stage.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).closest('input, textarea')) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.k - 1, true); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.k + 1, true); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); this.nudge(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); this.nudge(1); }
     });
   }
 
@@ -152,17 +169,34 @@ export class IssueRow {
   /** The keyboard on the issue not written yet's first line, if it is in the hand. */
   write() { if (this.atTail) this.track.lastElementChild?.querySelector<HTMLElement>('.issue-first')?.focus({preventScroll: true}); }
 
-  /**
-   * Back from the issue not written yet to the issue before it, if there is one, the keyboard back on the row that
-   * went to it (said by the piece in hand's edge, heavier: styles git-issue.css).
-   */
-  back() { if (this.atTail && this.shown.length) { this.go(this.k - 1, true, null); this.stage.focus({preventScroll: true}); } }
+  /** Back keeps the exact issue from which this draft was taken up. */
+  back() {
+    if (!this.atTail || this.track.querySelector('.issue-slot-new[aria-current=true] .issue-create-form[aria-busy=true]')) return;
+    const to = this.draftOrigin();
+    if (to < 0) return;
+    this.go(to, true, null);
+    this.create.focus({preventScroll: true});
+  }
+
+  private draftOrigin(): number {
+    const repo = this.track.lastElementChild?.querySelector<HTMLElement>('.issue-new-card')?.dataset.draftRepo;
+    if (!repo) return -1;
+    const origin = origins.get(repo);
+    const was = this.shown.findIndex((i) => issueKey(i) === origin);
+    return was >= 0 ? was : this.shown.findLastIndex((i) => i.repo === repo);
+  }
+
+  private nudge(by: -1 | 1) {
+    if (this.atTail) { if (by < 0) this.back(); return; }
+    this.go(this.k + by, true);
+  }
 
   /** No repo to write an issue in: the row stands aside. */
   none() {
     this.shown = [];
     this.track.replaceChildren();
     this.stage.hidden = true;
+    this.create.hidden = this.writingName.hidden = true;
     this.map.paint();
   }
 
@@ -176,7 +210,11 @@ export class IssueRow {
     const k = this.k = Math.max(0, Math.min(last, n));
     const was = this.was;
     this.was = k;
-    if (k === last) this.ways.landedTail(moved); else this.ways.landed(this.shown[k], moved);
+    if (k === last) {
+      const origin = this.shown[was];
+      if (moved && origin) origins.set(origin.repo, issueKey(origin));
+      this.ways.landedTail(moved);
+    } else this.ways.landed(this.shown[k], moved);
     this.track.style.setProperty('--at', `${k}`);
     // The box in full starts at the column's edge, wherever it is along the row: the next ahead of it.
     const lead = 0;
@@ -193,10 +231,18 @@ export class IssueRow {
     const card = this.track.children[k]?.querySelector<HTMLElement>('.issue-card');
     this.sized.disconnect();
     if (card) this.sized.observe(card);
+    this.create.hidden = k === last;
+    this.writingName.hidden = k !== last;
+    const from = k === last ? this.shown[this.draftOrigin()] : undefined;
+    this.returnToIssue.hidden = !from;
+    if (from) {
+      this.returnToIssue.textContent = from.n === null ? '←' : `← #${from.n}`;
+      this.returnToIssue.disabled = !!card?.querySelector('.issue-create-form[aria-busy=true]');
+    }
     const edge = document.activeElement === this.prev || document.activeElement === this.next;
     // (Behind the box in full there is no edge to press: the ones before are out of sight, gone to by ← or the map.)
     this.prev.hidden = true;
-    this.next.hidden = k === last;
+    this.next.hidden = k >= last - 1;
     this.focus(this.track.children[k] as HTMLElement | undefined, had, edge, moved && k === last);
     this.map.paint();
   }
@@ -211,10 +257,10 @@ export class IssueRow {
   }
   /** The row as its map says it: each issue a piece, the one in full in the hand. */
   private pieces() {
-    if (this.stage.hidden) return [];
-    const {w, gap} = this.step(), last = this.shown.length;
-    return [...this.shown.map((x, j) => ({x: j * (w + gap), w, held: j === this.k, name: x.n === null ? x.title : `#${x.n} ${x.title}`, go: () => this.go(j, true)})),
-      {x: last * (w + gap), w, held: this.k === last, name: t('New issue'), go: () => this.go(last, true)}];
+    if (this.stage.hidden || this.atTail) return [];
+    const {w, gap} = this.step();
+    return this.shown.map((x, j) => ({x: j * (w + gap), w, held: j === this.k,
+      name: x.n === null ? x.title : `#${x.n} ${x.title}`, go: () => this.go(j, true)}));
   }
   /** How far the row is turned: to the box in full. */
   private turned() { const {w, gap} = this.step(); return this.k * (w + gap); }

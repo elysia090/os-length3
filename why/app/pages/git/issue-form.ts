@@ -5,70 +5,123 @@ import {kindOf, named} from '../../../repo/text.ts';
 import {errorText} from '../../../api/errors.ts';
 import {nudge} from '../../ui/glide.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
-
-// Writing an issue is writing its first line where it stands (DESIGN §7: what is written is kept as it is written,
-// nothing to confirm). The issue not written yet is the last piece of Git's row, where a new thing in a row always is
-// (a new board at a server's row's end): beside the one in full only its edge, its + and its name; in the hand, the
-// issue it will be, its first line written in its head in an issue title's letters, named as a TODO item is ("Fix:
-// Title"), the repo it goes in said quietly at its foot, as a card says its repo (chosen in Git's one row of repos; All
-// only widens what is shown, and leaves where it goes as it was). Enter makes it, and the keyboard goes on into its
-// summary in the issue in full, where it is written on and kept as it is left; Escape with nothing written goes back to
-// the issue before it. What is half written stays, going along the row or to another page and back. (Before, it was a
-// line always there under main's steps: a second thing on that sheet, read as part of its Start.)
-//
-// Its title is changed where it is read, the same way: pressed, it is written over in its place, its kind kept and
-// its words chosen; Enter or leaving keeps what is written, Escape puts it back.
+import './issue-writing.css';
 
 /** An issue just made: its repo and its file. */
 export interface Made { repo: string; file: string }
 
-/** The new issue's first line as it was left. */
-let draft = '';
+type Outcome = {file: string} | {error: string};
+interface Draft {
+  first: string;
+  detail: string;
+  error: string;
+  pending: Promise<Outcome> | null;
+}
 
-/** What was said of the line as it was last put right (a title missing, a failure), kept as the line is: the row
- * drawn again under it (a repo chosen just before) took the words away the moment they were said. */
-let said = '';
+const drafts = new Map<string, Draft>();
+const blank = (): Draft => ({first: '', detail: '', error: '', pending: null});
 
-/** Something is written on the new issue's first line. */
-export const drafted = () => !!draft.trim();
+/** What was written stays at its repo, never transplanted into another folder. */
+export const drafted = (repo?: string | null) =>
+  (repo === undefined ? [...drafts.values()] : [repo ? drafts.get(repo) : undefined])
+    .some((d) => !!(d?.first.trim() || d?.detail.trim()));
 
-/**
- * The issue not written yet, as the row's last slot holds it: in the hand (`now`) the issue it will be, going into
- * `repo`, with what is so said quietly at its foot (`none`: no issue yet); else its edge. `made` hears what was made;
- * `back` goes to the issue before it.
- */
+/** The blank slot is the next sheet; its entry is outside the current issue (IssueRow). */
 export function newIssue(now: boolean, repo: string | null, none: string, ways: {made(m: Made): void; back(): void}): HTMLElement {
-  const head = (...words: (Node | string)[]) => h('div', {class: 'issue-card issue-new-card'}, ...words);
-  if (!now) return head(h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, '+'), ' ', t('New issue'))));
-  const line = h('input', {class: 'issue-first', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
-    'aria-describedby': 'issue-target', maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
-  line.value = draft;
-  const error = h('p', {class: 'error', role: 'alert'}, said);
-  const say = (words: string) => { said = words; error.textContent = words; };
-  line.addEventListener('input', () => { draft = line.value; if (said) say(''); });
-  let making = false;
-  const make = async () => {
-    if (making || !repo) return;
-    const {kind, title} = kindOf(line.value);
-    if (!title.trim()) { say(t('Enter a title on the first line')); nudge(line); return; }
-    making = true;
-    try {
-      const file = await writeIssue(issueStore, repo, kind, title, '');
-      draft = '';
-      said = '';
-      ways.made({repo, file});
-    } catch (e) { say(t('Failed to create: {message}', {message: errorText(e)})); } finally { making = false; }
+  const card = h('div', {class: 'issue-card issue-new-card', 'data-draft-repo': repo ?? ''});
+  if (!now) {
+    card.classList.add('issue-new-unwritten');
+    card.setAttribute('aria-hidden', 'true');
+    return card;
+  }
+  const draft = repo ? drafts.get(repo) ?? blank() : blank();
+  if (repo) drafts.set(repo, draft);
+
+  const target = h('span', {class: 'issue-where', id: 'issue-target'}, repo ?? '');
+  const line = h('input', {class: 'issue-first', placeholder: t('Issue title'),
+    'aria-label': t('Issue title'), 'aria-describedby': target.id, maxlength: '200', autocomplete: 'off'}) as HTMLInputElement;
+  const body = h('textarea', {class: 'issue-detail-draft', placeholder: t('Details'),
+    'aria-label': t('Details'), maxlength: '4000', rows: '5'}) as HTMLTextAreaElement;
+  const confirm = h('button', {type: 'submit', class: 'issue-create-word issue-create-submit'}, t('Create issue')) as HTMLButtonElement;
+  const error = h('p', {class: 'error', role: 'alert'}, draft.error);
+  const form = h('form', {class: 'issue-box no-work issue-create-form', novalidate: '', 'aria-label': t('New issue')},
+    h('label', {class: 'issue-words issue-big-head'}, h('span', {class: 'issue-create-head'}, line)),
+    body, error,
+    h('div', {class: 'issue-create-foot'}, target, none ? h('span', {class: 'muted small'}, none) : null, confirm));
+  card.append(form);
+  line.value = draft.first;
+  body.value = draft.detail;
+
+  let composing = false;
+  const sync = () => {
+    const held = !!draft.pending;
+    form.setAttribute('aria-busy', String(held));
+    line.readOnly = body.readOnly = held;
+    confirm.disabled = held || composing || !repo || !kindOf(line.value).title.trim();
+    const back = card.closest('.issue-column')?.querySelector<HTMLButtonElement>('.issue-create-back');
+    if (back) back.disabled = held;
+    error.textContent = draft.error;
   };
-  line.addEventListener('keydown', (e) => {
-    if (e.isComposing) return;
-    if (e.key === 'Enter') { e.preventDefault(); void make(); }
-    if (e.key === 'Escape' && !line.value.trim()) { e.preventDefault(); ways.back(); }
+  const writing = () => {
+    if (draft.pending) return;
+    draft.first = line.value;
+    draft.detail = body.value;
+    draft.error = '';
+    sync();
+  };
+  const landed = () => {
+    const slot = card.closest('.issue-slot');
+    return card.isConnected && (!slot || slot.getAttribute('aria-current') === 'true');
+  };
+  const hear = (pending: Promise<Outcome>) => {
+    void pending.then((result) => {
+      // A repaint can replace the composer while main is writing. Only the one
+      // still in hand can move to the result; a dismissed draft never steals focus.
+      if (!landed() || !repo) return;
+      if ('file' in result) ways.made({repo, file: result.file});
+      else { sync(); line.focus({preventScroll: true}); }
+    });
+  };
+  const make = () => {
+    if (!repo || draft.pending || composing || !landed()) return;
+    const {kind, title} = kindOf(line.value);
+    if (!title.trim()) {
+      draft.error = t('Enter a title on the first line');
+      sync();
+      return;
+    }
+    draft.first = line.value;
+    draft.detail = body.value;
+    draft.error = '';
+    // Store shared by mounted and rebuilt views: one creation per repo draft.
+    // A failed remote commit already leaves the local issue waiting in issueStore.
+    draft.pending = writeIssue(issueStore, repo, kind, title, draft.detail).then((file) => {
+      drafts.delete(repo);
+      return {file};
+    }, (e: unknown) => {
+      draft.pending = null;
+      draft.error = t('Failed to create: {message}', {message: errorText(e)});
+      return {error: draft.error};
+    });
+    sync();
+    hear(draft.pending);
+  };
+  form.addEventListener('input', writing);
+  form.addEventListener('compositionstart', () => { composing = true; sync(); });
+  form.addEventListener('compositionend', () => { composing = false; writing(); });
+  form.addEventListener('submit', (e) => { e.preventDefault(); make(); });
+  form.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229 || composing) return;
+    if (e.key === 'Enter' && e.target === line) { e.preventDefault(); make(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!draft.pending) ways.back();
+    }
   });
-  // Its name over its corner, as every piece has one (quiet: it is not an issue yet).
-  return head(h('div', {class: 'issue-box no-work'}, h('p', {class: 'issue-name', 'aria-hidden': 'true'}, t('New issue')),
-    h('label', {class: 'issue-words issue-big-head'}, h('h2', {}, line)), error,
-    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where', id: 'issue-target'}, repo ?? ''),
-      none ? h('span', {class: 'muted small'}, none) : null))));
+  sync();
+  if (draft.pending) hear(draft.pending);
+  return card;
 }
 
 /** An issue's title being written over, by repo/file: kept while the page is drawn again under it. */
