@@ -662,7 +662,12 @@ export class FileTree {
         this.settle((presented && neighbor ? this.nameAt(neighbor) : null)
           ?? parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
       },
-      back: () => {}};
+      back: () => {
+        // A shortcut did not open a menu for Cancel to return to.
+        if (!deed || !owned()) return;
+        this.unpop();
+        name.focus({preventScroll: true});
+      }};
     if (this.onDesk && deed === 'trash') { askDelete(); return; }
     pop = fileDeeds(deeds);
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.

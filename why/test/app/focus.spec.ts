@@ -40,23 +40,51 @@ async function ink(page: Page, rects: {x: number; y: number; r: number; b: numbe
   }, [`data:image/png;base64,${shot}`, rects] as const);
 }
 
-test('on Forge\'s desk, what is not words weighs at least eight times as much in the piece in hand as in any other in sight, whichever is in hand', async ({app}) => {
+test('on Forge\'s desk, the one document in hand is at least eight times as heavy as the other; Prompt is separate', async ({app}) => {
+  const {forge, page} = app;
   await app.newRepo.openInForge();
-  const pieces = () => app.forge.desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return {key: (b as HTMLElement).dataset.key!, held: b.classList.contains('held'), x: r.left, y: r.top, r: r.right + 12, b: r.bottom + 12}; }));
-  for (const take of [() => app.forge.promptBox.click(), () => app.forge.editor('README.md').focus()]) {
-    await take();
-    await app.page.mouse.move(1530, 726);
-    await expect.poll(async () => (await pieces()).filter((p) => p.held).length).toBe(1);
-    await app.page.waitForTimeout(300);
-    // The words out of sight: what is weighed is the fill, the shadow and the edge.
-    const style = await app.page.addStyleTag({content: '.desk-box, .desk-box * { color: transparent !important; caret-color: transparent !important; } .vt-cursor, .os-caret { visibility: hidden !important; }'});
-    const seen = (await pieces()).filter((p) => p.x >= 48 && p.r - 12 <= 1536);
-    expect(seen.length).toBeGreaterThan(1);
-    const weight = await ink(app.page, seen);
-    await style.evaluate((el) => (el as Element).remove());
-    const mine = weight[seen.findIndex((p) => p.held)], other = Math.max(...weight.filter((_, i) => !seen[i].held));
-    expect(mine / other, `${seen.find((p) => p.held)!.key} in hand: ${Math.round(mine)} to ${Math.round(other)}`).toBeGreaterThanOrEqual(8);
+  // The template opened three papers; keep two whole ones in the photograph.
+  // Closing the third is an ordinary Forge action, not a test-only change to the layout.
+  await forge.editor('Makefile').focus();
+  await forge.piece('Makefile').getByRole('button', {name: 'Close Makefile', exact: true}).click();
+  await expect(forge.desk.locator('.desk-box')).toHaveCount(2);
+  const paths = ['README.md', 'src/main.c'];
+  const shade = 4;
+  const positions = async () => Promise.all(paths.map(async (path) => {
+    const {x, y, width, height} = (await forge.piece(path).boundingBox())!;
+    return {x, y, r: x + width + shade, b: y + height + shade};
+  }));
+  for (const [at, path] of paths.entries()) {
+    await forge.editor(path).focus();
+    await page.mouse.move(1530, 726);
+    await expect(forge.desk.locator('.desk-box.held')).toHaveCount(1);
+    const mine = forge.piece(path), other = forge.piece(paths[1 - at]!);
+    await expect(mine).toHaveClass(/\bheld\b/);
+    await expect(mine).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+    await expect(other).toHaveCSS('box-shadow', 'none');
+    await expect(mine).toBeInViewport({ratio: 1});
+    await expect(other).toBeInViewport({ratio: 1});
+    const seen = await positions();
+    for (const box of seen) expect(box.x >= 48 && box.y >= 0 && box.r <= 1536 && box.b <= 730).toBe(true);
+    // Weigh only the fill, the shadow and the edge, while the paper stays where it is.
+    const style = await page.addStyleTag({content: '.desk-box, .desk-box * { color: transparent !important; caret-color: transparent !important; } .vt-cursor, .os-caret { visibility: hidden !important; }'});
+    let weight: number[];
+    try { weight = await ink(page, seen); } finally { await style.evaluate((el) => (el as Element).remove()); }
+    expect(weight[at]! / weight[1 - at]!, `${path} in hand: ${Math.round(weight[at]!)} to ${Math.round(weight[1 - at]!)}`).toBeGreaterThanOrEqual(8);
   }
+
+  // The adjacent Prompt is a peer place, not a third document or a competing shadow.
+  const before = await positions();
+  await forge.use('Prompt');
+  await expect(forge.promptBox).toBeFocused();
+  await expect(forge.desk.locator('.desk-box')).toHaveCount(2);
+  for (const path of paths) await expect(forge.piece(path)).toHaveCSS('box-shadow', 'none');
+  await expect.poll(positions).toEqual(before);
+  await forge.use('Forge');
+  await expect(forge.promptBox).toBeHidden();
+  await expect(forge.editor('src/main.c')).toBeFocused();
+  await expect(forge.piece('src/main.c')).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+  await expect.poll(positions).toEqual(before);
 });
 
 test('Home has one body of ink, the note: it weighs at least eight times what waits beside it', async ({app}) => {

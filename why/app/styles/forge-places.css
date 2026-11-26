@@ -37,6 +37,8 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
 .forge-layout .desk-file > .sheet { padding-inline: 14px; grid-template-columns: minmax(17px, max-content) minmax(0, 1fr); column-gap: 15px; }
 .forge-layout .desk-label { margin-block-end: 6px; padding-inline: 6px; font-size: var(--t-word); }
 .forge-layout .desk-close { margin-block-end: 6px; }
+/* The desk remembers its selected paper, but only the hand exposes its actions. */
+.forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-close { display: none; }
 .forge-layout .desk-room:not([data-place='Forge']) .desk-box[data-beside] { visibility: hidden; }
 .forge-layout .desk-room[data-hand='Forge'] .desk .desk-box.held:not([data-kind]) { box-shadow: 4px 4px 0 var(--ink); }
 .forge-layout .desk-room:not([data-hand='Forge']) .desk .desk-box.held,

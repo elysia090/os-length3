@@ -34,7 +34,8 @@ test('a managed folder is chosen by name; making one is not the action when fold
   // Only forget which repo was in hand, not the files made through the ordinary entry above.
   await page.evaluate(() => localStorage.removeItem('why.os.repo'));
   await page.reload();
-  await app.rail.go('forge');
+  // Forge is restored asynchronously after reload. Its empty desk is the entry, not the rail.
+  await expect(page.locator('#page')).toHaveAttribute('data-place', 'forge');
   await main.getByRole('button', {name: 'Open Folder', exact: true}).click();
   const choose = page.getByRole('dialog', {name: 'Open Folder', exact: true});
   await expect(choose.getByRole('button', {name: 'cedar', exact: true})).toBeVisible();
@@ -62,16 +63,17 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   const before = await position();
   expect(await forge.selected('README.md')).toBe('#');
   await expect(page.getByRole('navigation', {name: 'Purposes', exact: true})).toBeHidden();
-  await expect(forge.prompt).toBeHidden();
+  await expect(forge.promptBox).toBeHidden();
   await forge.placesKey.click();
   await expect(forge.places.getByRole('menuitemradio')).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
   await forge.use('Prompt');
+  // An idle Prompt has no transcript height; its input is the part that is out.
+  await expect(forge.promptBox).toBeVisible();
   await expect(forge.promptBox).toBeFocused();
-  await expect(forge.prompt).toBeVisible();
   await expect.poll(position).toEqual(before);
 
   await page.keyboard.press('Escape');
-  await expect(forge.prompt).toBeHidden();
+  await expect(forge.promptBox).toBeHidden();
   await expect(editor).toBeFocused();
   await expect.poll(position).toEqual(before);
   await editor.press('Shift+F10');
@@ -91,17 +93,28 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeVisible();
   await expect(row.getByRole('button', {name: 'Delete', exact: true})).toBeVisible();
   await row.getByRole('button', {name: 'Rename', exact: true}).click();
-  const rename = page.getByRole('textbox', {name: 'New name', exact: true});
+  const actions = page.getByRole('menu', {name: 'README.md', exact: true});
+  const rename = actions.getByRole('textbox', {name: 'New name', exact: true});
   await expect(rename).toBeFocused();
   await expect(rename).toHaveValue('README.md');
   await page.keyboard.press('Escape');
   await expect(rename).toBeHidden();
+  await expect(actions).toBeHidden();
   await expect(name).toBeFocused();
   await editor.hover();
   await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeHidden();
+
   await name.press('Shift+F10');
-  await expect(page.getByRole('menuitem', {name: 'Rename', exact: true})).toBeVisible();
+  const renameItem = actions.getByRole('menuitem', {name: 'Rename', exact: true});
+  await expect(renameItem).toBeVisible();
+  await renameItem.press('Enter');
+  await expect(rename).toBeFocused();
   await page.keyboard.press('Escape');
+  await expect(rename).toBeHidden();
+  await expect(renameItem).toBeFocused();
+  await expect(actions).not.toHaveAttribute('aria-busy', 'true');
+  await page.keyboard.press('Escape');
+  await expect(actions).toBeHidden();
   await expect(name).toBeFocused();
 });
 
