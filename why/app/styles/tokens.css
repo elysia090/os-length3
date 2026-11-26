@@ -211,7 +211,8 @@
 
 /* Forge's document table: the same light on an unraised desk and one sheet in hand.
    These colors do not replace the app's general palette or the Prompt's colors. */
-body.forge-place:has(.desk-room[data-place='Forge']) {
+:is(body.forge-place:has(> #page .desk-room[data-place='Forge']),
+    .place-left > .page[data-place='forge']:has(.desk-room[data-place='Forge'])) {
   --ground: var(--nighthawks-ground);
   --dots: var(--nighthawks-dots);
   --paper: var(--nighthawks-paper);

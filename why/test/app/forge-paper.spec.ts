@@ -112,12 +112,47 @@ test('the half-cell seam stays part of the real row at phone width', async ({pag
     const bar = map.getByRole('button', {name, exact: true});
     if (i % 2) await bar.press('Enter'); else await bar.click();
     await expect.poll(() => forge.desk.evaluate((el) => el.scrollLeft)).toBe(stops[i]);
-    await expect.poll(async () => (await forge.piece(name).boundingBox())?.x).toBe(24);
-    expect((await forge.piece(name).boundingBox())!.width).toBe(336);
+    await expect.poll(async () => {
+      const box = await forge.piece(name).boundingBox();
+      return box && [box.x, box.width];
+    }).toEqual([24, 336]);
     await expect(bar).toHaveAttribute('aria-current', 'true');
     await expect(forge.editor(name)).toBeFocused();
   }
   await map.getByRole('button', {name: names[0], exact: true}).press('Enter');
   await expect.poll(() => forge.desk.evaluate((el) => el.scrollLeft)).toBe(0);
   await expect(map.locator('.row-sight')).toBeHidden();
+});
+
+test('an outgoing Forge paper keeps its writing surface and position during Places travel', async ({page}) => {
+  const app = await documents(page);
+  // Let Git finish loading before the frame whose departed geometry we measure.
+  await app.git.write('hello', 'Fix: Preserve the writing frame');
+  await app.rail.go('forge');
+  await app.forge.editor('README.md').focus();
+  await page.emulateMedia({reducedMotion: 'no-preference'});
+  const before = await page.evaluate(() => {
+    type Sample = {ground: string; paper: string; pattern: string; shadow: string; box: number[]};
+    const sample = (root: Element, plane: Element): Sample => {
+      const el = root.querySelector('.desk-box.held:not([data-kind])')!;
+      const c = getComputedStyle(el), r = el.getBoundingClientRect(), at = root.getBoundingClientRect();
+      return {ground: getComputedStyle(plane).backgroundColor, paper: c.backgroundColor, pattern: c.backgroundImage,
+        shadow: c.boxShadow, box: [r.x - at.x, r.y - at.y, r.width, r.height].map(Math.round)};
+    };
+    const current = document.querySelector('#page')!;
+    const state = window as Window & {forgeDeparture?: Sample};
+    const observe = new MutationObserver(() => {
+      if (current.getAttribute('data-place') !== 'git') return;
+      const left = document.querySelector('.place-left > .page[data-place=forge]');
+      if (!left) return;
+      state.forgeDeparture = sample(left, left);
+      observe.disconnect();
+    });
+    observe.observe(document.body, {attributes: true, attributeFilter: ['data-place'], childList: true, subtree: true});
+    setTimeout(() => observe.disconnect(), 3000);
+    return sample(current, document.body);
+  });
+  await app.forge.use('Git');
+  await expect.poll(() => page.evaluate(() => (window as Window & {forgeDeparture?: unknown}).forgeDeparture)).toEqual(before);
+  await expect(app.page.locator('.place-left')).toHaveCount(0);
 });

@@ -1,17 +1,21 @@
 /* Forge's own plane. The place switch and temporary tools never claim a grid cell. */
-body.forge-place {
+:is(body.forge-place, .place-left > .page[data-place='forge']) {
   --forge-origin: 48px;
   --forge-top: 90px;
   --forge-slot: 630px;
   --forge-slot-width: min(360px, calc(100vw - var(--forge-slot) - 24px));
+}
+body.forge-place {
   padding: 0;
   grid-template-columns: minmax(0, 1fr);
 }
 body.forge-place > #page[data-place='forge'] { padding: 0; margin: 0; height: 100dvh; min-height: 0; width: 100%; grid-column: 1; }
+/* travel() keeps this one outgoing sheet as its own page after the body has taken the new place. */
+.place-left > .page[data-place='forge'] { padding: 0; background: var(--ground) var(--dots) 0 0 / var(--u) var(--u); }
 body.work-places > .rail { display: none; }
 /* Git keeps the same left measure when the permanent rail is put away. */
 body.work-places > #page[data-place='git'] { grid-column: 2; }
-#page[data-place='forge'] > .forge-layout {
+:is(#page[data-place='forge'], .place-left > .page[data-place='forge']) > .forge-layout {
   box-sizing: border-box; width: 100%; height: 100%; max-width: none; min-height: 0; padding: 0; margin: 0;
   grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
 }
@@ -86,7 +90,7 @@ body:has(.forge-document-menu) .forge-layout .desk .desk-close { display: none; 
 
 /* Where the written paper ends, its × sits outside the upper right, in the same row as the file name. */
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .desk-close,
-body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-title, .forge-open-folder) { color: var(--paper); }
+.forge-layout:has(.desk-room[data-place='Forge']) :is(.forge-title, .forge-open-folder) { color: var(--paper); }
 .forge-layout .desk-room[data-place='Forge'] .desk-close:focus-visible { outline-color: var(--paper); }
 body.forge-place:has(.desk-room[data-place='Forge']) .forge-places-key[aria-expanded='false'] { color: var(--forge-desk-text); }
 body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .forge-places-key):focus-visible,
@@ -185,7 +189,9 @@ body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tr
   .file-tree.on-forge-desk .tree-more { visibility: visible; min-width: 32px; min-height: 32px; }
 }
 @media (max-width: 1000px) {
-  body.forge-place { --forge-origin: 24px; --forge-slot: 24px; --forge-slot-width: calc(100vw - 48px); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) {
+    --forge-origin: 24px; --forge-slot: 24px; --forge-slot-width: calc(100vw - 48px);
+  }
   .forge-layout .desk-room:is([data-place='Prompt'], [data-place='Files']) > :is(.desk, .row-map) { visibility: hidden; }
 }
 .file-tree.on-forge-desk:has(.tree-row-asking) :is(.tree-quick-root, .tree-desk-close) { visibility: hidden; }
