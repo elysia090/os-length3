@@ -103,6 +103,38 @@ test('short, long and blank documents share a full writing surface without addin
   expect((await main.boundingBox())!.height).toBe(744);
 });
 
+test('closing the document context leaves its reading position and selection in place', async ({page}) => {
+  const {forge} = await documents(page);
+  const name = 'README.md', editor = forge.editor(name);
+  await forge.editFile(name, Array.from({length: 96}, (_, i) => `line ${i + 1} to read\n`).join(''));
+  await editor.focus();
+  const where = () => editor.evaluate((area: HTMLTextAreaElement) => [
+    area.selectionStart, area.selectionEnd, area.selectionDirection, area.closest('.desk-file')!.scrollTop]);
+  await editor.evaluate((area: HTMLTextAreaElement) => {
+    const from = area.value.split('\n').slice(0, 16).join('\n').length + 1;
+    area.setSelectionRange(from, from + 4, 'backward');
+    area.closest('.desk-file')!.scrollTop = 150;
+  });
+  const before = await where();
+  expect(before[3]).toBe(150);
+
+  // Both actions can happen before the next paint. No queued key should turn the reading surface then.
+  await editor.evaluate(async (area) => {
+    const key = (target: Element, key: string, shiftKey = false) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', {key, shiftKey, bubbles: true, cancelable: true}));
+    key(area, 'Shift', true);
+    key(area, 'F10', true);
+    const menu = document.querySelector('.forge-document-menu[aria-label="Edit text"]');
+    if (!menu) throw new Error('The document never owned its context menu');
+    key(menu, 'Escape');
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  });
+  await expect(editor).toBeFocused();
+  expect(await where()).toEqual(before);
+  await editor.press('Control+End');
+  await expect.poll(async () => Number((await where())[3])).toBeGreaterThan(150);
+});
+
 test('the half-cell seam stays part of the real row at phone width', async ({page}) => {
   const {forge} = await documents(page);
   await page.setViewportSize({width: 390, height: 844});

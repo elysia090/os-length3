@@ -239,7 +239,15 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     // Written on, or gone through by the keys, the line in hand keeps the room ahead of it (lead()); a press puts the
     // caret under the hand and turns nothing.
     e.area.addEventListener('input', () => lead(e.area));
-    e.area.addEventListener('keydown', (k) => { if (!k.isComposing) requestAnimationFrame(() => lead(e.area)); });
+    e.area.addEventListener('keydown', (key) => {
+      if (key.isComposing) return;
+      const {selectionStart, selectionEnd, selectionDirection} = e.area;
+      requestAnimationFrame(() => {
+        // The editor's context key is consumed up the tree. Neither it nor a bare modifier moves the caret.
+        if (!key.defaultPrevented && (e.area.selectionStart !== selectionStart || e.area.selectionEnd !== selectionEnd
+          || e.area.selectionDirection !== selectionDirection)) lead(e.area);
+      });
+    });
     const areaSize = new ResizeObserver(() => { stand(e.area); grew(); });
     const bodySize = new ResizeObserver(() => stand(e.area));
     areaSize.observe(e.area);
