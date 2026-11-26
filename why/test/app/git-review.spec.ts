@@ -68,6 +68,38 @@ test('real Git paper posts only explicitly, and a comment links to the original 
 
   const line = (n: number) => page.getByRole('button',{name:`After: line ${n} in src/main.c`,exact:true});
   const foot = page.locator('.git-paper-review');
+  const diff = page.getByRole('region',{name:'Diff',exact:true});
+  const frame = () => diff.evaluate((el) => {
+    const head = el.querySelector('.git-diff-head')!, paper = el.closest('.git-paper')!;
+    const start = getComputedStyle(head), end = getComputedStyle(el, '::after');
+    const wordsAt = (selector: string) => {
+      const range = document.createRange();
+      range.selectNodeContents(paper.querySelector(selector)!);
+      const {top, height} = range.getBoundingClientRect();
+      return top + height / 2;
+    };
+    const at = el.getBoundingClientRect(), open = head.getBoundingClientRect();
+    return {
+      start: [start.borderBottomWidth, start.borderBottomColor, start.inlineSize],
+      end: [end.blockSize, end.backgroundColor, end.inlineSize],
+      left: [open.left, at.left], startY: open.bottom,
+      gap: paper.querySelector('.git-paper-review')!.getBoundingClientRect().top - at.bottom,
+      words: ['.git-total-files', '.git-review-comment', '.git-review-approve'].map(wordsAt),
+      overflow: el.scrollHeight - el.clientHeight,
+    };
+  });
+  const rules = (size: Awaited<ReturnType<typeof frame>>) => {
+    expect(size.start[0]).toBe('1px');
+    expect(size.end).toEqual(size.start);
+    expect(size.left[0]).toEqual(size.left[1]);
+    expect(size.gap).toBeGreaterThanOrEqual(6);
+    expect(size.words).toEqual([size.words[0],size.words[0],size.words[0]]);
+  };
+  await expect(diff.locator('.git-diff-head')).toBeVisible();
+  const short = await frame();
+  rules(short);
+  expect(short.overflow).toBe(0);
+
   const footer = await foot.boundingBox();
   await line(2).click(); await line(3).click();
   await expect(line(2)).toHaveAttribute('aria-pressed','true');
@@ -87,11 +119,20 @@ test('real Git paper posts only explicitly, and a comment links to the original 
   await foot.getByRole('button',{name:'Approve',exact:true}).click();
   await expect(step('Merge')).toBeEnabled();
 
-  await edit('/* Second submit */\nint main(void) {\n    return 4;\n}\n');
+  const longLines = Array.from({length: 24}, (_,n) => '    // ' + n + ' ' + 'keep the changes readable '.repeat(5)).join('\n');
+  await edit(`/* Second submit */\nint main(void) {\n${longLines}\n    return 4;\n}\n`);
   await step('Submit').click();
   await expect(page.getByRole('button',{name:'Version 2',exact:true})).toBeVisible();
   await expect(page.getByText('return ok;', {exact:true})).toBeVisible(); // not switched by arrival
   await page.getByRole('button',{name:'Version 2',exact:true}).click();
+  await expect.poll(() => diff.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+  const long = await frame(), pageTop = await page.evaluate(() => scrollY);
+  await diff.evaluate((el) => { el.scrollTop = 180; el.scrollLeft = 120; });
+  await expect.poll(() => diff.evaluate((el) => [el.scrollLeft,el.scrollTop])).toEqual([120,180]);
+  expect(await page.evaluate(() => scrollY)).toBe(pageTop);
+  rules(await frame());
+  expect((await frame()).startY).toBe(long.startY);
+
   await expect(page.getByText('return 4;', {exact:true})).toBeVisible();
   await expect(step('Merge')).toBeDisabled();
   await ref.click();

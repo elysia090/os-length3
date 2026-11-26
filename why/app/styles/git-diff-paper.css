@@ -9,7 +9,9 @@
   position: relative;
   box-sizing: content-box;
   container-type: inline-size;
-  block-size: calc(var(--git-diff-rows) * var(--u) + var(--s2));
+  block-size: calc(var(--git-diff-rows) * var(--u) + var(--s2) + 2px);
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
   overflow: auto;
   overflow-anchor: none;
@@ -17,7 +19,21 @@
   scrollbar-width: thin;
   scrollbar-color: var(--rule) transparent;
 }
-.git-diff-file { inline-size: max-content; min-inline-size: 100%; }
+/* The matching end rule stays inside the reading width, above any scrollbar, while the rows move under it. */
+.git-diff-scroll:has(> .git-diff-file)::after {
+  content: '';
+  position: sticky;
+  inset-inline-start: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  flex: none;
+  inline-size: 100cqi;
+  block-size: 1px;
+  margin-block-start: auto;
+  background: var(--rule);
+  pointer-events: none;
+}
+.git-diff-file { flex: none; inline-size: max-content; min-inline-size: 100%; }
 .git-diff-head {
   position: sticky;
   inset: 0 auto auto 0;
@@ -59,7 +75,6 @@ button.git-diff-name, button.git-diff-number {
   inline-size: max-content;
   min-inline-size: 100%;
   padding-block-start: var(--s2);
-  border-block-end: 1px solid var(--rule);
 }
 .git-diff-lines[hidden] { display: none; }
 .git-diff-line {

@@ -109,6 +109,10 @@
 .git-totals .git-total-numbers:empty, .git-totals:empty { display: none; }
 .git-total-files { margin: 0; color: var(--sub); font: 400 var(--t-word)/var(--u) var(--sans); }
 .git-desk .git-paper > .git-paper-review { grid-area: 3 / 2; align-self: end; min-height: calc(1.5 * var(--u)); display: flex; gap: 4px; }
+/* The actions' words sit on the files-changed line, not the numbers above it. */
+@media (width > 920px) {
+  .git-desk .git-paper > .git-paper-review { position: relative; inset-block-start: calc(var(--u) / 4); }
+}
 .git-desk .git-paper > .git-paper-review[hidden] { display: none; }
 .git-desk .git-paper .git-review-key { box-sizing: border-box; min-height: calc(1.5 * var(--u)); padding: 0 calc(var(--u) / 2); border-radius: var(--r-key); color: var(--sub); }
 .git-review-approve:not(:disabled) { border: 1px solid var(--ink); color: var(--ink); font-weight: 700; }
