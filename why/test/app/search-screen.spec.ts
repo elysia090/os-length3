@@ -238,8 +238,9 @@ test('from Git, a Search match opens the repo in Forge and Back revisits Search 
 
 test('the repo named in Search changes scope without moving the query or losing the Forge desk', async ({app}) => {
   const {page, forge} = app;
-  await page.setViewportSize({width: 1320, height: 880});
-  await app.newRepo.make('atlas', {template: 'C'});
+  await page.setViewportSize({width: 390, height: 844});
+  const other = 'atlas-build-notes';
+  await app.newRepo.make(other, {template: 'C'});
   await forge.editFile('README.md', '# Atlas\nUse local launch target.\nKeep this detail.');
   await app.newRepo.make('hello', {template: 'C'});
   const editor = forge.editor('src/main.c');
@@ -256,22 +257,26 @@ test('the repo named in Search changes scope without moving the query or losing 
   await expect(query).toBeFocused();
   await query.fill('launch target');
   await expect(stage.getByRole('status')).toHaveText('No results found for "launch target"');
-  const at = await query.boundingBox();
+  const title = stage.getByRole('heading', {name:'Search',exact:true});
+  const at = await query.boundingBox(), head = await title.boundingBox();
 
   await scope.click();
   await expect(scope).toHaveJSProperty('value', 'hello');
-  await expect(stage.getByRole('option', {name:'atlas',exact:true})).toBeVisible();
+  await expect(stage.getByRole('option', {name:other,exact:true})).toBeVisible();
   await expect(stage.locator('.search-screen-paper')).toHaveCSS('box-shadow', 'none');
+  expect(await title.boundingBox()).toEqual(head);
   await page.keyboard.press('Escape');
   await expect(stage).toBeVisible();
   await expect(scope).toBeFocused();
 
   await scope.click();
-  await stage.getByRole('option', {name:'atlas',exact:true}).click();
+  await stage.getByRole('option', {name:other,exact:true}).click();
   await expect(query).toHaveValue('launch target');
   await expect(query).toBeFocused();
-  await expect(scope).toHaveValue('atlas');
+  await expect(scope).toHaveValue(other);
   expect(await query.boundingBox()).toEqual(at);
+  expect(await title.boundingBox()).toEqual(head);
+  expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
   await expect(hit).toBeVisible();
   await hit.click();
   const read = forge.editor('README.md');
@@ -280,7 +285,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   await expect.poll(() => forge.lineChosen('README.md')).toBe('Use local launch target.');
 
   await page.evaluate(() => history.back());
-  await expect(scope).toHaveValue('atlas');
+  await expect(scope).toHaveValue(other);
   await expect(query).toHaveValue('launch target');
   await expect(hit).toBeVisible();
   await query.press('Escape');
