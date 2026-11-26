@@ -1,7 +1,7 @@
 /* The shell is a companion of the same Forge desk. Its material begins at the document edge. */
 body.forge-place .forge-layout .desk-room[data-prompt-open] {
   --prompt-bay-inset: 24px;
-  --prompt-paper: min(580px, max(244px, calc(53% - 112px)));
+  --prompt-paper: calc(24 * var(--u) + var(--s1)); /* the whole document and its thin cast */
   --prompt-tool: min(800px, calc(100% - var(--prompt-paper) - 12px - var(--prompt-bay-inset)));
 }
 body.forge-place .forge-layout .desk-room[data-prompt-open] > .desk {

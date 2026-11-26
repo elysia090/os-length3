@@ -1,8 +1,9 @@
 import {expect, test} from './fixtures.ts';
 import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-layout.ts';
 
-/** The colours a piece is drawn in (styles/tokens.css): the desk's ground, paper, ink, and the terminal's green. */
-const GROUND = 'rgb(220, 217, 212)', FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(240, 235, 223)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)', GREEN = 'rgb(164, 234, 200)';
+/** The Forge paper, its ground, and the separate neutral terminal work face. */
+const FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(240, 235, 223)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)';
+const TERMINAL_FACE = 'rgb(232, 232, 232)', TERMINAL_INK = 'rgb(27, 27, 27)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo
@@ -359,9 +360,9 @@ test('the files tool from More Places brings out the deeds for the document in h
   await expect(app.file.tree).toBeHidden();
 });
 
-test('Prompt has its own slot: ink in hand and line on the ground when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {
+test('Prompt keeps its own steady material when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {
   await app.rail.go('forge');
-  const term = app.main.locator('.forge-prompt-slot'), stand = term.locator('.desk-term.stand'), own = app.forge.editor('README.md');
+  const term = app.main.locator('.forge-prompt-slot'), stand = term.locator('.desk-term.stand:visible'), own = app.forge.editor('README.md');
   await expect(term).toBeHidden();
   await expect(app.forge.desk.locator('section[aria-label="Prompt"]')).toHaveCount(0);
   await own.focus();
@@ -369,12 +370,11 @@ test('Prompt has its own slot: ink in hand and line on the ground when the file 
   await app.forge.use('Prompt');
   await expect(app.forge.promptBox).toBeFocused();
   await expect.poll(() => own.boundingBox()).toEqual(before);
-  const lying = () => term.evaluate((el) => { const c = getComputedStyle(el); return {rotate: c.rotate, ground: c.backgroundColor, shadow: c.boxShadow}; });
-  await expect(term.locator('.desk-label')).toHaveText('Prompt');
+  await expect(term.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
   await expect(term.locator('.desk-close')).toHaveCount(0);
   await expect(term).toHaveClass(/held/);
   await expect(app.forge.piece('README.md')).toHaveCSS('box-shadow', 'none');
-  expect((await lying()).ground).toBe(INK);
+  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
   // A line is run with Enter, as at a terminal: nothing to press beside it. A note takes more than a line, so what
   // sends it stands at the line's end once something is written.
   const send = stand.locator('.prompt-run');
@@ -388,11 +388,12 @@ test('Prompt has its own slot: ink in hand and line on the ground when the file 
   await expect(send).toHaveText('Add');
   await app.forge.promptBox.fill('');
   await app.forge.promptBox.press('Alt+1');
-  // The file gone back to: it is in hand, the terminal line on the ground again, still there to be read.
+  // The file gone back to: it is in hand, and the terminal face stays readable.
   await own.focus();
   await expect(app.forge.piece('README.md')).toHaveClass(/held/);
   await expect(term).not.toHaveClass(/held/);
-  expect(await lying()).toEqual({rotate: 'none', ground: GROUND, shadow: 'none'});
+  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
+  await expect(term).toHaveCSS('box-shadow', 'none');
   await expect(stand).toBeVisible();
   // Pressed in its room (not on its line): the keyboard in its line.
   await term.click({position: {x: 120, y: 240}});
@@ -407,10 +408,11 @@ test('Prompt has its own slot: ink in hand and line on the ground when the file 
   await expect(term).toHaveClass(/held/);
 });
 
-test('the Prompt slot keeps its ink, green, text measure and line wrapping without resizing the document row', async ({app}) => {
+test('the Prompt slot keeps its neutral material, 20 lines and print wrapping without resizing the document row', async ({app}) => {
+  await app.page.setViewportSize({width: 1300, height: 864});
   await app.rail.go('forge');
   const own = app.forge.editor('README.md'), term = app.main.locator('.forge-prompt-slot');
-  const stand = term.locator('.desk-term.stand'), chip = stand.locator('.prompt-chip');
+  const stand = term.locator('.desk-term.stand:visible'), chip = stand.locator('.prompt-chip');
   const papers = () => app.forge.desk.locator('.desk-box').evaluateAll((boxes) => boxes.map((el) => {
     const {x, y, width, height} = el.getBoundingClientRect();
     return [x, y, width, height];
@@ -424,23 +426,27 @@ test('the Prompt slot keeps its ink, green, text measure and line wrapping witho
   await expect(term).toBeHidden();
   await app.forge.use('Prompt');
   await expect(app.forge.promptBox).toBeFocused();
-  const measure = {x: 630, y: 90, w: 360, h: 380, line: 19, pitch: 19, font: '17px'};
-  expect(await size()).toEqual(measure);
-  await expect(term).toHaveCSS('background-color', INK);
-  await expect(app.forge.promptBox).toHaveCSS('color', GREEN);
+  const measure = await size();
+  expect(measure).toMatchObject({line: 18, pitch: 18, font: '16px'});
+  const face = (await stand.boundingBox())!, paper = (await app.forge.piece('README.md').boundingBox())!;
+  expect(face.y).toBeCloseTo(paper.y, 0);
+  expect(face.x).toBeGreaterThanOrEqual(paper.x + paper.width);
+  expect((face.height - 24) / measure.pitch).toBe(20);
+  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
+  await expect(app.forge.promptBox).toHaveCSS('color', TERMINAL_INK);
   expect(await papers()).toEqual(row);
 
   // The separate surface stays put to be read when the document is taken back in hand.
   await own.focus();
   await expect(term).not.toHaveClass(/held/);
-  await expect(term).toHaveCSS('background-color', GROUND);
+  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
   expect(await size()).toEqual(measure);
   await app.forge.promptBox.focus();
   await expect(term).toHaveClass(/held/);
   await expect(stand.locator('.prompt-chip > .lamp')).toBeHidden();
   const colour = () => chip.evaluate((el) => getComputedStyle(el).color);
   await expect(chip).not.toHaveAttribute('data-state', 'on');
-  expect(await colour()).not.toBe(GREEN);
+  expect(await colour()).not.toBe(TERMINAL_INK);
 
   // The actual shell completes a long printed line; it wraps to whole lines within this slot.
   await app.forge.run('printf "%080d\\n" 7');
@@ -448,7 +454,7 @@ test('the Prompt slot keeps its ink, green, text measure and line wrapping witho
   const printed = stand.locator('.term-out .term-lines').filter({hasText: digits});
   await expect(printed).toHaveText(digits);
   await expect(chip).toHaveAttribute('data-state', 'on');
-  await expect(chip).toHaveCSS('color', GREEN);
+  await expect(chip).toHaveCSS('color', TERMINAL_INK);
   await expect.poll(async () => (await printed.boundingBox())!.height).toBeGreaterThan(measure.pitch);
   expect((await printed.boundingBox())!.height % measure.pitch).toBe(0);
   expect(await size()).toEqual(measure);
@@ -542,10 +548,13 @@ test('the desk is a row on the grid: a piece\'s place is its number in the row, 
   await expect.poll(async () => (await at()).turned).toEqual([0, 0]);
   const laid = await at();
   expect(laid.boxes).toEqual(row(3));
-  // Prompt owns a separate slot, not an additional paper or a change to either scroll axis.
+  // A right bay reduces the available viewport, not the paper geometry or either scroll position.
   await app.forge.use('Prompt');
   await expect(term).toHaveClass(/held/);
-  expect(await at()).toEqual(laid);
+  const beside = await at();
+  expect(beside.boxes).toEqual(laid.boxes);
+  expect(beside.turned).toEqual(laid.turned);
+  expect(beside.face).toBeLessThan(laid.face);
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();
   await expect(own).toBeFocused();
@@ -685,7 +694,7 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
       inView: r.x >= 24 && r.right <= innerWidth};
   }));
   const quiet = (paper: Awaited<ReturnType<typeof look>>[number], ground = FORGE_GROUND) => {
-    expect({ground: paper.ground, shadow: paper.shadow, close: paper.close, quieter: paper.words !== INK && paper.words !== GREEN})
+    expect({ground: paper.ground, shadow: paper.shadow, close: paper.close, quieter: paper.words !== INK && paper.words !== TERMINAL_INK})
       .toEqual({ground, shadow: 'none', close: false, quieter: true});
   };
   for (const key of ['README.md', 'src/main.c']) {
@@ -702,10 +711,10 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
 
   await app.forge.use('Prompt');
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(term).toHaveCSS('background-color', INK);
-  await expect(term).toHaveCSS('box-shadow', 'none');
-  await expect(app.forge.promptBox).toHaveCSS('color', GREEN);
-  (await look()).forEach((paper) => quiet(paper, GROUND));
+  await expect(term.locator('.desk-term:visible')).toHaveCSS('background-color', TERMINAL_FACE);
+  await expect(term).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+  await expect(app.forge.promptBox).toHaveCSS('color', TERMINAL_INK);
+  (await look()).forEach((paper) => quiet(paper));
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();
   await expect(app.forge.editor('src/main.c')).toBeFocused();

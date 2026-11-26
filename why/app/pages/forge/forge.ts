@@ -415,10 +415,9 @@ class Forge {
       editor.focus({preventScroll:true});
       if(editor.value===saved.value)editor.setSelectionRange(saved.from,saved.to,saved.direction);
       editor.scrollTop=saved.top;editor.scrollLeft=saved.left;
-      const room=()=>{if(saved.desk)saved.desk.scrollLeft=saved.turned;if(saved.port)saved.port.scrollTop=saved.scroll;};
-      room();
-      // The viewport regained its width. After the desk lays its row out, recover its reading position too.
-      requestAnimationFrame(()=>{if(this.now.repo===repo&&this.prompt.hidden&&document.activeElement===editor)room();});
+      const desk = this.desks.get(repo)?.desk;
+      if (desk?.element === saved.desk) desk.restoreTurn(saved.turned);
+      if (saved.port) saved.port.scrollTop = saved.scroll;
     } else this.deskOf(repo).desk.focusHeld();
   }
 

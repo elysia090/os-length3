@@ -79,7 +79,7 @@ export function pointerMenu(at: Point, label: string, owns: () => boolean, resto
   }
   items({close, enabled, signal: layer.signal, item(name, run, opts) {
     const check = opts?.checked;
-    const b = h('button', {class: 'forge-menu-item', type: 'button', role: check === undefined ? 'menuitem' : 'menuitemcheckbox',
+    const b = h('button', {class: 'forge-menu-item', type: 'button', role: check === undefined ? 'menuitem' : 'menuitemcheckbox', 'aria-label': name,
       ...(check === undefined ? {} : {'aria-checked': String(check)})}, name) as HTMLButtonElement;
     b.disabled = opts?.disabled ?? false;
     b.addEventListener('click', () => { if (enabled()) run(); }, options);

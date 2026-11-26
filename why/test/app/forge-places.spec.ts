@@ -91,6 +91,8 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await terminal.locator('.desk-term:visible').click({button: 'right', position: {x: 160, y: 90}});
   await expect(context).toHaveCount(1);
   await expect(context).toHaveAttribute('aria-label', 'Terminal');
+  await expect(context).not.toHaveAttribute('data-context', 'document');
+  await expect(context.getByRole('menuitem')).toHaveText(['Close']);
   await context.getByRole('menuitem', {name: 'Close', exact: true}).click();
   await expect(context).toHaveCount(0);
   await expect(forge.promptBox).toBeHidden();

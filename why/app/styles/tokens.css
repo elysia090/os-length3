@@ -232,7 +232,7 @@
 
 /* This desk's approved light. The dots below are the solid composition of the original dot ink at 20%
    over the desk (not another translucent level or key light). */
-body:has(> .page.page-inbox > .inbox-shell) {
+:is(body:has(> .page.page-inbox > .inbox-shell), .place-left > .page.page-inbox:has(> .inbox-shell)) {
   --inbox-desk: var(--nighthawks-ground);
   --inbox-dots: radial-gradient(circle, #4c4e47 1.1px, transparent 1.8px);
   --inbox-paper: var(--nighthawks-paper);

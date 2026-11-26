@@ -4,6 +4,7 @@ body:has(> .page.page-inbox > .inbox-shell) {
   padding: 0; grid-template-columns: minmax(0, 1fr);
   background: var(--inbox-desk) var(--inbox-dots) 0 0 / var(--u) var(--u);
 }
+.place-left > .page.page-inbox:has(> .inbox-shell) { background: var(--inbox-desk) var(--inbox-dots) 0 0 / var(--u) var(--u); }
 body:has(> .page.page-inbox > .inbox-shell) > .door,
 body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display: none; }
 .page.page-inbox:has(> .inbox-shell) { padding: 0; margin: 0; height: 100dvh; min-width: 0; }

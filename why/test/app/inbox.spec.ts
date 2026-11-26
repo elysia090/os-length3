@@ -129,7 +129,8 @@ test('the conversation index, opened-paper marks and Places are independent', as
   await page.setViewportSize({width: 1320, height: 792});
   const headings = inbox.conversations.getByRole('heading');
   await expect(headings).toHaveText(['Messages', 'Requests']);
-  expect(await headings.evaluateAll((head) => head.map((h) => [h.getBoundingClientRect().x, getComputedStyle(h).fontWeight, getComputedStyle(h).fontSize])))
+  // The unread/contact poll can replace the row set between locating the headings and measuring them.
+  await expect.poll(() => headings.evaluateAll((head) => head.map((h) => [h.getBoundingClientRect().x, getComputedStyle(h).fontWeight, getComputedStyle(h).fontSize])))
     .toEqual([[48, '700', '14px'], [48, '700', '14px']]);
   await expect(inbox.newMessage).toBeVisible();
   await expect(inbox.conversations.getByText('New message →')).toHaveCount(0);
