@@ -195,17 +195,20 @@ row's start.
 *Letters: who wrote, and the conversation with them.* Its one large thing is the name of who the conversation is
 with.
 
-The same instrument as Server (so it is learnt once). First, the sheet of who wrote, twelve cells: one's own name
-(pressed, it is copied; its gear at its end), the field that writes to someone new, then each conversation on two
-lines of a cell, the name with the address quiet after it and under it the last thing said; the one open in ink.
-Then the conversation open, a piece in the hand. One is found by one's name: there is no number beside it. With no
-conversation open the first sheet stands alone. Signed out, or with no name yet, it is a sheet with the one thing
-to do, as the Remote's is.
+The left index has Messages and Requests, set the same way. Each has who wrote and the time on one line, with the
+last words a step in below. The current name and time reverse; unread is a separate dot. Reading a request doesn't
+accept its sender; Accept may also join any server invitations still eligible from that sender. A held letter is a
+single piece of paper. Open more than one and the marks at the desk's foot switch between just those opened.
 
-### What is said: a transcript on an axis
+New message → brings out the recipient paper, outside the index. Opening an address takes up its letter; Back or
+Escape puts the recipient paper away without losing what was written. The Places key at the upper right takes you
+to Server or to the shell's other places and tools. Your usernames is in More Places. Signed out, or with no name
+yet, the same single deed as the Remote's appears instead.
 
-A board's talk and a conversation are set the same way, as a transcript is, on the sheet's axis (§5); not as bubbles
-on two sides.
+### What is said: a transcript
+
+A letter stands on one left edge, with the day, who wrote and when above what they said, and the reply at its foot.
+There are no bubbles. A board's talk uses an axis (§5):
 
 - **The axis.** The sheet's inside is 22 cells, set **6 | 2 | 14**. The first six are the margin: who speaks (their
   name in bold) and when, right-aligned against the axis, and paper. The words start at the axis and have 14 cells.
@@ -213,16 +216,14 @@ on two sides.
   left from the second column toward the right margin".
 - **The measure.** 14 cells are 336 px, about 46 letters to a line: in the middle of what is read with ease (45 to
   72), where the whole inside (72 letters) was at its far end.
-- **The sheet's name stands at the axis** too, with what is said of it small in the margin beside it (a board's #,
-  how a conversation reaches the other). The sheet's line under its name starts at the axis
+- **The sheet's name stands at the axis** too, with what is said of it small in the margin beside it (the board's #). The sheet's line under its name starts at the axis
   and runs out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot. Between
   the talk and the box one writes in there is no line: the box is in front of the talk, and what passes under its
   edge as the talk is read back goes a little out of focus (2 px, over the cell the talk keeps empty at its
   foot, so at rest on the latest nothing is).
 - **The box one writes in** stands in the words' column, under them: the sheet's next line, its words where the
   talk's start, whom it writes to said quietly in it while it is empty, and nothing drawn round it (a box with a fill
-  and an edge of its own in the sheet was a sheet in a sheet, and the input every program has). Its key (Post, Send)
-  comes with the words, and says its keys on itself; Enter is a new line.
+  and an edge of its own in the sheet was a sheet in a sheet, and the input every program has). Its Post key comes with the words, and says its keys on itself; Enter is a new line.
 - **On the grid.** Words are on lines of a cell. A run of one person's posts a few minutes apart says who
   once, and the margin beside the rest of the run is paper; the next post of a run on the next line, a line before
   another speaker. A day's name is a small line of its own in the margin.

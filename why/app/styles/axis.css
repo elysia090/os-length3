@@ -1,9 +1,9 @@
-/* The axis of a sheet where something is said (a board, a conversation): DESIGN §5, §10.
+/* The axis of a board where something is said: DESIGN §5, §10.
 
    What made Git's sheet its own, said without looking at it: an axis that is not the sheet's left edge, with things
    hung on both sides of it (right-aligned against it at the left, left-aligned from it at the right); a division that
    is not into equal parts; white that is part of the composition, not what is left over; and one side only where the
-   margin is broken. A board and a conversation had none of these: everything from the left edge, the whole measure,
+   margin is broken. A board had none of these: everything from the left edge, the whole measure,
    the same margin both sides.
 
    A letter's sheet is set so already (the Canon's own letterhead: three columns, "leaving the left one blank", the
@@ -17,7 +17,7 @@
    On a sheet with no room for 6 | 2 | 14 (a phone's piece is 13 cells) who speaks is over the words, as what does
    not fit beside goes under (§6). By the sheet's own width, never the window's. */
 /* (The board in the hand: one beside it is as wide as its name, which a sheet measured for its own width cannot be.) */
-.server-center .slide[aria-current='true'], .inbox-page .inbox-thread { container-type: inline-size; }
+.server-center .slide[aria-current='true'] { container-type: inline-size; }
 
 @container (min-width: 576px) {
   /* -- a board -- */
@@ -41,14 +41,4 @@
   .slide > .dock { position: relative; inset: auto; padding-left: calc(9 * var(--u)); }
   .board-todo { padding-left: calc(9 * var(--u)); }
 
-  /* -- a conversation -- */
-  .inbox-top { position: relative; padding-left: calc(9 * var(--u)); box-shadow: none; }
-  .inbox-top::after { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; bottom: 0; height: 1px; background: var(--rule); }
-  /* (How it reaches them is a note in the margin, beside their name.) */
-  .inbox-top > .muted { position: absolute; left: var(--u); width: calc(6 * var(--u)); text-align: right; line-height: calc(2 * var(--u)); }
-  .bubble:not(.inbox-notice) { position: relative; padding-left: calc(8 * var(--u)); }
-  .bubble:not(.run-in, .inbox-notice)::before { position: absolute; left: 0; top: 0; width: calc(6 * var(--u)); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bubble.inbox-notice, .inbox-messages > .inbox-empty { margin-left: calc(8 * var(--u)); }
-  .inbox-ask { margin-left: calc(9 * var(--u)); }
-  .inbox-write { padding-left: calc(9 * var(--u)); }
 }

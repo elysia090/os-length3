@@ -105,6 +105,24 @@ async function row(what: string, size: {width: number; height: number}, first: L
   }).toPass({timeout: 4000});
 }
 
+async function inboxDesk(app: App, size: {width: number; height: number}) {
+  const desk = size.width >= 1000;
+  const x = desk ? 312 : 24, y = desk ? 96 : 72;
+  const held = app.main.locator('.inbox-thread');
+  await expect(app.rail.door).toBeHidden();
+  await expect(app.forge.placesKey).toBeVisible();
+  await expect(held).toBeInViewport({ratio: 1});
+  expect(await held.boundingBox()).toEqual({x, y, width: Math.min(816, size.width - x - (desk ? 48 : 24)), height: Math.min(552, size.height - y - 38)});
+  await expect(held).toHaveCSS('background-color', 'rgb(240, 235, 223)');
+  await expect(held).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 6px 6px 0px 0px');
+  const index = app.inbox.conversations;
+  if (desk) {
+    await expect(index).toBeVisible();
+    const left = await index.getByRole('heading', {name: 'Messages'}).boundingBox();
+    expect(left?.x).toBe(48);
+  } else await expect(index).toBeHidden();
+}
+
 test('signed in, the Remote is a sheet from the desk\'s corner still; Server and Inbox are desks with a row, the piece in the hand whole in the window', async ({signedIn: app, another}) => {
   const bo = await another('Bo');
   await bo.inbox.named();
@@ -120,8 +138,7 @@ test('signed in, the Remote is a sheet from the desk\'s corner still; Server and
     await app.rail.go('remote');
     await sheet(app, what('remote'), true);
     await app.rail.go('inbox');
-    await expect(app.rail.door).toBeVisible();
-    await row(what('Inbox'), size, app.main.locator('.inbox-index'), 12, app.main.locator('.inbox-thread'));
+    await inboxDesk(app, size);
     expect(await sideways(app), what('Inbox')).toBeLessThanOrEqual(0);
     await app.server.open();
     await row(what('Server'), size, app.server.side, 8, app.server.view.locator('.slide[aria-current="true"]'));

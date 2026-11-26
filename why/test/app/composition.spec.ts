@@ -35,7 +35,7 @@ const PLACES = {
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   // (Server's desk may rest with a board before the one in hand at its edge (§6): a board of the room is what it is.)
   server: {subject: '.slide.full', corner: '.server-side, .slide'},
-  inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread'},
+  inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread', anchor: '.inbox-title'},
   runtime: {subject: 'main#page', corner: '.page-head'},
   remote: {subject: 'main#page', corner: '.page-head'},
 } as const;
@@ -111,6 +111,8 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const code = !!paper && !!el.closest('.desk-file > .sheet');
     const tag = !!paper && !!el.closest('.desk-label');
     const diffHead = el.closest('.git-diff-head'), diffLines = el.closest('.git-diff-lines');
+    // A letter is set on its own local lines inside the accepted stock and measure.
+    const letterLine = el.closest('.inbox-entry-by, .inbox-footer > p');
     const totals = el.closest('.git-totals');
     // A board's transcript stands on its foot; the trailing, 1px scroll target is not part of a line.
     const foot = el.closest('.board-talk > .timeline')?.querySelector(':scope > .tl-foot-mark');
@@ -120,6 +122,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
       : totals ? totals.getBoundingClientRect().top + pitch / 2
+      : letterLine ? letterLine.getBoundingClientRect().top + pitch / 2
       : foot ? foot.getBoundingClientRect().top - pitch / 2 : 12;
     // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
     // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
@@ -172,7 +175,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = place === 'forge' && !called ? 4 : U / 2;
+    const shade = place === 'forge' && !called ? 4 : place === 'inbox' ? 6 : U / 2;
     expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual([shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
@@ -193,10 +196,11 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     }
     // Every line of words on a cell of the grid (DESIGN §3, whole cells).
     expect(f.offGrid, `${what}: lines of words off the grid`).toEqual([]);
-    // Three sizes and no others: the words', a name's, the one large thing's (DESIGN §3).
-    for (const size of f.sizes) expect([17, NAME, PERSON].some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the three sizes`).toBe(true);
-    // One voice: two sizes, no text twice, no number twice.
-    for (const d of f.display) expect([NAME, PERSON].some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
+    // Inbox follows its own letter measure: dossier notes, ink and a single display name at two possible widths.
+    const sizes = place === 'inbox' ? [13, 14, 17, 18, 20, 30, 38] : [17, NAME, PERSON];
+    const displaySizes = place === 'inbox' ? [30, 38] : [NAME, PERSON];
+    for (const size of f.sizes) expect(sizes.some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the place's sizes`).toBe(true);
+    for (const d of f.display) expect(displaySizes.some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
     expect(texts.length, `${what}: no text said twice large (${texts.join(' | ')})`).toBe(new Set(texts).size);
     const numbers = texts.flatMap((t) => t.match(/#\d+/g) ?? []);

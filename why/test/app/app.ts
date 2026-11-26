@@ -178,7 +178,7 @@ class Rail extends Part {
   /** The common routes are summoned on either work desk. */
   async open() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    if ((here === 'forge' || here === 'git') && !await this.navigation.isVisible()) {
+    if ((here === 'forge' || here === 'git' || here === 'inbox') && !await this.navigation.isVisible()) {
       const menu = this.app.forge.places;
       if (!await menu.isVisible()) await this.app.forge.placesKey.click();
       await menu.getByRole('menuitem', {name: 'More Places', exact: true}).click();
@@ -207,8 +207,14 @@ class Rail extends Part {
       return;
     }
     if (place !== 'forge' || now !== 'forge') {
-      await this.open();
-      await this.button(place).click();
+      const direct = place === 'server' && now === 'inbox' && await this.app.forge.placesKey.isVisible();
+      if (direct) {
+        if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
+        await this.app.forge.places.getByRole('menuitemradio', {name: 'Server', exact: true}).click();
+      } else {
+        await this.open();
+        await this.button(place).click();
+      }
     }
     if (place !== 'file' && place !== 'plugin') {
       await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
@@ -223,6 +229,7 @@ class MeMenu extends Part {
   get menu() { return this.page.getByRole('menu', {name: 'Me'}); }
 
   async openMenu() {
+    await this.app.rail.open();
     await this.button.click();
     await expect(this.menu).toBeVisible();
   }
@@ -741,26 +748,38 @@ class Runtime extends Part {
   }
 }
 
-/** Inbox: your name, the conversations, the one open. */
+/** Inbox: the address index, the letter in hand, and the next recipient paper. */
 class Inbox extends Part {
   get conversations() { return this.main.getByRole('navigation', {name: 'Conversations'}); }
-  /** A conversation in the list, by the other's name or address (it shows both, then the last message). */
   conversation(who: string) { return this.conversations.getByRole('button', {name: who}); }
   get message() { return this.main.getByRole('textbox', {name: 'Message', exact: true}); }
-  /** The conversation open at the right, named by the other (their name on this Remote). */
+  get newMessage() { return this.main.getByRole('button', {name: 'New message', exact: true}).and(this.main.getByText('New message →', {exact: true})); }
+  get recipient() { return this.main.getByRole('region', {name: 'New message', exact: true}); }
+  get papers() { return this.main.getByRole('group', {name: 'Open Inbox papers', exact: true}); }
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
-  /** Inbox, opened at its stub: their username, given at the first sign-in (nothing is claimed first). */
-  async named(name = this.app.handle) {
+  async names() {
+    await this.app.rail.open();
+    await this.page.getByRole('button', {name: 'Your usernames', exact: true}).click();
+  }
+
+  /** The Inbox has its automatically claimed address and stands ready to write. */
+  async named(name?: string) {
     await this.app.rail.go('inbox');
-    await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
+    await expect(this.newMessage).toBeVisible();
+    if (name) {
+      await this.names();
+      await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
+      await this.page.keyboard.press('Escape');
+    }
   }
 
   /** Write `text` to `to` (a name or a code) and send it. */
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
-    await this.conversations.getByRole('textbox', {name: 'Send to username'}).fill(to);
-    await this.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
+    await this.newMessage.click();
+    await this.recipient.getByRole('textbox', {name: 'Recipient address'}).fill(to);
+    await this.recipient.getByRole('button', {name: 'Open', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();
     await expect(this.message).toHaveValue('');

@@ -36,5 +36,6 @@ test('in Japanese, the Remote, File and Inbox say each thing with the one word t
   await app.file.close();
 
   await app.rail.go('inbox');
-  await expect(app.main.getByRole('textbox', {name: 'ユーザー名宛てに送信'})).toBeVisible();
+  await app.main.getByRole('button', {name: '新規メッセージ', exact: true}).click();
+  await expect(app.main.getByRole('textbox', {name: '宛先'})).toBeVisible();
 });

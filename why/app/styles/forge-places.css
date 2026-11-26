@@ -128,7 +128,7 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
 
 /* The app's existing routes and tools still exist. They are visible only when requested on a work desk. */
 .forge-route-tools { display: none; }
-body.work-places.forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
+:is(body.work-places, body:has(> .page.page-inbox > .inbox-shell)).forge-routes > .rail { display: flex; position: fixed; inset: 58px 12px auto auto; z-index: 21; width: min(250px, calc(100vw - 24px));
   height: auto; max-height: calc(100dvh - 74px); padding: 5px; flex-direction: column; gap: 0; background: var(--paper);
   border: 1px solid var(--ink); border-radius: var(--r-field); font: 400 var(--t-word)/19px var(--mono); }
 body.forge-routes .rail-tabs { display: grid; gap: 0; padding: 0; }

@@ -229,3 +229,18 @@
   --forge-paper-shade: var(--nighthawks-shadow);
   --forge-paper-thumb: #837d71;
 }
+
+/* This desk's approved light. The dots below are the solid composition of the original dot ink at 20%
+   over the desk (not another translucent level or key light). */
+body:has(> .page.page-inbox > .inbox-shell) {
+  --inbox-desk: var(--nighthawks-ground);
+  --inbox-dots: radial-gradient(circle, #4c4e47 1.1px, transparent 1.8px);
+  --inbox-paper: var(--nighthawks-paper);
+  --inbox-muted: var(--nighthawks-paper-sub);
+  --inbox-rule: var(--nighthawks-rule);
+  --inbox-desk-quiet: var(--nighthawks-desk-quiet);
+  --inbox-map-idle: var(--nighthawks-desk-disabled);
+  --inbox-selection: var(--nighthawks-paper-selected);
+  --inbox-shadow: var(--nighthawks-shadow);
+  --r-inbox-paper: 5px;
+}

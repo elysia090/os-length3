@@ -1,104 +1,173 @@
-/* Inbox: the conversations, their messages, someone who wrote first, and writing to someone. */
-/* Inbox is a desk with a row, as Server's is (DESIGN §10, ui/row-desk.ts): at the desk's edge the sheet of who wrote,
-   twelve cells wide (one's own name, the field to write to someone new, the conversations); two cells on, the
-   conversation open, a piece as wide as any, in the hand: paper, an ink edge, its shadow. From a cell under the band
-   (y = 72) to a cell over the window's foot and to the window's right edge; the conversation reaches its sheet's foot
-   and nothing of the place scrolls away. No conversation open, the first sheet stands alone. */
-.page:has(> div > .inbox-page) { display: flex; flex-direction: column; box-sizing: border-box; height: var(--inner-h); margin: 0; padding: 0; overflow: visible; }
-.page:has(> div > .inbox-page) > .page-head { display: none; }
-.page > div:has(> .inbox-page) { position: relative; flex: 1; min-height: 0; max-width: none; margin: calc(3 * var(--u) - var(--outer-top)) calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; }
-/* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). By
-   the page's class, not by what it holds: a :has() before `> *` is asked again of the whole page at every change in it
-   (a line in a Prompt's output cost a 40 ms restyle of Forge), a class only when it changes. */
-.page.page-inbox > * { width: auto; }
-.inbox-page { box-sizing: border-box; height: 100%; padding-bottom: var(--u); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
-.inbox-page::-webkit-scrollbar { display: none; }
-.inbox-box { display: flex; gap: calc(2 * var(--u)); box-sizing: border-box; width: max-content; min-width: 100%; height: 100%; padding-right: calc(100% - var(--piece, 100%)); }
-.inbox-index, .inbox-page .inbox-thread { flex: none; box-sizing: border-box; height: round(down, 100%, var(--u)); scroll-snap-align: start; border-radius: var(--r-sheet); outline-offset: -1px; overflow: hidden; }
-.inbox-index { display: flex; flex-direction: column; width: min(calc(12 * var(--u)), var(--piece, 100%)); background: var(--ground); outline: 1px solid var(--edge); overflow: visible; }
-.inbox-page .inbox-thread { width: var(--piece, 100%); background: var(--paper); outline: 1px solid var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); overflow: visible; }
-.inbox-box.none > .inbox-thread { display: none; }
-.inbox-box.none { padding-right: 0; }
-/* On the first sheet: one's own name, its top line; the field to write to someone new; then who wrote. Each a line
-   across the sheet, the frame's square tall, a quiet rule under it. */
-.inbox-index > .stub-holder { flex: none; margin: 0; }
-.inbox-index .stub, .inbox-index .inbox-new { min-height: var(--key); border: 0; border-radius: 0; background: none; box-shadow: 0 1px 0 var(--edge); }
-.inbox-index .stub, .inbox-index .stub-panel { width: 100%; }
-.inbox-index .stub > *, .inbox-index .inbox-new > * { height: var(--key); border-radius: 0; }
-.inbox-index .inbox-list { flex: 1; }
-/* The rows' words start where the field's and the stub's do, a border and a step in. */
-.inbox-page .inbox-row, .inbox-page .inbox-head, .inbox-none { padding-inline: var(--s3); }
-.inbox-none { margin: var(--s2) 0 0; color: var(--sub); }
-.inbox-list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-/* The field to write to someone new, the stub's shape under it: Write is its end, as the gear is the stub's. */
-.inbox-new { flex: none; align-items: stretch; gap: 0; margin: 0; }
-.inbox-new:focus-within { outline: 2px solid var(--ink); outline-offset: -2px; }
-.inbox-new .line-in { flex: 1; min-width: 0; min-height: 0; height: auto; padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; }
-.inbox-new .line-in:focus, .inbox-new .line-in:focus-visible { outline: none; }
-.inbox-new > .small-button { min-height: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; }
-.inbox-new > .small-button:hover { color: var(--ink); }
-/* The rows, drawn again as they come, lie in the list as if it held them itself. */
-.inbox-rows { display: contents; }
-.inbox-head { margin: var(--s3) 0 0; font-size: var(--t-word); color: var(--sub); }
-/* Who wrote: two lines of a cell (the name; the last thing said, quiet), the one whose conversation is open in ink. */
-.inbox-row { display: grid; text-align: left; padding-block: 0; border: 0; border-radius: 0; background: transparent; cursor: var(--cursor-hand); color: var(--sub); font: var(--t-word)/var(--u) var(--sans); }
-.inbox-row > .small { font: var(--t-word)/var(--u) var(--sans); }
-/* (Their address after the name on its line, quiet: two may share a name.) */
-.inbox-row { grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: var(--s2); }
-.inbox-row > .small:not(.inbox-last) { grid-column: 2; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inbox-row > .inbox-last { grid-column: 1 / -1; }
-.inbox-row:is(:hover, :focus-visible) { color: var(--ink); }
-.inbox-row[aria-current='true'] { background: var(--ink); color: var(--ground); }
-.inbox-row[aria-current='true'] .muted { color: inherit; }
-.inbox-who { display: flex; align-items: center; gap: var(--s2); }
-.inbox-who > b { margin-right: auto; }
-/* Under the round initial, the lines start where the name does. */
-.inbox-who > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inbox-who > .lately-badge { display: none; }
-.inbox-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unread { font: 700 var(--t-word) var(--mono); padding: 0 var(--s2); border-radius: var(--r-round); border: 1px solid var(--edge); }
-.inbox-thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-/* Its head: who it is with, in the display face, capitals a cell tall (a sheet's name, §5); how it reaches them, quiet. */
-.inbox-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); min-height: calc(2 * var(--u)); padding: 0 var(--u); box-shadow: 0 1px 0 var(--rule); }
-.inbox-top > h2 { min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* (Who it is with, a name a cell tall, as a board's beside the one in hand: the index's names are the words' size, so
-   it has the size's top alone. Longer than the head, it breaks over lines, two cells a line, never cut short.) */
-.inbox-top > h2 { white-space: normal; overflow: visible; text-overflow: clip; text-wrap: balance; overflow-wrap: anywhere; }
-.inbox-top .grow { flex: 1; }
-.inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--u); overflow-y: auto; }
-/* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
-   where the answer is written, never a sheet's height of nothing between them. */
-.inbox-messages > :first-child:first-child { margin-top: auto; }
-/* None said yet: said where the first words will come, at the sheet's edge. */
-.inbox-messages > .inbox-empty { margin: auto 0 0; align-self: flex-start; }
-/* What was said, as a transcript (talk.css): one left edge, for both who speak. Who says it on a line of its own where
-   a run starts (the other's name in ink, one's own a step quieter), then the words under it on lines of a cell; the
-   next of a run on the next line, a line before the other speaks. The time, quiet, after a run's last words. */
-.bubble { display: block; margin-top: 0; font: var(--t-word)/var(--u) var(--sans); }
-.bubble:not(.run-in, .inbox-notice) { margin-top: var(--u); }
-.bubble:not(.run-in, .inbox-notice)::before { content: attr(data-who); display: block; font-weight: 700; }
-.bubble[data-mine='true']::before { color: var(--sub); }
-.bubble-time { margin-left: var(--s2); font: var(--t-word)/1 var(--mono); white-space: nowrap; }
-.bubble .state-chip { line-height: 1; }
-.bubble.run-on > .bubble-time { display: none; }
-/* A notice the Remote left (added to a server at once, pages/inbox.ts noticeLine): no one's words: a quiet line at the
-   same edge, as a day's name is in a board's talk; the server in it a way there once one is in it. */
-.bubble.inbox-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); margin-top: var(--u); color: var(--sub); font-size: var(--t-word); }
-.inbox-notice > .link { padding-block: 2px; font-size: inherit; color: var(--ink); }
-/* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
-/* (A box on a sheet is ruled, as a form is: the quiet rule round it, no fill of its own, a cell of paper inside; a fill
-   would make it a sheet on a sheet, which there is not: DESIGN §5, what is ruled on a sheet.) */
-.inbox-ask { display: grid; gap: 0; margin: 0 var(--u) var(--u); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--rule); border-radius: var(--r-card); background: none; }
-.inbox-ask p { margin: 0; }
-.inbox-ask-acts { display: flex; gap: var(--s2); }
-.bubble .state-chip { margin-right: var(--s2); }
-.bubble > .link, .bubble > .muted { margin-right: var(--s2); }
-.bubble-text { display: inline; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inbox-write { position: relative; display: grid; gap: 0; padding: 0 var(--u) var(--u); }
-/* The box one writes in is the one a board's is (prompt.css .prompt): one deed, one look. */
-.bubble-in { flex: 1; min-width: 0; resize: none; min-height: 0; height: auto; max-height: 200px; padding: 0; border: 0; border-radius: 0; background: transparent; font: var(--t-word)/var(--u) var(--sans); }
-.bubble-in:focus, .bubble-in:focus-visible { outline: none; }
-.inbox-write .write-line { align-items: flex-end; gap: var(--s3); margin: 0; }
-/* (Its key comes with the words, as a board's does.) */
-.inbox-write .write-line:has(> .bubble-in:placeholder-shown) > .prompt-run { display: none; }
-.at { color: var(--sub); }
+/* Inbox: a quiet address index, one letter in hand, and the same map of the actual open papers as the work desks.
+   The sign-in card still belongs to the normal unconnected shell. */
+body:has(> .page.page-inbox > .inbox-shell) {
+  padding: 0; grid-template-columns: minmax(0, 1fr);
+  background: var(--inbox-desk) var(--inbox-dots) 0 0 / var(--u) var(--u);
+}
+body:has(> .page.page-inbox > .inbox-shell) > .door,
+body:has(> .page.page-inbox > .inbox-shell):not(.forge-routes) > .rail { display: none; }
+.page.page-inbox:has(> .inbox-shell) { padding: 0; margin: 0; height: 100dvh; min-width: 0; }
+.page.page-inbox:has(> .inbox-shell) > .page-head { display: none; }
+.page.page-inbox > .inbox-shell {
+  --paper: var(--inbox-paper); --sub: var(--inbox-muted); --rule: var(--inbox-rule); --slot: var(--inbox-selection);
+  --inbox-edge: calc(2 * var(--u)); --inbox-top: calc(4 * var(--u));
+  --inbox-index-width: calc(9 * var(--u)); --inbox-gap: calc(2 * var(--u));
+  --inbox-paper-width: min(calc(34 * var(--u)), calc(100vw - 2 * var(--inbox-edge) - var(--inbox-index-width) - var(--inbox-gap)));
+  --inbox-inset: calc(1.5 * var(--u));
+  position: relative; width: 100%; max-width: none; height: 100%;
+}
+.inbox-shell .forge-places-key { background: var(--inbox-desk); color: var(--paper); }
+.inbox-shell .forge-places-key[aria-expanded=true] { background: var(--paper); color: var(--ink); }
+.inbox-shell .forge-places-key:focus-visible { outline-color: var(--paper); }
+.inbox-title { position: absolute; inset: var(--u) auto auto var(--inbox-edge); color: var(--paper); font: 700 var(--t-word)/var(--u) var(--sans); }
+.inbox-page {
+  position: absolute; inset: var(--inbox-top) auto auto var(--inbox-edge);
+  height: min(calc(23 * var(--u)), calc(100% - var(--inbox-top) - 38px));
+  display: grid; grid-template-columns: var(--inbox-index-width) var(--inbox-paper-width);
+  grid-template-rows: minmax(0, 1fr); column-gap: var(--inbox-gap);
+}
+.inbox-over {
+  display: flex; align-items: center; justify-content: flex-end;
+  position: absolute; inset: -36px 0 auto auto; height: 32px; color: var(--paper);
+}
+.inbox-deed {
+  display: inline-block; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; cursor: var(--cursor-hand);
+  line-height: var(--u); text-decoration: underline; text-underline-offset: 2px; text-align: start;
+}
+.inbox-deed:disabled { color: var(--sub); cursor: var(--cursor-arrow); text-decoration: none; }
+.inbox-strong { font-weight: 700; }
+.inbox-over > .inbox-deed { min-height: 32px; }
+.inbox-over :focus-visible, .inbox-index :focus-visible, .inbox-paper-map :focus-visible { outline-color: var(--paper); }
+.inbox-index {
+  grid-row: 1; min-height: 0; min-width: 0; padding: 0 var(--s1) 0 var(--s4);
+  margin: 0 calc(-1 * var(--s1)) 0 calc(-1 * var(--s4)); overflow: auto;
+  color: var(--paper);
+}
+.inbox-group > h2, .inbox-none, .inbox-index-error {
+  margin: var(--u) 0 0; color: var(--inbox-desk-quiet); font: 700 14px/var(--u) var(--sans);
+}
+.inbox-index-error { color: var(--paper); }
+.inbox-row {
+  position: relative; display: block; border: 0; border-radius: 0; padding: 0; width: 100%;
+  text-align: start; background: none; color: var(--paper); cursor: var(--cursor-hand); line-height: var(--u);
+}
+.inbox-who { height: var(--u); display: block; }
+.inbox-first-line {
+  display: inline-flex; align-items: center; gap: var(--s3); height: 20px; max-width: calc(100% + var(--s1));
+  margin-inline-start: calc(-1 * var(--s1)); padding-inline: var(--s1); vertical-align: middle;
+}
+.inbox-person { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-first-line > time { flex: none; color: var(--inbox-desk-quiet); font: 400 13px/var(--u) var(--mono); }
+.inbox-row[aria-current=true] .inbox-first-line { background: var(--ink); }
+.inbox-row[aria-current=true] .inbox-person { font-weight: 700; }
+.inbox-row[aria-current=true] time { color: inherit; }
+.inbox-last {
+  display: block; margin-inline-start: var(--s3); color: var(--inbox-desk-quiet);
+  font: 400 14px/var(--u) var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inbox-dot {
+  position: absolute; inset: 10px auto auto -12px; width: 4px; height: 4px;
+  border-radius: 50%; background: var(--paper);
+}
+
+.inbox-thread {
+  grid-column: 2; grid-row: 1; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0; min-height: 0; padding-inline: var(--inbox-inset); overflow: hidden;
+  border-radius: var(--r-inbox-paper); outline: 1px solid var(--ink); outline-offset: -1px;
+  background-color: var(--paper); color: var(--ink); box-shadow: 6px 6px 0 var(--inbox-shadow);
+}
+.inbox-thread:focus-visible { outline-offset: -1px; outline-width: 1px; }
+.inbox-thread ::selection { color: var(--ink); background: var(--slot); }
+.inbox-top { position: relative; min-height: 113px; padding-block: 28px var(--s3); border-bottom: 1px solid var(--rule); }
+.inbox-top h2 {
+  margin: 0; color: var(--ink); font: 900 38px/48px var(--display);
+  letter-spacing: -.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inbox-address { color: var(--sub); font: 400 14px/20px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-direct { margin-inline-start: var(--s2); }
+.inbox-index-key { display: none; }
+
+.inbox-messages {
+  min-height: 0; overflow: auto; padding-block: 20px 10px; overscroll-behavior: contain;
+}
+.inbox-day { display: grid; gap: 20px; }
+.inbox-day + .inbox-day { margin-top: var(--u); }
+.inbox-day > h3 { margin: 0; color: var(--sub); font: 400 14px/var(--u) var(--sans); }
+.inbox-entry { display: grid; justify-items: start; gap: var(--s1); }
+.inbox-entry-by { display: flex; width: 100%; align-items: baseline; gap: var(--s3); }
+.inbox-entry-by > b { min-width: 0; overflow-wrap: anywhere; }
+.inbox-entry-by > time { margin-inline-start: auto; color: var(--sub); font: 400 13px/var(--u) var(--mono); white-space: nowrap; }
+.inbox-kind, .inbox-empty { color: var(--sub); font-size: 14px; }
+.inbox-words {
+  margin: 0; max-width: 570px; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 400 20px/1.5 var(--sans);
+}
+.inbox-entry .inbox-deed { max-width: 100%; overflow-wrap: anywhere; }
+
+.inbox-footer {
+  min-height: 80px; max-height: 50%; margin-block: 0 var(--u); padding-block-start: var(--s3);
+  border-top: 1px solid var(--rule); overflow: auto;
+}
+.inbox-ask { color: var(--sub); }
+.inbox-ask-acts { display: flex; flex-wrap: wrap; column-gap: 26px; margin-block-start: var(--s2); color: var(--ink); }
+.inbox-ask-acts > .inbox-deed, .inbox-write-line > .inbox-deed { min-height: 28px; }
+.inbox-write-line { display: flex; gap: var(--u); align-items: flex-start; }
+.inbox-reply {
+  field-sizing: content; flex: 1; min-width: 0; min-height: var(--u); max-height: 192px;
+  resize: none; padding: 0; border: 0; outline: none; background: transparent; font: 400 18px/var(--u) var(--sans);
+}
+.inbox-reply:focus-visible { outline: none; }
+.inbox-letter-error, .inbox-address-error { color: var(--off); overflow-wrap: anywhere; }
+.inbox-thread > .inbox-letter-error { grid-row: 2; margin-top: var(--u); }
+.inbox-send-status { color: var(--sub); }
+.inbox-send-status:empty, .inbox-letter-error:empty, .inbox-address-error:empty { display: none; }
+
+.inbox-recipient {
+  align-self: start; display: grid; width: min(100%, 445px);
+  grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2) var(--s3); padding-block-start: 18px;
+}
+.inbox-recipient > label { min-width: 0; display: grid; grid-template-columns: 35px minmax(0, 1fr); align-items: baseline; color: var(--sub); }
+.inbox-recipient input {
+  min-width: 0; width: 100%; height: 35px; padding: 0; border: none; border-bottom: 1px solid var(--rule);
+  border-radius: 0; background: transparent; outline: none; color: var(--ink);
+}
+.inbox-recipient input:focus-visible { outline: none; border-bottom-color: var(--ink); }
+.inbox-address-error { grid-column: 1 / -1; margin-inline-start: 35px; }
+
+/* Shared 4px bars, no line under them: the held one is light on the dark desk. */
+.inbox-paper-map {
+  --map-count: max(1, var(--paper-count, 1));
+  --map-gap: min(4px, calc((100vw - 2 * var(--inbox-edge)) / (2 * var(--map-count))));
+  --map-mark: round(nearest, calc(var(--inbox-paper-width) / 12), 1px);
+  left: var(--inbox-edge); bottom: calc(var(--u) / 2); width: min(calc(100% - 2 * var(--inbox-edge)),
+    calc(var(--map-count) * var(--map-mark) + (var(--map-count) - 1) * var(--map-gap)));
+  display: grid; grid-template-columns: repeat(var(--paper-count, 1), minmax(0, 1fr)); gap: var(--map-gap);
+}
+.inbox-paper-map .row-piece { position: relative; min-width: 0; }
+.inbox-paper-map .row-piece::before { background: var(--inbox-map-idle); }
+.inbox-paper-map .row-piece:is([aria-current=true], :hover, :focus-visible)::before { background: var(--paper); }
+.inbox-names {
+  position: absolute; z-index: 20; top: 58px; right: var(--s3); width: min(400px, calc(100% - var(--u)));
+  padding: var(--s2); color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: var(--r-field);
+}
+.inbox-names > .stub-holder { margin: 0; }
+.inbox-names .stub { width: 100%; }
+.inbox-names .stub-panel { background: var(--paper); }
+
+@media (max-width: 999px) {
+  .page.page-inbox > .inbox-shell {
+    --inbox-edge: var(--u); --inbox-top: calc(3 * var(--u));
+    --inbox-paper-width: min(calc(34 * var(--u)), calc(100vw - 2 * var(--inbox-edge)));
+  }
+  .inbox-page { grid-template-columns: var(--inbox-paper-width); }
+  .inbox-thread { grid-column: 1; }
+  .inbox-page[data-narrow=index] > .inbox-thread, .inbox-page[data-narrow=paper] > .inbox-index { display: none; }
+  .inbox-over { top: -52px; right: 42px; }
+  .inbox-index-key { display: block; position: absolute; inset: 4px 0 auto auto; font-size: 14px; }
+}
+@media (max-width: 519px) {
+  .page.page-inbox > .inbox-shell { --inbox-inset: 20px; }
+  .inbox-top h2 { font-size: 30px; }
+  .inbox-words { font-size: 18px; }
+  .inbox-footer { max-height: 168px; }
+}

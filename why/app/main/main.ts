@@ -123,7 +123,7 @@ const ctx: Context = {
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
-  morePlaces(anchor, tools) { if (isWorkPage(current)) openMorePlaces(anchor, tools); },
+  morePlaces(anchor, tools) { if (isWorkPage(current) || current === 'inbox') openMorePlaces(anchor, tools); },
   get repo() { return openRepo; },
   get leftOff() {
     try {

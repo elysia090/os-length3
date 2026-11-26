@@ -8,13 +8,13 @@ export type ForgePlace = Exclude<WorkPlace, 'Git'>;
 
 let made = 0;
 
-/** One key at the desk's right edge; both document and issue desks use these same routes. */
-export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, more: () => void) {
+/** One key and keyboard convention, with real routes supplied by the desk. */
+export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void, more: () => void) {
   const id = `work-places-${++made}`;
   const key = h('button', {class: 'forge-places-key', type: 'button', 'aria-label': t('Places'), 'aria-haspopup': 'menu',
     'aria-controls': id, 'aria-expanded': 'false'}, mark('places')) as HTMLButtonElement;
   const menu = h('div', {class: 'forge-menu forge-places', id, role: 'menu', 'aria-label': t('Places'), hidden: ''});
-  let here: WorkPlace = 'Forge';
+  let here = start;
   let listening: AbortController | null = null;
   let watching: MutationObserver | null = null;
   const close = (back = false) => {
@@ -30,26 +30,27 @@ export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => voi
     menu.append(b);
     return b;
   };
-  const tabs = WORK_PLACES.map((place) => item(place, 'menuitemradio', () => {
+  const tabs = places.map((place) => item(place, 'menuitemradio', () => {
     close(place === here);
     if (place !== here) select(place);
   }));
   menu.append(h('hr', {role: 'separator'}));
   const rest = item('More Places', 'menuitem', () => { close(); more(); });
   const items = () => [...tabs, rest].filter((b) => !b.disabled);
-  const set = (place: WorkPlace, hasRepo: boolean) => {
+  const set = (place: K, available: (destination: K) => boolean = () => true) => {
     here = place;
     tabs.forEach((b, i) => {
-      const destination = WORK_PLACES[i];
+      const destination = places[i];
       b.setAttribute('aria-checked', String(destination === place));
-      b.disabled = !hasRepo && (destination === 'Prompt' || destination === 'Files');
+      b.disabled = !available(destination);
     });
   };
+  set(start);
   key.addEventListener('click', () => {
     if (!menu.hidden) { close(true); return; }
     menu.hidden = false;
     key.setAttribute('aria-expanded', 'true');
-    const current = tabs[WORK_PLACES.indexOf(here)];
+    const current = tabs[places.indexOf(here)];
     (current && !current.disabled ? current : rest).focus({preventScroll: true});
     const {signal} = listening = new AbortController();
     document.addEventListener('pointerdown', (e) => {
@@ -59,7 +60,7 @@ export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => voi
       if (e.key !== 'Escape' || e.isComposing) return;
       e.preventDefault(); e.stopPropagation(); close(true);
     }, {capture: true, signal});
-    // Git is redrawn on a route change while Forge is retained and hidden. Neither lets an old menu keep listeners.
+    // A desk redrawn or retained and hidden does not leave an old menu listening.
     watching = new MutationObserver(() => { if (!owner.isConnected || owner.closest('[hidden]')) close(); });
     watching.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['hidden']});
   });
@@ -73,4 +74,10 @@ export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => voi
   });
   owner.append(key, menu);
   return {key, set, close, drop: () => close()};
+}
+
+/** Document and issue desks use the same routes. */
+export function workPlaces(owner: HTMLElement, select: (place: WorkPlace) => void, more: () => void) {
+  const menu = placesMenu(owner, WORK_PLACES, 'Forge', select, more);
+  return {...menu, set: (place: WorkPlace, hasRepo: boolean) => menu.set(place, (destination) => hasRepo || (destination !== 'Prompt' && destination !== 'Files'))};
 }

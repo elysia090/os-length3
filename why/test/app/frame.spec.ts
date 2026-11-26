@@ -27,9 +27,10 @@ function framed() {
     return {label: b.getAttribute('aria-label') ?? '', box: box(b), mark: box(mark), stroke: path ? getComputedStyle(path).strokeWidth : '', colour: getComputedStyle(b).color, current: b.getAttribute('aria-current') === 'page'};
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
-  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .forge-places-key, .sr-only';
+  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .forge-places-key, .sr-only';
   // Forge takes a smaller left measure when the full rail is away on a narrow desk. The top strip is unchanged.
-  const left = document.getElementById('page')?.dataset.place === 'forge' && matchMedia('(max-width: 1000px)').matches ? 24 : F;
+  const place = document.getElementById('page')?.dataset.place;
+  const left = (place === 'forge' || place === 'inbox') && matchMedia('(max-width: 999px)').matches ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
     if (el.closest(own) || !shown(el) || el.children.length) continue;
@@ -68,7 +69,8 @@ function framed() {
     return {key: box(key), mark: box(mark), expanded: key.getAttribute('aria-expanded'), color: c.color,
       inked: c.backgroundColor === INK || c.outlineStyle !== 'none' || c.boxShadow !== 'none'};
   });
-  return {W, H, places, corners, door: document.querySelector('.door:not([hidden])') && box(document.querySelector('.door')!), intrudes, loud};
+  const door = document.querySelector('.door:not([hidden])');
+  return {W, H, places, corners, door: door && shown(door) ? box(door) : null, intrudes, loud};
 }
 
 test('the frame is the camera\'s: one degree, receding, one square, a stable rail or corner, on two sides only, and quiet at rest', async ({signedIn: app}) => {
@@ -106,13 +108,13 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
         if (f.door) expect(f.door, `${what}: the door`).toEqual([F, 6, F, 36]);
         // Constant: the rail the same in every place.
         const now = JSON.stringify(f.places.map((p) => [p.label, p.box, p.mark]));
-        if (place === 'forge' || place === 'git') {
+        if (place === 'forge' || place === 'git' || place === 'inbox') {
           expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
           expect(f.door, `${what}: no second way beside the Places key`).toBeNull();
           expect(f.corners, `${what}: one quiet corner at rest`).toEqual([{
             key: [size.width - 56, 12, 44, 44],
             mark: [size.width - 42, 26, 16, 16],
-            expanded: 'false', color: INK, inked: false,
+            expanded: 'false', color: place === 'inbox' ? 'rgb(240, 235, 223)' : INK, inked: false,
           }]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
         } else {
