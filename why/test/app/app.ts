@@ -612,7 +612,6 @@ class Git extends Part {
     await expect(this.firstLine).toBeVisible();
   }
 
-  get repos() { return this.main.getByRole("radiogroup", {name: "repo"}); }
   get newIssue() { return this.main.getByRole('button', {name: 'New issue', exact: true}); }
   /** The paper's title and optional details; the title describes its destination. */
   get firstLine() { return this.main.locator('.issue-new-card').getByRole('textbox', {name: 'Issue title'}); }

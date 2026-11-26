@@ -61,7 +61,6 @@ export default {
   'Add a comment…': 'コメントを入力…',
   'Approved by {who}': '{who}が承認',
   // main's commit, what is done with (merged, closed), and putting a file back
-  'Fix: Title': 'Fix: 件名',
   '{who} · merged {when}': '{who} · {when}にマージ',
   '{who} · closed {day}': '{who} · {day}にクローズ',
   'Closed {day}': '{day}にクローズ',

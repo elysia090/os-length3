@@ -21,11 +21,6 @@ interface Draft {
 const drafts = new Map<string, Draft>();
 const blank = (): Draft => ({first: '', detail: '', error: '', pending: null});
 
-/** What was written stays at its repo, never transplanted into another folder. */
-export const drafted = (repo?: string | null) =>
-  (repo === undefined ? [...drafts.values()] : [repo ? drafts.get(repo) : undefined])
-    .some((d) => !!(d?.first.trim() || d?.detail.trim()));
-
 /** The blank slot is the next sheet; its entry is outside the current issue (IssueRow). */
 export function newIssue(now: boolean, repo: string | null, none: string, ways: {made(m: Made): void; back(): void}): HTMLElement {
   const card = h('div', {class: 'issue-card issue-new-card', 'data-draft-repo': repo ?? ''});
