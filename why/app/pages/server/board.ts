@@ -13,20 +13,20 @@ import {button, current, type Here, type Shown} from './parts.ts';
 let writingAs: string | undefined;
 let names = new Map<string, string>();
 
-/** One topic; Talk and TODO are two faces of the same paper, with a single switch above it. */
+/** One topic; Talk and TODO are two faces of the same paper, with one switch beside its name. */
 export function boardBox(b: Shown) {
   const key = `why.part.board-${b.id}`;
   const id = `topic-${b.id}`;
-  const head = h('div', {class: 'board-head'},
-    h('h2', {}, b.name), b.member ? null : h('p', {class: 'topic-source'}, b.server));
+  const name = h('h2', {id: `${id}-name`}, b.name);
   const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO', id: `${id}-todo`});
-  const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name, id: `${id}-talk`});
+  const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-labelledby': name.id, id: `${id}-talk`});
   const reading = timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined);
   talk.append(reading.root);
-  const title = h('span', {'aria-live': 'polite'});
+  const face = h('span', {class: 'sr-only', 'aria-live': 'polite'});
   const next = h('button', {type: 'button', class: 'topic-face-key'}) as HTMLButtonElement;
-  const over = h('div', {class: 'server-overline'}, title, next);
-  const body = h('div', {class: 'board-card', 'data-board': b.id}, head, talk, todo);
+  const over = h('div', {class: 'server-overline'}, name, next, face,
+    b.member ? null : h('p', {class: 'topic-source'}, b.server));
+  const body = h('div', {class: 'board-card', 'data-board': b.id}, talk, todo);
   let taskTop = 0;
   const show = (that: 'talk' | 'todo') => {
     if (body.dataset.face === 'todo' && !todo.hidden) taskTop = todo.scrollTop;
@@ -35,8 +35,9 @@ export function boardBox(b: Shown) {
     todo.hidden = that !== 'todo';
     talk.hidden = that !== 'talk';
     if (that === 'todo') todo.scrollTop = taskTop;
-    title.textContent = that === 'talk' ? t('Talk') : 'TODO';
-    next.textContent = that === 'talk' ? 'TODO' : t('Talk');
+    face.textContent = that === 'talk' ? t('Talk') : 'TODO';
+    next.textContent = that === 'talk' ? 'TODO →' : `← ${t('Talk')}`;
+    next.setAttribute('aria-label', that === 'talk' ? 'TODO' : t('Talk'));
     next.setAttribute('aria-controls', that === 'talk' ? todo.id : talk.id);
     try { localStorage.setItem(key, that); } catch { /* convenience only */ }
     if (that === 'talk') { reading.showFace(); requestAnimationFrame(seenNow); }
