@@ -252,7 +252,20 @@ test('a long inventory stays on its paper and restores the reading and the deedâ
   await batch.press('Enter');
   const ask = here.getByRole('group', {name: /^Free /});
   await expect(ask).toContainText(`${names.length} items`);
-  await app.answer(ask.getByRole('button', {name: 'Free space', exact: true}), ask);
+  const yes = ask.getByRole('button', {name: 'Free space', exact: true});
+  const panel = main.getByRole('tabpanel', {name: 'This browser'});
+  // Chromium can move the hand to the enclosing panel when a focused deed goes busy.
+  // Exercise that real focus destination even on a run where disabling the button falls back to body.
+  await yes.evaluate((button: HTMLButtonElement) => {
+    button.addEventListener('blur', () => {
+      const tab = button.closest<HTMLElement>('[role="tabpanel"]');
+      if (!button.disabled || !tab) return;
+      tab.focus({preventScroll: true});
+      if (document.activeElement === tab) tab.dataset.testFocusFallback = 'panel';
+    }, {once: true});
+  });
+  await app.answer(yes, ask);
+  await expect(panel).toHaveAttribute('data-test-focus-fallback', 'panel');
   const heading = here.getByRole('heading');
   await expect(heading).toBeFocused();
   await expect(heading).toBeInViewport({ratio: 1});

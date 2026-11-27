@@ -29,10 +29,10 @@ function framed() {
     return {label: b.getAttribute('aria-label') ?? '', box: box(b), mark: box(mark), stroke: path ? getComputedStyle(path).strokeWidth : '', colour: getComputedStyle(b).color, current: b.getAttribute('aria-current') === 'page'};
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
-  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .server-masthead, .server-sidebar, .server-overline, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .forge-places-key, .forge-search-key, .sr-only';
+  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .server-masthead, .server-sidebar, .server-overline, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .runtime-masthead > h1, .forge-places-key, .forge-search-key, .sr-only';
   // A narrow desk can use one cell of left margin; the top strip does not change.
   const place = document.getElementById('page')?.dataset.place;
-  const one = place === 'home' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
+  const one = place === 'home' || place === 'runtime' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
   const left = W <= one ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
@@ -121,6 +121,22 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
           });
           expect(f.corners, `${what}: Search and Places share one quiet corner`).toEqual([key('Search', 56), key('Places', 12)]);
           await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
+          if (place === 'runtime') {
+            // Its name belongs to the frame, but only where it is written, not underneath the corner keys.
+            const name = app.main.getByRole('heading', {name: 'Runtime', exact: true});
+            await expect(name).toBeVisible();
+            const title = (await name.boundingBox())!;
+            expect([title.x, title.y, title.height], `${what}: the place name stands in the frame`).toEqual([
+              size.width <= 600 ? U : F, U, U,
+            ]);
+            const ink = await name.evaluate((el) => {
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              return range.getBoundingClientRect().width;
+            });
+            expect(title.width, `${what}: the place name ends with its ink`).toBeCloseTo(ink, 1);
+            expect(title.x + title.width, `${what}: clear of the corner keys`).toBeLessThan(f.corners[0]!.key[0]!);
+          }
         } else {
           expect(f.corners, `${what}: only the permanent rail here`).toHaveLength(0);
           rail ??= now;

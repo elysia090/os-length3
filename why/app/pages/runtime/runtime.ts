@@ -78,7 +78,9 @@ export function runtime(ctx: Context): Node[] {
         drawn = now;
         const at = document.activeElement;
         const onSheet = holder.contains(at);
-        const requested = onSheet || at === document.body ? requestedFocus : undefined;
+        // A busy row can lose its focused button to the enclosing tabpanel before its read comes back.
+        const samePart = onSheet || at === page.panel('device');
+        const requested = samePart || at === document.body ? requestedFocus : undefined;
         const key = requested ?? (onSheet && at instanceof HTMLElement ? at.dataset.spaceFocus : undefined);
         requestedFocus = undefined;
         remember();

@@ -28,7 +28,7 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
   padding: var(--u) 0 0 var(--runtime-name-edge);
 }
 .runtime-masthead > h1 {
-  margin: 0; color: var(--nighthawks-paper); font: 700 var(--t-word)/var(--u) var(--sans);
+  inline-size: fit-content; margin: 0; color: var(--nighthawks-paper); font: 700 var(--t-word)/var(--u) var(--sans);
 }
 .runtime-work {
   container-type: inline-size;

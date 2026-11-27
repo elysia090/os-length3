@@ -63,6 +63,22 @@ async function sheet(app: App, what: string, door: boolean, paper = 'rgb(253, 25
     expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe(paper);
   }).toPass({timeout: 4000});
 }
+async function runtimeDesk(app: App, width: number) {
+  await corner(app, width);
+  const narrow = width <= 600, measure = 40 * U;
+  const left = narrow ? U : Math.max(2 * U, Math.min(9 * U, Math.floor((width - measure - U) / (2 * U)) * U));
+  const paper = app.main.locator('.runtime-paper');
+  const tabs = app.main.getByRole('tablist', {name: 'Runtime'});
+  await expect(paper).toBeVisible();
+  await expect(tabs).toBeVisible();
+  const b = await at(paper), row = await at(app.main.locator('.runtime-tabs'));
+  expect([b.x, b.y, b.width]).toEqual([left, narrow ? 4.5 * U : 4 * U, Math.min(measure, width - left - U)]);
+  expect([row.x, row.y + row.height]).toEqual([b.x, b.y]);
+  expect(await paper.locator('h1, [role="tablist"]').count()).toBe(0);
+  await expect(paper).toHaveCSS('background-color', 'rgb(239, 235, 227)');
+  await expect(app.main).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+}
+
 /** The ground is the desk's dots, under every place. */
 const dotted = (app: App) => app.page.evaluate(() => getComputedStyle(document.body).backgroundImage.includes('radial-gradient'));
 /** How far the page is wider than the window (it never is). */
@@ -83,10 +99,8 @@ test('signed out, each place keeps its own frame and reading edge at every width
     }
     for (const place of ['runtime', 'remote', 'inbox'] as const) {
       await app.rail.go(place);
-      if (place === 'runtime') {
-        await corner(app, size.width);
-        await sheet(app, what(place), false, 'rgb(239, 235, 227)');
-      } else await sheet(app, what(place), true);
+      if (place === 'runtime') await runtimeDesk(app, size.width);
+      else await sheet(app, what(place), true);
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
