@@ -203,8 +203,8 @@ accept its sender; Accept may also join any server invitations still eligible fr
 single piece of paper. Open more than one and the marks at the desk's foot switch between just those opened.
 
 New message → brings out the recipient paper, outside the index. Opening an address takes up its letter; Back or
-Escape puts the recipient paper away without losing what was written. The Places key at the upper right gives
-Server, Inbox, Your usernames and the shell's other destinations in one scrolling list. Signed out, or with no name
+Escape puts the recipient paper away without losing what was written. The Inbox name opens Server, Inbox, Your
+usernames and the shell's other destinations in one scrolling list alongside it. Signed out, or with no name
 yet, the same single deed as the Remote's appears instead.
 
 ### What is said: a transcript
@@ -587,9 +587,10 @@ it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
 **At the frame.** The name of the place is its Places button: its words start at (48, 24), or (24, 24) in a
 window up to 1000 px wide. The lens keeps the right corner. Each target is at least 44 px tall and wide. The
-name stays in place while the choices are out: their words stand under it against the same ground, not a sheet,
-with no border, shadow or separator. The work holds its place but goes quiet as a whole while the words are out;
-no menu edge cuts a paper or its words. The work returns at once when the list is put away.
+name stays in place while the choices are out: one vertical list immediately to its right, its first word level
+with the name. The words stand on the same ground with no sheet, border, shadow or separator; the list stops short
+of the lens. The work holds its place but goes quiet as a whole, so no menu edge cuts a paper or its words. The work
+returns at once when the list is put away.
 Forge, Files, Git, Prompt, Home, Server, Runtime, Plugin, New repo and Account are on one scrolling list. Five
 whole rows fit in the ordinary menu, four in a window 360 px tall or less when there is room; a touch row is at
 least 44 px. Arrow keys, Home and End bring the focused line into view. Escape puts the list away and gives the name

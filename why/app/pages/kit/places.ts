@@ -120,11 +120,13 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   };
   set(start);
   paintNews(key, menu);
+  const beside = () => menu.style.setProperty('--places-key-right', `${key.getBoundingClientRect().right}px`);
   key.addEventListener('click', () => {
     if (!menu.hidden) { close(true); return; }
     commands.forEach((button) => button.remove());
     commands = extra().map(({label, run, onPress}) => item(label, 'menuitem', () => { close(); run(key); }, onPress));
     paintNews(key, menu);
+    beside();
     menu.hidden = false;
     key.setAttribute('aria-expanded', 'true');
     menu.dataset.keys = '';
@@ -132,6 +134,10 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     const current = tabs[places.indexOf(here)];
     focus(current && !current.disabled ? current : items()[0]);
     const {signal} = listening = new AbortController();
+    const fit = new ResizeObserver(beside);
+    fit.observe(key);
+    signal.addEventListener('abort', () => fit.disconnect(), {once: true});
+    window.addEventListener('resize', beside, {signal});
     document.addEventListener('pointerdown', (e) => {
       if (e.target instanceof Node && !menu.contains(e.target) && !key.contains(e.target)) close();
     }, {capture: true, signal});

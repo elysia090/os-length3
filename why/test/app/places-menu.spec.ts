@@ -44,6 +44,16 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   expect(lower.opacity).toBeLessThan(1);
   expect(await key.boundingBox()).toEqual(keyAt);
   expect(await paper.boundingBox()).toEqual(first);
+  const beside = async () => {
+    const name = (await label.boundingBox())!, target = (await key.boundingBox())!, list = (await menu.boundingBox())!;
+    const firstWord = (await entries.first().locator('span').boundingBox())!;
+    const lens = (await app.main.getByRole('button', {name: 'Search', exact: true}).boundingBox())!;
+    expect(list.x).toBeCloseTo(target.x + target.width, 1);
+    expect(firstWord.y + 1).toBe(name.y); // align the ink of mono and sans, not their different font metrics
+    expect(firstWord.x - (name.x + name.width)).toBeGreaterThanOrEqual(20);
+    expect(list.x + list.width + 4).toBeLessThanOrEqual(lens.x);
+  };
+  await beside();
 
   const visible = () => menu.evaluate(el => {
     const frame = el.getBoundingClientRect(), top = frame.top + el.clientTop, bottom = top + el.clientHeight;
@@ -64,8 +74,10 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   expect(await paper.boundingBox()).toEqual(first);
   await key.click();
   await expect(menu).toBeVisible();
-  await page.setViewportSize({width: 1536, height: 320});
+  await page.setViewportSize({width: 320, height: 320});
   await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 112});
+  await expect.poll(async () => (await menu.boundingBox())!.x - (await key.boundingBox())!.x).toBeCloseTo((await key.boundingBox())!.width, 1);
+  await beside();
   const scroll = () => menu.evaluate(el => el.scrollTop);
   const world = await page.evaluate(() => scrollY);
   await menu.hover();
@@ -96,7 +108,7 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   expect(await scroll()).toBe(0);
   await current.press('Escape');
   // Git is now the third row. At two rows, the focused destination must still scroll fully into view.
-  await page.setViewportSize({width: 1536, height: 140});
+  await page.setViewportSize({width: 1536, height: 105});
   await key.click();
   await expect(current).toBeFocused();
   await expect(current).toBeInViewport({ratio: 1});
@@ -138,8 +150,17 @@ test.describe('touch', () => {
       await expect(menu).toBeVisible();
       const before = (await menu.boundingBox())!;
       expect(before.height).toBe(5 * 44);
-      expect(before.x + before.width).toBeLessThan(width);
-      await menu.getByRole('menuitemradio', {name: 'Files', exact: true}).tap();
+      expect(before.x).toBeCloseTo(target.x + target.width, 1);
+      const first = menu.getByRole('menuitemradio', {name: 'Forge', exact: true});
+      const firstInk = (await first.locator('span').boundingBox())!;
+      expect(firstInk.y + 1).toBe(label.y);
+      const lens = (await app.main.getByRole('button', {name: 'Search', exact: true}).boundingBox())!;
+      expect(before.x + before.width + 4).toBeLessThanOrEqual(lens.x);
+      const files = menu.getByRole('menuitemradio', {name: 'Files', exact: true});
+      const hit = (await files.boundingBox())!;
+      expect(hit.width).toBeGreaterThanOrEqual(44);
+      expect(hit.height).toBe(44);
+      await files.tap();
       await expect(key).toHaveAccessibleName('Files');
       await expect(menu).toBeHidden();
       await key.tap();
