@@ -73,21 +73,27 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(terminal.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
   await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-color', 'rgb(232, 228, 223)');
   await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-image', 'none');
-  await expect(terminal).toHaveCSS('outline-color', 'rgb(36, 36, 36)');
+  await expect(terminal).toHaveCSS('outline-color', 'rgb(169, 166, 162)');
+  await expect(terminal).toHaveCSS('outline-width', '2px');
   await expect(forge.promptBox).toBeFocused();
+  await expect(editor).toBeHidden();
   await expect.poll(position).toEqual(before);
+  await expect(terminal.locator('.terminal-paper-head > button')).toHaveCount(2);
+  const rules = await terminal.locator('.terminal-paper-rule').evaluateAll(rs =>
+    rs.map(r => getComputedStyle(r,'::before').backgroundImage));
+  expect(rules).toHaveLength(2);
+  expect(rules[0]).toEqual(rules[1]);
   await expect(terminal.getByRole('button', {name: 'Previous terminal'})).toBeDisabled();
   await terminal.getByRole('button', {name: 'Next terminal'}).click();
-  await expect(terminal.getByRole('button', {name: 'Right terminal'})).toHaveAttribute('aria-pressed', 'true');
+  await expect(terminal.getByRole('button', {name: 'Right terminal'})).toHaveAttribute('aria-current', 'true');
   await expect(forge.promptBox).toBeFocused();
   await terminal.getByRole('button', {name: 'Left terminal'}).press('Enter');
-  await expect(terminal.getByRole('button', {name: 'Left terminal'})).toHaveAttribute('aria-pressed', 'true');
+  await expect(terminal.getByRole('button', {name: 'Left terminal'})).toHaveAttribute('aria-current', 'true');
   await expect(forge.promptBox).toBeFocused();
 
   const context = page.locator('.forge-document-menu[role="menu"]');
-  await editor.press('Shift+F10');
-  await expect(context).toHaveCount(1);
-  await expect(context).toHaveAttribute('aria-label', 'Edit text');
+  // The parked editor is not a second target while Prompt has the same bay.
+  await expect(editor).toBeHidden();
   await terminal.locator('.desk-term:visible').click({button: 'right', position: {x: 160, y: 90}});
   await expect(context).toHaveCount(1);
   await expect(context).toHaveAttribute('aria-label', 'Terminal');
@@ -143,20 +149,20 @@ test('an open Prompt stays open after returning to the same workspace', async ({
   const right = app.main.getByRole('button', {name: 'Right terminal', exact: true});
   await forge.openPrompt();
   await right.click();
-  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  await expect(right).toHaveAttribute('aria-current', 'true');
   await app.rail.go('home');
   await expect(forge.promptBox).toBeHidden();
 
   await app.rail.go('forge');
   await expect(forge.promptBox).toBeVisible();
   await forge.openPrompt();
-  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  await expect(right).toHaveAttribute('aria-current', 'true');
   // The actual Places command still toggles the companion both ways.
   await forge.use('Prompt');
   await expect(forge.promptBox).toBeHidden();
   await forge.openPrompt();
   await expect(forge.promptBox).toBeFocused();
-  await expect(right).toHaveAttribute('aria-pressed', 'true');
+  await expect(right).toHaveAttribute('aria-current', 'true');
 });
 
 test('on a narrow desk, selecting a real file shows the editor and hands it the keyboard', async ({app}) => {

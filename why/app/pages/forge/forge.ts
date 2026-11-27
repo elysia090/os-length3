@@ -1,5 +1,7 @@
 import {currentLang, t} from '../../../text/i18n.ts';
 import {h} from '../../ui/dom.ts';
+import {fieldCarried} from '../../ui/caret.ts';
+import {still} from '../../ui/glide.ts';
 import {onChange, onRenamed, store} from '../../../repo/repos.ts';
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import type {Context} from '../kit/context.ts';
@@ -17,11 +19,13 @@ import {openFolder} from './open-folder.ts';
 import {deskSearch, workPlaces, type ForgePlace} from '../kit/places.ts';
 import {pointerMenu, type BesideOption} from './document-menu.ts';
 import {PromptPaper} from './prompt-paper.ts';
+import {turnPromptBay} from './prompt-bay.ts';
+import '../../styles/forge-paper.css';
 import '../../styles/forge-prompt.css';
 
 /**
- * Forge owns each repo's retained document desk. Files and Prompt take a separate slot without changing
- * the document row; search and the shell's other routes are brought out only when asked for.
+ * Forge keeps each repo's document desk mounted. On a wide desk Prompt and the papers take turns in one bay;
+ * a compact desk keeps its existing companion. Search, Files and other routes do not replace the working row.
  * A repo is chosen explicitly, or restored if it is still available on this device.
  */
 
@@ -135,7 +139,11 @@ class Forge {
   private now: {repo: string | null} = {repo: null};
   private readonly switcher: ReturnType<typeof workPlaces>;
   private readonly promptPaper: PromptPaper;
+  private readonly promptKey: HTMLElement;
+  private backGuide: ResizeObserver | undefined;
+  private currentTurn: {desk: Desk; cancel: () => void} | null = null;
   private get prompt() { return this.promptPaper.element; }
+  private get promptOpen() { return this.center.hasAttribute('data-prompt-open'); }
   private lastEditor: HTMLTextAreaElement | null = null;
   private paperReturn: PaperReturn | null = null;
   private paperMoved = false;
@@ -162,10 +170,10 @@ class Forge {
     this.center = h('div', {class: 'desk-room'});
     this.work = bench({main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
-      revealPrompt: () => this.promptWindow(true, false),
-      promptVisible: () => !this.prompt.hidden && this.center.dataset.hand === 'Prompt',
+      revealPrompt: () => this.promptWindow(true, false, true),
+      promptVisible: () => this.promptOpen && this.center.dataset.hand === 'Prompt',
       termAway: () => {
-        if (this.prompt.hidden) return false;
+        if (!this.promptOpen) return false;
         this.promptWindow(false, true); return true;
       },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
@@ -182,6 +190,7 @@ class Forge {
     this.element = this.work.element;
     this.element.classList.add('forge-layout');
     this.filesBeside.addEventListener('change', () => {
+      this.resizePromptBay();
       const repo = this.now.repo;
       if (!repo || !this.visible()) return;
       if (this.filesBeside.matches) this.selectPlace(this.placeInHand, false);
@@ -190,11 +199,15 @@ class Forge {
     this.element.prepend(h('h1', {class: 'forge-title'}));
     this.switcher = workPlaces(this.element, (place) => {
       if (place === 'Git') void ctx.go('git');
-      else if (place === 'Prompt') this.promptWindow(!!this.prompt.hidden,true);
+      else if (place === 'Prompt') this.promptWindow(!this.promptOpen, true);
       else this.selectPlace(place);
     }, () => ctx.placeCommands?.(['forge']) ?? [], deskSearch(ctx, () => this.now.repo));
     this.switcher.set('Forge', false);
-    this.promptPaper = new PromptPaper(this.center,this.work,()=>this.promptWindow(false,true));
+    this.promptPaper = new PromptPaper(this.center, this.work, () => this.promptWindow(false, true), () => this.filesBeside.matches);
+    this.promptKey = h('button', {class:'forge-prompt-approach', type:'button', 'aria-controls':this.prompt.id},
+      h('span', {class:'forge-prompt-action-label'}, h('span', {}, t('Prompt')), h('span', {}, t('Back'))),
+      h('span', {'aria-hidden':'true'}, ' →'));
+    this.promptKey.addEventListener('click', () => this.promptWindow(!this.promptOpen, true));
     this.prompt.addEventListener('focusin', () => this.hand('Prompt'));
     this.prompt.addEventListener('pointerdown', () => this.hand('Prompt'));
     this.center.addEventListener('focusin', (e) => {
@@ -206,7 +219,7 @@ class Forge {
     // A body-mounted menu can borrow and return focus without changing a document's place.
     // Only actually working in a paper updates where the tool returns.
     const moved = (event: Event) => {
-      if (!this.prompt.hidden && event.target instanceof Element && event.target.closest('.desk-file'))
+      if (!this.filesBeside.matches && this.promptOpen && event.target instanceof Element && event.target.closest('.desk-file'))
         this.paperMoved = true;
     };
     this.center.addEventListener('input', moved);
@@ -216,7 +229,7 @@ class Forge {
       if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) moved(e);
     });
     this.center.addEventListener('focusout', (e) => {
-      if (this.paperMoved && !this.prompt.hidden && e.target instanceof HTMLTextAreaElement && e.target.closest('.desk-file')) {
+      if (this.paperMoved && this.promptOpen && e.target instanceof HTMLTextAreaElement && e.target.closest('.desk-file')) {
         this.paperReturn = returnTo(e.target);
         this.paperMoved = false;
       }
@@ -287,11 +300,11 @@ class Forge {
       const repo = this.now.repo, el = out(document.elementFromPoint(last.x, last.y));
       const w = el && repo ? wordAt(last.x, last.y, el) : null;
       const named = w && repo ? asPath(w.text, repo) : null;
-      if (!w || !named || !repo || !el || this.prompt.hidden) { clear(); return; }
+      if (!w || !named || !repo || !el || !this.promptOpen) { clear(); return; }
       void isFile(repo, named.path).then((yes) => {
         // (Still the word under the pointer once it is known to be a file.)
         const now = out(document.elementFromPoint(last.x, last.y)), again = now ? wordAt(last.x, last.y, now) : null;
-        if (!yes || this.now.repo !== repo || this.prompt.hidden || now !== el || again?.text !== w.text) return;
+        if (!yes || this.now.repo !== repo || !this.promptOpen || now !== el || again?.text !== w.text) return;
         at = {repo, ...named, output: el, text: w.text};
         CSS.highlights?.set('term-file', new Highlight(again.range));
         room.classList.add('term-linking');
@@ -304,7 +317,7 @@ class Forge {
     }, {passive: true});
     room.addEventListener('pointerleave', clear);
     room.addEventListener('click', (e) => {
-      if (!at || at.repo !== this.now.repo || this.prompt.hidden || out(e.target) !== at.output || getSelection()?.toString()) return;
+      if (!at || at.repo !== this.now.repo || !this.promptOpen || out(e.target) !== at.output || getSelection()?.toString()) return;
       if (wordAt(e.clientX, e.clientY, at.output)?.text !== at.text) { clear(); return; }
       const {repo, path, line} = at;
       clear();
@@ -315,6 +328,7 @@ class Forge {
   /** Made again (another language): it no longer follows the store or the Remote. */
   drop() {
     this.away();
+    this.placeBack();
     this.promptPaper.drop(); this.work.drop();
     this.listening.abort();
     this.switcher.drop();
@@ -399,19 +413,91 @@ class Forge {
   private hand(place: ForgePlace) {
     this.center.dataset.hand = place;
     this.prompt.classList.toggle('held', place === 'Prompt');
+    this.promptKey.toggleAttribute('data-back', this.promptOpen);
   }
 
-  /** Prompt expands the tool, not a new place, and takes no command when opened. */
-  private promptWindow(open: boolean, focus: boolean) {
+  /** Back keeps the departed paper's actual foot without depending on an invisible CSS anchor. */
+  private placeBack(paper?: HTMLElement) {
+    this.backGuide?.disconnect();
+    this.backGuide = undefined;
+    if (!paper) { this.promptKey.style.removeProperty('--forge-back-foot'); return; }
+    const align = () => this.promptKey.style.setProperty('--forge-back-foot',
+      `${this.center.getBoundingClientRect().bottom - paper.getBoundingClientRect().bottom}px`);
+    align();
+    const guide = this.backGuide = new ResizeObserver(align);
+    guide.observe(this.center); guide.observe(paper);
+  }
+
+  private parkPaper(desk: Desk) {
+    this.placeBack(desk.element.querySelector<HTMLElement>('.desk-box.held:not([data-kind])') ?? undefined);
+    this.center.dataset.promptBayOpen = '';
+    desk.paperInHand(false, {name: t('Prompt'), go: () => this.promptWindow(true, true)});
+  }
+
+  private unparkPaper(desk: Desk) {
+    if (!this.center.hasAttribute('data-prompt-bay-open')) return;
+    delete this.center.dataset.promptBayOpen;
+    delete desk.element.dataset.promptParked;
+    this.placeBack();
+    desk.paperInHand(true);
+  }
+
+  private resizePromptBay() {
+    this.settlePromptTurn();
+    this.promptPaper.resized();
+    if (!this.promptOpen || !this.now.repo) return;
+    const desk = this.desks.get(this.now.repo)?.desk;
+    if (!desk) return;
+    if (this.filesBeside.matches) {
+      this.parkPaper(desk);
+      desk.element.dataset.promptParked = '';
+      if (!this.prompt.contains(document.activeElement)) this.work.showPrompt();
+    } else this.unparkPaper(desk);
+  }
+
+  /** Settle only the visible passage; the two live editors are retained in their own trees. */
+  private settlePromptTurn() {
+    const turn=this.currentTurn;
+    if (!turn) return;
+    this.currentTurn=null;
+    turn.cancel();
+    delete this.center.dataset.promptBayMoving;
+    if (this.center.hasAttribute('data-prompt-bay-open')) turn.desk.element.dataset.promptParked='';
+    else this.prompt.hidden=true;
+    fieldCarried();
+  }
+
+  private takePromptBay(desk: Desk, next: boolean, prior?: [number, number]) {
+    this.center.dataset.promptBayMoving='';
+    const turn = this.currentTurn = {desk, cancel: (): void => {}};
+    turn.cancel = turnPromptBay(desk.element, this.prompt, next, prior, () => {
+      if (this.currentTurn === turn) this.settlePromptTurn();
+    });
+  }
+
+  /** Prompt takes the existing work bay, not space beside the document, and runs nothing when revealed. */
+  private promptWindow(open: boolean, focus: boolean, glide = focus) {
     const repo=this.now.repo;
     if(!repo)return;
+    const desk=this.deskOf(repo).desk;
+    const wide=this.filesBeside.matches;
+    const bayOpen=this.center.hasAttribute('data-prompt-bay-open');
+    const transition=wide && glide && !still() && desk.element.clientWidth>0;
+    const prior: [number, number] | undefined = this.currentTurn
+      ? [desk.element.getBoundingClientRect().x,this.prompt.getBoundingClientRect().x] : undefined;
     if(open) {
-      if(this.prompt.hidden) {
+      if(!this.promptOpen) {
+        this.settlePromptTurn();
         if(this.placeInHand==='Files')this.selectPlace('Forge',false);
         const field=this.lastEditor;
-        this.paperReturn=field?.isConnected&&!field.closest('[hidden]')?returnTo(field):null;
+        this.paperReturn=field?.isConnected&&!field.closest('[hidden],[inert]')?returnTo(field):null;
         this.paperMoved=false;
         this.promptPaper.show();
+        if (wide) {
+          this.parkPaper(desk);
+          if (transition) this.takePromptBay(desk,true,prior);
+          else desk.element.dataset.promptParked='';
+        }
       }
       this.hand('Prompt');
       if(focus){
@@ -420,20 +506,25 @@ class Forge {
       }
       return;
     }
-    if(this.prompt.hidden)return;
-    const active = document.activeElement;
-    const saved = this.paperMoved && active instanceof HTMLTextAreaElement && active.closest('.desk-file') ? returnTo(active) : this.paperReturn;
-    this.paperReturn=null;this.paperMoved=false;this.promptPaper.hide();this.hand(this.placeInHand);
-    if(!focus)return;
-    if(saved?.editor.isConnected && !saved.editor.closest('[hidden]')) {
+    if(!this.promptOpen) {
+      if (!glide) this.settlePromptTurn();
+      return;
+    }
+    const active=document.activeElement;
+    const saved=this.paperMoved&&active instanceof HTMLTextAreaElement&&active.closest('.desk-file')?returnTo(active):this.paperReturn;
+    this.paperReturn=null;this.paperMoved=false;
+    this.settlePromptTurn();
+    this.unparkPaper(desk);
+    this.promptPaper.hide(bayOpen&&transition);this.hand(this.placeInHand);
+    if(focus && saved?.editor.isConnected&&!saved.editor.closest('[hidden],[inert]')) {
       const {editor}=saved;
       editor.focus({preventScroll:true});
       if(editor.value===saved.value)editor.setSelectionRange(saved.from,saved.to,saved.direction);
       editor.scrollTop=saved.top;editor.scrollLeft=saved.left;
-      const desk = this.desks.get(repo)?.desk;
-      if (desk?.element === saved.desk) desk.restoreTurn(saved.turned);
-      if (saved.port) saved.port.scrollTop = saved.scroll;
-    } else this.deskOf(repo).desk.focusHeld();
+      if(desk.element===saved.desk)desk.restoreTurn(saved.turned);
+      if(saved.port)saved.port.scrollTop=saved.scroll;
+    } else if (focus) desk.focusHeld();
+    if (bayOpen&&transition) this.takePromptBay(desk,false,prior);
   }
 
   private selectPlace(place: ForgePlace, focus = true) {
@@ -442,11 +533,12 @@ class Forge {
     if(place==='Prompt'){this.promptWindow(true,focus);return;}
     const beside = this.filesBeside.matches;
     if (place === 'Files' && !beside) this.promptWindow(false, false);
+    if (place === 'Forge' && focus && this.promptOpen) this.promptWindow(false, true);
     const face = beside ? 'Forge' : place;
     this.placeInHand = face;
     this.center.dataset.place = face;
     this.switcher.set(face, true);
-    if (!beside || (focus && place === 'Forge') || this.prompt.hidden) this.hand(face);
+    this.hand(this.promptOpen ? 'Prompt' : face);
     this.ctx.forgeFiles?.(beside || place === 'Files' ? repo : null, focus && place === 'Files', beside);
     if (focus && place === 'Forge') this.deskOf(repo).desk.focusHeld();
   }
@@ -475,6 +567,7 @@ class Forge {
   filesTaken() { if (this.placeInHand === 'Files') this.hand('Files'); }
 
   away() {
+    this.settlePromptTurn();
     this.promptPaper.dismiss(); this.work.rememberTerminal();
     ++this.visits;
     this.closeStart(); this.folderOut?.(); this.folderOut = null;
@@ -502,6 +595,12 @@ class Forge {
           this.ctx.reading(path);
           this.ctx.leftAt(current, path, 0);
         }
+      }, (key) => {
+        if (this.now.repo !== name() || !this.center.hasAttribute('data-prompt-bay-open')) return false;
+        desk.take(key, false, false);
+        this.promptWindow(false, false, true);
+        desk.focusHeld();
+        return true;
       });
       d = {desk, files, beside: null};
       this.desks.set(repo, d);
@@ -612,6 +711,7 @@ class Forge {
   private open(path: string, line = 0, write: Writing = false, keyboard = true) {
     const repo = this.now.repo;
     if (!repo || !path) return;
+    if (this.center.hasAttribute('data-prompt-bay-open')) this.promptWindow(false, false);
     const d = this.deskOf(repo);
     const kept = d.files.get(path);
     // Files takes the paper back into the hand, not to the top of a paper already being worked on.
@@ -680,6 +780,7 @@ class Forge {
       this.center.querySelector('.desk-none')?.remove();
       if (!d.desk.element.isConnected) this.center.append(d.desk.element);
       for (const o of this.desks.values()) o.desk.element.hidden = o !== d;
+      this.center.append(this.promptKey);
     }
     this.closeStart();
     this.selectPlace(this.placeInHand, false);
@@ -696,6 +797,8 @@ class Forge {
 
   /** No selected repo: a visible first move and the same action from the bare desk. */
   private none() {
+    this.promptWindow(false, false);
+    this.settlePromptTurn();
     this.now.repo = null;
     this.work.setRepo(null);
     this.promptPaper.hide();

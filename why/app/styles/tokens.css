@@ -314,3 +314,14 @@ body.forge-place {
   --prompt-scroll-hot: #cac5bf;
   --prompt-scroll-focus: #6b6b6b;
 }
+
+
+/* The one active work face on Forge's desktop: a quiet blue slate, lit words, and one native scroll ink. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) {
+  --forge-work-face: #1a272d;
+  --forge-work-grain: #1e2b31;
+  --forge-work-ink: var(--nighthawks-paper);
+  --forge-work-quiet: #b2a48f;
+  --forge-work-rule: #73817f;
+  --forge-work-mark: #36413d;
+}

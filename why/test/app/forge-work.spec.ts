@@ -1,9 +1,9 @@
 import {expect, test} from './fixtures.ts';
 import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-layout.ts';
 
-/** The Forge paper, its ground, and the separate neutral terminal work face. */
-const FORGE_GROUND = 'rgb(58, 61, 54)', PAPER = 'rgb(239, 235, 227)', CAST = 'rgb(26, 29, 23)', INK = 'rgb(23, 22, 21)';
-const TERMINAL_FACE = 'rgb(237, 234, 229)', TERMINAL_INK = 'rgb(27, 27, 27)';
+/** Forge's wide shared work material and the stationary surrounding ground. */
+const FORGE_GROUND = 'rgb(58, 61, 54)', CAST = 'rgb(26, 29, 23)';
+const WORK_FACE = 'rgb(26, 39, 45)', WORK_INK = 'rgb(239, 235, 227)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo
@@ -412,21 +412,41 @@ test('Files Rename leaves caret movement and Shift selection to the name field',
   await expect(src.getByRole('button', {name: 'src', exact: true})).toBeFocused();
 });
 
-test('Prompt keeps its own steady material when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {
+test('Prompt uses the work paper; the Back key returns to the exact writing, and Escape also puts the terminal away', async ({app}) => {
   await app.rail.go('forge');
   const term = app.main.locator('.forge-prompt-slot'), stand = term.locator('.desk-term.stand:visible'), own = app.forge.editor('README.md');
   await expect(term).toBeHidden();
   await expect(app.forge.desk.locator('section[aria-label="Prompt"]')).toHaveCount(0);
   await own.focus();
-  const before = await own.boundingBox();
-  await app.forge.use('Prompt');
+  const before = await own.boundingBox(), approach = app.main.locator('.forge-prompt-approach');
+  const editorNode = await own.elementHandle();
+  await own.press('Control+Home');
+  await app.page.keyboard.insertText('A retained edit. ');
+  const written = await state(app, 'README.md');
+  await expect(approach).toHaveAccessibleName('Prompt');
+  const key = await approach.boundingBox();
+  await approach.click();
   await expect(app.forge.promptBox).toBeFocused();
-  await expect.poll(() => own.boundingBox()).toEqual(before);
+  await expect(own).toBeHidden();
+  await expect(app.forge.desk).toHaveAttribute('inert', '');
+  await expect(approach).toHaveAccessibleName('Back');
+  expect(await approach.boundingBox()).toEqual(key);
   await expect(term.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
   await expect(term.locator('.desk-close')).toHaveCount(0);
   await expect(term).toHaveClass(/held/);
   await expect(app.forge.piece('README.md')).toHaveCSS('box-shadow', 'none');
-  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
+  await expect(stand).toHaveCSS('background-color', WORK_FACE);
+  await approach.click();
+  await expect(own).toBeFocused();
+  await expect(term).toBeHidden();
+  expect(await state(app, 'README.md')).toEqual(written);
+  expect(await own.evaluate((el, original) => el === original, editorNode)).toBe(true);
+  await app.page.keyboard.press('Control+z');
+  expect((await state(app, 'README.md')).text).not.toContain('A retained edit.');
+  await editorNode?.dispose();
+  await expect(approach).toHaveAccessibleName('Prompt');
+  expect(await approach.boundingBox()).toEqual(key);
+  await approach.click();
   // A line is run with Enter, as at a terminal: nothing to press beside it. A note takes more than a line, so what
   // sends it stands at the line's end once something is written.
   const send = stand.locator('.prompt-run');
@@ -440,13 +460,6 @@ test('Prompt keeps its own steady material when the file has focus; a note has a
   await expect(send).toHaveText('Add');
   await app.forge.promptBox.fill('');
   await app.forge.promptBox.press('Alt+1');
-  // The file gone back to: it is in hand, and the terminal face stays readable.
-  await own.focus();
-  await expect(app.forge.piece('README.md')).toHaveClass(/held/);
-  await expect(term).not.toHaveClass(/held/);
-  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
-  await expect(term).toHaveCSS('box-shadow', 'none');
-  await expect(stand).toBeVisible();
   // Pressed in its room (not on its line): the keyboard in its line.
   await term.click({position: {x: 120, y: 240}});
   await expect(app.forge.promptBox).toBeFocused();
@@ -460,7 +473,7 @@ test('Prompt keeps its own steady material when the file has focus; a note has a
   await expect(term).toHaveClass(/held/);
 });
 
-test('the Prompt slot keeps its neutral material, 20 lines and print wrapping without resizing the document row', async ({app}) => {
+test('Prompt keeps its frame, print wrapping and paper scroll material without resizing the document row', async ({app}) => {
   await app.page.setViewportSize({width: 1300, height: 864});
   await app.rail.go('forge');
   const own = app.forge.editor('README.md'), term = app.main.locator('.forge-prompt-slot');
@@ -482,23 +495,30 @@ test('the Prompt slot keeps its neutral material, 20 lines and print wrapping wi
   expect(measure).toMatchObject({line: 18, pitch: 18, font: '16px'});
   const face = (await stand.boundingBox())!, paper = (await app.forge.piece('README.md').boundingBox())!;
   expect(face.y).toBeCloseTo(paper.y, 0);
-  expect(face.x).toBeGreaterThanOrEqual(paper.x + paper.width);
-  expect((face.height - 24) / measure.pitch).toBe(20);
-  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
-  await expect(app.forge.promptBox).toHaveCSS('color', TERMINAL_INK);
+  expect(face.x).toBe(paper.x + 1);
+  expect(face.height).toBe(384);
+  await expect(own).toBeHidden();
+  const bar = stand.locator('.term-out');
+  await expect(bar).toHaveCSS('scrollbar-width', 'thin');
+  await expect(bar).toHaveCSS('scrollbar-gutter', 'stable');
+  await expect(bar).toHaveCSS('scrollbar-color', 'rgb(115, 129, 127) rgba(0, 0, 0, 0)');
+  await expect(stand).toHaveCSS('background-color', WORK_FACE);
+  await expect(app.forge.promptBox).toHaveCSS('color', WORK_INK);
   expect(await papers()).toEqual(row);
 
-  // The separate surface stays put to be read when the document is taken back in hand.
-  await own.focus();
-  await expect(term).not.toHaveClass(/held/);
-  await expect(stand).toHaveCSS('background-color', TERMINAL_FACE);
+  // Returning to the live paper and reopening does not change either settled position.
+  await app.main.getByRole('button', {name:'Back', exact:true}).click();
+  await expect(own).toBeFocused();
+  await expect(term).toBeHidden();
+  expect(await papers()).toEqual(row);
+  await app.forge.use('Prompt');
+  await expect(app.forge.promptBox).toBeFocused();
   expect(await size()).toEqual(measure);
-  await app.forge.promptBox.focus();
   await expect(term).toHaveClass(/held/);
   await expect(stand.locator('.prompt-chip > .lamp')).toBeHidden();
   const colour = () => chip.evaluate((el) => getComputedStyle(el).color);
   await expect(chip).not.toHaveAttribute('data-state', 'on');
-  expect(await colour()).not.toBe(TERMINAL_INK);
+  expect(await colour()).not.toBe(WORK_INK);
 
   // The actual shell completes a long printed line; it wraps to whole lines within this slot.
   await app.forge.run('printf "%080d\\n" 7');
@@ -506,7 +526,7 @@ test('the Prompt slot keeps its neutral material, 20 lines and print wrapping wi
   const printed = stand.locator('.term-out .term-lines').filter({hasText: digits});
   await expect(printed).toHaveText(digits);
   await expect(chip).toHaveAttribute('data-state', 'on');
-  await expect(chip).toHaveCSS('color', TERMINAL_INK);
+  await expect(chip).toHaveCSS('color', WORK_INK);
   await expect.poll(async () => (await printed.boundingBox())!.height).toBeGreaterThan(measure.pitch);
   expect((await printed.boundingBox())!.height % measure.pitch).toBe(0);
   expect(await size()).toEqual(measure);
@@ -529,6 +549,7 @@ test('Places brings Prompt into its slot from wherever the desk is turned withou
 });
 
 test('a piece whole in sight pressed is in hand where it lies, the caret where it was pressed: nothing moves; one gone to by the keyboard comes to the desk\'s edge; scrolled by hand, the desk rests with the nearest piece at its edge and keeps what is in hand', async ({app}) => {
+  await app.page.setViewportSize({width: 980, height: 900});
   await app.rail.go('forge');
   const box = (key: string) => app.forge.piece(key), desk = app.forge.desk, pitch = WIDTH + GAP;
   // Where each piece is in the window, and its size.
@@ -594,35 +615,40 @@ test('the desk is a row on the grid: a piece\'s place is its number in the row, 
     const boxes = [...d.querySelectorAll<HTMLElement>('.desk-plane > .desk-box')].map((b) => { const r = b.getBoundingClientRect(); return {x: Math.round(r.left - face.left + d.scrollLeft), y: Math.round(r.top - face.top), w: Math.round(r.width)}; });
     return {boxes, turned: [d.scrollLeft, d.scrollTop], room: [d.scrollWidth - d.clientWidth, d.scrollHeight - d.clientHeight], face: Math.round(face.width)};
   });
-  const row = (n: number) => Array.from({length: n}, (_, i) => ({x: PAD + i * (WIDTH + GAP), y: TOP, w: WIDTH}));
+  const row = (n: number, w: number) => Array.from({length:n}, (_, i) => ({x: PAD + i * (w + GAP), y: TOP, w}));
   const own = app.forge.editor('README.md'), term = app.main.locator('.forge-prompt-slot');
   await own.focus();
   await expect.poll(async () => (await at()).turned).toEqual([0, 0]);
   const laid = await at();
-  expect(laid.boxes).toEqual(row(3));
-  // A right bay reduces the available viewport, not the paper geometry or either scroll position.
+  const w = Math.floor((laid.face - PAD - SHADOW) / GRID) * GRID;
+  expect(laid.boxes).toEqual(row(3, w));
+  expect(laid.room).toEqual([2 * (w + GAP), 0]);
+  // The same work bay changes hands without resizing or turning the stored row.
   await app.forge.use('Prompt');
   await expect(term).toHaveClass(/held/);
   const beside = await at();
   expect(beside.boxes).toEqual(laid.boxes);
   expect(beside.turned).toEqual(laid.turned);
-  expect(beside.face).toBeLessThan(laid.face);
+  expect(beside.face).toBe(laid.face);
+  await expect(own).toBeHidden();
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();
   await expect(own).toBeFocused();
   await app.page.keyboard.press('Escape');
   await app.page.keyboard.press('ArrowRight');
   await expect(app.forge.piece('src/main.c')).toHaveClass(/held/);
-  await expect.poll(async () => (await at()).turned).toEqual([WIDTH + GAP, 0]);
+  await expect.poll(async () => (await at()).turned).toEqual([w + GAP, 0]);
   expect((await at()).boxes).toEqual(laid.boxes);
-  // Turned along as far as it goes: the last piece at the desk's edge, no further.
-  await desk.evaluate((d) => { d.scrollLeft = d.scrollWidth; });
+  // The actual paper marks go to each end of the retained row; the last is exactly its maximum, not past it.
+  const marks = app.main.locator('.desk-room > .row-map .row-piece');
+  await marks.last().click();
+  await expect(marks.last()).toHaveAttribute('aria-current', 'true');
   await expect.poll(async () => { const a = await at(); return a.turned[0] === a.room[0]; }).toBe(true);
   const end = await at(), last = end.boxes.at(-1)!;
   expect(end.room[0]).toBe(last.x - PAD);
   expect(end.room[0] % GRID).toBe(0);
   // And back to its start; nothing lies under the row to turn down to.
-  await desk.evaluate((d) => { d.scrollLeft = 0; });
+  await marks.first().click();
   await expect.poll(async () => (await at()).turned).toEqual([0, 0]);
   expect(end.room[1]).toBe(0);
 });
@@ -711,6 +737,7 @@ test('Tab in a file is the text\'s, the indent written; out of the text ← and 
 });
 
 test('nothing on the desk changes size: a piece pressed twice is as wide as it was, its letters 17 px; twice in its words chooses a word, as in any text', async ({app}) => {
+  await app.page.setViewportSize({width: 980, height: 900});
   await app.rail.go('forge');
   const readme = app.forge.piece('README.md'), main = app.forge.piece('src/main.c'), own = app.forge.editor('README.md');
   const size = (piece: typeof readme) => piece.evaluate((el) => ({w: Math.round(el.getBoundingClientRect().width * 10) / 10, font: Math.round(parseFloat(getComputedStyle(el.querySelector('.code')!).fontSize) * 10) / 10}));
@@ -740,32 +767,27 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
   const term = app.main.locator('.forge-prompt-slot');
   const look = () => app.forge.desk.locator('.desk-box').evaluateAll((boxes) => boxes.map((b) => {
     const c = getComputedStyle(b), close = b.querySelector('.desk-close'), words = b.querySelector('.code')!;
-    const r = b.getBoundingClientRect();
     return {key: (b as HTMLElement).dataset.key!, ground: c.backgroundColor, shadow: c.boxShadow,
       close: !!close && getComputedStyle(close).display !== 'none', words: getComputedStyle(words).color,
-      inView: r.x >= 24 && r.right <= innerWidth};
+      shown: c.visibility === 'visible' && c.opacity !== '0'};
   }));
   const quiet = (paper: Awaited<ReturnType<typeof look>>[number], ground = FORGE_GROUND) => {
-    expect({ground: paper.ground, shadow: paper.shadow, close: paper.close, quieter: paper.words !== INK && paper.words !== TERMINAL_INK})
-      .toEqual({ground, shadow: 'none', close: false, quieter: true});
+    expect({ground: paper.ground, shadow: paper.shadow, close: paper.close, shown: paper.shown})
+      .toEqual({ground, shadow: 'none', close: false, shown: false});
   };
   for (const key of ['README.md', 'src/main.c']) {
     await app.forge.editor(key).focus();
     await expect(app.forge.piece(key)).toHaveClass(/held/);
     const all = await look(), hand = all.find((b) => b.key === key)!;
-    expect(hand).toMatchObject({ground: PAPER, shadow: `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`, words: INK, close: true});
-    const rest = all.filter((b) => b.key !== key);
-    rest.forEach((paper) => quiet(paper));
-    const other = rest.find((b) => b.inView)!;
-    await app.forge.piece(other.key).hover({position: {x: 8, y: 8}});
-    quiet((await look()).find((b) => b.key === other.key)!);
+    expect(hand).toMatchObject({ground: WORK_FACE, shadow: `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`, words: WORK_INK, close: true, shown: true});
+    all.filter((b) => b.key !== key).forEach((paper) => quiet(paper));
   }
 
   await app.forge.use('Prompt');
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(term.locator('.desk-term:visible')).toHaveCSS('background-color', TERMINAL_FACE);
+  await expect(term.locator('.desk-term:visible')).toHaveCSS('background-color', WORK_FACE);
   await expect(term).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
-  await expect(app.forge.promptBox).toHaveCSS('color', TERMINAL_INK);
+  await expect(app.forge.promptBox).toHaveCSS('color', WORK_INK);
   (await look()).forEach((paper) => quiet(paper));
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();

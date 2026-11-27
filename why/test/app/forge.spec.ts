@@ -158,7 +158,9 @@ test('Places puts away its menus, and the Prompt shortcut returns to the paper i
   await expect(places).toBeHidden();
 
   await key.click();
-  await readme.click();
+  // The open Places veil receives a real click at the paper, not a click through to the editor.
+  const paper = (await readme.boundingBox())!;
+  await app.page.mouse.click(paper.x + Math.min(20, paper.width / 2), paper.y + paper.height / 2);
   await expect(places).toBeHidden();
   await expect(key).toHaveAttribute('aria-expanded', 'false');
 

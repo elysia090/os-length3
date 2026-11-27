@@ -630,22 +630,21 @@ in Forge; browser Back revisits the search, with its scope and query.
 The entry moves only its own contents a small step in 140 ms, or no
 motion when the system asks for less.
 
-**The terminal.** Prompt opens a companion on the right of the same
-Forge desk. It does not choose another place, cover a file, or take its
-editor and selection away. Its thin band rises above the working paper;
-the text face and document paper share their upper edge. The text face
-has a fine neutral grain with sharp mono text above it. Twenty rows fit
-at ordinary desktop size, with the history scrolled in the window. The
-two end triangles and the two parts of the band’s ruled strip switch
-between two independent shells of the same repo. Each keeps its draft
-and scrollback. The shared right-click menu’s Close puts the window
-away, not the shells. Opening Prompt again brings the same window out.
-On a narrow desk the terminal sits below the document instead of laying
-over it.
+**The terminal.** On a wide Forge desk, Prompt takes the document's place in
+the same work bay. The Files column stays still. Back, Escape or another
+paper's mark brings the writing back without reopening the file. Prompt has
+one ordinary mark in the paper row while it is open. Its own window keeps a
+silver edge, a centred title and three quiet rules on either side of it.
+The two end triangles and the two small marks inside the window switch
+between its independent shells. Each keeps its draft and scrollback; the
+history uses the same native scrollbar as a document. Close in the shared
+right-click menu puts the window away, not the shells. On a narrow desk
+the terminal is still a companion to the document.
 
 **A file** is a work surface even before a line is written. The open
-documents are 576 px wide at full measure, 12 px apart and top-aligned.
-At 1536 × 864 each stands at y=90, 744 px tall; 720 px of that is its
+documents are 12 px apart and top-aligned. The wide work bay fits each
+paper to its grid; the compact desk caps the paper width at 576 px.
+At 1536 × 864 a paper stands at y=96, 732 px tall; 708 px of that is its
 scrollport, room for 37 full lines at a 19 px pitch. A short, long or blank
 file owns the same space. Only actual lines are numbered. A press below the
 text puts the caret at its end, never adds lines. Real lines past the lower
@@ -667,7 +666,8 @@ the sheet after its edits are saved.
 pressed while fully in sight stays under the hand. The keyboard and the
 row's map can take a piece to the desk's edge; the same stops fit a narrow
 window. The wheel over a paper scrolls that paper itself, not past it into
-the desk. The terminal stays in its own bay as the document row turns.
+the desk. On a wide desk the terminal takes its turn at the same opening; on a narrow
+desk its companion window stays as the document row turns.
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the

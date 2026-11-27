@@ -1,0 +1,48 @@
+/* At the wide work desk one paper takes the bay, with the file index on stationary ground. */
+@media (min-width: 1001px) {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-file {
+    --file-content-height: calc(var(--tallest, 100dvh) - 2 * var(--sheet-inset-y) - var(--s3));
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-place='Forge']
+    > .desk:not(:has(.desk-box.held[data-beside])) .desk-box:not(.held,.leaving,[data-kind],[data-beside]) {
+    opacity: 0; pointer-events: none;
+  }
+  :is(body.forge-place:not(:has(.forge-document-menu[data-context='document'])), .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge']:is([data-hand='Forge'],[data-prompt-bay-moving]) > .desk .desk-box.held:not([data-kind]) {
+    --paper-base: var(--forge-work-face);
+    --paper-check: var(--forge-work-grain);
+    background-color: var(--paper-base);
+    background-image: conic-gradient(var(--paper-check) 25%,var(--paper-base) 25% 50%,var(--paper-check) 50% 75%,var(--paper-base) 75%);
+    background-size: var(--s1) var(--s1);
+    outline-color: var(--forge-paper-edge);
+    box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
+  }
+  :is(body.forge-place:not(:has(.forge-document-menu[data-context='document'])), .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge']:is([data-hand='Forge'],[data-prompt-bay-moving]) > .desk .desk-box.held:not([data-kind]) > .desk-file {
+    --ink: var(--forge-work-ink);
+    --paper: var(--forge-work-face);
+    --quiet: var(--forge-work-quiet);
+    --sub: var(--forge-work-quiet);
+    --rule: var(--forge-work-rule);
+    --file-thumb: var(--forge-work-rule);
+    --marker-soft: var(--forge-work-mark);
+    color: var(--forge-work-ink);
+  }
+  :is(body.forge-place:not(:has(.forge-document-menu[data-context='document'])), .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .code-edit:not(.os-caret-field) {
+    caret-color: var(--forge-work-ink);
+  }
+  :is(body.forge-place:not(:has(.forge-document-menu[data-context='document'])), .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .code-edit::selection {
+    color: var(--forge-work-face); background-color: var(--forge-work-quiet);
+  }
+  body.forge-place:has(.forge-layout .desk-room[data-place='Forge'][data-hand='Forge']
+    .desk-box.held:not([data-kind]) .code-edit.os-caret-field:focus) .os-caret:not(.block) {
+    background: var(--forge-work-ink);
+  }
+  @media (forced-colors: active) {
+    :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box.held:not([data-kind]) {
+      background: Canvas;
+    }
+  }
+}

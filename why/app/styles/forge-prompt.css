@@ -1,13 +1,10 @@
-/* The shell is a companion of the same Forge desk. Its material begins at the document edge. */
-body.forge-place .forge-layout .desk-room[data-prompt-open] {
+/* Reuse the exact window sizes until an outgoing Prompt is no longer painted. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room:is([data-prompt-open],[data-prompt-bay-moving]) {
   --prompt-bay-inset: 24px;
   --prompt-paper: calc(24 * var(--u) + var(--s1)); /* the whole document and its thin cast */
   --prompt-tool: min(800px, calc(100% - var(--prompt-paper) - 12px - var(--prompt-bay-inset)));
 }
-body.forge-place .forge-layout .desk-room[data-prompt-open] > .desk {
-  inset-inline-end: calc(100% - var(--prompt-paper));
-}
-body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
   --t-word: 16px;
   --line: 18px;
   --term-inset: 12px;
@@ -27,10 +24,10 @@ body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
   padding: 1px;
   background: var(--prompt-edge);
 }
-body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot:has(.term.raw) {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot:has(.term.raw) {
   --term-visible-rows: 24;
 }
-body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot:is(.held,:not(.held)) {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot:is(.held,:not(.held)) {
   --term-bg: var(--prompt-face);
   --term-grain: var(--prompt-grain);
   --term-fg: var(--prompt-ink);
@@ -42,97 +39,119 @@ body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot:is(
   --ansi-8: var(--prompt-ansi-bright-black); --ansi-9: var(--prompt-ansi-bright-red); --ansi-10: var(--prompt-ansi-bright-green); --ansi-11: var(--prompt-ansi-bright-yellow);
   --ansi-12: var(--prompt-ansi-bright-blue); --ansi-13: var(--prompt-ansi-bright-magenta); --ansi-14: var(--prompt-ansi-bright-cyan); --ansi-15: var(--prompt-ink);
 }
-body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot.held {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot.held {
   box-shadow: var(--s1) var(--s1) 0 0 var(--cast, var(--prompt-cast));
 }
-/* Two real directions at the ends. The MV's three fine rules become an ordered rail:
-   one section per open shell, darker where the hand is, press another to go straight there. */
-body.forge-place .terminal-paper-head {
+/* Original band and rule treatments, now with the name in the middle and no extra actions on the rules. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-head {
   height: var(--prompt-band-height); box-sizing: border-box; display: grid;
-  grid-template-columns: var(--term-text-start) auto minmax(0,1fr) var(--term-text-start);
+  grid-template-columns: var(--term-text-start) minmax(0,1fr) auto minmax(0,1fr) var(--term-text-start);
   align-items: center;
   background: var(--prompt-band); color: var(--prompt-ink);
   border-bottom: 1px solid var(--prompt-band-edge);
   box-shadow: inset 1px 1px 0 var(--prompt-band-highlight), inset -1px 0 0 var(--prompt-band-side);
   font: 400 var(--t-word)/var(--line) var(--mono);
 }
-body.forge-place .terminal-paper-name {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-name {
   margin: 0; min-width: 0; font: 700 var(--t-word)/var(--line) var(--mono);
-  max-width: 22ch; padding-inline-end: 9px;
-  text-align: left; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  max-width: 22ch; padding-inline: 9px;
+  text-align: center; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
 }
-body.forge-place .terminal-paper-rail {
-  display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 3px;
-  min-width: 0; align-self: stretch; padding-inline-end: 4px;
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-rule {
+  position: relative; height: 100%; min-width: 0; pointer-events: none;
+  --rule-ink: var(--prompt-rail-active);
 }
-body.forge-place .terminal-rail-place {
-  position: relative; height: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0;
-  --rule-ink: var(--prompt-rail-idle); background: transparent; cursor: var(--cursor-hand);
-}
-body.forge-place .terminal-rail-place::before {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-rule::before {
   content: ''; position: absolute; inset: calc(50% - 2px) 0 auto; height: 5px;
   background: repeating-linear-gradient(to bottom,var(--rule-ink) 0 1px,var(--prompt-rail-light) 1px 2px);
 }
-body.forge-place .terminal-rail-place[aria-pressed='true'] { --rule-ink:var(--prompt-rail-active); cursor: var(--cursor-arrow); }
-body.forge-place .terminal-rail-place[aria-pressed='false']:is(:hover,:focus-visible) { --rule-ink:var(--prompt-rail-hot); }
-body.forge-place .terminal-rail-place:focus-visible,
-body.forge-place .terminal-turn:focus-visible { outline: 1px solid var(--prompt-focus); outline-offset: -2px; }
-body.forge-place .terminal-turn {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn:focus-visible { outline: 1px solid var(--prompt-focus); outline-offset: -2px; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn {
   border: 0; border-radius: 0; background: transparent; color: var(--prompt-turn);
   width: var(--term-text-start); height: 21px; padding: 0;
   display: grid; place-items: center; cursor: var(--cursor-hand);
 }
-body.forge-place .terminal-turn > span {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn > span {
   width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor;
 }
-body.forge-place .terminal-turn.previous > span { transform: rotate(180deg); }
-body.forge-place .terminal-turn:disabled { color: var(--prompt-turn-disabled); cursor: var(--cursor-arrow); }
-body.forge-place .terminal-turn:not(:disabled):is(:hover,:focus-visible) { background: var(--prompt-turn-hot); color: var(--prompt-turn-hot-ink); }
-body.forge-place .forge-layout .forge-prompt-slot .desk-term.stand {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn.previous > span { transform: rotate(180deg); }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn:disabled { color: var(--prompt-turn-disabled); cursor: var(--cursor-arrow); }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-turn:not(:disabled):is(:hover,:focus-visible) { background: var(--prompt-turn-hot); color: var(--prompt-turn-hot-ink); }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term.stand {
   background: conic-gradient(var(--term-grain) 25%, var(--term-bg) 25% 50%, var(--term-grain) 50% 75%, var(--term-bg) 75%) 0 0 / 4px 4px;
   background-color: var(--term-bg); padding: var(--term-inset); padding-inline-start: var(--term-text-start);
   outline: 1px solid var(--prompt-face-edge); outline-offset: -1px;
   box-shadow: inset 1px 1px 0 var(--prompt-face-shade), inset -1px -1px 0 var(--prompt-face-light);
 }
-body.forge-place .forge-layout .forge-prompt-slot .desk-term[hidden] { display: none; }
-body.forge-place .forge-layout.work.bench .forge-prompt-slot .stand > .dock { transform: none; max-width: none; }
-body.forge-place .forge-prompt-slot .prompt[data-mode='run']:not([data-raw],[data-hushed]) > .prompt-in { --caret: block; }
-body.forge-place .forge-prompt-slot .prompt-in.os-caret-field { caret-color: transparent; }
-body.forge-place .forge-prompt-slot .vt-screen { min-width: 80ch; }
-body.forge-place .forge-prompt-slot .term-out:has(.vt-screen) { overflow-x: auto; }
-body.forge-place .forge-layout .forge-prompt-slot .desk-term:has(.term.raw) { height: var(--tallest); }
-body.forge-place .forge-prompt-slot .term-out {
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term[hidden] { display: none; }
+/* Keep the two real shells in the same window, without moving its frame or anything beside it. */
+.forge-prompt-slot .forge-terminal-deck[data-terminal-moving] { position: relative; overflow: clip; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .forge-terminal-deck > .desk-term[hidden][data-terminal-leaving] {
+  /* Override the global [hidden] display only for the inert picture of the shell leaving this deck. */
+  display: flex !important; position: absolute; inset: 0 auto auto 0; width: 100%; pointer-events: none;
+}
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout.work.bench .forge-prompt-slot .stand > .dock { transform: none; max-width: none; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .prompt[data-mode='run']:not([data-raw],[data-hushed]) > .prompt-in { --caret: block; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .prompt-in.os-caret-field { caret-color: transparent; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .vt-screen { min-width: 80ch; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out:has(.vt-screen) { overflow-x: auto; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term:has(.term.raw) { height: var(--tallest); }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out {
   margin-right: calc(1px - var(--term-inset));
   scrollbar-width: auto; scrollbar-color: auto;
   overscroll-behavior: contain; overflow-y: auto;
   font-variant-ligatures: none;
 }
-body.forge-place .forge-prompt-slot .term-out::-webkit-scrollbar { width: var(--term-scroll-width); }
-body.forge-place .forge-prompt-slot .term-out::-webkit-scrollbar-track { background: var(--prompt-scroll-track); border-left: 1px solid var(--prompt-scroll-edge); }
-body.forge-place .forge-prompt-slot .term-out::-webkit-scrollbar-thumb { background: var(--prompt-scroll-thumb); border-radius: 0; border: 1px solid var(--prompt-scroll-trim); }
 body.forge-place:has(.forge-prompt-slot .prompt-in:focus) .os-caret.on.block { background: var(--prompt-ink); color: var(--prompt-face); }
-body.forge-place .forge-prompt-slot .term-out::-webkit-scrollbar-thumb:hover,
-body.forge-place .forge-prompt-slot .term-out:focus-visible::-webkit-scrollbar-thumb { background: var(--prompt-scroll-active); }
-body.forge-place .forge-prompt-slot .term-out::-webkit-scrollbar-track:hover { background: var(--prompt-scroll-hot); }
-body.forge-place .forge-prompt-slot .term-out:focus-visible { outline: 1px solid var(--prompt-scroll-focus); outline-offset: -2px; }
-body.forge-place .forge-layout .row-piece:is(:hover,:focus-visible)::before {
-  background: var(--stage-primary); top: calc(50% - 3px); height: 6px;
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out:focus-visible { outline: 1px solid var(--prompt-scroll-focus); outline-offset: -2px; }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .row-piece:is(:hover,:focus-visible)::before {
+  background: var(--paper); top: calc(50% - 3px); height: 6px;
 }
-body.forge-place .forge-layout .row-piece:focus-visible { outline-color: var(--stage-primary); }
+:is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .row-piece:focus-visible { outline-color: var(--paper); }
 @media (max-width: 1000px) {
+  /* Keep the existing compact controls and the document beside the terminal's keyboard. */
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-head {
+    grid-template-columns: var(--term-text-start) auto minmax(0,1fr) var(--term-text-start);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-name { text-align: left; padding-inline: 0 9px; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-rule { display: none; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-session-switch {
+    display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 3px;
+    min-width: 0; align-self: stretch; padding-inline-end: var(--s1);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .terminal-session-switch > .row-piece {
+    position: relative; height: 100%; min-width: 0;
+    --rule-ink: var(--prompt-rail-idle);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .terminal-session-switch > .row-piece::before {
+    inset: calc(50% - 2px) 0 auto; height: 5px;
+    background: repeating-linear-gradient(to bottom,var(--rule-ink) 0 1px,var(--prompt-rail-light) 1px 2px);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-session-switch > .row-piece[aria-current='true'] {
+    --rule-ink: var(--prompt-rail-active);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-session-switch > .row-piece[aria-current='false']:is(:hover,:focus-visible) {
+    --rule-ink: var(--prompt-rail-hot);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out::-webkit-scrollbar { width: var(--term-scroll-width); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out::-webkit-scrollbar-track { background: var(--prompt-scroll-track); border-left: 1px solid var(--prompt-scroll-edge); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out::-webkit-scrollbar-thumb { background: var(--prompt-scroll-thumb); border-radius: 0; border: 1px solid var(--prompt-scroll-trim); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out::-webkit-scrollbar-thumb:hover,
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out:focus-visible::-webkit-scrollbar-thumb { background: var(--prompt-scroll-active); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .term-out::-webkit-scrollbar-track:hover { background: var(--prompt-scroll-hot); }
   /* The same companion lies below the paper when a useful right bay does not fit. */
-  body.forge-place .forge-layout .desk-room[data-prompt-open] {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-open] {
     --prompt-narrow-top: min(310px,42dvh);
     --prompt-tool: calc(100% - var(--prompt-bay-inset));
   }
-  body.forge-place .forge-layout .desk-room[data-prompt-open] > .desk {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-open] > .desk {
     inset-inline-end: var(--forge-origin);
     inset-block-end: calc(100% - var(--prompt-narrow-top) + var(--forge-top) + var(--s1));
   }
-  body.forge-place .forge-layout .desk-room[data-prompt-open] > .row-map {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-open] > .row-map {
     bottom: calc(100dvh - var(--prompt-narrow-top) + var(--s2));
   }
-  body.forge-place .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
     top: calc(var(--prompt-narrow-top) - var(--forge-top) + var(--u));
     --tallest: min(calc(var(--term-visible-rows) * var(--line) + 2 * var(--term-inset)),
       calc(100dvh - var(--prompt-narrow-top) - var(--prompt-band-height) - var(--s2)));
@@ -140,7 +159,120 @@ body.forge-place .forge-layout .row-piece:focus-visible { outline-color: var(--s
 }
 
 @media (forced-colors: active) {
-  body.forge-place .forge-layout .forge-prompt-slot .desk-term.stand { background: Canvas; }
-  body.forge-place .terminal-rail-place::before { border-top: 1px solid GrayText; }
-  body.forge-place .terminal-rail-place[aria-pressed='true']::before { border-top-color: ButtonText; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term.stand { background: Canvas; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-session-switch > .row-piece::before { forced-color-adjust: auto; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .terminal-paper-rule::before { border-top: 1px solid GrayText; }
+}
+
+/* The action stays at a paper's foot, even when the real paper is behind Prompt. */
+.forge-prompt-approach { display: none; }
+@media (min-width: 1001px) {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-place='Forge']:not([data-prompt-open])
+    > .desk:not([hidden]) .desk-box.held:not([data-kind]) { anchor-name: --held-prompt-sheet; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge']:not([data-prompt-bay-moving]):has(> .desk:not([hidden]) .desk-box.held:not([data-kind]))
+    > .forge-prompt-approach {
+    display: inline-flex; position: absolute; z-index: 8;
+    inset-inline-start: calc(var(--forge-work-origin) - 2 * var(--u)); transform: translateX(-100%);
+    min-height: var(--u); align-items: center; white-space: pre;
+    padding: 0 var(--s1); border: 0; border-radius: 0; background: transparent;
+    color: var(--nighthawks-desk-quiet); cursor: var(--cursor-hand);
+    font: 400 var(--t-word)/var(--u) var(--sans);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room:not([data-prompt-open]) > .forge-prompt-approach {
+    position-anchor: --held-prompt-sheet; inset-block-end: anchor(bottom);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-bay-open] > .forge-prompt-approach {
+    inset-block-end: var(--forge-back-foot);
+  }
+  .forge-prompt-action-label { display: grid; justify-items: end; }
+  .forge-prompt-action-label > span { grid-area: 1 / 1; }
+  .forge-prompt-approach[data-back] .forge-prompt-action-label > :first-child,
+  .forge-prompt-approach:not([data-back]) .forge-prompt-action-label > :last-child { visibility: hidden; }
+  .forge-prompt-approach:is(:hover,:focus-visible) {
+    color: var(--nighthawks-paper); text-decoration: underline; text-underline-offset: var(--s1);
+  }
+  .forge-prompt-approach:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
+  body.forge-place:has(.forge-layout .desk-room[data-place='Forge'] > .desk:not([hidden]) .desk-box.held:not([data-kind]))
+    .file-tree.on-forge-desk[data-forge-index] > .tree-children {
+    max-height: calc(100dvh - var(--forge-top) - 5 * var(--u));
+  }
+}
+
+/* The interior switches sit in the same 24px cell as the outside paper marks, without reaching into the text. */
+@media (min-width: 1001px) {
+  /* The wide work bay uses its own scrollports. An outer scrollbar would resize the camera as Prompt takes it. */
+  html:has(> body.forge-place .forge-layout .desk-room[data-place='Forge']) { overflow-y: hidden; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout { --prompt-paper-edge: var(--forge-work-origin, 0px); }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
+    inset-inline-start: var(--prompt-paper-edge); inset-inline-end: auto;
+    outline: 2px solid var(--prompt-face-edge); outline-offset: -2px;
+    --terminal-switch-foot: var(--u);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term.stand {
+    --term-bg: var(--forge-work-face);
+    --term-grain: var(--forge-work-grain);
+    --term-fg: var(--forge-work-ink);
+    --term-quiet: var(--forge-work-quiet);
+    --term-line: var(--forge-work-ink);
+    --term-rule: var(--forge-work-rule);
+    --ansi-7: var(--term-quiet); --ansi-15: var(--term-fg);
+    padding-block-end: calc(var(--term-inset) + var(--terminal-switch-foot));
+    color: var(--term-fg); box-shadow: none; outline: none;
+  }
+  /* The same native bar as a working paper: stable room, transparent track and a quiet thumb four pixels in. */
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .term-out {
+    margin-right: calc(var(--s1) - var(--term-inset) - 1px);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--forge-work-rule) transparent;
+  }
+  @supports not (scrollbar-color: auto) {
+    :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .term-out::-webkit-scrollbar-thumb {
+      background: var(--forge-work-rule) padding-box;
+    }
+  }
+  @media (forced-colors: active) {
+    :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .term-out { scrollbar-color: auto; scrollbar-width: auto; }
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-prompt-slot .prompt-in::selection {
+    background: var(--forge-work-quiet); color: var(--forge-work-face);
+  }
+  body.forge-place:has(.forge-prompt-slot .prompt-in:focus) .os-caret.on:is(.block,:not(.block)) {
+    background: var(--forge-work-ink); color: var(--forge-work-face);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .terminal-session-switch {
+    position: absolute; inset-inline-start: calc(var(--term-text-start) + 1px); inset-block-end: var(--s1);
+    display: flex; align-items: stretch; gap: 1px; height: var(--terminal-switch-foot);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .terminal-session-switch > .row-piece {
+    position: relative; inline-size: calc(8 * var(--s2));
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .terminal-session-switch > .row-piece::before {
+    top: calc(50% - 2px); height: 4px; border-radius: calc(var(--s1) / 2);
+    background: color-mix(in srgb,var(--forge-work-ink) 50%,var(--forge-work-face));
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .terminal-session-switch > .row-piece:is([aria-current='true'],:hover,:focus-visible)::before {
+    background: var(--forge-work-ink);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .terminal-session-switch > .row-piece:focus-visible {
+    outline: 1px solid var(--forge-work-ink); outline-offset: -2px;
+  }
+}
+
+/* At desk widths only, the resting Prompt hides the retained paper; both can pass through one fixed aperture. */
+@media (min-width: 1001px) {
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room > .desk[data-prompt-parked] { visibility: hidden; }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-bay-moving] {
+    /* Clip in the room coordinate space, never on the pieces being translated. Keep the full foot for the paper map. */
+    --paper-right: calc(100% - var(--u));
+    --paper-foot: calc(100% - var(--u) - var(--u) / 2);
+    overflow: clip;
+    clip-path: polygon(var(--prompt-paper-edge) 0, var(--paper-right) 0,
+      var(--paper-right) var(--paper-foot), 100% var(--paper-foot), 100% 100%, 0 100%,
+      0 var(--paper-foot), var(--prompt-paper-edge) var(--paper-foot));
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-bay-moving] > .desk
+  .desk-box:not(.held,.leaving,[data-kind],[data-beside]) { visibility: hidden; }
+  body.forge-place:has(.desk-room[data-prompt-bay-moving]) > .os-caret { visibility: hidden; }
 }
