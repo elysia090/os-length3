@@ -114,11 +114,15 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await name.hover();
   await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeVisible();
   await expect(row.getByRole('button', {name: 'Delete', exact: true})).toBeVisible();
+  const at = await name.boundingBox();
   await row.getByRole('button', {name: 'Rename', exact: true}).click();
   const actions = page.getByRole('menu', {name: 'README.md', exact: true});
-  const rename = actions.getByRole('textbox', {name: 'New name', exact: true});
+  const rename = row.getByRole('textbox', {name: 'New name', exact: true});
   await expect(rename).toBeFocused();
   await expect(rename).toHaveValue('README.md');
+  expect(await rename.boundingBox()).toEqual(at);
+  expect(await rename.evaluate((n: HTMLInputElement) => n.value.slice(n.selectionStart!, n.selectionEnd!))).toBe('README');
+  await rename.fill('Not kept.md');
   await page.keyboard.press('Escape');
   await expect(rename).toBeHidden();
   await expect(actions).toBeHidden();
@@ -131,11 +135,10 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(renameItem).toBeVisible();
   await renameItem.press('Enter');
   await expect(rename).toBeFocused();
+  await expect(actions).toBeHidden();
+  expect(await rename.boundingBox()).toEqual(at);
   await page.keyboard.press('Escape');
   await expect(rename).toBeHidden();
-  await expect(renameItem).toBeFocused();
-  await expect(actions).not.toHaveAttribute('aria-busy', 'true');
-  await page.keyboard.press('Escape');
   await expect(actions).toBeHidden();
   await expect(name).toBeFocused();
 });
@@ -174,4 +177,30 @@ test('on a narrow desk, selecting a real file shows the editor and hands it the 
   await expect(tree).toBeHidden();
   await expect(editor).toBeVisible();
   await expect(editor).toBeFocused();
+});
+
+test.describe('Files rename on touch', () => {
+  test.use({hasTouch: true, isMobile: true, viewport: {width: 390, height: 844}});
+
+  test('the same name is edited from its row menu, and Enter leaves the keyboard on the renamed row', async ({app}) => {
+    const {page, forge} = app;
+    await app.newRepo.make('pine');
+    await forge.use('Files');
+    const tree = page.getByRole('tree', {name: 'pine', exact: true});
+    const row = tree.getByRole('treeitem', {name: 'README.md', exact: true});
+    const before = await row.getByRole('button', {name: 'README.md', exact: true}).boundingBox();
+    await row.getByRole('button', {name: 'Actions for README.md', exact: true}).tap();
+    const actions = page.getByRole('menu', {name: 'README.md', exact: true});
+    await actions.getByRole('menuitem', {name: 'Rename', exact: true}).tap();
+
+    const field = row.getByRole('textbox', {name: 'New name', exact: true});
+    await expect(field).toBeFocused();
+    expect(await field.boundingBox()).toEqual(before);
+    await expect(actions).toBeHidden();
+    await field.fill('Notes.md');
+    await field.press('Enter');
+    await expect(tree.getByRole('button', {name: 'Notes.md', exact: true})).toBeFocused();
+    await expect(tree.getByRole('button', {name: 'README.md', exact: true})).toHaveCount(0);
+    await expect(tree).toBeVisible();
+  });
 });

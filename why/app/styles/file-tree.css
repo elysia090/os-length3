@@ -135,6 +135,15 @@
 .file-tree > .tree-pop .pop-item:is(:hover, :focus-visible):not(:disabled) { background: var(--ink); color: var(--paper); outline: none; }
 .file-tree > .tree-pop .pop-item.pop-gone:is(:hover, :focus-visible):not(:disabled) { background: var(--off); color: var(--paper); }
 .file-tree > .tree-pop :is(.pop-field, .pop-ask) { padding: 0 var(--u); }
+
+/* Docked Files: edit the name itself. Keep the original row's indent and end slots. */
+.file-tree .tree-file-rename { flex: 1; min-width: 0; }
+.file-tree .tree-file-rename > .tree-file-name-in { display: block; width: 100%; border-radius: 0;
+  box-shadow: inset 0 -1px var(--ink); text-overflow: clip; cursor: var(--cursor-text); }
+.file-tree .tree-row:has(> .tree-name[aria-current='location']) .tree-file-name-in { font-weight: 700; }
+.file-tree.on-forge-desk .tree-row:has(> form.tree-file-rename) > :is(.tree-quick, .tree-more) { visibility: hidden; }
+.file-tree .tree-file-rename > .error { margin: 0; overflow-wrap: anywhere; }
+
 /* The world stepping back out of focus under what is laid over it (ui/page-veil.ts): File's tree, the person's menu,
    what the band's search found. The frame does not: the rail and the band are the camera's, never the world's
    (DESIGN §2), so they stand over it in focus whatever is laid over the world. The same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its

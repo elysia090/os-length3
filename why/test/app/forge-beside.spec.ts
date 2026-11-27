@@ -250,9 +250,12 @@ test('Files rename waits for the same pending draft and leaves both panes when i
   await page.evaluate(() => (window as GatedWindow).forgeGate.reject());
   await expect(page.getByText('Could not save README.md. Nothing was moved.', {exact: true})).toBeVisible();
   await expect(old).toHaveValue('Rename keeps this draft');
-  await expect(row.getByRole('button', {name: 'README.md', exact: true})).toBeVisible();
+  await expect(row).toBeVisible();
+  await expect(field).toHaveValue('work.md');
+  await expect(field).toBeEditable();
+  await expect(field).toBeFocused();
   await field.press('Enter');
-  await expect(tree.getByRole('button', {name: 'work.md', exact: true})).toBeVisible();
+  await expect(tree.getByRole('button', {name: 'work.md', exact: true})).toBeFocused();
   await expect(app.forge.editor('work.md')).toHaveValue('Rename keeps this draft');
   await expect(old).toHaveCount(0);
   await expect(beside).toHaveCount(0);

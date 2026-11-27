@@ -357,12 +357,34 @@ test('the repo Files row keeps its real deeds without a second command in Places
   // Reopen the repo's catalogue after editing the new name. A path renamed from its row moves the actual file.
   await app.forge.use('Forge');
   await app.forge.use('Files');
+  const field = files.getByRole('textbox', {name: 'New name', exact: true});
   const {menu: util} = await action('util.c');
   await util.getByRole('menuitem', {name: 'Rename'}).click();
-  await util.getByRole('textbox').fill('lib/util.c');
-  await util.getByRole('textbox').press('Enter');
-  await expect(app.forge.editor('lib/util.c')).toBeVisible();
+  await expect(field).toHaveValue('util.c');
+  await field.fill('support.c');
+  await field.press('Enter');
+  await expect(src.getByRole('button', {name: 'support.c', exact: true})).toBeFocused();
+  await expect(app.forge.editor('src/support.c')).toBeVisible();
   await expect(util).toBeHidden();
+
+  const {menu: support} = await action('support.c');
+  await support.getByRole('menuitem', {name: 'Rename'}).click();
+  await field.fill('lib/util.c');
+  await field.press('Enter');
+  await expect(files.getByRole('button', {name: 'util.c', exact: true})).toBeFocused();
+  await expect(app.forge.editor('lib/util.c')).toBeVisible();
+  await expect(support).toBeHidden();
+
+  const {menu: moved} = await action('util.c');
+  await moved.getByRole('menuitem', {name: 'Rename'}).click();
+  await expect(field).toBeFocused();
+  await field.fill('Not kept.c');
+  // On down outside the field, there is no popup margin to swallow a press on its parent row.
+  const folder = files.getByRole('treeitem', {name: 'lib', exact: true});
+  await folder.getByRole('button', {name: 'lib', exact: true}).click({position: {x: 18, y: 20}});
+  await expect(field).toBeHidden();
+  await expect(folder).toHaveAttribute('aria-expanded', 'false');
+  await expect(app.forge.editor('lib/util.c')).toBeVisible();
 });
 
 test('Prompt keeps its own steady material when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {

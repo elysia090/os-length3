@@ -79,7 +79,8 @@ export interface Deeds {
   move(to: string): Promise<void>;
   /** Deleted from the store. */
   removed(): Promise<void> | void;
-  /** A named row can hold its own confirmation instead of borrowing the menu's space. */
+  /** Files can put the field or confirmation directly on the named row. */
+  askRename?(): void;
   askDelete?(): void;
   /** Put back as it was at the last commit (Revert): the menu's work is done. */
   reverted(): void;
@@ -191,7 +192,10 @@ export function fileDeeds(d: Deeds): HTMLElement {
   })));
   if (path !== '') {
     // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
-    rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true)));
+    rows.push(entry(t('Rename'), 'pen', (b) => {
+      if (d.askRename) d.askRename();
+      else field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true);
+    }));
     rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
       if (d.askDelete) { d.askDelete(); return; }
       const ask = fileDeleteAsk(d, () => { ask.element.replaceWith(b); b.focus(); d.back(); }, askFoot(b, pop));

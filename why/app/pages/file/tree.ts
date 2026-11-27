@@ -1,7 +1,7 @@
 import {keepNear} from '../../ui/near.ts';
 import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
-import {closeUp, keepOut, putAway, unfold} from '../../ui/glide.ts';
+import {closeUp, keepOut, nudge, putAway, unfold} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
@@ -10,7 +10,7 @@ import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import {onChange} from '../../../repo/repos.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../../prompt/system.ts';
-import {fileDeeds, fileDeleteAsk, joined, moveFile, split, type Deeds} from '../kit/file-deeds.ts';
+import {fileDeeds, fileDeleteAsk, joined, moveFile, renaming, split, type Deeds} from '../kit/file-deeds.ts';
 import type {Writing} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 
@@ -143,8 +143,7 @@ export class FileTree {
       if (!this.onDesk && to && !this.element.contains(to) && to !== (this.calledFrom ?? this.trigger)) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
-    // Only a floating tree or a row's menu owns the surrounding margin, not a File pane on the desk.
-    keepNear(() => (this.isOpen ? this.pop?.element ?? (this.onDesk ? null : this.element) : null));
+    keepNear(() => (!this.isOpen ? null : this.pop && !this.pop.inline ? this.pop.element : this.onDesk ? null : this.element));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !(this.calledFrom ?? this.trigger)?.contains(at)) {
@@ -570,12 +569,13 @@ export class FileTree {
   }
 
   /** Put the row's menu away, if one is out. */
-  private unpop() {
+  private unpop(immediately = false) {
     if (!this.pop) return;
     this.pop.more.setAttribute('aria-expanded', 'false');
     const {element: gone, inline} = this.pop;
     this.pop = null;
     if (inline) { inline(); gone.remove(); }
+    else if (immediately) gone.remove();
     else putAway(gone, () => gone.remove());
   }
 
@@ -625,6 +625,49 @@ export class FileTree {
     /** A folder of the repo as the tree knows it (its absolute path) and its row. */
     const abs = (folder: string) => `/root/${at.repo}${folder ? `/${folder}` : ''}`;
     let pop: HTMLElement;
+    const askRename = () => {
+      this.unpop(true);
+      // The text replaces its own name. Leave the row's other slots alone so the writing does not jump.
+      const input = h('input', {class: 'tree-name tree-file-name-in', type: 'text', 'aria-label': t('New name'),
+        autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'done'}) as HTMLInputElement;
+      const error = h('p', {class: 'error small', role: 'alert'});
+      const form = h('form', {class: 'tree-file-rename'}, input, error);
+      const draggable = row.draggable;
+      name.hidden = true;
+      name.after(form);
+      row.draggable = false;
+      pop = form;
+      this.pop = {element: form, name, more, inline: () => { name.hidden = false; row.draggable = draggable; }};
+      const clear = () => { error.textContent = ''; input.removeAttribute('aria-invalid'); };
+      input.addEventListener('input', clear);
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!owned() || input.readOnly) return;
+        const written = input.value.trim();
+        if (!written || e.name === written) {
+          this.unpop();
+          name.focus({preventScroll: true});
+          return;
+        }
+        clear();
+        input.readOnly = true;
+        form.setAttribute('aria-busy', 'true');
+        try {
+          // An ordinary name keeps its folder; the existing explicit repo path still moves the file.
+          const to = await renaming(at.repo, at.path, written.includes('/') ? written : joined(split(at.path)[0], written));
+          if (owned()) await deeds.move(to);
+        } catch (err) {
+          if (!owned()) return;
+          error.textContent = errorText(err);
+          input.setAttribute('aria-invalid', 'true');
+          nudge(input);
+        } finally { input.readOnly = false; form.removeAttribute('aria-busy'); }
+      });
+      input.value = e.name;
+      input.focus({preventScroll: true});
+      const dot = e.name.lastIndexOf('.');
+      input.setSelectionRange(0, !dir && dot > 0 ? dot : e.name.length);
+    };
     const askDelete = () => {
       const ask = fileDeleteAsk(deeds, () => { this.unpop(); name.focus({preventScroll: true}); }, undefined, true);
       this.unpop();
@@ -636,7 +679,7 @@ export class FileTree {
       ask.focus();
     };
     const deeds: Deeds = {repo: at.repo, path: at.path, name: e.name, dir,
-      ...(this.onDesk ? {askDelete} : {}),
+      ...(this.onDesk ? {askRename, askDelete} : {}),
       // Made in a folder: the folder open from now, not once it is written (a row drawn meanwhile is drawn open).
       opening: (folder) => expandedPaths.add(abs(folder)),
       made: async (made, file) => {
@@ -672,6 +715,7 @@ export class FileTree {
         this.unpop();
         name.focus({preventScroll: true});
       }};
+    if (this.onDesk && deed === 'pen') { askRename(); return; }
     if (this.onDesk && deed === 'trash') { askDelete(); return; }
     pop = fileDeeds(deeds);
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
