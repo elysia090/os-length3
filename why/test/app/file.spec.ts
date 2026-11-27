@@ -223,7 +223,10 @@ test('a box in Forge follows its file through moves one after another and throug
 });
 
 test('File pressed brings the tree out, and nothing else does: a pointer resting on File or on the tree brings nothing out and puts nothing away; pressed again it goes', async ({app}) => {
+  // The rail's own File toggle is visible on Remote. Home's Places command is exercised in places-menu.spec.ts.
+  await app.rail.go('remote');
   const file = app.rail.button('file');
+  await expect(file).toBeVisible();
   // The pointer rests on File: nothing comes out, however long.
   await file.hover();
   await app.page.waitForTimeout(600);

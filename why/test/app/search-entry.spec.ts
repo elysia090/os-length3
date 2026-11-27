@@ -8,6 +8,9 @@ async function paired(app: App) {
   const places = app.forge.placesKey;
   await expect(search).toHaveCount(1);
   await expect(places).toHaveCount(1);
+  // Startup mounts the controls before the complete first page becomes visible.
+  await expect(search).toBeVisible();
+  await expect(places).toBeVisible();
   const [a, b] = await Promise.all([search.boundingBox(), places.boundingBox()]);
   expect(a).toEqual({x: b!.x - 44, y: b!.y, width: 44, height: 44});
   expect(await search.evaluate(key => getComputedStyle(key).color)).toBe(await places.evaluate(key => getComputedStyle(key).color));
@@ -53,7 +56,7 @@ test('the scope is an actual repo, even on a desk that had no repo in hand', asy
   await page.reload();
   await expect(page.locator('#page')).toHaveAttribute('data-place', 'runtime');
   const search = await paired(app);
-  await search.click();
+  await search.press('Enter');
   const stage = page.getByRole('main', {name: 'Search', exact: true});
   const scope = stage.getByRole('combobox', {name: 'Search in'}), input = stage.getByRole('searchbox');
   await expect(scope).toHaveValue('search-entry-scope');
@@ -69,8 +72,26 @@ test('the scope is an actual repo, even on a desk that had no repo in hand', asy
   const narrowSearch = await paired(app);
   const [entry, newMessage] = await Promise.all([narrowSearch.boundingBox(), app.inbox.newMessage.boundingBox()]);
   expect(newMessage!.x + newMessage!.width).toBeLessThanOrEqual(entry!.x);
+  // The keyboard was on the lens when Search opened, so Escape gives it back to the lens.
+  await narrowSearch.press('Enter');
+  await expect(scope).toHaveValue('search-entry-scope');
+  await expect(input).toBeFocused();
+  await input.press('Escape');
+  await expect(stage).toHaveCount(0);
+  await expect(narrowSearch).toBeFocused();
+
+  // A mouse takes Search from the paper in hand, not from the lens it presses.
+  await app.inbox.newMessage.click();
+  const address = app.inbox.recipient.getByRole('textbox', {name: 'Recipient address'});
+  await expect(address).toBeFocused();
+  await address.fill('mira');
+  const writing = () => address.evaluate((el: HTMLInputElement) => [el.value, el.selectionStart, el.selectionEnd, el.selectionDirection]);
+  await address.evaluate((el: HTMLInputElement) => el.setSelectionRange(1, 3, 'backward'));
   await narrowSearch.click();
   await expect(scope).toHaveValue('search-entry-scope');
+  await expect(input).toBeFocused();
   await input.press('Escape');
-  await expect(narrowSearch).toBeFocused();
+  await expect(stage).toHaveCount(0);
+  await expect(address).toBeFocused();
+  expect(await writing()).toEqual(['mira', 1, 3, 'backward']);
 });

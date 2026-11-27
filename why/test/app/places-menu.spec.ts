@@ -67,7 +67,16 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await key.click();
   await expect(entries).toHaveText(['Server', 'Inbox', 'Your usernames', 'Home', 'Forge', 'Runtime', 'Plugin', 'New repo', 'Account']);
   await app.rail.go('home');
-  await expect(app.rail.button('file')).toBeVisible();
-  await app.file.openTree();
+  await expect(app.rail.button('file')).toBeHidden();
+  await key.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowUp');
+  const file = menu.getByRole('menuitem', {name: 'File', exact: true});
+  await expect(file).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(app.file.tree).toBeVisible();
+  await expect(app.file.name('corner')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(app.file.tree).toBeHidden();
+  await expect(key).toBeFocused();
 });

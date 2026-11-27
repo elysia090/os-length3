@@ -183,8 +183,11 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    return (here === 'home' || here === 'forge' || here === 'git' || here === 'inbox' || here === 'runtime' || here === 'server') && !await this.navigation.isVisible()
-      && await this.app.forge.placesKey.isVisible();
+    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server') return false;
+    // A redraw (e.g. after changing language) can briefly show neither entrance. Do not fall back to a hidden rail.
+    const corner = this.app.forge.placesKey;
+    await expect(this.navigation.or(corner).filter({visible: true}).first()).toBeVisible();
+    return !await this.navigation.isVisible();
   }
 
   /** The actual destination is in the rail or the one Places menu, depending on the current desk. */

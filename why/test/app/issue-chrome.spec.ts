@@ -45,6 +45,8 @@ test('Git summons a real search by its shortcut; Escape puts it away and Forge d
   await expect(gitSearch).toHaveCSS('opacity', '0');
   const rail = page.getByRole('navigation', {name: 'Purposes', exact: true});
   await expect(main.getByRole('button', {name: 'Search', exact: true})).toBeVisible();
+  // The corner opens even with no repo. The inline shortcut uses Git's own repo once it is read.
+  await expect(forge.search).toBeEnabled();
   await main.getByRole('region', {name: 'Git', exact: true}).press('Control+k');
   await expect(forge.search).toBeFocused();
   await expect(rail).toBeHidden();
