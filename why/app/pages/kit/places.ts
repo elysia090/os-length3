@@ -59,13 +59,18 @@ export function deskSearch(ctx: SearchDesk, repo: () => string | null = () => ct
   return (origin) => ctx.searchRepo?.(repo(), origin, () => document.querySelector<HTMLElement>('#page .forge-search-key'));
 }
 
-/** One set of corner keys and keyboard conventions. This desk supplies the routes. */
+/** The place name opens its destinations. An existing masthead keeps its heading semantics. */
 export function placesMenu<K extends string>(owner: HTMLElement, places: readonly K[], start: K, select: (place: K) => void,
   extra: () => readonly PlaceCommand[], {action = () => false, find}: PlaceKeys<K> = {}) {
   const id = `work-places-${++made}`;
-  const key = h('button', {class: 'forge-places-key', type: 'button', 'aria-label': t('Places'), 'aria-haspopup': 'menu',
-    'aria-controls': id, 'aria-expanded': 'false'}, mark('places')) as HTMLButtonElement;
-  const menu = h('div', {class: 'forge-menu forge-places', id, role: 'menu', 'aria-label': t('Places'), hidden: ''});
+  const label = h('span', {class: 'places-label', 'data-press-face': ''}, t(start));
+  const key = h('button', {class: 'forge-places-key', type: 'button', 'aria-haspopup': 'menu',
+    'aria-controls': id, 'aria-expanded': 'false'}, label) as HTMLButtonElement;
+  const caption = owner.querySelector<HTMLElement>(':scope > h1') ?? h('div', {});
+  if (!caption.parentNode) owner.prepend(caption);
+  caption.classList.add('desk-caption');
+  caption.replaceChildren(key);
+  const menu = h('div', {class: 'forge-places', id, role: 'menu', 'aria-label': t('Places'), hidden: ''});
   let here = start;
   let listening: AbortController | null = null;
   let watching: MutationObserver | null = null;
@@ -77,7 +82,8 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     if (back && owner.isConnected && !owner.closest('[hidden]')) key.focus({preventScroll: true});
   };
   const item = (name: string, role: string, go: () => void, onPress = false) => {
-    const b = h('button', {class: 'forge-menu-item', type: 'button', role, tabindex: '-1', 'aria-label': t(name)}, t(name)) as HTMLButtonElement;
+    const b = h('button', {class: 'forge-menu-item', type: 'button', role, tabindex: '-1', 'aria-label': t(name)},
+      h('span', {'data-press-face': ''}, t(name))) as HTMLButtonElement;
     if (name === 'Inbox' || name === 'Server') b.dataset.newsPlace = name;
     if (onPress) activateOnPress(b, go);
     else b.addEventListener('click', go);
@@ -105,6 +111,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   };
   const set = (place: K, available: (destination: K) => boolean = () => true) => {
     here = place;
+    label.textContent = t(place);
     tabs.forEach((b, i) => {
       const destination = places[i];
       if (!action(destination)) b.setAttribute('aria-checked', String(destination === place));
@@ -153,7 +160,9 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     if (e.key === 'Tab') close(true);
   });
   if (find) {
-    const search = h('button', {class: 'forge-search-key', type: 'button', 'aria-label': t('Search')}, mark('search'));
+    const lens = mark('search');
+    lens.setAttribute('data-press-face', '');
+    const search = h('button', {class: 'forge-search-key', type: 'button', 'aria-label': t('Search')}, lens);
     // The mouse usually takes focus from the paper before click. Return to that paper, not to the key by mistake.
     let pressed: Element | null = null;
     search.addEventListener('pointerdown', (event) => { if (event.isPrimary && event.button === 0) pressed = document.activeElement; });
@@ -166,7 +175,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     });
     owner.append(search);
   }
-  owner.append(key, menu);
+  owner.append(menu);
   return {key, set, close, drop: () => close()};
 }
 

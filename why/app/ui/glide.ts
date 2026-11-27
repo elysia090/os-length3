@@ -406,8 +406,7 @@ export function pop(el: Element, by = .16, ms = 380) {
 /** The window's instruments stay: its title slot, Places, Search, the bands, panes and the row's map.
  * The room chooser and index in Server, for example, belong to Server's contents, not the window. */
 const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle, .row-map, ' +
-  '.forge-places-key, .forge-search-key, .forge-places, .forge-title, .git-title, ' +
-  '.server-masthead > h1, .inbox-title, .runtime-masthead > h1)';
+  '.desk-caption, .forge-search-key, .forge-places)';
 // Inbox can draw its corner after the address comes back. Its shell cannot travel even while empty.
 const LATE_FRAME = '.inbox-holder';
 

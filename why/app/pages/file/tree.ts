@@ -143,8 +143,8 @@ export class FileTree {
       if (!this.onDesk && to && !this.element.contains(to) && to !== (this.calledFrom ?? this.trigger)) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
-    // (A press that just misses the tree, or a row's menu out beside it, is still theirs: ui/near.ts.)
-    keepNear(() => (this.isOpen ? this.pop?.element ?? this.element : null));
+    // Only a floating tree or a row's menu owns the surrounding margin, not a File pane on the desk.
+    keepNear(() => (this.isOpen ? this.pop?.element ?? (this.onDesk ? null : this.element) : null));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !(this.calledFrom ?? this.trigger)?.contains(at)) {

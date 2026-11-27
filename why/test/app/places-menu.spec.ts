@@ -8,7 +8,9 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await app.newRepo.make('corner');
   const paper = forge.piece('README.md'), menu = forge.places, key = forge.placesKey;
   const first = await paper.boundingBox(), keyAt = await key.boundingBox();
-  const glyph = await key.locator('svg path').getAttribute('d');
+  const label = key.locator('.places-label');
+  await expect(key).toHaveAccessibleName('Forge');
+  const at = await label.boundingBox();
   const entries = menu.locator('button[role^="menuitem"]');
   await key.click();
   await expect(entries).toHaveText(work);
@@ -19,8 +21,13 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
       menu.getByRole('menuitemradio', {name, exact: true}))).toBeFocused();
   }
   await expect(menu.getByRole('separator')).toHaveCount(0);
-  await expect(key.locator('svg path')).toHaveAttribute('d', glyph!);
-  expect(await key.evaluate(el => getComputedStyle(el, '::before').width)).toBe('28px');
+  await expect(key).toHaveAttribute('aria-expanded', 'true');
+  await expect(key.locator('svg')).toHaveCount(0);
+  expect(await label.boundingBox()).toEqual(at);
+  expect(await menu.evaluate(el => {
+    const style = getComputedStyle(el);
+    return [style.borderTopWidth, style.borderTopLeftRadius, style.boxShadow, style.backgroundColor, getComputedStyle(document.body).backgroundColor];
+  })).toEqual(['0px', '0px', 'none', 'rgb(58, 61, 54)', 'rgb(58, 61, 54)']);
   expect(await key.boundingBox()).toEqual(keyAt);
   expect(await paper.boundingBox()).toEqual(first);
 
@@ -36,20 +43,20 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
     }
     return {names, cut, height: frame.height};
   });
-  expect(await visible()).toEqual({names: work.slice(0, 5), cut: [], height: 142});
+  expect(await visible()).toEqual({names: work.slice(0, 5), cut: [], height: 140});
   await page.setViewportSize({width: 1536, height: 320});
-  await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 114});
+  await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 112});
   const scroll = () => menu.evaluate(el => el.scrollTop);
   const world = await page.evaluate(() => scrollY);
   await menu.hover();
   await page.mouse.wheel(0, 152);
   await expect.poll(scroll).toBeGreaterThan(0);
   await page.keyboard.press('Home');
-  await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 114});
+  await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 112});
   await page.keyboard.press('End');
   const account = menu.getByRole('menuitem', {name: 'Account', exact: true});
   await expect(account).toBeFocused();
-  await expect.poll(visible).toEqual({names: work.slice(-4), cut: [], height: 114});
+  await expect.poll(visible).toEqual({names: work.slice(-4), cut: [], height: 112});
   expect(await page.evaluate(() => scrollY)).toBe(world);
   await account.press('Enter');
   const identity = page.getByRole('menu', {name: 'Me', exact: true});
@@ -92,4 +99,35 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await page.keyboard.press('Escape');
   await expect(app.file.tree).toBeHidden();
   await expect(key).toBeFocused();
+});
+
+test.describe('touch', () => {
+  test.use({hasTouch: true, isMobile: true});
+
+  test('the same place name and whole rows can be tapped at 390 and 320 pixels', async ({app}) => {
+    await app.newRepo.make('field-notes');
+    const key = app.forge.placesKey, menu = app.forge.places;
+    for (const [width, height] of [[390, 844], [320, 568]]) {
+      await app.page.setViewportSize({width, height});
+      await expect(key).toHaveAccessibleName('Forge');
+      const target = (await key.boundingBox())!;
+      const label = (await key.locator('.places-label').boundingBox())!;
+      expect([label.x, label.y, target.height]).toEqual([24, 24, 44]);
+      expect(target.width).toBeGreaterThanOrEqual(44);
+      await key.tap();
+      await expect(menu).toBeVisible();
+      const before = (await menu.boundingBox())!;
+      expect(before.height).toBe(5 * 44);
+      expect(before.x + before.width).toBeLessThan(width);
+      await menu.getByRole('menuitemradio', {name: 'Files', exact: true}).tap();
+      await expect(key).toHaveAccessibleName('Files');
+      await expect(menu).toBeHidden();
+      await key.tap();
+      await menu.getByRole('menuitemradio', {name: 'Forge', exact: true}).tap();
+      await expect(key).toHaveAccessibleName('Forge');
+      await expect(menu).toBeHidden();
+      // The quick sequence is not taken as a double-tap zoom on the adjacent name and option.
+      expect(await app.page.evaluate(() => visualViewport!.scale)).toBe(1);
+    }
+  });
 });

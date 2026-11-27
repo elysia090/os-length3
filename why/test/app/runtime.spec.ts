@@ -178,7 +178,7 @@ test('Runtime lists each local repo once, keeps Remote below it, and restores th
   await expect(gear(here, 'field-notes')).toBeFocused();
   await expect(main).toHaveAttribute('data-place', 'runtime');
 
-  const key = main.getByRole('button', {name: 'Places', exact: true});
+  const key = main.getByRole('button', {name: 'Runtime', exact: true});
   await key.press('Enter');
   await main.getByRole('menuitem', {name: 'File', exact: true}).click();
   await expect(app.file.tree).toBeVisible();

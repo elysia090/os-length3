@@ -71,7 +71,7 @@ test('a press answers in its own frame, sounds as it goes down, is held down a f
   await app.rail.go('home');
   type Trace = {down: number; up: number; sound: number; frames: {t: number; s: number}[]};
   const trace = () => app.page.evaluate(() => (window as unknown as {__press: Trace}).__press);
-  for (const name of ['Places', 'Actions for hello', 'Search']) {
+  for (const name of ['Home', 'Actions for hello', 'Search']) {
     const b = app.main.getByRole('button', {name, exact: true});
     await expect(b).toBeVisible();
     await b.hover();
@@ -97,7 +97,7 @@ test('a press answers in its own frame, sounds as it goes down, is held down a f
         addEventListener('pointerup', () => { press.up = performance.now(); }, {capture: true, once: true});
         let after = 0;
         const step = () => {
-          const scale = parseFloat(getComputedStyle(el).scale);
+          const scale = parseFloat(getComputedStyle(el.querySelector(':scope > [data-press-face]') ?? el).scale);
           press.frames.push({t: performance.now(), s: Number.isNaN(scale) ? 1 : scale});
           if (!press.up || ++after < 4) requestAnimationFrame(step);
         };

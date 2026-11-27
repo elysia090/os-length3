@@ -309,18 +309,20 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
 test('a press is let go when the pointer is cancelled, and being held is shown with less motion asked for too (a state, not a move)', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.forge.placesKey;
+  const toggle = app.forge.placesKey, face = toggle.locator('[data-press-face]');
   await expect(toggle).toBeVisible();
+  const at = await toggle.boundingBox();
   await toggle.dispatchEvent('pointerdown', {button: 0});
-  await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
+  await expect.poll(() => face.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
+  expect(await toggle.boundingBox()).toEqual(at);
   await toggle.dispatchEvent('pointercancel');
   await still(app);
-  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  expect(await face.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await app.page.emulateMedia({reducedMotion: 'reduce'});
   await toggle.dispatchEvent('pointerdown', {button: 0});
-  expect(Number(await toggle.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
+  expect(Number(await face.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointerup', {button: 0});
-  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  expect(await face.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await expect(app.forge.places).toBeHidden();
 });
 
@@ -328,9 +330,9 @@ test('a press is let go when the pointer is cancelled, and being held is shown w
 test('less motion asked for during a held press keeps it held; let go, it is up at once and nothing is replayed', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.forge.placesKey;
+  const toggle = app.forge.placesKey, face = toggle.locator('[data-press-face]');
   await expect(toggle).toBeVisible();
-  const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
+  const scale = () => face.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);
   // Held is a state, not a move: less motion asked for keeps it held, and let go it is up at once.
@@ -392,7 +394,7 @@ test('going to another place the world goes sideways: the two places move togeth
         }
         const outAt = at(left), inAt = left ? at(coming) : null, ground = getComputedStyle(document.body);
         const corner = [...page.querySelectorAll('.forge-search-key, .forge-places-key')].filter((key) => key.getClientRects().length);
-        const caption = page.querySelector('.forge-title, .git-title, .server-masthead > h1, .inbox-title, .runtime-masthead > h1');
+        const caption = page.querySelector('.desk-caption .places-label');
         const point = (el: Element) => { const r = el.getBoundingClientRect(); return [r.x, r.y]; };
         out.push({t, left: outAt?.m41 ?? null, come: inAt?.m41 ?? null, dots: parseFloat(ground.backgroundPositionX) || 0,
           cross: Math.max(Math.abs(outAt?.m42 ?? 0), Math.abs(inAt?.m42 ?? 0), Math.abs(parseFloat(ground.backgroundPositionY) || 0)),

@@ -59,7 +59,7 @@ test('what one person writes arrives live on the Places key and Inbox, and readi
 
   // The browser coming back looks at the real Remote. No reload or opening Inbox to see the news.
   await bo.comeBack();
-  await expect(key).toHaveAccessibleName('Places');
+  await expect(key).toHaveAccessibleName('Home');
   await expect(key).toHaveAccessibleDescription(unreadMail);
   expect(await hasNewsDot(key)).toBe(true);
   await expect(places).toBeHidden();

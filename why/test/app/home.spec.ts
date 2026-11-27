@@ -323,7 +323,7 @@ test('Home has no band or rail; its single Places key opens File and goes to the
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const {page, main} = app;
-  const key = main.getByRole('button', {name: 'Places', exact: true});
+  const key = main.getByRole('button', {name: 'Home', exact: true});
   const menu = main.getByRole('menu', {name: 'Places', exact: true});
   await expect(page.getByRole('navigation', {name: 'Purposes', includeHidden: true})).toBeHidden();
   await expect(page.locator('#door')).toBeHidden();

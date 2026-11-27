@@ -11,9 +11,10 @@ async function paired(app: App) {
   // Startup mounts the controls before the complete first page becomes visible.
   await expect(search).toBeVisible();
   await expect(places).toBeVisible();
-  const [a, b] = await Promise.all([search.boundingBox(), places.boundingBox()]);
-  expect(a).toEqual({x: b!.x - 44, y: b!.y, width: 44, height: 44});
-  expect(await search.evaluate(key => getComputedStyle(key).color)).toBe(await places.evaluate(key => getComputedStyle(key).color));
+  const width = await app.page.evaluate(() => innerWidth);
+  const [a, b] = await Promise.all([search.boundingBox(), places.locator('.places-label').boundingBox()]);
+  expect(a).toEqual({x: width - 56, y: 12, width: 44, height: 44});
+  expect([b!.x, b!.y]).toEqual([width <= 1000 ? 24 : 48, 24]);
   // Git's keyboard Reference may be in the tab order at opacity zero; the desk has no always-visible search bar.
   expect(await app.main.getByRole('searchbox').evaluateAll(fields => fields.some(field =>
     field.checkVisibility({opacityProperty: true, visibilityProperty: true})))).toBe(false);

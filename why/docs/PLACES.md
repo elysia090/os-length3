@@ -585,16 +585,22 @@ The row runs on past the window's right edge, and the piece cut by that edge
 says so: there is more that way. Nothing is under a piece and nothing over
 it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
-**At the corner.** Two 44 px keys, 12 px from the upper and right edges:
-Places at the edge and a lens beside it. Each mark is 18 px.
-The two windows in the Places mark do not change when pressed; the key
-sinks into 28 px of the desk and the menu is the paper. Forge, Files,
-Git, Prompt, Home, Server, Runtime, Plugin, New repo and Account are on one
-scrolling list. Five lines of 28 px fit in the ordinary menu, four in a window
-360 px tall or less when there is room. Arrow keys, Home and End bring the
-focused line into view, and Escape puts the list away. Files is the current
-repo's tree, with actions on its rows. The whole filesystem is still File
-on Home's rail. With no repo, Open Folder is the empty desk's own first move.
+**At the frame.** The name of the place is its Places button: its words start at (48, 24), or (24, 24) in a
+window up to 1000 px wide. The lens keeps the right corner. Each target is at least 44 px tall and wide. The
+name stays in place while the choices are out: their words stand under it against the same ground, not a sheet,
+with no border, shadow or separator. The contents of the place remain where they were.
+Forge, Files, Git, Prompt, Home, Server, Runtime, Plugin, New repo and Account are on one scrolling list. Five
+whole rows fit in the ordinary menu, four in a window 360 px tall or less when there is room; a touch row is at
+least 44 px. Arrow keys, Home and End bring the focused line into view. Escape puts the list away and gives the name
+the keyboard back. Files is the current repo's tree, with actions on its rows. The whole filesystem is still File.
+With no repo, Open Folder is the empty desk's own first move.
+
+The standards here are the [UIKit title menu](https://developer.apple.com/videos/play/wwdc2022/10068/?time=1052)
+(the name opens the choices) and [Safari on iPhone](https://www.apple.com/newsroom/2021/09/ios-15-is-available-today-making-iphone-more-personal-and-capable-than-ever/#redesigned-browsing-with-safari)
+(the navigation stays put while another page comes in). Frequent destinations sit together, as in
+[Linear Mobile's pinned navigation](https://linear.app/changelog/2026-01-22-customize-your-navigation-in-linear-mobile).
+The visible target works by a press, without requiring a gesture or an extra button, using the
+[44-point target](https://developer.apple.com/design/human-interface-guidelines/buttons) as its reference.
 
 The lens opens a dedicated Search screen. The query has the keyboard as
 it comes in. The editor shortcuts still open the quick in-place search;

@@ -139,7 +139,6 @@ class Forge {
   private lastEditor: HTMLTextAreaElement | null = null;
   private paperReturn: PaperReturn | null = null;
   private paperMoved = false;
-  private readonly placeHeading: HTMLElement;
   private placeInHand: ForgePlace = 'Forge';
   private folderOut: (() => void) | null = null;
   private startOut: (() => void) | null = null;
@@ -181,6 +180,7 @@ class Forge {
       }});
     this.element = this.work.element;
     this.element.classList.add('forge-layout');
+    this.element.prepend(h('h1', {class: 'forge-title'}));
     this.switcher = workPlaces(this.element, (place) => {
       if (place === 'Git') void ctx.go('git');
       else if (place === 'Prompt') this.promptWindow(!!this.prompt.hidden,true);
@@ -262,8 +262,6 @@ class Forge {
     document.addEventListener('keydown', keys, true);
     this.offKeys = () => document.removeEventListener('keydown', keys, true);
     this.known = ctx.repo;
-    this.placeHeading = h('h1', {class: 'forge-title'}, t('Forge'));
-    this.element.prepend(this.placeHeading);
   }
 
   /**
@@ -437,7 +435,6 @@ class Forge {
     if(place==='Prompt'){this.promptWindow(true,focus);return;}
     if(place==='Files')this.promptWindow(false,false);
     this.placeInHand=place;
-    this.placeHeading.textContent=t(place);
     this.center.dataset.place=place;
     this.switcher.set(place,true);
     this.hand(place);
@@ -688,7 +685,6 @@ class Forge {
   /** No selected repo: a visible first move and the same action from the bare desk. */
   private none() {
     this.now.repo = null;
-    this.placeHeading.textContent = t('Forge');
     this.work.setRepo(null);
     this.promptPaper.hide();
     this.center.dataset.place = 'Forge';

@@ -327,7 +327,7 @@ class NewRepo extends Part {
 
 /** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
-  get placesKey() { return this.main.getByRole('button', {name: placeLabel('Places')}); }
+  get placesKey() { return this.main.locator('button.forge-places-key[aria-haspopup=menu]:visible'); }
   get places() { return this.main.getByRole('menu', {name: placeLabel('Places')}); }
 
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {

@@ -145,7 +145,12 @@ export function caret() {
     if (styled !== f) { copyStyle(f, copy); styled = f; }
     const p = caretAt(f, copy);
     const seen = seenIn(f);
-    if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
+    if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) {
+      hide();
+      // A live editor may have focus before the arriving page reaches the window.
+      if (document.querySelector('.place-left')) later();
+      return;
+    }
     // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell, the
     // letter it stands on drawn in it dark (styles.css), as a terminal draws it.
     const block = cs.getPropertyValue('--caret').trim() === 'block';

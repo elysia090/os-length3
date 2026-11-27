@@ -36,7 +36,9 @@ function give(el: HTMLElement): number {
 /** Held down: in the first frame drawn after the press, as the hand is. */
 function down(el: HTMLElement) {
   held?.press.cancel();
-  held = {el, press: el.animate([{scale: give(el)}], {duration: 0, fill: 'forwards'})};
+  // A text or glyph can give inside a fixed hit area, so a press at its edge still reaches the same button on release.
+  const face = el.querySelector(':scope > [data-press-face]') ?? el;
+  held = {el, press: face.animate([{scale: give(el)}], {duration: 0, fill: 'forwards'})};
 }
 
 /** Let go: up at once. */

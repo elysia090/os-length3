@@ -14,8 +14,9 @@ test('choosing 日本語 shows the page in Japanese, and it stays chosen', async
     await expect(app.page.locator('html')).toHaveAttribute('lang', 'ja');
     await expect(app.page.locator('#profile-name')).toHaveAttribute('data-placeholder', 'あなたの名前');
     const {placesKey, places} = app.forge;
-    await expect(placesKey).toHaveAccessibleName('作業場所');
+    await expect(placesKey).toHaveAccessibleName('Home');
     await placesKey.click();
+    await expect(places).toHaveAccessibleName('作業場所');
     await places.getByRole('menuitem', {name: 'アカウント', exact: true}).click();
     await expect(app.page.getByRole('menu', {name: '自分', exact: true})).toBeVisible();
     await app.page.keyboard.press('Escape');

@@ -2,8 +2,8 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// New repo retains the framed band. Home, the work desks and Runtime share two corner keys, not a permanent rail.
-// The Remote still frames a sheet; Inbox uses its desk on either side of sign-in.
+// New repo retains the framed band. Home, the work desks and Runtime share the labelled Places and Search, not a permanent rail.
+// The Remote still frames a sheet; Inbox uses its own desk on either side of sign-in.
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
@@ -25,11 +25,13 @@ async function newRepoDesk(app: App, what: string) {
 async function corner(app: App, width: number) {
   await expect(app.page.getByRole('navigation', {name: 'Purposes', exact: true, includeHidden: true})).toBeHidden();
   await expect(app.rail.door).toBeHidden();
-  for (const [name, right] of [['Search', 56], ['Places', 12]] as const) {
-    const key = app.main.getByRole('button', {name, exact: true});
-    await expect(key).toBeVisible();
-    expect(await key.boundingBox()).toEqual({x: width - right - 44, y: 12, width: 44, height: 44});
-  }
+  const lens = app.main.getByRole('button', {name: 'Search', exact: true});
+  await expect(lens).toBeVisible();
+  expect(await lens.boundingBox()).toEqual({x: width - 12 - 44, y: 12, width: 44, height: 44});
+  const key = app.forge.placesKey;
+  await expect(key).toBeVisible();
+  const {x, y, height} = await at(key.locator('.places-label'));
+  expect([x, y, height]).toEqual([width <= 1000 ? U : 2 * U, U, U]);
 }
 
 async function homeDesk(app: App, width: number) {
