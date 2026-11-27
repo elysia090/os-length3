@@ -2,22 +2,33 @@
 // board's talk and TODO, its people and the repos they show, how far it is
 // open, guests; and who sees a repo.
 export default {
+  'View': '表示',
+  'Add a task…': 'タスクを追加…',
+  'Topic': 'トピック',
+  'Topics': 'トピック',
+  'Talk': '会話',
+  'Thread name': 'スレッド名',
+  'New thread': '新しいスレッド',
+  'New thread…': '新しいスレッド…',
+  'Write a post': '投稿を書く',
+  'Write a reply': '返信を書く',
+  'Only {server} members can read it.': '{server}のメンバーだけが読めます。',
   'Contacts': '連絡先メンバー',
   'A group workspace. Each board combines discussions and a shared TODO list.': 'つながりのある人たちのグループ。ボードごとに対話と共有 TODO をまとめて管理します。',
   'Not a member of any server': 'まだどのサーバーにも参加していません',
   'Published to': '公開先',
   // The boxes.
   'Boards': 'ボード',
-  'New board': '新規ボード',
   'Message {name}': '{name}にメッセージを入力',
   'Servers will reappear once Remote responds': 'Remote から応答があり次第、サーバーが再表示されます',
   'Public boards will reappear once Remote responds': 'Remote から応答があり次第、公開ボードが再表示されます',
   'A board named "{name}" already exists': '「{name}」という名前のボードは既に存在します',
-  'Topic / Description': 'ボードのトピック・概要',
   // The same, broken where the sentence is.
-  'A board groups discussions and shared tasks around a topic:': 'ボードは1つのテーマに関する対話と共有 TODO をまとめる場所です：',
-  'e.g. trips, releases, or study groups.': '旅行計画、リリース作業、読書会など。',
   'Public boards': '公開ボード',
+  'Server menu': 'サーバーメニュー',
+  'Server name': 'サーバー名',
+  'Rename {name}': '{name}の名前を変更',
+  'Manage…': '管理…',
   'Create server': 'サーバーを作成',
   // Share with no server to show a repo in: the way to make one.
   'Create server…': 'サーバーを作成…',
@@ -62,9 +73,7 @@ export default {
   'Guest posting privileges have ended.': 'ゲストとしての投稿権限が終了しました。',
   'Invalid invite link. Request a new invite from the server owner.': 'この招待リンクは有効なゲスト向けボードを開けません。招待元に新しいリンクの発行を依頼してください。',
   // A board's TODO, pinned at the top of it (Home's list, kept together).
-  'Shared TODO': '共有 TODO',
   // The right: who is in it, then the repos they show.
-  'Members and shared repos': '参加メンバーと公開中の repo',
   'Members': 'メンバー',
   'Owner': 'オーナー',
   'Public': '全体（パブリック）',
@@ -118,13 +127,11 @@ export default {
   // Something came in, not seen yet: said on the rail's place, a server's chip and a board.
   'New posts in server': 'サーバーに新しい投稿があります',
   'New posts': '新しい投稿',
-  'Discussions': 'トーク',
   '{server} (new posts)': '{server}（新着投稿あり）',
   'Seen by everyone': '全体公開',
   'Guest posting enabled': 'ゲスト投稿可能',
   'Leave': '退出',
   'Delete': '削除',
-  'Manage members, boards, and repos': 'メンバー・ボード・repo の設定',
   'Add contact': '連絡先メンバーを追加',
   'Export local copy': 'ローカルに保存',
   'Members only': 'メンバー限定',

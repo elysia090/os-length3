@@ -10,7 +10,7 @@ import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, 
 import type {Rises, ScreenState} from './screen.ts';
 import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
 import {type AgentTerm, agentTermFor} from './agent-term.ts';
-import {sessionIfAny} from './sessions.ts';
+import {sessionIfAny, type TerminalSide} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
 import {agentKey, agentUse} from '../../../device/agent-key.ts';
@@ -44,15 +44,18 @@ import {SPRING} from '../../ui/law.ts';
 /** Choices said under the box after → completed, at most. */
 const CHOICES = 24;
 
-/** What was written in a box and not sent: by repo for Run, by what the box does and repo otherwise. */
-const drafts = new Map<string, string>();
-// A repo renamed: what was half written for it is its new name's.
+/** A note belongs to its repo; a line of shell input belongs to its particular terminal. */
+const drafts = new Map<string,string>();
+const shellDrafts = {left:new Map<string,string>(),right:new Map<string,string>()};
 onRenamed((from, to) => {
-  for (const [k, text] of [...drafts]) {
-    const mode = k.includes('\n') ? k.slice(0, k.indexOf('\n')) : null;
-    if ((mode === null ? k : k.slice(mode.length + 1)) !== from) continue;
-    drafts.delete(k);
-    drafts.set(mode === null ? to : `${mode}\n${to}`, text);
+  for (const lines of Object.values(shellDrafts)) {
+    const text=lines.get(from);
+    if(text!==undefined){lines.delete(from);lines.set(to,text);}
+  }
+  for (const [key, text] of [...drafts]) {
+    const split=key.indexOf('\n');
+    if (key.slice(split+1)!==from) continue;
+    drafts.delete(key); drafts.set(`${key.slice(0,split+1)}${to}`,text);
   }
 });
 
@@ -88,6 +91,7 @@ interface BoxParts {
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
    * terminal's does (Shift+Enter a new line). */
   desk?: boolean;
+  side?: TerminalSide;
 }
 
 /** The box at the foot of a bench's center: its field and pill, what is said under it, what it does with what is written. */
@@ -134,6 +138,7 @@ export class Box {
   readonly #edit: EditLine;
 
   readonly #p: BoxParts;
+  readonly #offs: (()=>void)[] = [];
 
   constructor(p: BoxParts) {
     this.#p = p;
@@ -154,8 +159,8 @@ export class Box {
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, caps, this.runIt) as HTMLFormElement;
     this.line = [lamp, this.waits, this.prompt, this.runIt];
     this.dock = h('div', {class: 'dock'}, this.note, this.heard);
-    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up, desk: () => !!p.desk,
-      followed: () => this.onFollow?.()});
+    this.#pillLine = new PillLine({chip: this.chip, waits: this.waits, repo: () => this.#repo, up: () => this.#up, desk: () => !!p.desk, side:this.side,
+      followed: () => { this.#watchState(); this.onFollow?.(); }});
     // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
     // nowhere.
     this.#edit = new EditLine({box: this.prompt, main: p.main, dock: this.dock, repo: () => this.#repo,
@@ -174,12 +179,19 @@ export class Box {
     this.#stepsBack();
     this.#byItself();
     // Chosen in another page's box, this one does it too (turned there, not here: it is not on screen).
-    onBoxMode((m) => this.choose(m, false));
-    onChange((c) => {
+    this.#offs.push(onBoxMode((m) => this.choose(m, false)));
+    this.#offs.push(onChange((c) => {
       if (c.repo !== this.#repo) return;
       this.#listed.clear();
       if (this.#mode === 'issue') this.#pillSays();
-    });
+    }));
+  }
+
+  get side(): TerminalSide { return this.#p.side ?? 'left'; }
+
+  drop() {
+    this.#offs.forEach(off=>off());
+    this.#pillLine.drop(); this.#unwatchRaw?.(); this.#onScreen.disconnect(); this.#shown.disconnect();
   }
 
   /** The repo the box works on. */
@@ -194,7 +206,7 @@ export class Box {
     this.#pillLine.said();
     this.#fit();
     // Back in the box, the Prompt is read afresh when it comes up again: what it printed is folded away.
-    if (state === 'rest' && this.#repo) sessionIfAny(this.#repo)?.fold();
+    if (state === 'rest' && this.#repo) sessionIfAny(this.#repo,this.side)?.fold();
     if (state === 'leaving' && this.#p.back) requestAnimationFrame(() => this.#rest(true));
   }
 
@@ -207,7 +219,7 @@ export class Box {
     this.#edit.letGo();
     this.#edit.hide();
     this.prompt.placeholder = modeHint(this.#mode, name);
-    this.prompt.value = name && this.#mode !== 'edit' ? drafts.get(this.#draft()) ?? '' : '';
+    this.prompt.value = name && this.#mode !== 'edit' ? this.#draftBook().get(this.#draft()) ?? '' : '';
     this.#pillSays();
     this.#unsay();
     this.#say('');
@@ -267,7 +279,7 @@ export class Box {
       this.#mode = m;
       this.#pillSays();
       this.prompt.placeholder = modeHint(m, this.#repo, m === 'edit' ? this.#edit.where()?.file : null);
-      this.prompt.value = this.#repo && m !== 'edit' ? drafts.get(this.#draft()) ?? '' : '';
+      this.prompt.value = this.#repo && m !== 'edit' ? this.#draftBook().get(this.#draft()) ?? '' : '';
       this.#fit();
       this.#unsay();
       this.#say('');
@@ -324,17 +336,14 @@ export class Box {
    */
   attach() {
     const {term, termHead, work} = this.#p;
-    const el = this.#repo ? terminalFor(this.#repo) : null;
+    const el = this.#repo ? terminalFor(this.#repo,this.side) : null;
     // Whether its program in front reads each key as it comes, heard as it changes: said on the line (data-raw), where
     // the page's own keys (the desk's, the bench's) give way to it.
-    this.#unwatchRaw?.();
-    const session = this.#repo ? sessionIfAny(this.#repo) : null;
-    this.#unwatchRaw = session ? session.watch(() => this.#rawMark()) : null;
-    this.#rawMark();
     const held = !!el && el.parentElement !== term && offScreen(work) && !offScreen(el);
     if (held) this.#onScreen.observe(term);
     else if (el ? el.parentElement !== term : term.childElementCount > 1) term.replaceChildren(termHead, ...(el ? [el] : []));
     this.#pillLine.follow();
+    this.#watchState();
   }
   readonly #onScreen = new ResizeObserver(() => {
     if (offScreen(this.#p.work) || !this.#p.term.getClientRects().length) return;
@@ -343,21 +352,30 @@ export class Box {
   });
 
   #unwatchRaw: (() => void) | null = null;
+  #watched: ReturnType<typeof sessionIfAny>;
+  #watchState() {
+    const session=this.#repo ? sessionIfAny(this.#repo,this.side) : undefined;
+    if (this.#watched!==session) {
+      this.#unwatchRaw?.(); this.#watched=session;
+      this.#unwatchRaw=session?.watch(()=>this.#rawMark()) ?? null;
+    }
+    this.#rawMark();
+  }
   /** The repo's Prompt, while the program in front of it reads each key as it comes. */
   #raw(): Session | null {
-    const s = this.#repo ? sessionIfAny(this.#repo) : null;
+    const s = this.#repo ? sessionIfAny(this.#repo,this.side) : null;
     return s instanceof Session && s.raw ? s : null;
   }
   #rawMark() {
     this.form.toggleAttribute('data-raw', !!this.#raw());
     // What is typed kept out of sight (a password asked for): hidden in the box, and never kept as a draft.
-    const s = this.#repo ? sessionIfAny(this.#repo) : null, hushed = s instanceof Session && s.hushed;
-    if (hushed && !this.form.hasAttribute('data-hushed')) drafts.delete(this.#draft());
+    const s = this.#repo ? sessionIfAny(this.#repo,this.side) : null, hushed = s instanceof Session && s.hushed;
+    if (hushed && !this.form.hasAttribute('data-hushed')) this.#draftBook().delete(this.#draft());
     this.form.toggleAttribute('data-hushed', hushed);
   }
 
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
-  room() { this.#p.work.classList.toggle('unrun', !!this.#repo && !sessionIfAny(this.#repo)?.runs.length); }
+  room() { if(!this.#p.desk) this.#p.work.classList.toggle('unrun', !!this.#repo && !sessionIfAny(this.#repo,this.side)?.runs.length); }
 
   // ---- What it says.
 
@@ -369,9 +387,10 @@ export class Box {
     this.prompt.style.height = 'auto'; this.prompt.style.height = `${this.prompt.scrollHeight}px`;
   }
   /** What is half written is kept for the repo and for what the box does: an issue's words are not a line to run. */
+  #draftBook() { return this.#mode === 'run' ? shellDrafts[this.side] : drafts; }
   #draft() { return this.#mode === 'run' ? this.#repo! : `${this.#mode}\n${this.#repo}`; }
   /** What is written kept for the repo and what the box does (not Edit's: its line is the file's own). */
-  #keep() { if (this.#repo && this.#mode !== 'edit' && !this.form.hasAttribute('data-hushed')) { if (this.prompt.value) drafts.set(this.#draft(), this.prompt.value); else drafts.delete(this.#draft()); } }
+  #keep() { if (this.#repo && this.#mode !== 'edit' && !this.form.hasAttribute('data-hushed')) { if (this.prompt.value) this.#draftBook().set(this.#draft(), this.prompt.value); else this.#draftBook().delete(this.#draft()); } }
   /** Completing's choices go as the next key is pressed, not at once: put away as they came. */
   #unsay() {
     if (!this.#choices) return;
@@ -460,10 +479,10 @@ export class Box {
     // `agent` and what to do, run in the terminal on a desk: asked of the Agent, which works in a terminal of its own.
     const agentLine = this.#p.besideTerm ? /^\s*agent\s+(\S[\s\S]*)$/.exec(this.prompt.value) : null;
     if (agentLine) { void this.#askBeside(repo, this.prompt.value.trim(), agentLine[1].trim()); return; }
-    const s = sessionIfAny(repo);
+    const s = sessionIfAny(repo,this.side);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
     if (s?.ended) { s.restart(); this.#pillLine.follow(); this.#say(t('Starting up…')); return; }
-    if (!sessionFor(repo).send(this.prompt.value)) { this.#say(t('Starting up…')); return; }
+    if (!sessionFor(repo,this.side).send(this.prompt.value)) { this.#say(t('Starting up…')); return; }
     // Sent with the Prompt put down (Escape, or Run chosen from another of the box's deeds): it comes up, so what is
     // run is seen run, never answered out of sight.
     if (!this.#up && document.activeElement === this.prompt) this.#screen?.raise();
@@ -475,7 +494,7 @@ export class Box {
     this.#unsay();
     this.#say('');
     this.prompt.value = '';
-    drafts.delete(this.#draft());
+    this.#draftBook().delete(this.#draft());
     this.#walk.reset();
     this.room();
     this.#fit();
@@ -492,7 +511,11 @@ export class Box {
     // moment with neither, the line gone and come back. (Asked again meanwhile, by a second Enter, it is asked once.)
     if (this.#asking) return;
     this.#asking = true;
-    const run = (output: string, status: number) => { this.#asking = false; this.#emptied(); sessionFor(at).shown(line, output, status); };
+    const run = (output: string, status: number) => {
+      this.#asking = false;
+      if(this.#repo===at && this.prompt.value.trim()===line)this.#emptied();
+      sessionFor(at,this.side).shown(line, output, status);
+    };
     let use;
     try { use = await agentUse(); } catch (e) { run(`agent: ${errorText(e)}`, 1); return; }
     if (!use) { run(`agent: ${t('No API key configured on this device; set one in Runtime')}`, 1); return; }
@@ -586,7 +609,7 @@ export class Box {
       this.attach();
       const to = sent.to;
       const row = this.#flow(at).note(sent.head, sent.words, () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo'));
-      if (this.prompt.value === text) { land(row); this.prompt.value = ''; drafts.delete(this.#draft()); this.#fit(); }
+      if (this.prompt.value === text) { land(row); this.prompt.value = ''; this.#draftBook().delete(this.#draft()); this.#fit(); }
       this.heard.textContent = sent.said;
       this.#pillSays();
     } catch (e) { this.#say(errorText(e)); } finally { landed(); }
@@ -614,7 +637,7 @@ export class Box {
     const row = session.note('Agent', question, () => { this.choose('agent'); this.#put(question); this.prompt.focus(); });
     land(row);
     this.prompt.value = '';
-    drafts.delete(this.#draft());
+    this.#draftBook().delete(this.#draft());
     this.#fit();
     this.heard.textContent = t('Prompt sent to Agent');
     // On an issue's work the Agent was handed it, and writes; on main it reads and runs only.
@@ -651,7 +674,7 @@ export class Box {
           },
         };
       },
-      shown: (line, output, status) => sessionFor(at).shown(line, output, status),
+      shown: (line, output, status) => sessionFor(at,this.side).shown(line, output, status),
       place: (path) => {
         if (this.#repo !== at) return false;
         if (this.#p.place) return this.#p.place(path);
@@ -786,12 +809,12 @@ export class Box {
     // terminal's copy, Ctrl+Shift+C, and left to the page.)
     if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && caret && repo) {
       event.preventDefault();
-      const s = sessionFor(repo);
+      const s = sessionFor(repo,this.side);
       if (s.abandon(prompt.value)) this.#emptied(); else s.interrupt();
       return;
     }
     // Ctrl-Z while a line runs stops it, a job the shell holds (fg brings it back), as in a terminal.
-    if (event.key.toLowerCase() === 'z' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && repo && sessionFor(repo).suspend()) {
+    if (event.key.toLowerCase() === 'z' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && repo && sessionFor(repo,this.side).suspend()) {
       event.preventDefault();
       return;
     }
@@ -831,9 +854,9 @@ export class Box {
         cut(a, at);
         return true;
       }
-      case 'l': return sessionFor(repo).clearScreen();
+      case 'l': return sessionFor(repo,this.side).clearScreen();
       case 'd':
-        if (!v) { sessionFor(repo).endOfInput(); return true; }
+        if (!v) { sessionFor(repo,this.side).endOfInput(); return true; }
         if (at === end && at < v.length) cut(at, at + 1);
         return true;
       default: return false;
@@ -843,7 +866,7 @@ export class Box {
   /** ↑ or ↓ with the caret on the first or last line: the line run before (or after) it in the box. */
   #walkTo(event: KeyboardEvent, key: 'ArrowUp' | 'ArrowDown') {
     const {prompt} = this, repo = this.#repo;
-    const runs = repo ? sessionIfAny(repo)?.runs.map((r) => r.line) ?? [] : [];
+    const runs = repo ? sessionIfAny(repo,this.side)?.runs.map((r) => r.line) ?? [] : [];
     const line = this.#walk.arrow(key, prompt.value, prompt.selectionStart, runs);
     if (line === null) return;
     event.preventDefault();
@@ -904,7 +927,7 @@ export class Box {
       this.#look();
       if (this.#mode === 'edit') this.#edit.typed();
       // Written to, the Prompt starts: its shell comes up while the line is still being written.
-      if (this.#mode === 'run' && this.#repo && this.prompt.value) sessionFor(this.#repo).begin();
+      if (this.#mode === 'run' && this.#repo && this.prompt.value) sessionFor(this.#repo,this.side).begin();
     });
     prompt.addEventListener('keydown', (event) => this.#key(event));
   }

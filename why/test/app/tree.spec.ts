@@ -21,8 +21,8 @@ test('File\'s tree has the repos on top and the rest of / under System, shut unt
 
 test('→ on File brings the tree out with the keyboard on its first row', async ({app}) => {
   await app.newRepo.make('tide');
-  // Creation opens Forge. Test the global File key on Home, where the rail is in sight.
-  await app.rail.go('home');
+  // Creation opens Forge. Remote still shows the rail's own File key, including its directional shortcut.
+  await app.rail.go('remote');
   const file = app.rail.button('file');
   // /root is structural; the first focusable row is the repo.
   const first = app.file.name('tide');

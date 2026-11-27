@@ -1,10 +1,62 @@
 /* Git: the issue is the paper in hand. The folder name and main's steps stand quietly beside it. */
+/* Nighthawks: the dotted desk and the single paper in hand. Only the active Git
+   page colours the window; the page left in a move keeps its own ink. */
+:is(body:has(> #page[data-place='git']), .page[data-place='git']) {
+  --git-ground: var(--nighthawks-ground);
+  --git-dots: var(--nighthawks-dots);
+}
+body:has(> #page[data-place='git']) {
+  background-color: var(--git-ground);
+  background-image: var(--git-dots);
+}
+.page[data-place='git'] {
+  --ground: var(--git-ground);
+  --paper: var(--nighthawks-paper);
+  --ink: var(--paper);
+  --git-desk-sub: var(--nighthawks-desk-quiet);
+  --sub: var(--git-desk-sub);
+  --quiet: var(--sub);
+  --rule: var(--nighthawks-rule);
+  --edge: var(--nighthawks-desk-disabled);
+  --git-shadow: var(--nighthawks-shadow);
+  --slot: var(--git-shadow);
+  --raised: var(--ground);
+  --off: var(--del-tint);
+  --git-paper-ink: var(--nighthawks-paper-ink);
+  --git-paper-sub: var(--nighthawks-paper-sub);
+  color: var(--ink);
+}
+.place-left > .page[data-place='git'] {
+  background: var(--ground) var(--git-dots) 0 calc(-1 * var(--outer-top)) / var(--u) var(--u);
+}
+.git-layout .git-switch { --quiet: var(--edge); }
+.git-layout .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']):not(:focus) { color: var(--edge); }
+
+/* Ink follows the reading surface; the tag, history and controls outside the paper stay in desk ink. */
+.git-layout :is(.git-desk .issue-slot:is([aria-current='true'], .leaving) > .issue-card, .forge-menu, .band-tools) {
+  --ink: var(--git-paper-ink);
+  --sub: var(--git-paper-sub);
+  --quiet: var(--sub);
+  --edge: var(--rule);
+  --off: var(--nighthawks-paper-off);
+  --raised: var(--paper);
+  --slot: var(--nighthawks-paper-selected);
+}
+.git-layout .band-tools { --ground: var(--paper); color: var(--ink); }
+.git-layout .git-desk .issue-slot:is([aria-current='true'], .leaving) > .issue-card {
+  box-shadow: var(--shade) var(--shade) 0 0 var(--git-shadow);
+}
+.git-layout .git-desk .issue-card .issue-name { color: var(--paper); }
+.git-layout .git-desk .issue-card .issue-name > i { color: var(--git-desk-sub); }
+/* Added/deleted lines in the merged list are already tinted, even though the list itself is on the desk. */
+.git-layout .done-diff .diff-line:is(.add, .del) { --sub: var(--git-paper-sub); color: var(--git-paper-ink); }
+
 /* (The desk's dotted ground, and nothing of the page cut at the rail's edge: its keys and main's sheet start left of it.) */
 .page.page-work[data-place='git'] { overflow: visible; }
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
 .work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 .work.bench.band-bench > .center { overflow: visible; }
-/* Search remains available via More Places, / and the keyboard, not a permanent band across the title. */
+/* The lens and keyboard summon Search; no permanent band crosses the title. */
 .work.bench.git-layout > .bar > .band-tools { margin-inline-start: calc(4 * var(--u));
   width: min(calc(24 * var(--u)), calc(100% - 7 * var(--u))); }
 .git-layout > .bar > .band-tools:not(:focus-within) { opacity: 0; pointer-events: none; }
@@ -239,7 +291,7 @@
 .git-desk .issue-end { display: grid; justify-items: start; gap: 0; margin: calc(2 * var(--u)) 0 0 var(--u); }
 .git-desk .issue-end :is(.issue-leave, .merge-row) { display: block; margin: 0; padding: 0; border: 0; background: none; }
 .git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
-.git-desk .issue-end .merge-row .button { color: var(--del); }
+.git-desk .issue-end .merge-row .button { color: var(--off); }
 @media (max-width: 1100px) {
   .git-desk .issue-run { padding-left: calc(3 * var(--u)); }
   .issue-history { position: static; width: auto; margin: 31px 0 calc(2 * var(--u)); }

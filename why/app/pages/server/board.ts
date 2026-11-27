@@ -1,71 +1,52 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
 import * as servers from '../../../shipto/servers.ts';
-import {boardNew, sawBoard} from '../../../shipto/news.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {sawBoard} from '../../../shipto/news.ts';
 import {nudge} from '../../ui/glide.ts';
 import {errorText} from '../../../api/errors.ts';
 import {seenNow, timeline} from './talk.ts';
-import {parts} from '../kit/common.ts';
 import {boardTodo} from './todo.ts';
-import {button, current, fitting, type Here, type Shown} from './parts.ts';
+import {button, current, type Here, type Shown} from './parts.ts';
 
-// A board's box in Server's row: in full where it is on screen, its two parts, its talk and its TODO (the same list as
-// Home's, written there by its people), one at a time, chosen on its head as Remote's parts are; beside it, only its
-// name. The last box makes a new board.
+/** An unsubmitted thread name stays in its own room, not in the paper. */
+let writingAs: string | undefined;
+let names = new Map<string, string>();
 
-/**
- * What is half written in a new board's name, by the server it is made in: kept while the app runs as the box's words
- * are. Put away with Escape or by going elsewhere, Server opens with it as it was; made, it is gone.
- */
-const drafts = new Map<string, string>();
-
-/** A board's box: in full where it is on screen (its talk or its TODO, chosen on its head), only its name beside it. */
-export function boardBox(b: Shown, now: boolean, signedIn: boolean): HTMLElement {
-  const head = h('div', {class: 'board-head', 'data-board': b.id}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
-    signedIn ? null : h('span', {class: 'muted small'}, b.server), h('span', {class: 'sr-only'}));
-  markBoard(head, signedIn);
-  if (!now) return h('div', {class: 'board-card'}, head);
-  const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO'});
-  const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
-  // Its foot in view, what came is seen: the marks go, here and on the rail.
-  talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
-  // Its talk and its TODO, side by side on its head after its name, one at a time below it; each board keeps the one
-  // it was left at. Its TODO says how many are left on it; none there to show (a guest's board, its list empty), only
-  // the talk, and nothing to choose.
-  const sides = parts<'talk' | 'todo'>(`board-${b.id}`, [{id: 'talk', label: t('Discussions')}, {id: 'todo', label: 'TODO'}], b.name);
-  head.append(sides.switch);
-  sides.panel('talk').append(talk);
-  sides.panel('todo').append(todo);
-  // The talk come back to, what came while the TODO was in front is seen.
-  sides.onShow((k) => { if (k === 'talk') seenNow(); });
-  void boardTodo(b, todo, {left: (n) => sides.count('todo', n), none: () => { sides.offer('todo', false); sides.switch.hidden = true; }});
-  const box = h('div', {class: 'board-card'}, head, sides.panel('talk'), sides.panel('todo'));
-  openAtFoot(box, talk);
-  return box;
-}
-
-/**
- * While its talk goes on below what is shown, the box is open at its foot: the posts run past the edge, so the reader
- * sees there is more to scroll to. At the talk's foot it closes. Said by what really scrolls, nothing else; and a
- * talk that all fits (`fits`) does not say it is every post, which is plain to see.
- */
-function openAtFoot(box: HTMLElement, talk: HTMLElement) {
-  const more = () => {
-    box.classList.toggle('more-below', talk.scrollHeight - talk.scrollTop - talk.clientHeight > 1);
-    box.classList.toggle('fits', talk.scrollHeight <= talk.clientHeight + 1);
+/** One topic; Talk and TODO are two faces of the same paper, with a single switch above it. */
+export function boardBox(b: Shown) {
+  const key = `why.part.board-${b.id}`;
+  const id = `topic-${b.id}`;
+  const head = h('div', {class: 'board-head'},
+    h('h2', {}, b.name), b.member ? null : h('p', {class: 'topic-source'}, b.server));
+  const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO', id: `${id}-todo`});
+  const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name, id: `${id}-talk`});
+  const reading = timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined);
+  talk.append(reading.root);
+  const title = h('span', {'aria-live': 'polite'});
+  const next = h('button', {type: 'button', class: 'topic-face-key'}) as HTMLButtonElement;
+  const over = h('div', {class: 'server-overline'}, title, next);
+  const body = h('div', {class: 'board-card', 'data-board': b.id}, head, talk, todo);
+  let taskTop = 0;
+  const show = (that: 'talk' | 'todo') => {
+    if (body.dataset.face === 'todo' && !todo.hidden) taskTop = todo.scrollTop;
+    if (body.dataset.face === 'talk' && that === 'todo') reading.holdFace();
+    body.dataset.face = that;
+    todo.hidden = that !== 'todo';
+    talk.hidden = that !== 'talk';
+    if (that === 'todo') todo.scrollTop = taskTop;
+    title.textContent = that === 'talk' ? t('Talk') : 'TODO';
+    next.textContent = that === 'talk' ? 'TODO' : t('Talk');
+    next.setAttribute('aria-controls', that === 'talk' ? todo.id : talk.id);
+    try { localStorage.setItem(key, that); } catch { /* convenience only */ }
+    if (that === 'talk') { reading.showFace(); requestAnimationFrame(seenNow); }
   };
-  talk.addEventListener('scroll', more, {passive: true});
-  const grown = new ResizeObserver(more);
-  grown.observe(talk);
-  for (const el of talk.children) grown.observe(el);
-}
-
-/** A board's #: a dot while something came in it not seen yet, and said so to a screen reader. */
-export function markBoard(head: HTMLElement, signedIn: boolean) {
-  const id = head.dataset.board ?? '', on = signedIn && boardNew(id);
-  head.classList.toggle('news', on);
-  const said = head.querySelector('.sr-only');
-  if (said) said.textContent = on ? t('New posts') : '';
+  let last: string | null = null;
+  try { last = localStorage.getItem(key); } catch { /* convenience only */ }
+  show(last === 'todo' ? 'todo' : 'talk');
+  next.addEventListener('click', () => show(body.dataset.face === 'talk' ? 'todo' : 'talk'));
+  void boardTodo(b, todo, () => { show('talk'); next.hidden = true; });
+  return {body, over, drop: reading.stop};
 }
 
 /** What the last box needs of the view: the board once made. */
@@ -74,51 +55,46 @@ interface NewBoardWays {
   made(id: string, board: string): void;
 }
 
-/**
- * The last box: a new board in the server chosen (in `here` as it is when Make is pressed), made where it will stand,
- * as a server is (new-server.ts): the box is the board it will be, dashed, its name written in its head in the letters
- * a board's name has, Make beside it, what a board is said quietly where its talk will be, and its TODO's first line
- * and its talk's foot faint, each where it will stand. Made, the same shapes stand there whole. Beside the one on
- * screen, only its edge and its +.
- */
-export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElement {
-  if (!now) return h('div', {class: 'board-card board-new'}, h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '+'), h('h2', {class: 'muted'}, t('New board'))));
-  const name = h('input', {class: 'board-name-in', maxlength: '64', placeholder: t('Topic / Description'), 'aria-label': t('New board'), autocomplete: 'off'}) as HTMLInputElement;
-  const kept = `${here.serverId}`;
+/** A real thread is created in this room; an answer can never change the room in hand. */
+export function newBoard(here: Here, ways: NewBoardWays): HTMLElement {
+  const room = current(here);
+  const session = connection()?.session;
+  if (writingAs !== session) { writingAs = session; names = new Map(); }
+  const drafts = names;
+  const kept = room?.id ?? '';
+  const name = h('input', {class: 'board-name-in', maxlength: '64', placeholder: t('Thread name'), 'aria-label': t('Thread name'), autocomplete: 'off'}) as HTMLInputElement;
   name.value = drafts.get(kept) ?? '';
-  const make = button(t('Create'), 'small-button primary');
-  // Refused (a name another board has), said under the name, where it is written.
+  const make = button(t('Create'), 'topic-face-key');
   const error = h('p', {class: 'error small', role: 'alert'});
-  const field = h('label', {class: 'board-naming'}, name);
-  // As wide as the name written (or what it asks for), as a board's name is; drawn whole once it has one.
-  const fit = fitting(name);
-  const named = () => { fit(); field.classList.toggle('named', !!name.value.trim()); };
-  queueMicrotask(named);
   const done = async () => {
-    // Enter pressed again while it is made makes no second board.
-    if (!here.serverId || make.disabled) return;
+    if (!room || here.serverId !== kept || make.disabled) return;
     const n = name.value.trim();
-    if (!n) { name.focus(); nudge(field); return; }
-    if (current(here)?.boards.some((b) => b.name.trim().toLowerCase() === n.toLowerCase())) {
-      error.textContent = t('A board named "{name}" already exists', {name: n}); name.focus(); nudge(field); return;
+    if (!n) { name.focus(); return; }
+    if (room.boards.some((b) => b.name.trim().toLowerCase() === n.toLowerCase())) {
+      error.textContent = t('A board named "{name}" already exists', {name: n}); name.focus(); return;
     }
     error.textContent = '';
     make.disabled = true;
+    name.readOnly = true;
     try {
-      const b = await servers.makeBoard(here.serverId, name.value);
+      const b = await servers.makeBoard(kept, n);
       drafts.delete(kept);
-      current(here)?.boards.push(b);
-      ways.made(here.serverId, b.id);
-    } catch (e) { error.textContent = errorText(e); make.disabled = false; name.focus(); nudge(field); }
+      const still = here.list.find((s) => s.id === kept);
+      if (still && !still.boards.some((x) => x.id === b.id)) still.boards.push(b);
+      ways.made(kept, b.id);
+    } catch (e) {
+      error.textContent = errorText(e); make.disabled = false; name.readOnly = false;
+      if (name.isConnected) { name.focus(); nudge(name); }
+    }
   };
   make.addEventListener('click', () => void done());
-  name.addEventListener('input', () => { error.textContent = ''; named(); if (name.value) drafts.set(kept, name.value); else drafts.delete(kept); });
+  name.addEventListener('input', () => { error.textContent = ''; if (name.value) drafts.set(kept, name.value); else drafts.delete(kept); });
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
   return h('div', {class: 'board-card board-new'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ghostBody(),
-    // At the top of where its talk will be (styles.css), broken where the sentence is: what a board is, then what one
-    // may be about.
-    h('p', {class: 'board-lead muted small'}, t('A board groups discussions and shared tasks around a topic:'), h('br'), t('e.g. trips, releases, or study groups.')));
+    h('div', {class: 'board-head'}, h('h2', {}, t('New thread'))),
+    h('div', {class: 'board-create'}, name,
+      room ? h('p', {class: 'muted'}, t('Only {server} members can read it.', {server: room.name})) : null, error),
+    h('div', {class: 'board-create-foot'}, make));
 }
 
 /**

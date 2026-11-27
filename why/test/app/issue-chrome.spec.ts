@@ -34,7 +34,7 @@ test('Git and Forge have one Places key and a direct first action, with no perma
   await expect(open).toBeFocused();
 });
 
-test('Git summons a real search from More Places; Escape puts it away and Forge does not inherit it', async ({signedIn: app}) => {
+test('Git summons a real search by its shortcut; Escape puts it away and Forge does not inherit it', async ({signedIn: app}) => {
   const {main, page, forge} = app;
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
@@ -43,9 +43,11 @@ test('Git summons a real search from More Places; Escape puts it away and Forge 
   await app.rail.go('git');
   const gitSearch = main.locator('.git-layout .band-tools');
   await expect(gitSearch).toHaveCSS('opacity', '0');
-  await app.rail.open();
   const rail = page.getByRole('navigation', {name: 'Purposes', exact: true});
-  await rail.getByRole('button', {name: 'Search', exact: true}).click();
+  await expect(main.getByRole('button', {name: 'Search', exact: true})).toBeVisible();
+  // The corner opens even with no repo. The inline shortcut uses Git's own repo once it is read.
+  await expect(forge.search).toBeEnabled();
+  await main.getByRole('region', {name: 'Git', exact: true}).press('Control+k');
   await expect(forge.search).toBeFocused();
   await expect(rail).toBeHidden();
   await expect(gitSearch).toHaveCSS('opacity', '1');

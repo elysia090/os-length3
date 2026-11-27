@@ -7,7 +7,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //
 //   one lens        nothing in sight is drawn scaled, zoomed or in perspective
 //   one horizon     the subject's edges on the grid
-//   one subject     one shadow cast in focus: 12 px right/down on sheets, 4 px on Forge's paper
+//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and Forge's paper
 //   the frame       under what is called up, the available frame controls stay in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
@@ -20,7 +20,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //   the field       the bare ground is one field, reaching the window's right or foot, with nothing of it trapped
 //                   between things; at most a third of the world's cells carry a mark
 //   a whole title   the band's name whole at its size, inside the window, or not there
-//   one voice       the display face at its two sizes, no text and no number said twice in it
+//   one voice       the display voice and names in their measure, no text and no number said twice
 
 const U = 24;
 const SIZES = [{width: 1536, height: 864}, {width: 1024, height: 768}, {width: 768, height: 864}, {width: 390, height: 844}];
@@ -28,15 +28,15 @@ const NAME = 33.0124, PERSON = 66.0248;
 
 /** Each place, what is its subject (the one thing with the shadow at rest), and what may stand at the frame's corner. */
 const PLACES = {
-  home: {subject: '.home-own > .section', corner: '.home-own'},
+  home: {subject: '.home-own > .section', corner: '.home-own', anchor: '.home-person h1'},
   'new-repo': {subject: '.nr-box', corner: '.new-repo'},
   // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
   forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
-  // (Server's desk may rest with a board before the one in hand at its edge (§6): a board of the room is what it is.)
-  server: {subject: '.slide.full', corner: '.server-side, .slide'},
-  inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread'},
-  runtime: {subject: 'main#page', corner: '.page-head'},
+  server: {subject: '.server-paper', corner: '.server-sidebar, .server-paper', anchor: '.server-masthead > h1'},
+  inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread', anchor: '.inbox-title'},
+  // The Utility has no rail or door: its actual visible caption is the corner's eye-trace anchor.
+  runtime: {subject: 'main#page', corner: '.page-head', anchor: '.page-head > h1'},
   remote: {subject: 'main#page', corner: '.page-head'},
 } as const;
 type Place = keyof typeof PLACES;
@@ -66,7 +66,28 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const over = !veil || el.closest('.file-tree, .me-pop, .search-results, .rail') !== null;
     return [{name: el.className.toString().slice(0, 60), x: Number(m[1]), y: Number(m[2]), blur: Number(m[3]), focus: over, box: [r.left, r.top, r.width, r.height]}];
   });
-  const s = document.querySelector(subject)?.getBoundingClientRect() ?? null;
+  const sheet = document.querySelector(subject);
+  const s = sheet?.getBoundingClientRect() ?? null;
+  const home = sheet?.matches('.home-own > .section') ? (() => {
+    const portrait = sheet.closest('.home-portrait')!;
+    const person = portrait.querySelector('.home-person')!, note = getComputedStyle(sheet);
+    const row = getComputedStyle(portrait.querySelector('.home-row')!);
+    const repos = portrait.querySelector('.home-repos-sec')!.getBoundingClientRect();
+    const type = (el: Element) => {
+      const {fontSize, lineHeight, fontWeight, color} = getComputedStyle(el);
+      return [parseFloat(fontSize), lineHeight, fontWeight, color] as const;
+    };
+    return {
+      paint: [note.backgroundColor, note.color, note.boxShadow],
+      crown: type(person.querySelector('h1')!),
+      noteType: [...sheet.querySelectorAll('.todo-title, .todo-kind:not([hidden]), .todo-detail:not([hidden])')]
+        .filter(inSight).map((el) => ({detail: el.matches('.todo-detail'), type: type(el)})),
+      repoTypes: [...portrait.querySelectorAll('.home-repos .card-title')].filter(inSight).map(type),
+      line: row.display === 'grid' ? Math.max(person.getBoundingClientRect().bottom, repos.bottom) + 16
+        : person.getBoundingClientRect().bottom + 24,
+      alongside: row.display === 'grid', repos: {left: repos.left, top: repos.top},
+    };
+  })() : null;
   // The display face's words in sight, each text as it is set, with its size (a person's initial in their mark, on the
   // rail or beside what they said, is a mark, not words).
   const display = [...(function* () {
@@ -92,10 +113,22 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   // is a cell of the grid, its middle on a row of the dots). Not a key's or a field's words (a thing's, centred in its
   // field), nor words on a name's line (they stand on its baseline: its servants), nor the frame's.
   const offGrid: string[] = [];
+  const offCell = (line: number, pitch: number) => line - pitch * Math.round(line / pitch);
+  // In Server, the text lives in ruled boxes: the mixed fonts don't share the same glyph center, and a
+  // shared glyph baseline must not grow the 24px row. Measure the boxes, including wrapped paragraphs.
+  const transcriptRows = '.board-talk :is(.tl-who, .tl-who > *, .tl-body)';
+  for (const el of all.filter((el) => el.matches(transcriptRows))) {
+    const transcript = el.closest('.board-talk')!;
+    const origin = transcript.getBoundingClientRect().top - transcript.scrollTop + 1;
+    const {top, height} = el.getBoundingClientRect(), {lineHeight} = getComputedStyle(el);
+    if (Math.abs(offCell(top - origin, 24)) > .1 || Math.abs(offCell(height, 24)) > .1 || lineHeight !== '24px')
+      offGrid.push(`Server "${el.textContent!.trim().slice(0, 24)}" at ${(top - origin).toFixed(2)}, ${height}px high, line ${lineHeight}`);
+  }
   const lines = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = lines.nextNode(); n; n = lines.nextNode()) {
     const el = n.parentElement!;
     if (!n.textContent!.trim() || !inSight(el) || el.closest('.sr-only, button, [role=button], [role=tab], [role=menuitem], kbd, input, textarea, [contenteditable], .rail, .band, .home-band, .bar, .chip, .state-chip, .lately-badge, .tl-face, .prompt, .screen')) continue;
+    if (el.closest(transcriptRows)) continue;
     const c = getComputedStyle(el);
     if (Math.abs(parseFloat(c.fontSize) - 17) > .01 || Number(c.opacity) === 0) continue;
     let heard = false;
@@ -111,23 +144,39 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     const code = !!paper && !!el.closest('.desk-file > .sheet');
     const tag = !!paper && !!el.closest('.desk-label');
     const diffHead = el.closest('.git-diff-head'), diffLines = el.closest('.git-diff-lines');
+    // A letter is set on its own local lines inside the accepted stock and measure.
+    const letterLine = el.closest('.inbox-entry-by, .inbox-footer > p');
+    // These two labels stand on the repo names' baseline and the inset of the activity glass, respectively.
+    const homeHead = el.closest('.home-portrait :is(.home-repos-sec > h2, .home-waits > .lately > h2)');
     const totals = el.closest('.git-totals');
-    // A board's transcript stands on its foot; the trailing, 1px scroll target is not part of a line.
-    const foot = el.closest('.board-talk > .timeline')?.querySelector(':scope > .tl-foot-mark');
+    // The transcript is ruled from its reading origin within the paper, not the window edge.
+    const transcript = el.closest('.board-talk');
+    // Runtime's utility paper has its own measured rows: a line beside the large number, a host readout,
+    // an inline key and inventory sections. Their first line is inset from the paper's edge, then wraps by a cell.
+    const runtimeLine = el.closest('.page[data-place="runtime"]') && el.closest(
+      '.page-head > h1, .storage-amount > span, .storage-host, .storage-key > div, .storage-caption > h3, '
+      + '.space-what, .space-measure, .space-empty, .reclaimed, .storage-error');
+    const runtimeFirst = runtimeLine ? (() => {
+      const css = getComputedStyle(runtimeLine);
+      const top = runtimeLine.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth);
+      return top + (runtimeLine.matches('.page-head > h1') ? parseFloat(css.lineHeight) : 24) / 2;
+    })() : null;
     const pitch = code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
-      : tag ? paper!.getBoundingClientRect().top - 6 - pitch / 2
+      : tag ? paper!.getBoundingClientRect().top - pitch / 2
       : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
       : totals ? totals.getBoundingClientRect().top + pitch / 2
-      : foot ? foot.getBoundingClientRect().top - pitch / 2 : 12;
-    // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
-    // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
-    const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.tl-who > time, .bubble-time') ? 1 : 0;
+      : letterLine ? letterLine.getBoundingClientRect().top + pitch / 2
+      : homeHead ? homeHead.getBoundingClientRect().top + pitch / 2
+      : transcript ? transcript.getBoundingClientRect().top - transcript.scrollTop + 1 + pitch / 2 : runtimeFirst ?? 12;
+    // A 17px inline monospace time sits on the sentence's baseline, not on a separate 24px line.
+    // Its text Range centers one pixel above the regular line's text Range.
+    const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.bubble-time') ? 1 : 0;
     for (const b of range.getClientRects()) {
       if (b.width < 2 || b.top < 48 || b.left < 48 || b.bottom > H || b.right > W) continue;
       const line = b.top + b.height / 2 + baseline - first;
-      const off = line - pitch * Math.round(line / pitch);
+      const off = offCell(line, pitch);
       if (Math.abs(off) > 1) offGrid.push(`"${n.textContent!.trim().slice(0, 24)}" ${off > 0 ? '+' : ''}${off.toFixed(1)}`);
     }
   }
@@ -150,19 +199,18 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
   // The frame over what is called up: the available controls, not a hidden band's old bounding box.
-  const frameControl = all.find((el) => el.matches('body.forge-routes > .rail, #page[data-place="forge"] .forge-places-key'));
+  const frameControl = all.find((el) => el.matches('body > .rail, #page[data-place="home"] > .home-portrait > .forge-places-key'));
   const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
   const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
     const {left, top, right, bottom} = el.getBoundingClientRect();
     const c = getComputedStyle(el);
     // Away from the rounded corners, the sheet owns all of this ground-coloured strip.
     return {
-      left: left + Math.max(parseFloat(c.borderTopLeftRadius), parseFloat(c.borderBottomLeftRadius)),
-      right: right - Math.max(parseFloat(c.borderTopRightRadius), parseFloat(c.borderBottomRightRadius)),
-      top, bottom,
+      left, top, right, bottom,
+      inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper, home};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -173,31 +221,64 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = place === 'forge' && !called ? 4 : U / 2;
-    expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual([shade, shade, 0]);
+    const shade = (place === 'home' || place === 'forge') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
+    expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual(place === 'server' && !called ? [2, 4, 0] : [shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
       expect(f.cast.length, `${what}: the shadow is the subject's (${JSON.stringify(f.cast)})`).toBe(1);
       const [x, y] = f.cast[0]!.box;
       expect([Math.abs(x! - f.subject!.x) < 1, Math.abs(y! - f.subject!.y) < 1], `${what}: the shadow is the subject's`).toEqual([true, true]);
-      // One horizon: the subject stands on the grid (whole cells from the window's top left).
-      for (const [edge, v] of [['left', f.subject!.x], ['top', f.subject!.y]] as const) {
-        // Forge's paper starts at y=90; the name and the ground still keep the window grid.
-        const origin = place === 'forge' && edge === 'top' ? 90 : 0;
-        expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
+      if (place === 'server') {
+        expect(Math.abs(f.subject!.x + f.subject!.w / 2 - f.W / 2)).toBeLessThan(2);
+        await expect(app.server.topics).toBeVisible();
+      } else {
+        // One horizon: the subject stands on the grid (whole cells from the window's top left).
+        for (const [edge, v] of [['left', f.subject!.x], ['top', f.subject!.y]] as const) {
+          // On Home the note follows the portrait's last line, measured on the portrait grid below.
+          if (place === 'home' && edge === 'top') continue;
+          // Forge's paper starts at y=90; the name and the ground still keep the window grid.
+          const origin = place === 'forge' && edge === 'top' ? 90 : 0;
+          expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
+        }
+        expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
+        // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
+        expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
       }
-      expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
-      // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
-      expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
     } else {
+      if (place === 'home') expect(focused[0]!.name, `${what}: File is the subject, not the note`).toMatch(/(?:^| )file-tree(?: |$)/);
       expect(f.frameOver, `${what}: the frame control over the veil, in focus`).toBe(true);
+    }
+    const compactHome = size.width <= 600, homeCap = compactHome ? 2.25 : 3;
+    const homeTitle = homeCap * U / .727, homeWriting = compactHome ? 18 : 20, homeName = compactHome ? 17 : .7 * NAME;
+    if (place === 'home') {
+      expect(f.home, `${what}: the portrait and note`).not.toBeNull();
+      const home = f.home!, sheet = f.subject!;
+      expect([sheet.x, sheet.w, sheet.h], `${what}: the whole note`).toEqual(compactHome ? [24, 336, 312] : [48, 624, 288]);
+      expect(Math.abs(sheet.y - home.line), `${what}: the note begins after the portrait's last line`).toBeLessThan(1);
+      expect(home.paint, `${what}: one yellow paper in dark ink with a short hard cast`).toEqual([
+        'rgb(215, 197, 90)', 'rgb(23, 22, 21)', 'rgb(26, 29, 23) 4px 4px 0px 0px',
+      ]);
+      expect(Math.abs(home.crown[0] - homeTitle), `${what}: the portrait at its cap height`).toBeLessThan(.01);
+      expect(home.crown.slice(1)).toEqual([`${(homeCap + 1) * U}px`, '900', 'rgb(239, 235, 227)']);
+      expect(home.noteType.length).toBeGreaterThan(0);
+      for (const {detail, type} of home.noteType)
+        expect(type, `${what}: the note's own writing grid`).toEqual([homeWriting, detail ? '28px' : '36px', detail ? '400' : '700', 'rgb(23, 22, 21)']);
+      for (const [name, pitch, weight] of home.repoTypes) {
+        expect(Math.abs(name - homeName)).toBeLessThan(.01);
+        expect([pitch, weight]).toEqual(['24px', '900']);
+      }
+      expect(home.alongside ? home.repos.left : home.repos.top, `${what}: destinations beside or below the note`)
+        .toBeGreaterThanOrEqual(home.alongside ? sheet.x + sheet.w + 2 * U : sheet.y + sheet.h);
     }
     // Every line of words on a cell of the grid (DESIGN §3, whole cells).
     expect(f.offGrid, `${what}: lines of words off the grid`).toEqual([]);
-    // Three sizes and no others: the words', a name's, the one large thing's (DESIGN §3).
-    for (const size of f.sizes) expect([17, NAME, PERSON].some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the three sizes`).toBe(true);
-    // One voice: two sizes, no text twice, no number twice.
-    for (const d of f.display) expect([NAME, PERSON].some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
+    // Inbox and Server have distinct reading measures; on Home the portrait, note and destinations have their own.
+    const sizes = place === 'inbox' ? [13, 14, 17, 18, 20, 30, 38] : place === 'server' ? [13, 14, 16, 17, 18, 34, 36]
+      : place === 'home' ? [17, homeTitle, homeWriting, homeName] : [17, NAME, PERSON];
+    const displaySizes = place === 'inbox' ? [30, 38] : place === 'server' ? [34, 36]
+      : place === 'home' ? [homeTitle, homeName] : [NAME, PERSON];
+    for (const size of f.sizes) expect(sizes.some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the place's sizes`).toBe(true);
+    for (const d of f.display) expect(displaySizes.some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
     expect(texts.length, `${what}: no text said twice large (${texts.join(' | ')})`).toBe(new Set(texts).size);
     const numbers = texts.flatMap((t) => t.match(/#\d+/g) ?? []);
@@ -214,7 +295,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   // at the desk's edge. (Where a row's first sheet stands before it, that sheet is what can be done next, which
   // outranks the plane: §2, the order of sacrifice.)
   const f = await app.page.evaluate(frame, PLACES[place]);
-  const desk = place !== 'runtime' && place !== 'remote';
+  const desk = place !== 'runtime' && place !== 'remote' && place !== 'server';
   // What stands before the subject, when it is not at the desk's edge: the place's own side (Git's steps and new line),
   // a row's first sheet (Server's first board), or the place's index (Inbox's who wrote).
   const before = !called && f.subject && f.subject.x > 2 * U + .5 ? await app.page.evaluate(() => {
@@ -237,13 +318,20 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(lr, `${what}: the lower right (${lr.toFixed(2)} empty) at least as empty as the upper left (${ul.toFixed(2)})`).toBeGreaterThanOrEqual(ul);
   if (!desk) return;
   // The field: the bare ground one body, open to the right or the foot, nothing of it shut in between things.
+  // Forge now has 12px seams between full-height sheets. A full 24px cell cannot witness that open corridor,
+  // so resolve connectivity on smaller samples there; coverage and the lean still use the 24px grid.
+  const pitch = place === 'forge' ? 4 : U;
+  const field = pitch === U ? rows : await emptiness(app.page, pitch);
   // DESIGN §2: a counter inside a sheet belongs to that sheet. A quiet Forge paper uses ground paint, so its
   // wholly contained bare cells do not belong to the desk. Any cell crossing its boundary is still measured as drawn.
-  const ground = f.quietPaper.length ? rows.map((row, j) => [...row].map((cell, i) => {
-    const x = 2 * U + i * U, y = 2 * U + j * U;
-    return cell === 'g' && f.quietPaper.some((p) => x >= p.left && x + U <= p.right && y >= p.top && y + U <= p.bottom) ? 'p' : cell;
-  }).join('')) : rows;
+  const ground = f.quietPaper.length ? field.map((row, j) => [...row].map((cell, i) => {
+    if (cell !== 'g') return cell;
+    const x = 2 * U + i * pitch, y = 2 * U + j * pitch, right = x + pitch, bottom = y + pitch;
+    return f.quietPaper.some(p => x >= p.left && right <= p.right && y >= p.top && bottom <= p.bottom &&
+      ((x >= p.left + p.inset && right <= p.right - p.inset) || (y >= p.top + p.inset && bottom <= p.bottom - p.inset))) ? 'p' : cell;
+  }).join('')) : field;
   const all = fields(ground), bare = all.reduce((n, c) => n + c.n, 0);
+  expect(bare, `${what}: bare ground still visible`).toBeGreaterThan(0);
   expect(all[0]!.n / bare, `${what}: the bare ground one field`).toBeGreaterThanOrEqual(.95);
   expect(all[0]!.open, `${what}: the field open to the window's right or foot`).toBe(true);
   expect(all.filter((c) => !c.edge).reduce((n, c) => n + c.n, 0) / bare, `${what}: no ground trapped between things`).toBeLessThan(.01);
@@ -278,7 +366,8 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
   await expect(readme).toHaveValue(text);
   await app.server.make('Trip', `${app.handle}-trip`);
   await app.server.makeBoard('Packing');
-  await app.server.post('Packing', 'Who brings the tent?');
+  const post = 'Who brings the tent?\nI have the stove.';
+  await app.server.post('Packing', post);
   const bo = await another('Bo');
   await bo.inbox.named();
   await app.inbox.named();
@@ -289,19 +378,24 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
     for (const place of Object.keys(PLACES) as Place[]) {
       await app.rail.go(place);
       if (place === 'forge') await app.forge.editor('README.md').focus();
+      if (place === 'server') {
+        const paragraph = app.server.talk('Packing').locator('.tl-body');
+        await expect(paragraph).toHaveText(post);
+        await expect(paragraph).toHaveCSS('height', `${2 * U}px`);
+      }
       if (place === 'inbox') {
         const thread = app.inbox.thread(bo.handle);
-        if (!await thread.isVisible() || !await thread.evaluate((e) => e.getBoundingClientRect().right <= innerWidth + 1)) {
-          await app.inbox.conversation(bo.handle).click();
-        }
+        // Returning holds the same letter. On a narrow window the index is beside it, not a fallback to poke
+        // before the authenticated letter has finished reading.
+        await expect(thread).toBeInViewport({ratio: 1});
         await expect(thread.getByText('are you coming on Saturday?', {exact: true})).toBeInViewport({ratio: .8});
       }
       await shot(app, place, size);
     }
-    // What is called up comes in front, and the frame stays over the world in focus.
-    await app.rail.go('forge');
+    // The global File tree is called up from Home; its rail stays over the world in focus.
+    await app.rail.go('home');
     await app.file.openTree();
-    await shot(app, 'forge', size, true);
+    await shot(app, 'home', size, true);
     await app.page.keyboard.press('Escape');
   }
 });

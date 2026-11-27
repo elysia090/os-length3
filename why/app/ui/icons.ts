@@ -57,8 +57,8 @@ const MARKS = {
   // A lens: what is looked for.
   search: 'M10.5 16a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM15 15l5 5',
   close: 'M7 7l10 10M17 7L7 17',
-  // The peer work places: overlapping window leaves, rather than a split-pane control.
-  places: 'M3 10h14v10H3zM6 10V7h14v10h-3M9 7V4h14v10h-3M3 13h14',
+  // A window and the next behind it; one title line is enough to read them as places, not copies.
+  places: 'M3.5 8.5h13v11h-13zM3.5 12.5h13M7.5 8.5v-4h13v11h-4',
   // A window with its right pane: the pane the switch puts away and brings back.
   pane: 'M4 5.5h16v13H4zM14.5 5.5v13',
   // Beside: the window cut in two, another box to its right.

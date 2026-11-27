@@ -6,16 +6,18 @@ import {ahead, atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, restFor, 
 
 const keys = ['term', 'a.c', 'README.md'];
 
-test('a piece\'s place is its number in the row: all one width, one cell apart, on the grid', () => {
+test('a piece\'s place is its number in the row: all one width, half a cell apart', () => {
   const {at, end} = row(keys);
   keys.forEach((key, n) => assert.equal(at.get(key), n * (WIDTH + GAP)));
   assert.equal(end, at.get('README.md')! + WIDTH + SHADOW + GRID);
   // Two cells for the numbers, forty-nine letters of 17 px, a cell of paper: every column whole cells.
   assert.equal(CODE, 17);
   assert.equal(WIDTH, 24 * GRID);
-  for (const x of at.values()) assert.equal(x % GRID, 0);
+  assert.equal(GAP, 12);
+  assert.ok(GAP > SHADOW, 'the cast never reaches the next paper');
+  for (const x of at.values()) assert.equal(x % (GRID / 2), 0);
   // A narrower piece (a window narrower than one): the same rule.
-  assert.equal(row(keys, 14 * GRID).at.get('a.c'), 15 * GRID);
+  assert.equal(row(keys, 14 * GRID).at.get('a.c'), 14 * GRID + GAP);
   assert.deepEqual(row([]), {at: new Map(), end: 0});
 });
 
@@ -84,9 +86,9 @@ test('the desk rests with a piece at its edge and nowhere else; a piece whole in
   assert.equal(go(pitch, 'Makefile', half), 3 * pitch);
   // A phone (a piece as wide as the face has room for): the same.
   const narrow = row(four, 13 * GRID), ns = [...narrow.at.values()];
-  assert.equal(turnedTo(0, narrow.at.get('a.c')!, 13 * GRID, 342, ns), 14 * GRID);
-  // Every rest is a piece's start, on the grid.
-  for (const face of [whole, half]) for (const from of starts) for (const key of four) { const to = go(from, key, face); assert.ok(starts.includes(to) && to % GRID === 0); }
+  assert.equal(turnedTo(0, narrow.at.get('a.c')!, 13 * GRID, 342, ns), 13 * GRID + GAP);
+  // Every rest is a piece's start, on the half-cell grid.
+  for (const face of [whole, half]) for (const from of starts) for (const key of four) { const to = go(from, key, face); assert.ok(starts.includes(to) && to % (GRID / 2) === 0); }
   // Scrolled by hand and let go, the desk comes to rest at the nearest piece.
   assert.equal(atRest(0, starts), 0);
   assert.equal(atRest(.49 * pitch, starts), 0);

@@ -78,6 +78,7 @@ export class FileTree {
   private root: HTMLElement;
   private events: FileTreeEvents;
   private trigger: HTMLElement | null = null;
+  private calledFrom: HTMLElement | null = null;
   private deskRepo: string | null = null;
   private building = 0;
   /** The menu of one row, while it is out, and the row's name to go back to. */
@@ -132,21 +133,21 @@ export class FileTree {
         const back = this.pop.name;
         this.unpop(); back.focus(); return;
       }
-      const at = document.activeElement;
-      const back = !!at && (this.element.contains(at) || at === this.trigger);
+      const at = document.activeElement, origin = this.calledFrom ?? this.trigger;
+      const back = !!at && (this.element.contains(at) || at === origin);
       this.close();
-      if (back) this.trigger?.focus();
+      if (back && origin?.isConnected) origin.focus({preventScroll: true});
     }, true);
     this.element.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
-      if (!this.onDesk && to && !this.element.contains(to) && to !== this.trigger) this.close();
+      if (!this.onDesk && to && !this.element.contains(to) && to !== (this.calledFrom ?? this.trigger)) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
     // (A press that just misses the tree, or a row's menu out beside it, is still theirs: ui/near.ts.)
     keepNear(() => (this.isOpen ? this.pop?.element ?? this.element : null));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
-      if (!this.element.contains(at) && !this.trigger?.contains(at)) {
+      if (!this.element.contains(at) && !(this.calledFrom ?? this.trigger)?.contains(at)) {
         if (this.onDesk) this.unpop(); else this.close();
       }
       else if (this.pop && !this.pop.element.contains(at) && !this.pop.more.contains(at)) this.unpop();
@@ -205,11 +206,13 @@ export class FileTree {
     });
   }
 
-  open(focus = false) {
+  open(focus = false, from?: HTMLElement) {
+    if (from && this.isOpen && this.calledFrom !== from) this.close();
     if (!this.isOpen) {
+      this.calledFrom = from ?? null;
       // Its top a cell under the File icon's: its name, over its corner, starts level with the icon's place; on the
       // grid line nearest that, as every sheet's edge is (DESIGN §3, whole cells: the places stand at 6 + 48n).
-      const at = this.trigger?.getBoundingClientRect();
+      const at = (this.calledFrom ?? this.trigger)?.getBoundingClientRect();
       if (at) {
         const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
         // (And never so low that it is cut by the window's foot: at least twelve cells of it are in the window.)
@@ -248,6 +251,7 @@ export class FileTree {
       this.deskClose.hidden = true;
     }
     this.unpop();
+    this.calledFrom = null;
     this.coming = false;
     this.element.classList.remove('open', 'settled');
     this.veil.out(false);

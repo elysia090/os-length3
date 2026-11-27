@@ -20,10 +20,11 @@ test.describe("on 'hello', made from C's files", () => {
     await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
     await expect(app.forge.editor('src/main.c')).toBeFocused();
 
-    await app.file.openTree();
-    await expect(app.file.name('main.c')).toHaveAttribute('aria-current', 'location');
-    await expect(app.file.name('README.md')).not.toHaveAttribute('aria-current', 'location');
-    await expect(app.file.name('hello')).toHaveAttribute('aria-current', 'page');
+    await app.forge.use('Files');
+    const files = app.page.getByRole('tree', {name: 'hello', exact: true});
+    await expect(files.getByRole('button', {name: 'main.c', exact: true})).toHaveAttribute('aria-current', 'location');
+    await expect(files.getByRole('button', {name: 'README.md', exact: true})).not.toHaveAttribute('aria-current', 'location');
+    await expect(files.getByRole('button', {name: 'hello', exact: true})).toHaveAttribute('aria-current', 'page');
   });
 
   test('a file renamed and a file deleted from their rows change the repo', async ({signedIn: app}) => {
@@ -40,6 +41,7 @@ test.describe("on 'hello', made from C's files", () => {
     await expect(app.file.name('Makefile')).toHaveCount(0);
 
     await app.file.close();
+    await app.rail.go('forge');
     await expect(app.forge.editor('READ-ME.md')).toBeVisible();
     await expect(app.forge.editor('Makefile')).toHaveCount(0);
   });
@@ -53,8 +55,9 @@ test('a new file made from a repo\'s row opens in Forge, ready to write', async 
   await expect(app.file.tree).toBeHidden();
   await expect(app.forge.editor('notes.txt')).toBeFocused();
   await app.forge.editFile('notes.txt', 'Bring a tent.\n');
-  await app.file.openTree();
-  await expect(app.file.name('notes.txt')).toHaveAttribute('aria-current', 'location');
+  await app.forge.use('Files');
+  const files = app.page.getByRole('tree', {name: 'hello', exact: true});
+  await expect(files.getByRole('button', {name: 'notes.txt', exact: true})).toHaveAttribute('aria-current', 'location');
 });
 
 test('a new folder takes a file of its own, and Forge shows the file under it', async ({signedIn: app}) => {
@@ -177,6 +180,7 @@ test('a file is moved by a path written as its new name, or by its row carried o
   await row('notes').dragTo(row('notes/summer'));
   await expect(row('notes/summer')).toBeVisible();
   await app.file.close();
+  await app.rail.go('forge');
   await expect(app.forge.editor('docs/packing.md')).toHaveValue('- tent\n');
 });
 
@@ -193,6 +197,9 @@ test('a box in Forge follows its file through moves one after another and throug
   // Moved, and moved again at once: one box, the file where it went (the store says each move as one move).
   await app.file.named('trip', 'a.md', 'Rename', 'b.md');
   await app.file.named('trip', 'b.md', 'Rename', 'notes/c.md');
+  await expect(app.file.name('c.md')).toBeVisible();
+  await app.file.close();
+  await app.rail.go('forge');
   await expect(app.forge.editor('notes/c.md')).toHaveValue('a\n');
   await expect(app.forge.editor('a.md')).toHaveCount(0);
   await expect(app.forge.editor('b.md')).toHaveCount(0);
@@ -200,18 +207,26 @@ test('a box in Forge follows its file through moves one after another and throug
 
   // The folder it is in moved: its box is the file in the folder as it is called now.
   await app.file.named('trip', 'notes', 'Rename', 'kept');
+  await expect(app.file.name('kept')).toBeVisible();
+  await app.file.close();
+  await app.rail.go('forge');
   await expect(app.forge.editor('kept/c.md')).toHaveValue('a\n');
   await expect(app.forge.editor('notes/c.md')).toHaveCount(0);
   expect((await boxes()).indexOf('c.md')).toBe(at);
 
   // Removed, its box goes; the file beside it, made before and untouched, is not taken for it.
   await app.file.remove('trip', 'kept/c.md');
+  await app.file.close();
+  await app.rail.go('forge');
   await expect(app.forge.editor('kept/c.md')).toHaveCount(0);
   await expect(app.forge.editor('other.md')).toBeVisible();
 });
 
 test('File pressed brings the tree out, and nothing else does: a pointer resting on File or on the tree brings nothing out and puts nothing away; pressed again it goes', async ({app}) => {
+  // The rail's own File toggle is visible on Remote. Home's Places command is exercised in places-menu.spec.ts.
+  await app.rail.go('remote');
   const file = app.rail.button('file');
+  await expect(file).toBeVisible();
   // The pointer rests on File: nothing comes out, however long.
   await file.hover();
   await app.page.waitForTimeout(600);

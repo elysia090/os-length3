@@ -9,7 +9,7 @@ import {button} from './parts.ts';
 // Runtime's environments: the one a Prompt runs on, and the others it could.
 
 /**
- * The environments a Prompt can run on, in one card: the one in effect at its
+ * The environments a Prompt can run on: the one in effect at the
  * top (its name, its version in the mono face, what it is here, its digest),
  * then the others, a row each, quiet: Ubuntu and Debian (their makers' roots,
  * pinned by digest), and a root of one's own. In the app each other one can be
@@ -19,12 +19,17 @@ import {button} from './parts.ts';
  * run); the others say where they do. Custom is not yet.
  */
 export function environment(): HTMLElement {
-  const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Loading…')));
+  const card = h('div', {class: 'env-card'}, h('span', {class: 'muted small'}, t('Loading…')));
   const paint = async () => {
     const here = await rootHere();
     let root: Awaited<ReturnType<typeof rootStatus>> = null;
     try { root = here.native ? await rootStatus() : null; } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    if (root) { card.replaceChildren(...inTheApp(root, paint)); return; }
+    if (root) {
+      const was = card.contains(document.activeElement);
+      card.replaceChildren(...inTheApp(root, paint));
+      if (was) card.querySelector<HTMLElement>('.runtime-lead')?.focus({preventScroll: true});
+      return;
+    }
     let a: Awaited<ReturnType<typeof about>>;
     try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     // In the app on a machine Prompts do not run on the root, translated as in a browser: said, with the Ricebox root.
@@ -38,7 +43,7 @@ const version = (v: string) => (v ? h('span', {class: 'version'}, v) : null);
 
 /** The one in effect: the card's head. */
 const top = (name: string, v: string, note: string, sha: string) => [
-  h('span', {class: 'card-title'}, name, ' ', version(v)), h('span', {class: 'muted small'}, note),
+  h('h3', {class: 'runtime-lead card-title', tabindex: '-1'}, name, ' ', version(v)), h('span', {class: 'muted small'}, note),
   ...(sha ? [h('code', {class: 'muted small env-sha'}, sha.slice(0, 12))] : [])];
 
 /** Another: its name and version, what it is (or its state), and at its right what can be done (or nothing). */
@@ -53,7 +58,7 @@ const custom = () => other(t('Custom'), '', t('Custom root (.tar)'), h('span', {
 
 /** Pressed: fetched if it is not here, then the one in effect; its progress said in `note`, the card drawn again (`again`) once it is. */
 function use(id: string, note: HTMLElement, again: () => void): HTMLButtonElement {
-  const b = button(t('Use'), 'small-button');
+  const b = button(t('Use'));
   b.addEventListener('click', () => {
     b.disabled = true;
     void rootUse(id, (got, of, retry) => {
@@ -68,7 +73,9 @@ function inTheApp(root: RootStatus, again: () => void): Node[] {
   const now = root.current?.distro ?? (root.current ? 'why' : null);
   const all = roots(root, now);
   const current = all.find((e) => e.id === now);
-  return [...(current ? top(current.name, current.version, current.what, current.sha) : [h('span', {class: 'card-title'}, t('Active environment'))]),
+  return [...(current ? top(current.name, current.version, current.what, current.sha)
+    : [h('p', {class: 'muted'}, t('No root environment on device; install via Runtime'))]),
+    h('h3', {class: 'runtime-group-heading'}, t('Other environments')),
     others(...all.filter((e) => e !== current).map((e) => { const note = h('span', {class: 'muted small env-note'}, e.what); return other(e.name, e.version, note, use(e.id, note, again)); }),
       custom())];
 }
@@ -89,7 +96,8 @@ function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
   // The same Ricebox root as the app uses, with its own version and digest, run here through Muk.
   return [...(a ? top('Ricebox', a.version, t('{name} · via muk', {name: a.root.name}), a.sha256)
     : top('Ricebox', '', t('Ricebox root missing (run: npm run webroot)'), '')),
-  others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
+    h('h3', {class: 'runtime-group-heading'}, t('Other environments')),
+    others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
     other('Debian', '13.7', t('App only'), null),
     custom())];
 }

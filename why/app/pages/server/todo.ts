@@ -13,21 +13,20 @@ const EVERY = 15_000;
 
 /**
  * A board's TODO, one of its two parts, in `holder`: Home's list, kept
- * together on the Remote (shown, not written, outside the server; not there
- * at all while it is empty: `told.none`). How many are left is told as it
- * changes (`told.left`), to be said on its part. What others change is taken
- * in every little while, whenever nothing written here is waiting.
+ * together on the Remote. Outside the server it is read-only; an empty one
+ * is not offered. Refresh only when no local changes are waiting.
  */
-export async function boardTodo(b: Shown, holder: HTMLElement, told: {left(open: number): void; none(): void}): Promise<void> {
+export async function boardTodo(b: Shown, holder: HTMLElement, onEmptyReadOnly: () => void): Promise<void> {
   const status = h('p', {class: 'error small', role: 'alert'});
   let list: servers.BoardTodo[];
   try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-  if (!b.member && !list.length) { told.none(); return; }
+  if (!holder.isConnected) return;
+  if (!b.member && !list.length) { onEmptyReadOnly(); return; }
   // Not sent (the Remote away): said under the list, and sent again by itself.
   const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Failed to save: {message}', {message: why}); }}) : null;
   const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
-    {readOnly: !b.member, first: t('Shared TODO'), counted: (open) => told.left(open), failed: (why) => { status.textContent = why; }});
-  // How many are left is said on its part; Clear done, while some are, under the list.
+    {readOnly: !b.member, first: t('Add a task…'), datePlacement: 'detail', failed: (why) => { status.textContent = why; }});
+  // Completed items can still be cleared; the face itself carries no count.
   holder.replaceChildren(box.element, box.clear, status);
   // Read in after its board was drawn: it comes up where it stands, as the talk does.
   if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(200), easing: SPRING});

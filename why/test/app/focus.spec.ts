@@ -73,14 +73,18 @@ test('on Forge\'s desk, the one document in hand is at least eight times as heav
     expect(weight[at]! / weight[1 - at]!, `${path} in hand: ${Math.round(weight[at]!)} to ${Math.round(weight[1 - at]!)}`).toBeGreaterThanOrEqual(8);
   }
 
-  // The adjacent Prompt is a peer place, not a third document or a competing shadow.
+  // The attached Prompt takes its bay rather than adding a third document to the row. With the second document
+  // held, the narrower writing viewport turns to it; closing the tool restores the exact two-paper frame.
   const before = await positions();
   await forge.use('Prompt');
   await expect(forge.promptBox).toBeFocused();
   await expect(forge.desk.locator('.desk-box')).toHaveCount(2);
   for (const path of paths) await expect(forge.piece(path)).toHaveCSS('box-shadow', 'none');
-  await expect.poll(positions).toEqual(before);
-  await forge.use('Forge');
+  await expect(forge.piece('src/main.c')).toBeInViewport({ratio: 1});
+  const terminal = app.main.locator('.forge-prompt-slot');
+  await expect(terminal).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+  await terminal.locator('.desk-term:visible').click({button: 'right', position: {x: 160, y: 90}});
+  await page.getByRole('menu', {name: 'Terminal', exact: true}).getByRole('menuitem', {name: 'Close', exact: true}).click();
   await expect(forge.promptBox).toBeHidden();
   await expect(forge.editor('src/main.c')).toBeFocused();
   await expect(forge.piece('src/main.c')).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);

@@ -1,27 +1,104 @@
-/* Runtime's three columns: what is here, what can be freed, what is on the Remote. */
-/* Runtime: one box in three columns, as tall as the longest: here, on the Remote, can be freed */
-.space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
-/* (Inside the box's edge, a cell of paper over its lines, as a sheet's: the edge's own pixel in it.) */
-.space-col { display: flex; flex-direction: column; min-width: 0; padding: calc(var(--u) - 1px) var(--s4) var(--u); }
-.space-col + .space-col { border-left: 1px solid var(--rule); }
-.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--u); font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
-.space-col > h3 b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.space-list { display: grid; align-content: start; gap: var(--u); flex: 1; overflow-y: auto; }
-/* A row: what a thing takes is on its name's line against its column's right edge, as the column's total is over
-   it (the figures of a column are one right-aligned column); what is said of it runs the column's width under its
-   name; what is done to it (Free space) is under that, against the same edge. Its gear, come at a touch, is on the
-   name's line beside what it takes. */
-.space-row { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--s3); padding: 0; }
-.space-what { display: grid; min-width: 0; flex: 1 0 100%; }
-.space-name { padding-right: calc(4 * var(--u)); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.space-row:has(> .repo-gear-button) .space-name { padding-right: calc(6 * var(--u)); }
-.space-row > .repo-gear-button { position: absolute; right: calc(3 * var(--u)); top: 0; }
-.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: calc((2 * var(--u) - var(--h-control)) / 2); } /* (a key in a field of two cells) */
-.space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
-.space-size { position: absolute; right: 0; top: 0; font-size: var(--t-word); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
-.space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--u); }
-.space-foot .grow { flex: 1; }
-.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: var(--cursor-hand); }
-.link-name:hover { border-radius: var(--r-key); color: var(--ink); }
-@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
+/* One paper on the desk. The global Places key remains independent. */
+body:has(> #page[data-place='runtime']) { background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u); }
+body:has(> #page[data-place='runtime']) > .rail { display: none; }
+#page[data-place='runtime'] { grid-column: 2; }
+:is(#page, .place-left > .page)[data-place='runtime'] {
+  --paper: var(--nighthawks-paper);
+  --ground: var(--paper);
+  --sub: var(--nighthawks-paper-sub);
+  --quiet: var(--nighthawks-paper-thumb);
+  --edge: var(--nighthawks-desk-disabled);
+  --rule: var(--nighthawks-rule);
+  --raised: var(--nighthawks-paper-grain);
+  --slot: var(--nighthawks-paper-selected);
+  box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow);
+}
+#page[data-place='runtime'] :is(.forge-places-key, .forge-search-key) { --places-down: var(--nighthawks-shadow); color: var(--nighthawks-desk-quiet); }
+#page[data-place='runtime'] :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--paper); }
+#page[data-place='runtime'] .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
+.place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
+
+/* The local views are one quiet horizontal strip, and the chosen word its only line. */
+#page[data-place='runtime'] .part { background: none; border: 0; border-radius: 0; position: relative; padding-inline: 0; }
+#page[data-place='runtime'] .parts { gap: var(--s5); padding-inline-start: var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
+#page[data-place='runtime'] .part[aria-selected='true'] { color: var(--ink); }
+#page[data-place='runtime'] .part[aria-selected='true']::after {
+  content: ''; position: absolute; inset: auto 0 0; block-size: var(--line-frame); background: currentColor;
+}
+#page[data-place='runtime'] .part:focus-visible { outline-offset: -1px; }
+.page[data-place='runtime'] > .page-head h1 {
+  font-family: var(--sans); font-size: var(--t-word); font-weight: 700; letter-spacing: 0;
+}
+
+/* Read the extent in one sweep, then what it means. The denominator is Why's local footprint. */
+.device-part .storage-hero { margin-block: var(--u) calc(2 * var(--u)); }
+.storage-figures { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: var(--s3) var(--s5); }
+.storage-figures p { margin: 0; }
+.storage-amount { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--s3); }
+.storage-amount strong { font: 900 var(--t-voice)/calc(3 * var(--u)) var(--display); letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.storage-amount > span { color: var(--sub); }
+.storage-host { display: grid; justify-items: end; text-align: end; padding-block-end: var(--s2); }
+.storage-host b, .storage-key dd { font-variant-numeric: tabular-nums; }
+.storage-meter { display: flex; min-width: 0; height: var(--s4); margin-block-start: var(--s3); overflow: hidden; border-radius: var(--r-key); }
+.storage-meter > span { flex: 0 1 0; min-width: 0; }
+.device-part [data-capacity='free'] { --segment: var(--ink); }
+.device-part [data-capacity='sync'] { --segment: var(--marker); }
+.device-part [data-capacity='keep'] { --segment: var(--rule); }
+.device-part [data-capacity='estimate'] { --segment: var(--raised); }
+.storage-meter > span, .storage-key dt::before, .space-mark { background: var(--segment); }
+.storage-meter [data-capacity='estimate'], .storage-key [data-capacity='estimate'] dt::before {
+  background: repeating-linear-gradient(135deg, var(--rule) 0 1px, var(--raised) 1px var(--s1));
+}
+.storage-key { display: flex; margin: var(--s2) 0 0; flex-wrap: wrap; gap: var(--s1) var(--s5); }
+.storage-key > div, .storage-key dt { display: flex; align-items: center; gap: var(--s2); }
+.storage-key dt { color: var(--sub); }
+.storage-key dt::before, .device-part .space-mark { content: ''; flex: none; width: var(--s2); height: var(--s2); }
+.storage-key dd { margin: 0; white-space: nowrap; }
+
+/* Less measure for the list than for the graph. The right-hand paper says nothing until it has something to say. */
+.storage-inventory { max-inline-size: calc(29 * var(--u)); }
+.storage-group + .storage-group, .reclaimed + .storage-group { margin-block-start: var(--u); }
+.storage-caption { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; column-gap: var(--s3); min-height: var(--h-control); }
+.storage-caption h3 { font-weight: 700; font-size: var(--t-word); margin: 0; }
+.storage-caption h3:focus { outline: none; }
+.storage-batch .button {
+  border-color: transparent; background: none; padding-inline: 0; min-height: var(--h-control);
+  text-decoration: underline; text-underline-offset: var(--s1);
+}
+.storage-batch:has(.storage-batch-ask) { flex-basis: 100%; margin-block-end: var(--s2); }
+.storage-batch-ask { padding: var(--s3) 0; border-block-start: 1px solid var(--rule); }
+.storage-batch-ask p, .storage-error, .reclaimed p { margin: 0; }
+.storage-batch-ask .answers .button { padding-inline: var(--s2); }
+.storage-batch-ask .answers .primary { text-decoration: none; color: var(--ground); background: var(--ink); }
+.storage-error:empty { display: none; }
+.device-part .space-list { border-block-start: 1px solid var(--rule); }
+.device-part .space-empty { margin: 0; padding-block-start: var(--s2); }
+.device-part .space-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) max-content var(--h-control); align-items: start;
+  gap: 0 var(--s3); min-block-size: var(--h-control); padding-block: var(--s1);
+}
+.device-part .space-what, .device-part .space-measure { padding-block-start: calc((var(--h-control) - var(--u)) / 2); }
+.device-part .space-what { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.device-part .space-name { font-weight: 700; }
+.device-part .space-name .link-name { font: 400 var(--t-word)/var(--u) var(--mono); }
+.device-part .space-name [role='status']:not(:empty) { display: block; font-weight: 400; }
+.device-part .space-measure { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: var(--s2); }
+.device-part .space-size { white-space: nowrap; font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
+.device-part .space-row > .repo-gear-button { grid-column: 3; grid-row: 1; }
+.device-part .space-row > .repo-gear-pop { grid-column: 1 / -1; min-width: 0; margin: var(--s1) 0 var(--s3); }
+.device-part .space-row > .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
+.device-part .space-row > .repo-gear-button[aria-expanded='true'] .mark { transform: rotate(.5turn); }
+#page[data-place='runtime']:has(.device-part .repo-gear-button[aria-expanded='true']) { box-shadow: none; }
+.device-part .repo-gear-pop { box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow); }
+.device-part .reclaimed > p:first-child { font-weight: 700; }
+.device-part .link-name {
+  border: 0; background: none; padding: 0; color: inherit; text-align: start; cursor: var(--cursor-hand);
+  overflow-wrap: anywhere; max-inline-size: 100%;
+}
+.device-part .link-name:hover { text-decoration: underline; text-underline-offset: var(--s1); }
+
+@media (max-width: 560px) {
+  .storage-host { justify-items: start; text-align: start; padding-block-end: 0; }
+  .device-part .storage-hero { margin-block-end: var(--u); }
+  .device-part .space-row { gap: 0 var(--s2); }
+}

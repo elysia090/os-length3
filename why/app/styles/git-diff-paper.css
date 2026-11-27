@@ -9,15 +9,39 @@
   position: relative;
   box-sizing: content-box;
   container-type: inline-size;
-  block-size: calc(var(--git-diff-rows) * var(--u) + var(--s2));
+  block-size: calc(var(--u) + var(--s2) + 2px);
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--rule) transparent;
+  scrollbar-color: var(--nighthawks-paper-thumb) transparent;
 }
-.git-diff-file { inline-size: max-content; min-inline-size: 100%; }
+/* Both tracks remain native. Only their ink and inset change, never the area the pointer can drag. */
+@supports selector(::-webkit-scrollbar) {
+  @media not (forced-colors: active) {
+    .git-diff-scroll, .git-diff-scroll.scrolling { scrollbar-color: auto; scrollbar-width: auto; }
+    .git-diff-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+    .git-diff-scroll::-webkit-scrollbar-track, .git-diff-scroll::-webkit-scrollbar-corner { background: transparent; }
+    .git-diff-scroll::-webkit-scrollbar-thumb {
+      border: 2px solid transparent; border-radius: var(--r-key); background: var(--nighthawks-paper-thumb) padding-box;
+    }
+    .git-diff-scroll::-webkit-scrollbar-thumb:horizontal { border-block-width: 4px; }
+    .git-diff-scroll::-webkit-scrollbar-button:horizontal { display: none; }
+    .git-diff-scroll[data-scrollbar-across]::-webkit-scrollbar-thumb:horizontal { border-block-width: 2px; }
+    .git-diff-scroll[data-scrollbar-across]::-webkit-scrollbar-thumb:vertical { background-color: transparent; }
+  }
+}
+@media (forced-colors: active) {
+  .git-diff-scroll { scrollbar-color: auto; scrollbar-width: auto; }
+}
+/* One opening line and eleven reading lines, whether the file fills them or not. */
+.git-diff-scroll:has(> .git-diff-files) { block-size: calc(12 * var(--u) + var(--s2) + 2px); }
+/* All files share one width so a short file's name and number gutter can still pin at a horizontal offset. */
+.git-diff-files { flex: none; inline-size: max-content; min-inline-size: 100%; }
 .git-diff-head {
   position: sticky;
   inset: 0 auto auto 0;
@@ -54,12 +78,16 @@ button.git-diff-name, button.git-diff-number {
   outline-offset: -1px;
 }
 .git-diff-count { color: var(--sub); white-space: pre; flex: none; }
+/* Keep ordinary file names whole on a phone; move the counts down before breaking a file name. */
+@container (inline-size <= 280px) {
+  .git-diff-head { flex-wrap: wrap; gap: 0 var(--s1); padding-inline: var(--s2); }
+  .git-diff-count { margin-inline-start: auto; }
+}
 .git-diff-lines {
   display: grid;
   inline-size: max-content;
   min-inline-size: 100%;
   padding-block-start: var(--s2);
-  border-block-end: 1px solid var(--rule);
 }
 .git-diff-lines[hidden] { display: none; }
 .git-diff-line {

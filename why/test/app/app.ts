@@ -11,6 +11,7 @@
 
 import {expect, type Locator, type Page} from '@playwright/test';
 import TEMPLATES from '../../repo/templates.json' with {type: 'json'};
+import ja from '../../text/ja.ts';
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
@@ -24,6 +25,9 @@ export const handleOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+
 
 /** `text` as a regular expression that matches it literally. */
 export const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** An exact label at one of the localized Places entry points. */
+const placeLabel = (label: string) => new RegExp(`^(${escape(label)}|${escape(ja[label] ?? label)})$`);
 
 export class App {
   readonly page: Page;
@@ -95,8 +99,10 @@ export class App {
     await this.settled();
   }
 
-  /** The first look at the Remote is done and the page drawn from it (main is busy until then). */
+  /** The actual first place is drawn and the first look at the Remote is done. */
   async settled() {
+    // The busy marker can clear as the restored place's module is still coming in.
+    await expect(this.main).toHaveAttribute('data-place', /\S/);
     await expect(this.main).not.toHaveAttribute('aria-busy', 'true');
   }
 
@@ -175,19 +181,34 @@ class Rail extends Part {
 
   private get navigation() { return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/, includeHidden: true}); }
 
-  /** The common routes are summoned on either work desk. */
-  async open() {
+  private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    if ((here === 'forge' || here === 'git') && !await this.navigation.isVisible()) {
-      const menu = this.app.forge.places;
-      if (!await menu.isVisible()) await this.app.forge.placesKey.click();
-      await menu.getByRole('menuitem', {name: 'More Places', exact: true}).click();
-    }
+    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server') return false;
+    // A redraw (e.g. after changing language) can briefly show neither entrance. Do not fall back to a hidden rail.
+    const corner = this.app.forge.placesKey;
+    await expect(this.navigation.or(corner).filter({visible: true}).first()).toBeVisible();
+    return !await this.navigation.isVisible();
+  }
+
+  /** The actual destination is in the rail or the one Places menu, depending on the current desk. */
+  async destination(place: Place) {
+    if (!await this.usesPlaces()) return this.button(place);
+    const menu = this.app.forge.places;
+    if (!await menu.isVisible()) await this.app.forge.placesKey.click();
+    const name = placeLabel(PLACES[place]);
+    return menu.getByRole('menuitem', {name}).or(menu.getByRole('menuitemradio', {name}));
   }
 
   async go(place: Place) {
     const at = this.page.locator('#page');
     const now = await at.getAttribute('data-place');
+    if (now === 'home' && await this.usesPlaces()) {
+      if (place === 'home') return;
+      if (place === 'new-repo') await this.main.locator('.home-repos .card.new').click();
+      else await (await this.destination(place)).click();
+      if (place !== 'file' && place !== 'plugin') await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
     if (place === 'git' || (place === 'forge' && now === 'git')) {
       if (now !== place) {
         if (now !== 'forge' && now !== 'git') await this.go('forge');
@@ -201,14 +222,16 @@ class Rail extends Part {
       // A far side: to its place (unless there, or at the far side already), then through the door.
       if (now !== place) {
         if (now !== of) await this.go(of);
-        await this.door.click();
+        if (await this.usesPlaces()) await (await this.destination(place)).click();
+        else await this.door.click();
       }
       await expect(at).toHaveAttribute('data-place', place);
       return;
     }
     if (place !== 'forge' || now !== 'forge') {
-      await this.open();
-      await this.button(place).click();
+      // Forge offers the repo's Files, not the global filesystem. The latter still starts at Home's File.
+      if (place === 'file' && now !== 'runtime' && await this.usesPlaces()) await this.go('home');
+      await (await this.destination(place)).click();
     }
     if (place !== 'file' && place !== 'plugin') {
       await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
@@ -219,11 +242,15 @@ class Rail extends Part {
 
 /** The person's own icon at the foot of the rail, and its menu. */
 class MeMenu extends Part {
-  get button() { return this.page.getByRole('button', {name: 'Me', exact: true}); }
-  get menu() { return this.page.getByRole('menu', {name: 'Me'}); }
+  get button() { return this.page.getByRole('button', {name: placeLabel('Me')}); }
+  get menu() { return this.page.getByRole('menu', {name: placeLabel('Me')}); }
 
   async openMenu() {
-    await this.button.click();
+    if (await this.button.isVisible()) await this.button.click();
+    else {
+      if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
+      await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Account')}).click();
+    }
     await expect(this.menu).toBeVisible();
   }
 
@@ -300,12 +327,12 @@ class NewRepo extends Part {
 
 /** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
-  get placesKey() { return this.main.getByRole('button', {name: 'Places', exact: true}); }
-  get places() { return this.main.getByRole('menu', {name: 'Places', exact: true}); }
+  get placesKey() { return this.main.getByRole('button', {name: placeLabel('Places')}); }
+  get places() { return this.main.getByRole('menu', {name: placeLabel('Places')}); }
 
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
     if (!await this.places.isVisible()) await this.placesKey.click();
-    await this.places.getByRole('menuitemradio', {name: place, exact: true}).click();
+    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: placeLabel(place)}).click();
   }
 
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
@@ -393,6 +420,13 @@ class Forge extends Part {
     });
   }
 
+  /** Reveal the companion when needed. An idle shell can have no visible transcript; the heading still stands. */
+  async openPrompt() {
+    const heading = this.main.getByRole('heading', {name: 'Prompt', exact: true});
+    if (!await heading.isVisible()) await this.use('Prompt');
+    await expect(heading).toBeVisible();
+  }
+
   /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
@@ -402,7 +436,7 @@ class Forge extends Part {
 
   /** Start the open repo's Prompt by writing to it (a letter, taken back), and wait for its prompt line (`hello $ `). */
   async startPrompt(repo: string) {
-    if (!await this.prompt.isVisible()) await this.use('Prompt');
+    await this.openPrompt();
     // Run, as chosen (the box takes up Edit by itself while a file has the keyboard).
     await this.promptBox.press('Alt+1');
     await this.promptBox.press(' ');
@@ -413,7 +447,7 @@ class Forge extends Part {
 
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
-    if (!await this.prompt.isVisible()) await this.use('Prompt');
+    await this.openPrompt();
     await this.promptBox.press('Alt+1');
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');
@@ -464,8 +498,7 @@ class FileTree extends Part {
     // moment while no longer out.
     const file = this.app.rail.button('file');
     if (await file.getAttribute('aria-expanded') !== 'true') {
-      await this.app.rail.open();
-      await file.click();
+      await this.app.rail.go('file');
     }
     await expect(file).toHaveAttribute('aria-expanded', 'true');
     await expect(this.tree).toBeVisible();
@@ -741,26 +774,38 @@ class Runtime extends Part {
   }
 }
 
-/** Inbox: your name, the conversations, the one open. */
+/** Inbox: the address index, the letter in hand, and the next recipient paper. */
 class Inbox extends Part {
   get conversations() { return this.main.getByRole('navigation', {name: 'Conversations'}); }
-  /** A conversation in the list, by the other's name or address (it shows both, then the last message). */
   conversation(who: string) { return this.conversations.getByRole('button', {name: who}); }
   get message() { return this.main.getByRole('textbox', {name: 'Message', exact: true}); }
-  /** The conversation open at the right, named by the other (their name on this Remote). */
+  get newMessage() { return this.main.getByRole('button', {name: 'New message', exact: true}).and(this.main.getByText('New message →', {exact: true})); }
+  get recipient() { return this.main.getByRole('region', {name: 'New message', exact: true}); }
+  get papers() { return this.main.getByRole('group', {name: 'Open Inbox papers', exact: true}); }
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
-  /** Inbox, opened at its stub: their username, given at the first sign-in (nothing is claimed first). */
-  async named(name = this.app.handle) {
+  async names() {
+    if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
+    await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
+  }
+
+  /** The Inbox has its automatically claimed address and stands ready to write. */
+  async named(name?: string) {
     await this.app.rail.go('inbox');
-    await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
+    await expect(this.newMessage).toBeVisible();
+    if (name) {
+      await this.names();
+      await expect(this.main.getByRole('button', {name, exact: true})).toBeVisible();
+      await this.page.keyboard.press('Escape');
+    }
   }
 
   /** Write `text` to `to` (a name or a code) and send it. */
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
-    await this.conversations.getByRole('textbox', {name: 'Send to username'}).fill(to);
-    await this.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
+    await this.newMessage.click();
+    await this.recipient.getByRole('textbox', {name: 'Recipient address'}).fill(to);
+    await this.recipient.getByRole('button', {name: 'Open', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();
     await expect(this.message).toHaveValue('');
@@ -771,10 +816,16 @@ class Inbox extends Part {
 class Server extends Part {
   /** Its page: the servers on its top line, the boards under them, the people at the right. */
   get view() { return this.page.locator('#page[data-place="server"] > .work:not(.bench)'); }
-  /** The right: who is in it, then the repos they show in it. */
-  get side() { return this.view.getByRole('complementary', {name: 'Members and shared repos'}); }
+  get topics() { return this.view.getByRole('navigation', {name: 'Topics'}); }
+  get paper() { return this.view.locator('.server-paper'); }
+  face(name: 'Talk' | 'TODO') { return this.view.locator('.server-overline').getByRole('button', {name, exact: true}); }
 
-  /** To its page, by the rail (summoned through More Places on a work desk). */
+  async newRoom() {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitem', {name: 'Create server', exact: true}).click();
+  }
+
+  /** To its page, by the rail or the Places menu on a work desk. */
   async open() {
     await this.app.rail.go('server');
     await expect(this.view).toBeVisible();
@@ -793,12 +844,12 @@ class Server extends Part {
     await this.view.getByRole('button', {name: 'Username on this Remote', exact: true}).click();
     await this.view.getByRole('textbox', {name: /^Username on this Remote/}).fill(handle);
     await this.view.getByRole('button', {name: 'Create', exact: true}).click();
-    await expect(this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();
+    await expect(this.room(name)).toHaveAttribute('aria-current', 'true');
   }
 
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
-    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    const field = this.view.getByRole('textbox', {name: 'Thread name', exact: true});
     await this.newBoard();
     await field.fill(name);
     await field.press('Enter');
@@ -807,14 +858,14 @@ class Server extends Part {
 
   /** To the board `name`, by its line on the room's own sheet (the row shows the one in the hand alone). */
   async goBoard(name: string) {
-    await this.side.getByRole('button', {name, exact: true}).click();
+    await this.topics.getByRole('button', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}).click();
     await expect(this.board(name)).toBeVisible();
   }
 
   /** To the board not made yet, by its line on the room's own sheet: its name then takes the keyboard. */
   async newBoard() {
-    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
-    if (!(await field.isVisible())) await this.side.getByRole('button', {name: 'New board', exact: true}).click();
+    const field = this.view.getByRole('textbox', {name: 'Thread name', exact: true});
+    if (!(await field.isVisible())) await this.topics.getByRole('button', {name: 'New thread…', exact: true}).click();
     await expect(field).toBeVisible();
   }
 
@@ -825,8 +876,19 @@ class Server extends Part {
   /** Its TODO, the part beside its talk (in front once its part is pressed). */
   get todo() { return this.view.getByRole('region', {name: 'TODO', exact: true}); }
 
-  /** A server's chip on the top line (its name says so while a board in it has posts not seen). */
-  chip(name: string) { return this.view.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
+  /** The server in hand (its name says so while a board in it has posts not seen). */
+  room(name: string) { return this.view.getByRole('group', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}); }
+  get roomKey() { return this.view.getByRole('button', {name: 'Server menu', exact: true}); }
+  get roomChoices() { return this.view.getByRole('menu', {name: 'Servers', exact: true}); }
+  async chooseRoom(name: string) {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitemradio', {name: new RegExp(`^${escape(name)}(?: \\(new posts\\))?$`)}).click();
+    await expect(this.room(name)).toHaveAttribute('aria-current', 'true');
+  }
+  async manage() {
+    if (await this.roomKey.getAttribute('aria-expanded') !== 'true') await this.roomKey.click();
+    await this.roomChoices.getByRole('menuitem', {name: /^(Manage…|Members)$/}).click();
+  }
 
   /** The box at the board's foot that writes in it. */
   box(board: string) { return this.view.getByRole('textbox', {name: `Post in #${board}`, exact: true}); }
@@ -836,7 +898,7 @@ class Server extends Part {
    * Add contact). What the card then says is returned, to be checked by the caller.
    */
   async addSomeone(who: string) {
-    await this.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
+    await this.manage();
     await this.view.getByRole('tab', {name: /^Members/}).click();
     await this.view.getByRole('button', {name: 'Add contact'}).click();
     const typed = this.view.getByRole('textbox', {name: 'Enter username or invite code'});

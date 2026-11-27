@@ -24,6 +24,8 @@ import {SPRING} from '../../ui/law.ts';
 export interface DeskFile extends Laid {
   /** The line `line` (1-based) chosen in it, the caret there (none: the caret at its top). */
   at(line: number): void;
+  /** The keyboard in it, at an existing character offset (Home's last edit, not a line highlighted by search). */
+  toOffset(offset: number): void;
   /** The keyboard in it, the caret at its end (a file just named goes on being written). */
   toEnd(): void;
   /** Its own top, measured from the box's: where `line` is. */
@@ -98,8 +100,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   let revision = 0;
   let writer: string | null = null;
   let dropped = false;
-  let wanted: number | null = null;
-  let endWanted = false;
+  let wanted: {line: number} | {offset: number | 'end'} | null = null;
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
   /**
@@ -180,7 +181,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   };
 
   function at(line: number) {
-    if (!editor) { wanted = line; later(); return; }
+    if (!editor) { wanted = {line}; later(); return; }
     const {area} = editor;
     // No line asked for: the caret at its top.
     if (line < 1) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
@@ -239,7 +240,15 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     // Written on, or gone through by the keys, the line in hand keeps the room ahead of it (lead()); a press puts the
     // caret under the hand and turns nothing.
     e.area.addEventListener('input', () => lead(e.area));
-    e.area.addEventListener('keydown', (k) => { if (!k.isComposing) requestAnimationFrame(() => lead(e.area)); });
+    e.area.addEventListener('keydown', (key) => {
+      if (key.isComposing) return;
+      const {selectionStart, selectionEnd, selectionDirection} = e.area;
+      requestAnimationFrame(() => {
+        // The editor's context key is consumed up the tree. Neither it nor a bare modifier moves the caret.
+        if (!key.defaultPrevented && (e.area.selectionStart !== selectionStart || e.area.selectionEnd !== selectionEnd
+          || e.area.selectionDirection !== selectionDirection)) lead(e.area);
+      });
+    });
     const areaSize = new ResizeObserver(() => { stand(e.area); grew(); });
     const bodySize = new ResizeObserver(() => stand(e.area));
     areaSize.observe(e.area);
@@ -253,10 +262,12 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       e.drop();
       if (!shared) draft.stop();
     };
-    if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
-    if (wanted !== null) at(wanted);
-    else if (endWanted) toEnd();
-    else if (focusing) e.area.focus({preventScroll: true});
+    const request = stillAsked() ? wanted : null;
+    wanted = null;
+    if (request && 'line' in request) at(request.line);
+    else if (request) toOffset(request.offset);
+    else if (focusing && stillAsked()) e.area.focus({preventScroll: true});
+    focusing = false;
     grew();
   };
 
@@ -289,6 +300,8 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       dropView?.(); dropView = undefined;
       editor = null;
     }
+    // A read-only preview scrolls its actual content, without a writer's look-ahead room.
+    element.classList.remove('long');
     if (c.text === null) {
       state.el.textContent = '';
       sheet.replaceChildren(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)})));
@@ -357,8 +370,8 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   if (shared) bind(shared); else void load();
 
   /**
-   * A file whose lines pass the world's lower third stands to the window's foot, with paper under its last line up to
-   * that third: the room ahead of the line written last (DESIGN §2, look room). Shorter, it is as tall as its lines.
+   * The working surface is always full height, but only real lines past the lower third call for room
+   * to write ahead of the last line (DESIGN §2). The fitted textarea measures text, not empty paper.
    */
   function stand(area: HTMLTextAreaElement) {
     const foot = parseFloat(getComputedStyle(element).getPropertyValue('--ahead'));
@@ -399,17 +412,19 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     fieldCarried();
   }
 
-  function toEnd() {
-    if (!editor) { endWanted = true; later(); return; }
-    const {area} = editor, end = area.value.length;
+  function toOffset(offset: number | 'end') {
+    if (!editor) { wanted = {offset}; later(); return; }
+    const {area} = editor;
+    const at = offset === 'end' ? area.value.length : Math.max(0, Math.min(offset, area.value.length));
     area.focus({preventScroll: true});
-    area.setSelectionRange(end, end);
+    area.setSelectionRange(at, at);
     lead(area);
   }
 
   return {
     element,
-    toEnd,
+    toOffset,
+    toEnd: () => toOffset('end'),
     name: cut < 0 ? shown : shown.slice(cut + 1),
     dir: cut < 0 ? '' : `${shown.slice(0, cut)}/`,
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
@@ -427,7 +442,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {retry}, editor.draft) : null,
     drop: () => { dropped = true; dropMenu(); off?.(); offEarly?.(); dropView?.(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
-    ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; endWanted = false; rename(name); }} : {}),
+    ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; rename(name); }} : {}),
   };
 }
 

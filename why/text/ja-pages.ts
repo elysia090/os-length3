@@ -124,7 +124,6 @@ export default {
   'Unsaved': '未保存',
 
   'Places': '作業場所',
-  'More Places': 'ほかの作業場所',
   'Open Folder': 'フォルダーを開く',
   'Available folders changed. Choose again.': '開けるフォルダーが変わりました。選び直してください。',
   'The folder was not opened.': 'フォルダーを開けませんでした。',
@@ -145,6 +144,7 @@ export default {
   files: 'ファイル',
   runs: '実行',
   'Search this repo': 'この repo を検索',
+  'Search in': '検索範囲',
   Search: '検索',
   Terminal: '端末',
   Tools: '道具',
@@ -194,6 +194,7 @@ export default {
   'Files in {name}': '{name}のファイル一覧',
   'Move to {where}': '{where}に追加',
   'Search results': '検索結果',
+  'Suggested files': 'おすすめのファイル',
   'Plugins': 'プラグイン',
 
   // Writing an issue
@@ -256,4 +257,10 @@ export default {
   '{path} is too large to edit here': '{path}は大きすぎてここでは直せません',
   'Prompt': 'Prompt',
   'exit {n}': '終了 {n}',
+  'Previous terminal': '前の端末',
+  'Next terminal': '次の端末',
+  'Left terminal': '左の端末',
+  'Right terminal': '右の端末',
+  'Terminal order': '端末の並び',
+  'The Prompt has processes remaining': 'Prompt のプロセスが残っています',
 } as Record<string, string>;

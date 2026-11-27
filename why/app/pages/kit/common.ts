@@ -7,11 +7,11 @@ import {readTime} from '../../ui/law.ts';
 import {wayOut} from '../../ui/way-out.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';
 
-export function pageHead(id: PurposeId): HTMLElement {
+export function pageHead(id: PurposeId, describe = true): HTMLElement {
   const p = purpose(id);
   const mark = icon(id);
   inkAtEdge(mark);
-  return h('div', {class: 'page-head'}, mark, h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
+  return h('div', {class: 'page-head'}, mark, h('h1', {}, t(p.label)), describe ? h('p', {}, t(p.role)) : null);
 }
 
 /**
@@ -147,7 +147,7 @@ export function choosePart(page: string, part: string) {
 }
 
 export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[],
-  label = RAIL.some((p) => p.id === page) ? t(purpose(page as PurposeId).label) : ''): Parts<K> {
+  label = RAIL.some((p) => p.id === page) ? t(purpose(page as PurposeId).label) : '', markWeight: 'raised' | 'quiet' = 'raised'): Parts<K> {
   const key = `why.part.${page}`;
   const tabs = new Map<K, {tab: HTMLButtonElement; small: HTMLElement; panel: HTMLElement}>();
   const heard: ((k: K) => void)[] = [];
@@ -209,7 +209,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       if (on) { if (bar.isConnected) keep(); else requestAnimationFrame(keep); }
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
-    glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');
+    if (markWeight === 'raised') glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');
     if (by) arrive(tabs.get(k)!.panel, by, 'x', 16, 260);
     for (const f of heard) f(k);
   };

@@ -29,7 +29,7 @@ import {wayOut} from '../../ui/way-out.ts';
  * goes.
  */
 export function sshSection(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'ssh-title', hidden: ''});
+  const section = h('section', {class: 'section runtime-ssh', 'aria-labelledby': 'ssh-title', hidden: ''});
   const again = () => void paint();
   const paint = async () => {
     if (!section.isConnected && section.dataset.drawn) return;
@@ -43,7 +43,7 @@ export function sshSection(): HTMLElement {
     if (isNative && here) cards.unshift(hereCard(here, again));
     const count = others.length + (here?.on ? 1 : 0);
     section.hidden = false;
-    section.replaceChildren(h('h2', {id: 'ssh-title'}, h('span', {}, 'SSH', count ? h('small', {}, `${count}`) : null)),
+    section.replaceChildren(h('h2', {id: 'ssh-title', class: 'runtime-group-heading'}, h('span', {}, 'SSH', count ? h('small', {}, `${count}`) : null)),
       ...(isNative ? [] : [h('p', {class: 'muted small'}, t('SSH is desktop-exclusive. Enabled locally; network addresses are not published.'))]),
       ...(cards.length ? [h('div', {class: 'grid small-grid'}, ...cards)] : []));
   };

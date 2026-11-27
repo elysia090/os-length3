@@ -98,7 +98,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
   const said = options.brief ? whenOnly : sizeAndWhen;
   // (Nothing in it before the repos are read: a page is not seen before its lists are, ui/whole.ts.)
   const grid = h('div', {class: 'grid repo-grid'});
-  arrowKeys(grid, '.card-open, .card.new');
+  arrowKeys(grid, '.card-open, .card.new', {horizontalRowFirst: options.brief});
   /** The cards for `repos` drawn. */
   const draw = (repos: RepoSummary[]) => {
     options.counted?.(repos.length + remoteOnly().length);

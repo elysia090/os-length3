@@ -193,3 +193,117 @@
 @supports (transition-timing-function: linear(0, 1)) {
   :root { --spring: linear(0, 0.062, 0.192, 0.338, 0.477, 0.596, 0.694, 0.771, 0.831, 0.877, 0.911, 0.937, 0.955, 0.969, 0.979, 0.986, 0.991, 0.994, 0.997, 0.999, 1); }
 }
+
+/* App materials are not global .everyday controls. The desks opt in to this shared paint, including
+   departing papers that keep their light during a Places change. The dots are opaque over this ground. */
+body {
+  --nighthawks-ground: #3a3d36;
+  --nighthawks-dot: #4c4e48;
+  --nighthawks-dots: radial-gradient(circle, var(--nighthawks-dot) 1.5px, transparent 1.9px);
+  --nighthawks-paper: #efebe3;
+  --nighthawks-paper-grain: #e3ded5;
+  --nighthawks-paper-ink: var(--ink);
+  --nighthawks-paper-sub: #514e49;
+  --nighthawks-paper-thumb: #837d71;
+  --nighthawks-rule: #a9a49b;
+  --nighthawks-desk-quiet: #c1beb0;
+  --nighthawks-desk-disabled: #726e65;
+  --nighthawks-paper-selected: #ded3bb;
+  --nighthawks-paper-off: var(--off);
+  --nighthawks-shadow: #1a1d17;
+}
+
+/* The portrait owns its note's stock, on screen as well as on the departing page. */
+.home-portrait { --home-note: #d7c55a; }
+
+/* Forge's document table: the same light on an unraised desk and one sheet in hand.
+   These colors do not replace the app's general palette or the Prompt's colors. */
+:is(body.forge-place:has(> #page .desk-room[data-place='Forge']),
+    .place-left > .page[data-place='forge']:has(.desk-room[data-place='Forge'])) {
+  --ground: var(--nighthawks-ground);
+  --dots: var(--nighthawks-dots);
+  --paper: var(--nighthawks-paper);
+  --sub: var(--nighthawks-paper-sub);
+  --quiet: var(--sub);
+  --rule: var(--nighthawks-rule);
+  --raised: #ded9d0;
+  --slot: var(--nighthawks-paper-selected);
+  --edge: var(--nighthawks-desk-disabled);
+  --forge-desk-text: var(--nighthawks-desk-quiet);
+  --forge-desk-grain: #43463e;
+  --forge-paper-grain: var(--nighthawks-paper-grain);
+  --forge-paper-edge: #68655c;
+  --forge-paper-shade: var(--nighthawks-shadow);
+  --forge-paper-thumb: var(--nighthawks-paper-thumb);
+}
+
+/* This desk's approved light. The dots below are the solid composition of the original dot ink at 20%
+   over the desk (not another translucent level or key light). */
+:is(body:has(> .page.page-inbox > .inbox-shell), .place-left > .page.page-inbox:has(> .inbox-shell)) {
+  --inbox-desk: var(--nighthawks-ground);
+  --inbox-dots: radial-gradient(circle, #4c4e47 1.1px, transparent 1.8px);
+  --inbox-paper: var(--nighthawks-paper);
+  --inbox-paper-grain: var(--nighthawks-paper-grain);
+  --inbox-muted: var(--nighthawks-paper-sub);
+  --inbox-rule: var(--nighthawks-rule);
+  --inbox-desk-quiet: var(--nighthawks-desk-quiet);
+  --inbox-map-idle: var(--nighthawks-desk-disabled);
+  --inbox-selection: var(--nighthawks-paper-selected);
+  --inbox-shadow: var(--nighthawks-shadow);
+  --r-inbox-paper: 5px;
+  /* The letter's own words and quiet metadata, not new type sizes for the other desks. */
+  --t-inbox-time: 13px;
+  --t-inbox-meta: 14px;
+  --t-inbox-write: 18px;
+  --t-inbox-words: 20px;
+  --t-inbox-compact-title: 30px;
+  --t-inbox-title: 38px;
+}
+
+/* The Forge Prompt is a warm neutral, quieter in colour than the paper beside it. */
+body.forge-place {
+  --prompt-edge: #242424;
+  --prompt-face: #edeae5;
+  --prompt-grain: #e9e6e1;
+  --prompt-ink: #1b1b1b;
+  --prompt-quiet: #505050;
+  --prompt-rule: #a5a5a5;
+  --prompt-ansi-black: #303030;
+  --prompt-ansi-red: #963928;
+  --prompt-ansi-green: #1d6444;
+  --prompt-ansi-yellow: #78551b;
+  --prompt-ansi-blue: #344d91;
+  --prompt-ansi-magenta: #854075;
+  --prompt-ansi-cyan: #1d666e;
+  --prompt-ansi-bright-black: #606060;
+  --prompt-ansi-bright-red: #ae3420;
+  --prompt-ansi-bright-green: #19764c;
+  --prompt-ansi-bright-yellow: #7d570d;
+  --prompt-ansi-bright-blue: #305cae;
+  --prompt-ansi-bright-magenta: #8c4687;
+  --prompt-ansi-bright-cyan: #126e7a;
+  --prompt-cast: #1a1d17;
+  --prompt-band: #e8e4df;
+  --prompt-band-edge: #686868;
+  --prompt-band-highlight: #fcfaf7;
+  --prompt-band-side: #f5f2ee;
+  --prompt-rail-idle: #a6a6a6;
+  --prompt-rail-light: #faf7f3;
+  --prompt-rail-active: #575757;
+  --prompt-rail-hot: #727272;
+  --prompt-focus: #666;
+  --prompt-turn: #3a3a3a;
+  --prompt-turn-disabled: #a4a4a4;
+  --prompt-turn-hot: #d0cbc5;
+  --prompt-turn-hot-ink: #151515;
+  --prompt-face-edge: #a9a6a2;
+  --prompt-face-shade: #b0ada8;
+  --prompt-face-light: #f8f5f1;
+  --prompt-scroll-track: #dad6d1;
+  --prompt-scroll-edge: #b3afa9;
+  --prompt-scroll-thumb: #9b9b9b;
+  --prompt-scroll-trim: #d3cfca;
+  --prompt-scroll-active: #646464;
+  --prompt-scroll-hot: #cac5bf;
+  --prompt-scroll-focus: #6b6b6b;
+}

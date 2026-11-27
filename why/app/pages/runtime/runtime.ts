@@ -6,6 +6,7 @@ import {connection} from '../../../shipto/connection.ts';
 import {deviceStateKey} from './device-state.ts';
 import {readSpace} from '../../../device/space.ts';
 import {pageHead, parts} from '../kit/common.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
 import type {Context} from '../kit/context.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -34,20 +35,44 @@ import {agentSection} from './agent-part.ts';
 export function runtime(ctx: Context): Node[] {
   const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
     {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Running Prompts')},
-    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
+    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}], undefined, 'quiet');
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
   let last: Freed | null = null;
-  // Drawn at once from what the core last measured, then, if some of it was that, measured now and drawn again where
-  // it differs (what is drawn the same is left as it is).
-  let drawn = '';
-  const read = (fresh = false): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
-    // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
-    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
-    const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
-    if (now !== drawn) { drawn = now; holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })); }
-    if (u.kept && holder.isConnected) read(true);
-  },
-    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
+  let requestedFocus: string | undefined;
+  let drawn = '', generation = 0;
+  let waiting: ReturnType<typeof setTimeout> | undefined;
+  const inHand = () => !!holder.querySelector(
+    '.repo-gear-button[aria-expanded="true"], [aria-busy="true"], .storage-batch-ask');
+  const read = (fresh = false): void => {
+    const g = ++generation;
+    clearTimeout(waiting);
+    const defer = () => { waiting = setTimeout(() => { if (holder.isConnected) read(fresh); }, 350); };
+    if (holder.isConnected && inHand()) { defer(); return; }
+    void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
+      if (g !== generation) return;
+      if (holder.isConnected && inHand()) { defer(); return; }
+      const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
+      if (now !== drawn) {
+        drawn = now;
+        const at = document.activeElement;
+        const onSheet = holder.contains(at);
+        const requested = onSheet || at === document.body ? requestedFocus : undefined;
+        const key = requested ?? (onSheet && at instanceof HTMLElement ? at.dataset.spaceFocus : undefined);
+        requestedFocus = undefined;
+        holder.replaceChildren(device(ctx, u, last, (r, focus) => { last = r; requestedFocus = focus; read(); }));
+        if (key && holder.isConnected && !holder.closest('[hidden]')) {
+          const find = (id: string) => holder.querySelector<HTMLElement>(`[data-space-focus="${CSS.escape(id)}"]`);
+          (find(key) ?? find('here-col'))?.focus({preventScroll: !requested});
+        }
+      }
+      if (u.kept && holder.isConnected) read(true);
+    }, (e) => {
+      if (g !== generation) return;
+      if (holder.isConnected && inHand()) { defer(); return; }
+      drawn = '';
+      holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)}))));
+    });
+  };
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
@@ -60,14 +85,16 @@ export function runtime(ctx: Context): Node[] {
   const restarted = () => { const next = prompts(heard, following); running.replaceWith(next); running = next; };
   page.panel('device').append(holder);
   page.panel('prompts').append(running);
-  // The environments and, on the web, the desktop app one to their right: how this device runs, or becomes the
-  // app. SSH, how it is reached, under the two. (The desktop app is offered on the web; the app itself is it.)
-  page.panel('environments').append(h('div', {class: 'section-row'},
+  // More about the same device, at the same reading edge; the inactive panels stay live.
+  page.panel('environments').append(h('div', {class: 'runtime-leaf runtime-environments'},
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Active environment')), environment()),
-    ...(isNative ? [] : [desktopApp()])), sshSection());
+    isNative ? null : desktopApp(), sshSection()));
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
-  // The Agent's key apart from the dotfiles: a dotfile is the person's, on every device; the key is this device's alone.
+  // The Agent's key is local; dotfiles remain the person's on every device.
   page.panel('agent').append(agentSection());
-  return [pageHead('runtime'), h('div', {class: 'part-bar'}, page.switch),
+  const head = pageHead('runtime', false);
+  // Runtime keeps the page and its parts; navigation moves from the rail to the same Places as the work desks.
+  placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? [], {find: deskSearch(ctx)});
+  return [head, h('div', {class: 'part-bar'}, page.switch),
     page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles'), page.panel('agent')];
 }

@@ -1,0 +1,209 @@
+/* Workshop is an index on the desk, not another sheet. The held topic is a centered close-up. */
+body:has(> #page[data-place='server'] > .server-work) {
+  padding: 0; grid-template-columns: minmax(0, 1fr);
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
+}
+body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { display: none; }
+.place-left > .page[data-place='server']:has(> .server-work) {
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
+}
+.page.page-work[data-place='server']:has(> .server-work) {
+  min-width: 0; width: 100%; height: 100dvh; max-width: none; margin: 0; padding: 0;
+}
+.page[data-place='server'] > .server-work {
+  --server-edge: calc(2 * var(--u));
+  --r-server-paper: 5px;
+  --server-paper-w: min(calc(32 * var(--u)), calc(100% - 20 * var(--u)));
+  --server-paper-h: min(calc(22 * var(--u)), calc(100dvh - 7 * var(--u)));
+  --server-paper-top: calc((100dvh - var(--server-paper-h)) / 2);
+  --server-paper-left: calc((100% - var(--server-paper-w)) / 2);
+  --server-inset: calc(2 * var(--u));
+  --server-head-gap: 27px; --server-after-rule: 20px;
+  /* The desk's established measure: index, metadata, words and the one title. */
+  --t-server-control: 16px; --t-server-meta: 14px; --t-server-time: 13px;
+  --t-server-word: 18px; --t-server-title: 36px;
+  --places-down: var(--nighthawks-shadow);
+  display: block; position: relative; width: 100%; max-width: none; height: 100%; overflow: visible;
+}
+.server-masthead { position: absolute; inset: 0 0 auto; height: calc(2 * var(--u)); }
+.server-masthead > h1 {
+  position: absolute; inset: 24px auto auto var(--server-edge); margin: 0; color: var(--nighthawks-paper);
+  font: 700 var(--t-server-control)/var(--u) var(--sans); background: var(--nighthawks-ground);
+}
+.server-masthead :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
+.server-masthead :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
+.place-left > .page[data-place='server'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
+
+.server-center { height: 100%; }
+.server-sidebar {
+  --ground: var(--nighthawks-ground); --ink: var(--nighthawks-paper);
+  --sub: var(--nighthawks-desk-quiet); --edge: var(--nighthawks-desk-disabled);
+  position: absolute; z-index: 2;
+  inset: calc(var(--server-paper-top) + 36px) auto auto var(--server-edge);
+  width: min(calc(8 * var(--u)), calc(var(--server-paper-left) - var(--server-edge) - var(--u)));
+}
+.server-sidebar :focus-visible { outline-color: var(--nighthawks-paper); }
+.server-sidebar .server-held { padding-bottom: 0; }
+.server-sidebar .server-held > :is(.server-display-name, .server-display-label, .server-display-edit) { font-size: var(--t-server-control); }
+.server-sidebar .server-chooser { --server-choices-fit: 100%; }
+.server-sidebar .server-top:has(.server-chooser:not([hidden])) { margin-bottom: 16px; }
+.server-sidebar .server-top:has(.server-disclosure[aria-expanded='true']) ~ .server-index { visibility: hidden; }
+.server-sidebar .chip.server-naming { color: var(--ink); background: var(--ground); }
+.server-index {
+  min-width: 0; padding-inline-start: 12px; margin-inline-start: -12px;
+  max-height: calc(var(--server-paper-h) - 2 * var(--u)); overflow: auto; scrollbar-width: thin;
+}
+.server-index > h2 { margin: 0; color: var(--sub); font: 700 var(--t-server-meta)/var(--u) var(--sans); background: var(--ground); }
+.server-topics { display: grid; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.topic-key {
+  position: relative; display: block; min-height: var(--u); width: 100%; min-width: 0; padding: 0; border: 0;
+  background: var(--ground); color: var(--sub); font: 400 var(--t-server-control)/var(--u) var(--sans);
+  text-align: start; cursor: var(--cursor-hand); overflow-wrap: anywhere;
+}
+.topic-key > span { display: inline; padding: 0 var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
+.topic-key[aria-current='true'] > span { font-weight: 700; color: var(--nighthawks-paper); background: var(--nighthawks-paper-ink); }
+.topic-key.news::before {
+  content: ''; position: absolute; left: -11px; top: 10px; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--nighthawks-paper);
+}
+.topic-key:is(:hover, :focus-visible), .topic-new[aria-current='true'] { color: var(--ink); }
+.topic-key:focus-visible { outline-offset: -1px; }
+.topic-new { margin-top: 9px; min-height: 32px; }
+
+.server-focus {
+  position: absolute; top: var(--server-paper-top); left: var(--server-paper-left);
+  width: var(--server-paper-w); height: var(--server-paper-h); min-width: 0;
+}
+.server-topic { position: relative; height: 100%; min-width: 0; }
+.server-overline {
+  position: absolute; inset: auto 0 100%; margin-bottom: 6px; height: 27px;
+  display: flex; align-items: center; justify-content: space-between; background: var(--nighthawks-ground);
+  color: var(--nighthawks-desk-quiet); font: 400 var(--t-server-control)/var(--u) var(--mono);
+}
+.topic-face-key {
+  min-height: 27px; padding: 0; border: 0; border-radius: 0; background: none; color: inherit;
+  font: 700 var(--t-server-control)/var(--u) var(--sans); cursor: var(--cursor-hand); white-space: nowrap;
+}
+.topic-face-key:is(:hover, :focus-visible):not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.topic-face-key:disabled { color: var(--nighthawks-paper-sub); cursor: var(--cursor-arrow); }
+.server-overline .topic-face-key { color: var(--nighthawks-paper); outline-color: currentColor; }
+:is(.server-paper, .server-sheet) {
+  --paper: var(--nighthawks-paper); --ground: var(--paper);
+  --ink: var(--nighthawks-paper-ink); --sub: var(--nighthawks-paper-sub);
+  --edge: var(--nighthawks-paper-thumb); --rule: var(--nighthawks-rule);
+  --slot: var(--nighthawks-paper-selected); --raised: var(--slot);
+  height: 100%; min-height: 0; margin: 0; border-radius: var(--r-server-paper); outline: 1px solid var(--ink); outline-offset: -1px;
+  background-color: var(--paper); box-shadow: 2px 4px 0 var(--nighthawks-shadow); color: var(--ink);
+}
+.server-paper { display: flex; flex-direction: column; overflow: hidden; }
+.server-paper[data-material='topic'] {
+  --grain: var(--nighthawks-paper-grain);
+  background-image: conic-gradient(var(--grain) 25%, transparent 0 50%, var(--grain) 0 75%, transparent 0);
+  background-size: 4px 4px;
+}
+.server-sheet {
+  padding: var(--u) var(--server-inset);
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.server-sheet:has(> .sheet-foot) { grid-template-rows: auto minmax(0, 1fr) auto; }
+.server-paper > .board-card {
+  display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; min-width: 0;
+  margin: 0; background: none;
+}
+.server-paper .board-head { margin: 32px var(--server-inset) var(--server-head-gap); min-width: 0; }
+/* As on an Inbox letter, the heading ends in one quiet rule on the text's measure.
+   Use the existing gap so neither the reading area nor the reply moves. Both faces share this heading. */
+.server-paper[data-material='topic'] > .board-card > .board-head {
+  margin-block-end: var(--server-after-rule);
+  padding-block-end: calc(var(--server-head-gap) - var(--server-after-rule) - 1px);
+  border-bottom: 1px solid var(--rule);
+}
+.server-paper .board-head > h2 {
+  margin: 0; color: var(--ink); text-transform: uppercase;
+  font: 900 var(--t-server-title)/48px var(--display); letter-spacing: -.018em; overflow-wrap: anywhere;
+}
+.topic-source { color: var(--sub); font: 400 var(--t-server-meta)/var(--u) var(--mono); }
+.server-paper :is(.board-talk, .board-todo) {
+  min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+  margin-inline: var(--server-inset) calc(var(--server-inset) - 8px);
+  padding: 0 8px 0 0; font: 400 var(--t-server-word)/var(--u) var(--sans);
+}
+.server-paper :is(.board-talk, .board-todo):is(:hover, :focus-visible, .scrolling) { scrollbar-color: var(--edge) transparent; }
+.server-paper .board-talk:focus-visible { outline-offset: -2px; }
+.server-paper .board-talk { overflow-anchor: none; }
+.server-paper .board-todo .todo-box {
+  min-height: 0; margin: 0 0 var(--s3); border: 0; background: none;
+  padding: 0; font-size: inherit;
+}
+.server-paper .board-todo .todo-items { padding: 0; }
+.server-paper .board-todo .todo-item { background: none; }
+.server-paper .board-todo .todo-head { min-height: calc(1.5 * var(--u)); --h-control: var(--u); }
+.server-paper .board-todo .todo-title { font: inherit; }
+.server-paper .board-todo .todo-mark {
+  position: relative; color: var(--sub);
+}
+.server-paper .board-todo .todo-mark svg { visibility: hidden; }
+.server-paper .board-todo .todo-mark::before {
+  position: absolute; content: ''; width: 14px; height: 14px; border: 1px solid currentColor; border-radius: 0;
+}
+.server-paper .board-todo .todo-mark:disabled::before { content: none; }
+.server-paper .board-todo .done .todo-mark::before { background: var(--ink); border-color: var(--ink); }
+.server-paper .board-todo .done .todo-mark::after {
+  position: absolute; content: ''; width: 7px; height: 4px; border: solid var(--paper); border-width: 0 0 1px 1px; transform: translateY(-1px) rotate(-45deg);
+}
+.server-paper .board-todo .todo-clear { min-height: var(--u); }
+.server-paper > .dock {
+  position: static; inset: auto; display: block; z-index: auto;
+  flex: none; max-width: none; padding: 9px 0 36px; margin: var(--u) var(--server-inset) 0;
+  border-top: 1px solid var(--rule); transform: none;
+}
+.server-paper > .dock:empty,
+.server-paper:has(> .board-card[data-face='todo']) > .dock { display: none; }
+.server-paper > .dock::after { content: none; }
+.server-paper > .dock > :is(.prompt, .prompt:focus-within) {
+  display: flex; align-items: flex-end; gap: var(--u); min-height: 26px;
+  border: 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
+}
+.server-paper .prompt-in {
+  flex: 1; min-height: var(--u); max-height: calc(3 * var(--u)); resize: none; padding: 0;
+  overflow-y: auto; scrollbar-width: thin; font: 400 var(--t-server-word)/var(--u) var(--sans);
+}
+.server-paper .server-post { font-size: var(--t-server-word); }
+.server-paper .prompt-note:empty, .board-create > .error:empty { display: none; }
+.server-paper .board-new { grid-template-rows: auto minmax(0, 1fr) auto; }
+.board-create { display: grid; align-content: start; gap: var(--s3); margin-inline: var(--server-inset); }
+.board-name-in {
+  width: min(100%, 24ch); min-height: calc(1.5 * var(--u)); border: 0; border-bottom: 1px solid var(--rule); padding: 0;
+  background: transparent; font: 400 var(--t-server-word)/var(--u) var(--sans);
+}
+.board-create-foot {
+  margin: var(--u) var(--server-inset) 36px; padding-top: 9px; border-top: 1px solid var(--rule);
+  display: flex; justify-content: flex-end;
+}
+.server-paper .board-said { display: block; min-height: 0; overflow: auto; }
+.server-signed-out, .server-paper .board-body { padding: var(--u) var(--server-inset); }
+.board-ghost .board-faint { padding-inline: var(--server-inset); }
+
+@media (max-width: 999px), (max-height: 683px) {
+  .page[data-place='server'] > .server-work {
+    --server-edge: clamp(24px, 4vw, 40px); --server-inset: clamp(20px, 4vw, 36px);
+    --server-head-gap: var(--s4); --server-after-rule: var(--s3);
+    --t-server-word: var(--t-word); --t-server-title: min(34px, 9vw);
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 62px minmax(0, 1fr);
+  }
+  .server-masthead { grid-row: 1; position: relative; }
+  .server-masthead > h1 { top: 20px; }
+  .server-center {
+    display: flex; flex-direction: column; height: auto; min-height: 0;
+    padding: 0 var(--server-edge) var(--u); overflow: auto;
+  }
+  .server-sidebar { position: relative; inset: auto; width: 100%; flex: none; margin-bottom: 35px; }
+  .server-sidebar .server-top:has(.server-chooser:not([hidden])) { margin-bottom: 4px; }
+  .server-index { max-height: calc(6 * var(--u)); }
+  .server-focus { position: relative; inset: auto; flex: 1; width: 100%; height: auto; min-height: 360px; }
+  .server-paper .board-head { margin-block-start: var(--u); }
+  .server-paper .board-head > h2 { line-height: 1.1; }
+  .server-paper > .dock { margin-top: var(--s3); padding-bottom: var(--s4); }
+  .board-create-foot { margin-bottom: var(--s4); }
+}

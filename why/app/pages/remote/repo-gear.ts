@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
-import {mark} from '../../ui/icons.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from '../kit/common.ts';
-import {keepOut, nudge, putAway} from '../../ui/glide.ts';
+import {nudge} from '../../ui/glide.ts';
+import {rowActions} from '../kit/row-actions.ts';
 import {store, validName} from '../../../repo/repos.ts';
 import {forget, remoteAll, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
@@ -13,8 +13,7 @@ import {askFirst} from './repo-off.ts';
 import type {Context} from '../kit/context.ts';
 import {wayOut} from '../../ui/way-out.ts';
 
-// A repo's gear, the same in every list of repos (Home's cards, Runtime's
-// three columns): near a repo (the pointer on it, or the keyboard in it) a
+// A repo's gear, the same in every list of repos (Home's cards and Runtime): near a repo (the pointer on it, or the keyboard in it) a
 // small gear shows at its edge; pressed, it offers what is done to the repo
 // itself from a list, each chosen on its own and never one after the other:
 //
@@ -38,15 +37,21 @@ import {wayOut} from '../../ui/way-out.ts';
 // (repo-list.ts, runtime/device.ts).
 
 interface GearWays {
+  /** An inline inventory row offers directional choice as Places does. */
+  arrowKeys?: boolean;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
   why(): Promise<string | null>;
+  /** A storage row can know an identical Remote copy before the UI's list has refreshed. */
+  backedHere?: boolean;
+  /** An unsent copy is not yet preserved by Remote. Say what must happen before release. */
+  afterSend?: string;
+  /** Runtime can explicitly retrieve a remote-only copy without opening its editor. */
+  fetch?(): Promise<void>;
   /** Free it from this device (refused: why, said in the ask). */
   free(): Promise<void>;
   /** Freed, renamed or deleted, once the list is put away: the place draws itself again and shows what it came to. */
   freed(): void;
 }
-
-let open: (() => void) | null = null;
 
 const note = (text: string) => h('p', {class: 'muted small pop-note'}, text);
 /** What a Prompt with nothing running in it comes to, said in the ask of a deed that lets its repo go. */
@@ -58,24 +63,9 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  * copy of it is on this device (false: only on the Remote).
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
-  const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': t('Actions for {name}', {name: repo})}, mark('down')) as HTMLButtonElement;
-  const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('Actions for {name}', {name: repo}), hidden: ''});
-
-  const away = (e: Event) => {
-    const mine = (n: Node | null) => !!n && (gear.contains(n) || list.contains(n));
-    if (e instanceof KeyboardEvent ? e.key !== 'Escape' : mine(e.target as Node)) return;
-    const inside = mine(document.activeElement);
-    show(false);
-    if (e instanceof KeyboardEvent) { e.stopPropagation(); if (inside) gear.focus(); }
-  };
-  const show = (on: boolean) => {
-    if (on) { open?.(); open = () => show(false); } else if (open) open = null;
-    if (on) { keepOut(list); list.hidden = false; } else putAway(list, () => { list.hidden = true; });
-    gear.setAttribute('aria-expanded', String(on));
-    for (const k of ['pointerdown', 'keydown'] as const) (on ? document.addEventListener : document.removeEventListener).call(document, k, away, true);
-    if (on) fill();
-  };
+  const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys);
+  let fetching = false;
+  let fetchError = '';
   /** Done (renamed, freed, deleted): the list is put away and the place drawn again as it is now. */
   const done = () => { show(false); w.freed(); };
 
@@ -85,7 +75,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     // On the Remote: as the Remote last listed it, or agreed with this device since (the list is read again only now and then).
     const listed = remoteAll().find((r) => r.name === repo);
     const state = repoState(repo);
-    const there = signedIn && (listed || !here || state?.agreed) ? {offAt: listed?.offAt ?? (state?.where === 'off' ? 1 : null)} : null;
+    const there = signedIn && (listed || !here || state?.agreed || w.backedHere) ? {offAt: listed?.offAt ?? (state?.where === 'off' ? 1 : null)} : null;
     // What a Prompt running here holds back: one with something running in it, everything; one waiting, nothing.
     const holds = promptHolds(repo);
     const busy = holds === 'busy' ? t('A process is currently running in Prompt') : null;
@@ -97,6 +87,28 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
       const place = menuItem(t('View on Remote'), 'remote');
       place.addEventListener('click', () => { show(false); openRepoPlace(ctx, repo); });
       rows.push(place);
+    }
+    const retrieve = w.fetch;
+    if (!here && retrieve) {
+      const fetch = menuItem(t('Fetch'), 'download');
+      const problem = h('p', {class: 'error small pop-note storage-error', role: 'alert'}, fetchError);
+      fetch.disabled = fetching;
+      fetch.addEventListener('click', async () => {
+        if (fetching) return;
+        fetching = fetch.disabled = true;
+        fetchError = problem.textContent = '';
+        gear.setAttribute('aria-busy', 'true');
+        try { await retrieve(); done(); }
+        catch (e) {
+          fetchError = problem.textContent = errorText(e);
+          fetch.disabled = false;
+          if (list.contains(fetch) && !list.hidden) fetch.focus();
+        } finally {
+          fetching = false;
+          gear.removeAttribute('aria-busy');
+        }
+      });
+      rows.push(fetch, problem);
     }
     if (here && !there) {
       const rename = menuItem(t('Rename'), 'pen');
@@ -135,7 +147,8 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const error = h('p', {class: 'error small', role: 'alert'});
     const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Remove {repo} from device (free space)', {repo})},
       h('p', {class: 'muted small'}, t('{repo} will be removed from this device.', {repo})),
-      h('p', {class: 'muted small'}, t('Preserved on Remote; re-downloads when opened.')), stops ? stopsFirst() : null, error, foot(no, yes));
+      h('p', {class: 'muted small'}, w.afterSend || t('Preserved on Remote; re-downloads when opened.')),
+      w.afterSend ? h('p', {class: 'muted small'}, t('Copies stay on Remote.')) : null, stops ? stopsFirst() : null, error, foot(no, yes));
     no.addEventListener('click', () => { ask.replaceWith(free); free.focus(); });
     const shown = performance.now();
     yes.addEventListener('click', async () => {
@@ -230,8 +243,5 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     askFirst(list, del, repo, kind, here, {done: end, ended: end, keyed: () => {}}, async () => { if (here) await deleteHere(stops); });
   };
 
-  gear.addEventListener('click', (e) => { e.stopPropagation(); show(gear.getAttribute('aria-expanded') !== 'true'); });
-  // Inside a card that is pressed as a whole, the gear and its list are the gear's own.
-  list.addEventListener('click', (e) => e.stopPropagation());
   return {gear, list};
 }

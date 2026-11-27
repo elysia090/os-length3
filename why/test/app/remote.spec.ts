@@ -31,7 +31,13 @@ test('Share shows the repo in a server at a press, and takes it off at the next'
   await app.page.keyboard.press('Escape');
   await expect(list).toBeHidden();
   await app.server.open();
-  await expect(app.server.side.getByRole('button', {name: /^hello/})).toBeVisible();
+  await app.server.manage();
+  const repos = app.server.view.getByRole('tab', {name: /^Repos/});
+  await repos.click();
+  const hello = app.server.view.getByRole('tabpanel', {name: /^Repos/}).locator('.small-card', {hasText: 'hello'});
+  await hello.getByRole('button', {name: 'View', exact: true}).click();
+  await expect(app.server.view.getByRole('heading', {name: 'hello', exact: true})).toBeVisible();
+  await expect(app.server.view.getByRole('button', {name: 'README.md'})).toBeVisible();
   await app.server.close();
 
   await app.rail.go('remote');

@@ -43,13 +43,13 @@ test('on a phone, Forge has one Places key; its menu, summoned Search, and the s
   await forge.placesKey.click();
   await expect(forge.places).toBeInViewport({ratio: 1});
   const destinations = forge.places.getByRole('menuitemradio');
-  await expect(destinations).toHaveText(['Prompt', 'Forge', 'Files', 'Git']);
+  await expect(destinations).toHaveText(['Forge', 'Files', 'Git']);
+  await expect(forge.places.getByRole('menuitem', {name: 'Prompt', exact: true})).toBeInViewport({ratio: 1});
   for (const key of await destinations.all()) await expect(key).toBeInViewport({ratio: 1});
-  const more = forge.places.getByRole('menuitem', {name: 'More Places', exact: true});
-  await expect(more).toBeInViewport({ratio: 1});
+  await expect(forge.places.getByRole('menuitem', {name: 'Home', exact: true})).toBeInViewport({ratio: 1});
   expect(await sideways(page), 'Places').toBeLessThanOrEqual(0);
-  await more.click();
-  await page.getByRole('navigation', {name: 'Purposes', exact: true}).getByRole('button', {name: 'Search', exact: true}).click();
+  await forge.placesKey.press('Escape');
+  await page.keyboard.press('Control+k');
   await expect(forge.search).toBeFocused();
   await expect(forge.search).toBeInViewport({ratio: 1});
   expect(await sideways(page), 'Search').toBeLessThanOrEqual(0);
@@ -90,6 +90,8 @@ test('a profile with a word longer than a phone is wide breaks in the word, neve
 
 test('a window too short for the rail keeps + clear of the person\'s icon, and + is pressed', async ({app}) => {
   await app.page.setViewportSize({width: 720, height: 450});
+  // Home has no rail; measure this on a page that still uses it.
+  await app.rail.go('remote');
   const plus = (await app.rail.button('new-repo').boundingBox())!;
   const me = (await app.me.button.boundingBox())!;
   expect(plus.y + plus.height).toBeLessThanOrEqual(me.y);
@@ -105,10 +107,12 @@ test('on a phone, a device row shows the device\'s name beside when it was used'
   expect((await name.boundingBox())!.width).toBeGreaterThan(100);
 });
 
-test('signed out, Server has no right pane and so no line where it would start', async ({app}) => {
+test('signed out, Server shows no member or thread-creation controls', async ({app}) => {
   await app.server.open();
-  await expect(app.server.side).toBeHidden();
-  await expect(app.server.view.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
+  await expect(app.server.paper).toBeVisible();
+  await expect(app.server.view.getByRole('button', {name: 'New thread…'})).toBeHidden();
+  await expect(app.server.view.getByRole('button', {name: 'Server menu'})).toBeHidden();
+  expect(await sideways(app.page)).toBeLessThanOrEqual(0);
 });
 
 test('a build without why says so in Runtime, never a parser\'s words', async ({app}) => {

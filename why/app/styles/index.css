@@ -25,6 +25,7 @@
 @import './pane-rows.css';
 @import './bench-2.css';
 @import './search.css';
+@import './search-screen.css';
 @import './diff.css';
 @import './file-tree.css';
 @import './terminal.css';
@@ -44,7 +45,7 @@
 @import './git-verdict.css';
 @import './talk.css';
 @import './server.css';
+@import './server-desk.css';
 @import './git-desk.css';
 @import './fit.css';
-@import './axis.css';
 @import './forge-places.css';

@@ -1,7 +1,7 @@
 import {expect, test} from './fixtures.ts';
 
 // The language is chosen in the person's menu; the OS then speaks it at once,
-// the rail and the page alike, and keeps speaking it the next time.
+// the frame and the page alike, and keeps speaking it the next time.
 
 test('choosing 日本語 shows the page in Japanese, and it stays chosen', async ({app}) => {
   await app.rail.go('home');
@@ -10,14 +10,19 @@ test('choosing 日本語 shows the page in Japanese, and it stays chosen', async
 
   await app.me.language('English', '日本語');
 
-  // What goes on the name's line, where none is written yet, is said in it too.
-  await expect(app.page.locator('#profile-name')).toHaveAttribute('data-placeholder', 'あなたの名前');
-  await expect(app.page.getByRole('button', {name: '自分', exact: true})).toBeVisible();
-  await expect(app.page.locator('html')).toHaveAttribute('lang', 'ja');
-
+  const speaksJapanese = async () => {
+    await expect(app.page.locator('html')).toHaveAttribute('lang', 'ja');
+    await expect(app.page.locator('#profile-name')).toHaveAttribute('data-placeholder', 'あなたの名前');
+    const {placesKey, places} = app.forge;
+    await expect(placesKey).toHaveAccessibleName('作業場所');
+    await placesKey.click();
+    await places.getByRole('menuitem', {name: 'アカウント', exact: true}).click();
+    await expect(app.page.getByRole('menu', {name: '自分', exact: true})).toBeVisible();
+    await app.page.keyboard.press('Escape');
+  };
+  await speaksJapanese();
   await app.open();
-  await expect(app.page.locator('#profile-name')).toHaveAttribute('data-placeholder', 'あなたの名前');
-  await expect(app.page.getByRole('button', {name: '自分', exact: true})).toBeVisible();
+  await speaksJapanese();
 });
 
 test('in Japanese, the Remote, File and Inbox say each thing with the one word the catalog gives it', async ({signedIn: app}) => {
@@ -36,5 +41,6 @@ test('in Japanese, the Remote, File and Inbox say each thing with the one word t
   await app.file.close();
 
   await app.rail.go('inbox');
-  await expect(app.main.getByRole('textbox', {name: 'ユーザー名宛てに送信'})).toBeVisible();
+  await app.main.getByRole('button', {name: '新規メッセージ', exact: true}).click();
+  await expect(app.main.getByRole('textbox', {name: '宛先'})).toBeVisible();
 });

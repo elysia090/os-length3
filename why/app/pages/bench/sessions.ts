@@ -3,6 +3,7 @@
 // the Prompt's whole screen (and why's machine) with it.
 
 import type {Stopped} from '../../../api/host.ts';
+import {t} from '../../../text/i18n.ts';
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
 export interface Run {
@@ -16,6 +17,7 @@ export interface Prompt {
   readonly element: HTMLElement;
   readonly runs: Run[];
   readonly running: boolean;
+  readonly begun: boolean;
   /** Where it runs: the root's, or why alone (a browser's, or the app's before the root is here); null before it starts. */
   readonly on: 'root' | 'why' | null;
   /** What its programs hold, in bytes; what it keeps for programs it ran and could let go (a browser's); how many run. */
@@ -43,25 +45,55 @@ export interface Prompt {
   restart(): void;
 }
 
-/** Each repo's session, by its name. */
-export const sessions = new Map<string, Prompt>();
+/** Fixed positions on Forge's Prompt rail, not names or identities of worker processes. */
+export const TERMINAL_SIDES = ['left', 'right'] as const;
+export type TerminalSide = typeof TERMINAL_SIDES[number];
+const sessions = new Map<string, Map<TerminalSide, Prompt>>();
 
-/** Every session started in this window, running or stopped. */
-export const allSessions = (): [string, Prompt][] => [...sessions];
+/** Every user's session in this window, including ones becoming ready or ending. */
+export const allSessions = (): [string, Prompt][] => [...sessions].flatMap(([repo, bySide]) =>
+  [...bySide.values()].map((prompt): [string, Prompt] => [repo, prompt]));
 
-/** The repo's session if one is running, without starting one. */
-export const sessionIfAny = (repo: string): Prompt | undefined => sessions.get(repo);
+/** The left Prompt is the one other work pages have always shown. */
+export const sessionIfAny = (repo: string, side: TerminalSide = 'left'): Prompt | undefined => sessions.get(repo)?.get(side);
 
-/** How the repo's Prompt holds it: 'busy' while a line runs in it, 'idle' while it waits at its prompt line, null when none runs. */
-export function promptHolds(repo: string): 'busy' | 'idle' | null {
-  const s = sessions.get(repo);
-  if (!s?.running) return null;
-  return s.runs.at(-1)?.ms === null ? 'busy' : 'idle';
+export function keepPrompt(repo: string, side: TerminalSide, prompt: Prompt) {
+  let bySide = sessions.get(repo);
+  if (!bySide) sessions.set(repo, bySide = new Map());
+  bySide.set(side, prompt);
 }
 
-/** The repo's Prompt stopped, before its repo goes from here or takes another name; `gone`: let go of, too (its copy is of a repo no longer here). */
+/** Never remove a successor in the same slot on account of its predecessor. */
+export function forgetPrompt(repo: string, side: TerminalSide, prompt: Prompt): boolean {
+  const bySide = sessions.get(repo);
+  if (!bySide || bySide.get(side) !== prompt) return false;
+  bySide.delete(side);
+  if (!bySide.size) sessions.delete(repo);
+  return true;
+}
+
+const active = (s: Prompt) => s.running || (s.begun && !s.ended) || !!s.stopped?.left;
+const incomplete = () => new Error(t('The Prompt has processes remaining'));
+
+/** Any busy side holds a repo; a pill can instead ask only about its own side. */
+export function promptHolds(repo: string, side?: TerminalSide): 'busy' | 'idle' | null {
+  const bySide = sessions.get(repo);
+  if (!bySide) return null;
+  let waiting = false;
+  for (const [there, s] of bySide) {
+    if ((side && there !== side) || !active(s)) continue;
+    if (s.stopped?.left || !s.running || s.runs.at(-1)?.ms === null) return 'busy';
+    waiting = true;
+  }
+  return waiting ? 'idle' : null;
+}
+
+/** A repo-wide deed stops every side, including a side that is still being started. */
 export async function stopPrompt(repo: string, gone = false) {
-  const s = sessions.get(repo);
-  if (s?.running) await s.stop();
-  if (gone) sessions.delete(repo);
+  const held = [...sessions.get(repo) ?? []];
+  const stopped = await Promise.allSettled(held.filter(([, s]) => active(s)).map(async ([, s]) => { await s.stop(); }));
+  const failure = stopped.find((r) => r.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
+  if (held.some(([, s]) => s.stopped?.left) || promptHolds(repo)) throw incomplete();
+  if (gone) for (const [side, prompt] of held) forgetPrompt(repo, side, prompt);
 }

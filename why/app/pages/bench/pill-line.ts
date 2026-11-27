@@ -1,6 +1,6 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {cut, still} from '../../ui/glide.ts';
-import {promptHolds, sessionIfAny, type Prompt} from './sessions.ts';
+import {sessionIfAny, type Prompt, type TerminalSide} from './sessions.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The box's pill while it runs (box.ts): the prompt line the repo's shell waits at, and its lamp, lit while the shell
@@ -15,6 +15,7 @@ interface PillParts {
   repo(): string | null;
   up(): boolean;
   desk(): boolean;
+  side: TerminalSide;
   /** Told when another Prompt is followed. */
   followed(): void;
 }
@@ -32,9 +33,11 @@ export class PillLine {
 
   constructor(p: PillParts) { this.#p = p; }
 
+  drop() { this.#unwatch?.(); cancelAnimationFrame(this.#saying); clearTimeout(this.#speaking); }
+
   /** The repo's Prompt followed (the one it has now, if any), and its prompt line said. */
   follow() {
-    const repo = this.#p.repo(), s = repo ? sessionIfAny(repo) ?? null : null;
+    const repo = this.#p.repo(), s = repo ? sessionIfAny(repo,this.#p.side) ?? null : null;
     if (s !== this.#followed) {
       this.#followed = s;
       this.#unwatch?.();
@@ -49,7 +52,7 @@ export class PillLine {
    * Come back after a run, it comes once what the run printed has come in (output.ts), as a terminal's does.
    */
   said() {
-    const repo = this.#p.repo(), s = repo ? sessionIfAny(repo) : undefined;
+    const repo = this.#p.repo(), s = repo ? sessionIfAny(repo,this.#p.side) : undefined;
     // Started again: the new one is followed from now on.
     if (this.#followed && (s ?? null) !== this.#followed) { this.follow(); return; }
     const line = s?.promptLine.trimEnd() ?? '';
@@ -58,7 +61,7 @@ export class PillLine {
     // On a desk, the terminal's own line: none while a line runs, as a terminal's prompt is not there till it is done.
     // (There the line is the terminal's own whether what was printed stands over it or not: its prompt is said before
     // its shell is up too, so the line always says what it is.)
-    this.#waitsAt(!repo ? '' : this.#p.up() && !this.#p.desk() ? line : this.#p.desk() && promptHolds(repo) === 'busy' ? '' : this.#lastLine.get(repo) ?? `${repo} $`, s);
+    this.#waitsAt(!repo ? '' : this.#p.up() && !this.#p.desk() ? line : this.#p.desk() && s?.running && s.runs.at(-1)?.ms === null ? '' : this.#lastLine.get(repo) ?? `${repo} $`, s);
   }
 
   /** `now` the prompt line in the pill: at once, or (up, after a run) once what the run printed has come in. */

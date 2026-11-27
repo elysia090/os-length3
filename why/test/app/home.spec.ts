@@ -202,69 +202,40 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test("Home's pieces are set as words are on the desk's grid: the person's own (name and note) from the desk's edge, and beside it where both fit the repos and what waits, the first repo on the line the name stands on; half a screen and a phone have the second under the first, and nothing is out of sight sideways", async ({app}) => {
+test('Home gives the note one full measure, with paired repo names and New repo at the end', async ({app}) => {
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
-  await app.page.setViewportSize({width: 1440, height: 900});
-  const repos = app.main.getByRole('region', {name: 'Repos'});
-  const names = repos.getByRole('group');
-  await expect(names).toHaveCount(3);
-  const at = async (l: Locator) => (await l.boundingBox())!;
-  const U = 24, CAP = .727, FOOT = .1245, PIECE = 24 * U;
-  /** Where a name's (first line's) capitals stand: their top and their feet (the display face sets them so in a line
-   * of its size, and half the line's room over that where its line is taller). */
-  const caps = (l: Locator) => l.evaluate((el, [cap, foot]) => {
-    const r = el.getBoundingClientRect(), cs = getComputedStyle(el), size = parseFloat(cs.fontSize), line = cs.lineHeight === 'normal' ? size : parseFloat(cs.lineHeight);
-    const feet = r.top + (line + size) / 2 - foot * size;
-    return {top: feet - cap * size, feet, x: r.x};
-  }, [CAP, FOOT]);
-  await expect(async () => {
-    // The person's name: its capitals two cells tall, a cell under the band, from the desk's edge.
-    const name = await caps(app.page.locator('#profile-name'));
-    expect(Math.abs(name.top - 3 * U)).toBeLessThan(1.5);
-    expect(Math.abs(name.feet - 5 * U)).toBeLessThan(1.5);
-    expect(Math.abs(name.x - 2 * U)).toBeLessThan(6);
-    // The note: the piece in hand, from the desk's edge, a cell under the counts, as wide as a piece; paper its own
-    // yellow, its shadow half a cell right and down; whole cells tall.
-    const note = await at(app.home.todo);
-    expect(Math.abs(note.x - 2 * U)).toBeLessThan(1);
-    expect(Math.abs(note.y - 8 * U)).toBeLessThan(1);
-    expect(Math.abs(note.width - PIECE)).toBeLessThan(1);
-    expect(note.height % U).toBeLessThan(1);
-    expect(await app.home.todo.evaluate((el) => getComputedStyle(el).boxShadow)).toMatch(/12px 12px 0px 0px$/);
-    // The repos: the second piece, a width and two cells along; said on the first cell; a name every two cells,
-    // capitals a cell tall, their left edges on one line; the first on the line the person's name stands on.
-    const second = 2 * U + PIECE + 2 * U;
-    expect(Math.abs((await at(repos)).x - second)).toBeLessThan(1);
-    expect(Math.abs((await at(repos.getByRole('heading'))).y - 2 * U)).toBeLessThan(1);
-    const titles = await Promise.all((await names.all()).map((n) => caps(n.locator('.card-title'))));
-    for (const [i, t] of titles.entries()) {
-      expect(Math.abs(t.x - second), `name ${i}: its left edge`).toBeLessThan(6);
-      expect(Math.abs(t.feet - t.top - U), `name ${i}: capitals a cell tall`).toBeLessThan(1.5);
-      expect(Math.abs(t.feet - (name.feet + i * 2 * U)), `name ${i}: its feet`).toBeLessThan(1.5);
-    }
-    // What waits: a slip under the repos, in line on the ground (it is not the piece in hand): no fill, no shadow.
-    const slip = app.main.getByRole('region', {name: 'Recent activity'});
-    expect(Math.abs((await at(slip)).x - second)).toBeLessThan(1);
-    expect(await slip.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow]; })).toEqual(['rgb(220, 217, 212)', 'none']);
-  }).toPass();
-  // Half a screen: the second piece does not fit beside the first, so it goes under it, at the desk's edge, two
-  // cells down, on the grid. Nothing of Home is out of sight sideways, and nothing scrolls along.
-  const under = async (W: number, H: number, piece: number) => {
-    await app.page.setViewportSize({width: W, height: H});
+  const {page, main} = app;
+  const entries = main.locator('.home-repos > :is(.card.repo, .card.new)');
+  await expect(entries).toHaveCount(4);
+  await expect(entries.last()).toHaveClass(/\bnew\b/);
+  const box = async (l: Locator) => (await l.boundingBox())!;
+  const sizes = [{width: 1440, height: 900}, {width: 768, height: 730}, {width: 390, height: 844}];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
     await expect(async () => {
-      const own = await at(app.main.locator('.home-own')), r = await at(repos), note = await at(app.home.todo);
-      expect(note.width).toBe(piece);
-      expect(Math.abs(r.x - 2 * U)).toBeLessThan(1);
-      expect(Math.abs(r.y - (own.y + own.height + 2 * U))).toBeLessThan(1);
-      expect((r.y - 2 * U) % U).toBeLessThan(1);
-      expect(await app.main.locator('.home-row').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
-      expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const note = await box(app.home.todo);
+      const repos = await box(main.getByRole('region', {name: 'Repos'}));
+      expect(note.x).toBe(size.width === 390 ? 24 : 48);
+      expect(note.width).toBe(size.width === 390 ? 336 : 624);
+      expect(note.height).toBeGreaterThanOrEqual(288);
+      if (size.width === 1440) expect(repos.x).toBeGreaterThan(note.x + note.width);
+      else expect(repos.y).toBeGreaterThanOrEqual(note.y + note.height);
+      const rows = new Map<number, number>();
+      for (const entry of await entries.all()) {
+        const at = await box(entry);
+        const top = Math.round(at.y);
+        const row = [...rows.keys()].find((y) => Math.abs(y - top) <= 2) ?? top;
+        rows.set(row, (rows.get(row) ?? 0) + 1);
+        expect(at.x).toBeGreaterThan(repos.x);
+      }
+      expect(Math.max(...rows.values())).toBeLessThanOrEqual(2);
+      if (size.width === 1440) expect([...rows.values()]).toEqual([2, 2]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(size.width);
     }).toPass();
-  };
-  await under(768, 730, PIECE);
-  // A phone: the same rule, a piece as wide as the window has whole cells for.
-  await under(390, 844, 13 * U);
+  }
+  await expect(app.home.todo).toHaveCSS('background-color', 'rgb(215, 197, 90)');
+  await expect(app.home.todo).toHaveCSS('box-shadow', /4px 4px 0px 0px$/);
 });
 
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
@@ -333,52 +304,41 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-  test('Home has the search Forge has, where Forge has it: on the band, in the repo last worked in, a line found opened in Forge there', async ({app}) => {
+  test('Home opens the real repo Search and the matching line in Forge', async ({app}) => {
     await app.rail.go('home');
-    // Named, there being no repos on Home's band to say which it searches.
-    const search = app.main.getByRole('searchbox', {name: 'Search hello'});
-    await expect(search).toBeVisible();
+    await expect(app.main.getByRole('searchbox')).toHaveCount(0);
     await app.page.keyboard.press('Control+k');
-    await expect(search).toBeFocused();
-    await search.fill('puts');
-    // What it finds drops as a sheet over Home, as Forge's does over its desk, a kind at a time.
-    const results = app.main.getByRole('region', {name: 'Search results'});
-    await expect(results.locator('.found-sec-head')).toHaveText([/^files\s*1$/]);
-    await results.getByRole('button', {name: /puts\("hello"\);/}).click();
+    const screen = app.page.getByRole('main', {name: 'Search', exact: true});
+    const query = screen.getByRole('searchbox');
+    await expect(query).toBeFocused();
+    await expect(screen.getByRole('combobox', {name: 'Search in'})).toHaveValue('hello');
+    await query.fill('puts');
+    await screen.getByRole('button', {name: /puts\("hello"\);/}).click();
     await expect(app.forge.editor('src/main.c')).toBeFocused();
     await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
   });
 });
 
-test("Home's band: one bar from the desk's edge on the row of the rail's first place, as wide as a piece: the door to the Remote, the terminal's key and the files', two cells each, edge to edge, and the search the rest; the files' key is Forge's", async ({app}) => {
+test('Home has no band or rail; its single Places key opens File and goes to the Remote', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
-  const tools = app.main.getByRole('group', {name: 'Tools'});
-  const term = await tools.getByRole('button', {name: 'Terminal'}).boundingBox(), files = await tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox();
-  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox(), bar = await tools.boundingBox(), door = await app.rail.door.boundingBox();
-  // The door: at the desk's edge (two cells in), two cells wide, as tall as a place of the rail and on its row. The
-  // band goes on from it to twenty-four cells from the desk's edge.
-  expect(door).toEqual({x: 48, y: first!.y, width: 48, height: first!.height});
-  expect(bar).toEqual({x: 96, y: first!.y, width: 22 * 24, height: first!.height});
-  // Its keys two cells wide, edge to edge on the grid's lines; the search to the bar's end.
-  for (const key of [term!, files!, search!]) {
-    expect(Math.abs(key.y - first!.y)).toBeLessThan(1);
-    expect(Math.abs(key.height - first!.height)).toBeLessThan(1);
-  }
-  expect([term!.x, term!.width, files!.x, files!.width]).toEqual([96, 48, 144, 48]);
-  expect(Math.abs(search!.x - 192)).toBeLessThan(1);
-  expect(Math.abs(search!.x + search!.width - (48 + 24 * 24))).toBeLessThan(1);
-  // Home's Files key opens the last repo's Forge and puts the document's actions under its Places key.
-  // It does not open a global Files panel or bring back a permanent Forge band.
-  await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
-  const menu = app.page.getByRole('menu', {name: 'README.md', exact: true});
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
-  await expect(app.forge.desk).toHaveAttribute('data-repo', 'notes');
-  await expect(app.forge.placesKey).toHaveAttribute('aria-expanded', 'true');
-  await expect(app.forge.tools).toBeHidden();
-  const under = (await app.forge.placesKey.boundingBox())!;
-  expect((await menu.boundingBox())!.y).toBeGreaterThan(under.y + under.height - 1);
+  const {page, main} = app;
+  const key = main.getByRole('button', {name: 'Places', exact: true});
+  const menu = main.getByRole('menu', {name: 'Places', exact: true});
+  await expect(page.getByRole('navigation', {name: 'Purposes', includeHidden: true})).toBeHidden();
+  await expect(page.locator('#door')).toBeHidden();
+  await expect(main.locator('.home-band')).toHaveCount(0);
+  await key.press('Enter');
+  await expect(menu.getByRole('menuitemradio', {name: 'Home'})).toBeFocused();
+  await menu.getByRole('menuitem', {name: 'File', exact: true}).click();
+  await expect(app.file.tree).toBeVisible();
+  await expect(app.file.name('notes')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(app.file.tree).toBeHidden();
+  await expect(key).toBeFocused();
+  await key.press('Enter');
+  await menu.getByRole('menuitem', {name: 'Remote', exact: true}).click();
+  await expect(page.locator('#page')).toHaveAttribute('data-place', 'remote');
 });
 
 test('what was written on Home and was not yet the core\'s when the page went is kept at the next start', async ({app}) => {
@@ -463,42 +423,30 @@ test('Home is a shot: its title keeps its size at any length, over lines on the 
     await app.home.title(item).press('Enter');
     await app.page.keyboard.press('Escape');
   }
-  const U = 24, NAME = 2 * U / .727;
-  const title = app.page.locator('#profile-name');
-  await title.click();
-  await app.page.keyboard.press('Control+a');
-  await app.page.keyboard.type('Augusta Ada King Lovelace');
-  await app.page.keyboard.press('Enter');
-  /** The title's lines: its size, how many, each line's capitals' feet, and where the counts stand under it. */
-  const lines = () => title.evaluate((el) => {
-    const cs = getComputedStyle(el), size = parseFloat(cs.fontSize), pitch = parseFloat(cs.lineHeight);
-    const range = document.createRange(); range.selectNodeContents(el);
-    const n = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
-    const first = el.getBoundingClientRect().top + (pitch + size) / 2 - .1245 * size;
-    return {size, pitch, n, feet: Array.from({length: n}, (_, i) => first + i * pitch), counts: document.querySelector('.identity > .counts')!.getBoundingClientRect().top};
-  });
+  const {page} = app;
+  const title = page.locator('#profile-name');
   for (const size of [{width: 1440, height: 900}, {width: 390, height: 844}]) {
-    await app.page.setViewportSize(size);
-    await expect(async () => {
-      const t = await lines();
-      // Two cells' capitals however long the name is; more than one line; each line's feet on the grid, the first on
-      // the second cell's foot; the counts a cell under the last.
-      expect(Math.abs(t.size - NAME), `the title at two cells at ${size.width}`).toBeLessThan(.01);
-      expect(t.n).toBeGreaterThan(1);
-      expect(t.pitch).toBe(3 * U);
-      for (const f of t.feet) expect(Math.abs(f - U * Math.round(f / U)), `a line's feet (${f}) on the grid`).toBeLessThan(1.5);
-      expect(Math.abs(t.feet[0]! - 5 * U)).toBeLessThan(1.5);
-      expect(Math.abs(t.counts - (t.feet.at(-1)! + U))).toBeLessThan(1.5);
-    }).toPass();
+    await page.setViewportSize(size);
+    await title.fill('Ada');
+    await title.press('Enter');
+    const short = await title.evaluate((el) => getComputedStyle(el).fontSize);
+    await title.fill('Augusta Ada King Lovelace');
+    await title.press('Enter');
+    await expect(title).toHaveText('Augusta Ada King Lovelace');
+    const layout = await title.evaluate((el) => {
+      const style = getComputedStyle(el), text = document.createRange();
+      text.selectNodeContents(el);
+      const bounds = el.getBoundingClientRect();
+      const lines = [...text.getClientRects()];
+      return {size: style.fontSize, lines: new Set(lines.map((r) => Math.round(r.top))).size,
+        fits: lines.every((r) => r.left >= bounds.left - 1 && r.right <= bounds.right + 1)};
+    });
+    expect(layout.size).toBe(short);
+    expect(parseFloat(layout.size)).toBeCloseTo(24 * (size.width === 390 ? 2.25 : 3) / .727, 1);
+    expect(layout.lines).toBeGreaterThan(1);
+    expect(layout.fits).toBe(true);
   }
-  // The eyeline: beside it, the first repo's name stands on the line the title's first line stands on, at half its size.
-  await app.page.setViewportSize({width: 1440, height: 900});
-  const repo = app.main.getByRole('region', {name: 'Repos'}).getByRole('group').first().locator('.card-title');
-  await expect(async () => {
-    const r = await repo.evaluate((el) => { const b = el.getBoundingClientRect(), s = parseFloat(getComputedStyle(el).fontSize); return {feet: b.bottom - .1245 * s, size: s}; });
-    expect(Math.abs(r.feet - 5 * U)).toBeLessThan(1.5);
-    expect(Math.abs(r.size * 2 - NAME)).toBeLessThan(.01);
-  }).toPass();
+  await page.setViewportSize({width: 1440, height: 900});
   // The subject's edge is whole: nothing on the note stands over its edge (an item's × inside it).
   const note = (await app.home.todo.boundingBox())!;
   for (const away of await app.home.todo.getByRole('button', {name: /^Delete /}).all()) {

@@ -10,7 +10,7 @@ import {answers, choosePart, SETTLE} from '../kit/common.ts';
 import {errorText} from '../../../api/errors.ts';
 import {takeOff} from '../../../device/space.ts';
 import {releaseHome} from '../../../shipto/lifecycle.ts';
-import {allSessions} from '../bench/sessions.ts';
+import {allSessions, stopPrompt} from '../bench/sessions.ts';
 import type {Context} from '../kit/context.ts';
 
 /** The person's name as written on Home; none written there, the one signed in with (the Remote's), as Home says it. */
@@ -41,6 +41,8 @@ export class Me {
   private pop: HTMLElement;
   private ctx: Context;
   private profile: () => Profile;
+  private readonly fill: () => void;
+  private borrowed: {anchor: HTMLElement; rail: HTMLElement} | null = null;
   /** The language list is open, in place of the language in use. */
   private choosing = false;
 
@@ -53,7 +55,7 @@ export class Me {
       const b = h('button', {type: 'button', class: 'pop-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label);
       if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
       // The menu goes, and the keyboard back to the face it came from, unless what was chosen takes it on (a field to write in).
-      if (run) b.addEventListener('click', () => { this.close(); this.button.focus(); run(); }); else b.setAttribute('disabled', '');
+      if (run) b.addEventListener('click', () => { this.back(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
     const group = (title: string, ...items: HTMLElement[]) =>
@@ -94,6 +96,7 @@ export class Me {
       });
       return b;
     };
+    this.fill = fill;
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
     // The profile saved (on Home, or from another device): the face on the rail is the new one at once.
@@ -104,7 +107,7 @@ export class Me {
       this.open(event.detail === 0);
     });
     this.element.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { this.close(); this.button.focus(); return; }
+      if (event.key === 'Escape') { this.back(); return; }
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       const items = [...this.pop.querySelectorAll<HTMLElement>('.pop-item:not([disabled])')];
       if (!items.length) return;
@@ -140,7 +143,7 @@ export class Me {
       const off = h('button', {type: 'button', class: 'button small-button'}, t('Remove from device')) as HTMLButtonElement;
       const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Sign out')) as HTMLButtonElement;
       const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
-      no.addEventListener('click', () => { this.close(); this.button.focus(); });
+      no.addEventListener('click', () => this.back());
       const said = h('div', {class: 'pop-said'}, h('p', {class: 'muted small'}, t('Repos, TODOs, and profile remain in this browser.')),
         h('p', {class: 'muted small'}, t('On shared computers, clear local data on exit. Data is saved on Remote and restores upon sign-in.')));
       const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Sign out')}, said, error, answers(off, yes));
@@ -153,15 +156,15 @@ export class Me {
         error.textContent = '';
         let gone = false;
         try { gone = await f(); } catch (e) { error.textContent = errorText(e); } finally { this.busy = false; off.disabled = yes.disabled = false; }
-        if (gone) { this.close(); this.button.focus(); } else if (!ask.contains(document.activeElement)) yes.focus();
+        if (gone) this.back(); else if (!ask.contains(document.activeElement)) yes.focus();
       };
       yes.addEventListener('click', () => void run(async () => { await signOut(); return true; }));
       off.addEventListener('click', () => void run(async () => {
         off.textContent = t('Removing from device…');
         // A Prompt holds its repo open: stopped first, as one leaving stops what they started.
-        for (const [, s] of allSessions()) if (s.running) s.stop();
         try {
-          const kept = await takeOff().finally(() => { off.textContent = t('Remove from device'); });
+          await Promise.all([...new Set(allSessions().map(([repo]) => repo))].map((repo) => stopPrompt(repo)));
+          const kept = await takeOff();
           if (!kept.length) { await signOut(); return true; }
           // What could not go stays, said with why: signed out, it would be there to whoever uses this browser next.
           said.replaceChildren(...kept.map(([what, why]) => h('p', {class: 'small'}, t('{what} retained: {why}', {what, why}))),
@@ -170,6 +173,7 @@ export class Me {
           return false;
         } finally {
           // Signed out, or staying signed in with what was kept: Home's settings are agreed again as they change.
+          off.textContent = t('Remove from device');
           releaseHome();
         }
       }));
@@ -204,10 +208,37 @@ export class Me {
     if (focus) this.pop.querySelector<HTMLElement>('.pop-item')?.focus();
   }
 
+  openFrom(anchor: HTMLElement) {
+    if (this.isOpen) this.close();
+    const rail = this.element.parentElement;
+    if (!rail) return;
+    this.borrowed = {anchor, rail};
+    this.element.setAttribute('data-called-from-places', '');
+    document.body.append(this.element);
+    this.fill();
+    this.open(true);
+  }
+
+  private back() {
+    const to = this.borrowed?.anchor ?? this.button;
+    this.close();
+    if (to.isConnected && !to.closest('[hidden], [inert]')) to.focus({preventScroll: true});
+  }
+
+  /** A page transition only dismisses the account panel that was called from its Places key. */
+  leavePlaces() {
+    if (this.borrowed && !this.busy) this.close();
+  }
+
   close() {
     this.veil.out(false);
     this.choosing = false;
     this.element.classList.remove('open');
     this.button.setAttribute('aria-expanded', 'false');
+    if (this.borrowed) {
+      const {rail} = this.borrowed; this.borrowed = null;
+      this.element.removeAttribute('data-called-from-places');
+      rail.append(this.element);
+    }
   }
 }

@@ -26,7 +26,6 @@ interface PaperRest {
 // A redraw or a return to a comparison keeps the view, not a cache of the diff or of a person's draft.
 const rests = new Map<string, PaperRest>();
 const MAX_RESTS = 64;
-const READ_ROWS = 12; // one head and eleven lines in the right column
 
 function restFor(key: string): PaperRest {
   const rest = rests.get(key) ?? {position: {top: 0, left: 0}, folds: new Map(), resume: new Map()};
@@ -71,6 +70,36 @@ function range(first: Cell, last: Cell): Cell[] {
 }
 const sameSide = (a: Cell, b: Cell) => a.row.file === b.row.file && a.ref.side === b.ref.side;
 
+/** Native scrollbar events target the scrollport. Only the bottom track takes the hand from the other thumb. */
+function scrollbarAcross(viewport: HTMLElement) {
+  if (!CSS.supports('selector(::-webkit-scrollbar)')) return;
+  let held: number | undefined;
+  const paint = (on: boolean) => viewport.toggleAttribute('data-scrollbar-across', on);
+  const onTrack = (e: PointerEvent) => {
+    if (e.target !== viewport || e.pointerType === 'touch') return false;
+    const {clientLeft, clientTop, clientWidth, clientHeight, offsetWidth, offsetHeight} = viewport;
+    if (viewport.scrollWidth <= clientWidth || offsetHeight <= clientTop + clientHeight) return false;
+    const r = viewport.getBoundingClientRect();
+    const x = (e.clientX - r.left) * offsetWidth / r.width - clientLeft;
+    const y = (e.clientY - r.top) * offsetHeight / r.height - clientTop;
+    return x >= 0 && x < clientWidth && y >= clientHeight && e.clientY < r.bottom;
+  };
+  viewport.addEventListener('pointermove', (e) => {
+    if (e.pointerId === held && e.buttons === 0) held = undefined;
+    if (held === undefined) paint(onTrack(e));
+  }, {passive: true});
+  viewport.addEventListener('pointerleave', () => { if (held === undefined) paint(false); });
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.button === 0 && onTrack(e)) { held = e.pointerId; paint(true); }
+  });
+  viewport.addEventListener('pointerup', (e) => {
+    if (e.pointerId === held) { held = undefined; paint(onTrack(e)); }
+  });
+  viewport.addEventListener('pointercancel', (e) => {
+    if (e.pointerId === held) { held = undefined; paint(false); }
+  });
+}
+
 /** The right column of the issue's paper. Its only scroller is this region. Its only fold is the file's name. */
 export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
   element: HTMLElement;
@@ -79,6 +108,8 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
   const rest = restFor(options.key);
   const element = h('div', {class: 'git-diff-paper'});
   const viewport = h('div', {class: 'git-diff-scroll', role: 'region', 'aria-label': t('Diff'), tabindex: '0'});
+  scrollbarAcross(viewport);
+  const fileList = h('div', {class: 'git-diff-files'});
   const marked = new Map(options.marks?.map((line) => [lineKey(line), line]));
   const linked = new Set(options.linked?.map(lineKey));
   const addresses = new Map<string, Cell>();
@@ -86,8 +117,8 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
   let pointer: (Stroke & {id: number}) | undefined;
   let keyboard: {first: Cell; base: Map<string, ReviewLine>} | undefined;
   let anchor: Cell | undefined;
-  let rowCount = 0;
   element.append(viewport);
+  viewport.append(files.length ? fileList : h('p', {class: 'git-diff-unread'}, t('No changes')));
 
   const position = (): Position => ({top: viewport.scrollTop, left: viewport.scrollLeft});
   const remember = () => { if (element.isConnected) rest.position = position(); };
@@ -139,6 +170,8 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
     rest.folds.set(file.path, open);
     file.fold.setAttribute('aria-expanded', String(open));
     file.body.hidden = !open;
+    if (viewport.hasAttribute('data-scrollbar-across') && viewport.scrollWidth <= viewport.clientWidth)
+      viewport.removeAttribute('data-scrollbar-across');
     if (!byHand) return;
     const where = rest.resume.get(file.path);
     if (open && where) scroll({top: file.section.offsetTop + where.top, left: where.left});
@@ -259,9 +292,7 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
     const section = h('section', {class: 'git-diff-file'}, head, body);
     const file: FileView = {path: f.path, section, head, fold, body, sides: {old: [], new: []}};
     const open = rest.folds.get(f.path) ?? index < 3;
-    const rowsOfFile = readable ? f.lines.length + (f.more ? 1 : 0) : 0;
-    rowCount += 1 + (index < 3 ? rowsOfFile : 0);
-    viewport.append(section);
+    fileList.append(section);
     body.hidden = !readable || !open;
     if (!readable) return;
     fold.setAttribute('aria-expanded', String(open));
@@ -297,8 +328,6 @@ export function diffPaper(files: readonly FileDiff[], options: PaperOptions): {
     }
     if (f.more) body.append(h('p', {class: 'git-diff-unread'}, tn('{n} more line', '{n} more lines', f.more)));
   });
-  if (!files.length) viewport.append(h('p', {class: 'git-diff-unread'}, t('No changes')));
-  element.style.setProperty('--git-diff-rows', String(Math.max(1, Math.min(READ_ROWS, rowCount))));
   const initial = rest.position;
   // The caller inserts our element immediately; restore after all scroll dimensions exist. An explicit link wins.
   let willReveal = false;

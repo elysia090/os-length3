@@ -1,5 +1,7 @@
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
+import {declarations, readSheet} from '../../build/styles/sheet.ts';
 import {atRest, pieceWidth, turnedTo} from './row.ts';
 
 // A row's numbers (DESIGN §6), every row's: Forge's files, Server's boards, Inbox's conversation.
@@ -45,17 +47,31 @@ test('a piece of 24 cells divides into 1, 2, 3, 4 and 6 columns with nothing ove
   assert.ok(48 + 24 * (10 + 2 + 24 + 2 + 24) + 12 > 1536);
 });
 
-test('the sheets are cut to the programme: no width of a sheet on a desk is outside 8, 12, 24 and 48 cells', async () => {
-  const {readFileSync} = await import('node:fs');
-  const sheet = (name: string) => readFileSync(new URL(`../styles/${name}.css`, import.meta.url), 'utf8');
-  const widthOf = (css: string, selector: string) => {
-    const at = css.indexOf(selector);
-    assert.ok(at >= 0, selector);
-    return Number(/(?:max-)?width: (?:min\()?calc\((\d+) \* var\(--u\)\)/.exec(css.slice(at, at + 900))?.[1]);
+test('the Home activity glass, side sheets and Inbox address track keep their exact cell widths', () => {
+  const style = (name: string, selector: string | RegExp, prop: string) => {
+    const css = readFileSync(new URL(`../styles/${name}.css`, import.meta.url), 'utf8');
+    const values = readSheet(css).nodes.flatMap((rule) => rule.kind === 'rule'
+      && (typeof selector === 'string' ? rule.selector === selector : selector.test(rule.selector))
+      ? declarations(rule.body).filter((d) => d.prop === prop).map((d) => d.value) : []);
+    assert.equal(values.length, 1, `${name}.css ${selector} must set ${prop} once`);
+    return values[0];
   };
-  assert.equal(widthOf(sheet('home'), '.home-waits > .lately {'), 12);
-  assert.equal(widthOf(sheet('server'), '.slide-track > .server-side { display: grid;'), 8);
-  assert.equal(widthOf(sheet('inbox'), '.inbox-index {'), 12);
-  assert.equal(widthOf(sheet('git-desk'), '.git-desk > .git-side {'), 8);
-  assert.equal(widthOf(sheet('page'), '.page:not(.page-work)'), 48);
+  const cells = (n: number) => `calc(${n} * var(--u))`;
+  // The 15-cell activity glass follows its beside column. The two smaller Home sheets keep their own measure.
+  assert.equal(style('home', '.home-waits > .lately', 'width'), cells(15));
+  assert.equal(style('home', '.home-waits > .plugins', 'width'), cells(12));
+  assert.equal(style('home', '.home-waits > .agent-cards', 'width'), cells(12));
+  // The Server index used to stand in a row of sheets. It still caps at eight cells, with a cell clear of the
+  // centered paper; the available width can be smaller, so do not measure it as a fixed sheet.
+  assert.equal(style('server-desk', '.server-sidebar', 'width'),
+    `min(${cells(8)}, calc(var(--server-paper-left) - var(--server-edge) - var(--u)))`);
+  assert.equal(style('git-desk', '.git-desk > .git-side', 'width'), cells(8));
+  assert.equal(style('page', /^\.page:not\(\.page-work\)/, 'max-width'), cells(48));
+
+  // The Inbox index is no longer a boxed sheet; its nine-cell track shares the grid with an open letter.
+  const inbox = '.page.page-inbox > .inbox-shell';
+  assert.equal(style('inbox', inbox, '--inbox-index-width'), cells(9));
+  assert.equal(style('inbox', inbox, '--inbox-gap'), cells(2));
+  assert.equal(style('inbox', '.inbox-page', 'grid-template-columns'), 'var(--inbox-index-width) var(--inbox-paper-width)');
+  assert.equal(style('inbox', '.inbox-page', 'column-gap'), 'var(--inbox-gap)');
 });

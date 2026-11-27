@@ -15,10 +15,10 @@ import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
-import {sessions, type Prompt, type Run} from './sessions.ts';
+import {allSessions, forgetPrompt, keepPrompt, sessionIfAny, type Prompt, type Run, type TerminalSide} from './sessions.ts';
 import {Consumption, type ConsumptionResult} from './consumption.ts';
 
-// A shell per repo: in a browser, why's root (its BusyBox sh, and every other
+// Independent shells for the two positions of a repo: in a browser, why's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
 // machine. Sessions outlive page switches: the workbench re-attaches the same element. A
 // session only shows output (output.ts); what is typed comes from the prompt box through
@@ -158,6 +158,8 @@ export class Session implements Prompt {
   /** How the last stop went, on the root: what it held, and how long until none was left. */
   stopped: Stopped | null = null;
   private native: Awaited<ReturnType<typeof promptOpen>> | null = null;
+  private nativeOpening: Promise<void> | null = null;
+  private nativeClosing: Promise<void> | null = null;
   /** What the root's processes hold, read every 3 s while the page is in view. */
   private measuring: {stop(): void} | null = null;
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
@@ -186,10 +188,13 @@ export class Session implements Prompt {
    * they run do; never the Agent's own (agentSessionFor), at whose keys nobody is, so nothing a command it chose prints
    * (a file of the repo it read, an issue's words) changes what the person pastes next. */
   private readonly clipboard: boolean;
+  private readonly side: TerminalSide | null;
+  private warmed = false;
 
-  constructor(repo: string, {clipboard = true}: {clipboard?: boolean} = {}) {
+  constructor(repo: string, {clipboard = true, side = null}: {clipboard?: boolean; side?: TerminalSide | null} = {}) {
     this.repo = repo;
     this.clipboard = clipboard;
+    this.side = side;
     // Nothing to say until it is written to: that starts it.
     this.status = h('p', {class: 'muted small'});
     // A Prompt that ended says so in the language chosen since, as the rest of the page does.
@@ -205,10 +210,20 @@ export class Session implements Prompt {
 
   /** Started, once: what is written to it starts it, never its being shown. */
   begin() {
-    if (this.#begun) return;
+    if (this.#begun || this.ended) return;
     this.#begun = true;
     this.sayStarting();
     void this.start();
+  }
+
+  /** Rehearse only once, and never begin a shell merely by revealing it. */
+  warm() {
+    if (this.warmed || this.begun || this.ended) return;
+    this.warmed = true;
+    void rootHere().then(here => {
+      if (!here.native && !this.begun && !this.ended)
+        void executionRoot.load().then(webroot => { if (!this.begun && !this.ended) readyNext(webroot); }, () => {});
+    }, () => {});
   }
 
   /** "Starting…" said, if the shell has not said its first line in STARTING_SAID. */
@@ -511,9 +526,11 @@ export class Session implements Prompt {
 
   private async start() {
     try {
-      if ((await rootHere()).native) await this.startNative(); else await this.startWebroot();
+      const here = await rootHere();
+      if (this.ended) return;
+      if (here.native) await this.startNative(); else await this.startWebroot();
     } catch (e) {
-      // Said short at the Prompt's foot; why is the line's title, there when asked for, not a sentence beside the switch.
+      if (this.ended) return;
       const why = errorText(e);
       this.end(() => t('Failed to start'), why);
     }
@@ -525,11 +542,12 @@ export class Session implements Prompt {
    * the status saying how far it is (Runtime fetches it ahead, and chooses another).
    */
   private async startNative() {
-    if (await this.startRoot()) return;
+    if (await this.startRoot() || this.ended) return;
     await rootFetch((got, of, retry) => {
+      if (this.ended) return;
       this.status.textContent = retry ? t('{why}; resuming from breakpoint', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
     });
-    if (await this.startRoot()) return;
+    if (this.ended || await this.startRoot()) return;
     throw new Error(t('No root environment on device; install via Runtime'));
   }
 
@@ -537,17 +555,39 @@ export class Session implements Prompt {
   private async startRoot(): Promise<boolean> {
     const root = await rootStatus();
     if (!root?.current) return false;
-    this.native = await promptOpen(this.repo, {
-      output: (text) => { this.activity.heard = Date.now(); this.received(text); },
-      exit: (code) => { if (this.live) this.end(() => t('Exited with code {code}', {code}), '', true); },
+    if (this.ended) return true;
+    const open = this.openRoot();
+    this.nativeOpening = open;
+    try { await open; } finally { if (this.nativeOpening === open) this.nativeOpening = null; }
+    return true;
+  }
+
+  private async openRoot() {
+    let exited: number | null = null;
+    const native = await promptOpen(this.repo, {
+      output: (text) => { if (!this.ended) { this.activity.heard = Date.now(); this.received(text); } },
+      exit: (code) => { exited = code; if (this.live) this.end(() => t('Exited with code {code}', {code}), '', true); },
     });
+    if (this.ended || exited !== null) {
+      // A stop while the IPC id was in flight still owns the shell it created.
+      try {
+        if (exited === null) {
+          this.stopped = await native.close();
+          if (this.stopped.left) {
+            this.end(() => t('The Prompt has processes remaining'));
+            throw new Error(t('The Prompt has processes remaining'));
+          }
+        } else if (!this.ended) this.end(() => t('Exited with code {code}', {code: exited!}), '', true);
+      } finally { native.forget(); }
+      return;
+    }
+    this.native = native;
     this.on = 'root';
     this.live = true;
     this.tell();
     this.status.textContent = '';
     void this.measure();
     this.measuring = every(3000, () => this.measure());
-    return true;
   }
 
   /** In a browser: why's root in a Worker, given the repo's copy. */
@@ -670,17 +710,23 @@ export class Session implements Prompt {
    * then does it say so, and the promise is kept once it has.
    */
   stop(): Promise<void> {
-    if (!this.native) { this.end(() => t('Stopped'), '', true); return Promise.resolve(); }
-    // On the root: stopped only once the host shows none of its processes left.
+    if (this.nativeClosing) return this.nativeClosing;
+    if (!this.native) {
+      if (this.stopped?.left) return Promise.reject(new Error(t('The Prompt has processes remaining')));
+      if (!this.ended) this.end(() => t('Stopped'), '', true);
+      return this.nativeOpening ?? Promise.resolve();
+    }
+    // On the root: a failed IPC is not a successful stop.
     const n = this.native;
-    return n.close().then((s) => {
+    return this.nativeClosing = n.close().then((s) => {
       this.stopped = s;
       this.end(() => {
         const back = s.before.memory ? t('Freed {size}', {size: bytes(s.before.memory)}) : '';
         return s.left ? tn('Stopping ({n} process remaining)', 'Stopping ({n} processes remaining)', s.left)
           : back ? t('Stopped (freed {back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped');
       }, '', true);
-    }, () => this.end(() => t('Stopped'), '', true));
+      if (s.left) throw new Error(t('The Prompt has processes remaining'));
+    }, (err) => { if (!this.ended) throw err; }).finally(() => { this.nativeClosing = null; });
   }
 
   /** While a line runs, say what it is doing, once it has taken a moment (activity.ts). */
@@ -743,15 +789,17 @@ export class Session implements Prompt {
     return true;
   }
 
-  /** A new shell for this repo in this place. */
+  /** Restart only this side; the other shell and its view are not replaced. */
   restart() {
+    if (this.restarting) return;
     this.restarting = true;
-    if (!this.ended) this.stop();
-    sessions.delete(this.repo);
-    // Started again on purpose: the new one starts now. Whoever showed this one hears that another has taken its place.
-    const next = sessionFor(this.repo);
-    next.begin();
-    switchOver(this.element, next.element, () => this.tell());
+    void this.stop().then(() => {
+      if (this.side ? !forgetPrompt(this.repo, this.side, this) : agents.get(this.repo) !== this) return;
+      if (!this.side) agents.delete(this.repo);
+      const next = this.side ? sessionFor(this.repo, this.side) : agentSessionFor(this.repo);
+      next.begin();
+      switchOver(this.element, next.element, () => this.tell());
+    }, (err) => { this.restarting = false; this.status.textContent = errorText(err); });
   }
   /** Started again: its own ending is not shown going dark, the new one comes at once. */
   private restarting = false;
@@ -775,6 +823,7 @@ export class Session implements Prompt {
     this.said = message;
     this.why = why;
     this.activity.end();
+    clearTimeout(this.startingSaid);
     this.unwatch?.();
     this.unwatch = null;
     this.unhear?.();
@@ -833,15 +882,15 @@ if (typeof addEventListener === 'function') addEventListener('keydown', () => {
   const now = performance.now();
   if (now - typedAt < 400) return;
   typedAt = now;
-  for (const s of [...sessions.values(), ...agents.values()]) if (s instanceof Session) s.typing();
+  for (const s of [...allSessions().map(([, prompt]) => prompt), ...agents.values()]) if (s instanceof Session) s.typing();
 }, {capture: true, passive: true});
 
 /** The repo's session, made if it has none (made, it is not started: writing to it starts it). */
-export function sessionFor(repo: string): Session {
-  const s = sessions.get(repo);
+export function sessionFor(repo: string, side: TerminalSide = 'left'): Session {
+  const s = sessionIfAny(repo, side);
   if (s instanceof Session) return s;
-  const made = new Session(repo);
-  sessions.set(repo, made);
+  const made = new Session(repo, {side});
+  keepPrompt(repo, side, made);
   return made;
 }
 
@@ -860,11 +909,8 @@ export function agentSessionFor(repo: string): Session {
  * in a browser) is read ahead meanwhile, and a Worker readied with it (readyPrompt), so the first line written waits
  * for neither, and holds no repo.
  */
-export function terminalFor(repo: string): HTMLElement {
-  const session = sessionFor(repo);
-  // (Not once it has begun: it made its own Worker, and another made beside it now only takes from its start.)
-  void rootHere().then((here) => {
-    if (!here.native) void executionRoot.load().then((webroot) => { if (!session.begun) readyNext(webroot); }, () => { /* said by the Prompt that starts, if it fails again there */ });
-  });
+export function terminalFor(repo: string, side: TerminalSide = 'left'): HTMLElement {
+  const session = sessionFor(repo, side);
+  session.warm();
   return session.element;
 }

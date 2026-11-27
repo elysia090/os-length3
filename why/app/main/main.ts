@@ -34,6 +34,7 @@ import {drawing} from '../ui/whole.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
+import {SearchTrail} from './search-trail.ts';
 
 const PURPOSE_KEY = 'why.os.purpose';
 const REPO_KEY = 'why.os.repo';
@@ -95,13 +96,27 @@ function brought(id: PurposeId): Promise<void> | null {
 let openRepo = load(REPO_KEY);
 /** The file Forge's center is reading. */
 let readingPath: string | null = null;
+const searchTrail = new SearchTrail({
+  surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
+  files: repo => forgeOf?.searchPaths(repo) ?? [],
+  restore(repo, place) {
+    if (repo && place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
+  },
+  open(repo, path, line) {
+    searchTrail.leave(false);
+    // Even in Forge, opening a match is a new step. Back can read this same search again.
+    if (current === 'forge') history.pushState({place: 'forge'}, '');
+    openRepoFrom(document.activeElement, repo, path, true, undefined, line, undefined, true);
+  },
+  name: () => named(),
+});
 /**
  * `name` opened in Forge (see Context.openRepo), `keyboard` where the keyboard was when it was asked: read then, not
  * once Forge's code has come, so a keyboard put elsewhere meanwhile is not taken back (forge.ts revealNext).
  */
-function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined) {
+function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined, quiet = false) {
   const bringing = brought('forge');
-  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried)); return; }
+  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried, quiet)); return; }
   const f = forgeOf!;
   if (current === 'forge' && f.showInForge(name, path, write, line)) return;
   ctx.remember(name);
@@ -110,7 +125,7 @@ function openRepoFrom(keyboard: Element | null, name: string, path: string, writ
   const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
     : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
   pressedOn = null;
-  select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
+  select('forge', quiet || !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
     340, '', 40, grownFrom?.isConnected ? carried : undefined));
 }
 
@@ -123,7 +138,25 @@ const ctx: Context = {
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
-  morePlaces(anchor, tools) { if (isWorkPage(current)) openMorePlaces(anchor, tools); },
+  searchRepo(repo, origin, rejoin) {
+    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime'] as const).some((desk) => current === desk)) return;
+    ++asked;
+    searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
+  },
+  placeCommands(omit) {
+    return [
+      ...RAIL.filter(p => p.id !== 'file' && !omit.includes(p.id)).map(({id, label}) => ({
+        label,
+        onPress: id !== 'plugin',
+        run: (anchor: HTMLElement) => {
+          if (id === 'plugin') togglePlugins(anchor);
+          else void select(id);
+        },
+      })),
+      ...((current === 'home' || current === 'runtime') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
+      {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
+    ];
+  },
   get repo() { return openRepo; },
   get leftOff() {
     try {
@@ -165,6 +198,33 @@ scrollbars();
 // once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
 const worn = () => { wear(inEffect()[LOOK]); };
 onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
+function pluginKey(anchor?: HTMLElement) {
+  // A choice made on another desk leaves its corner behind; that desk's key may still be kept, but out of sight.
+  if (anchor?.isConnected && !anchor.closest('[inert]') && anchor.getClientRects().length) return anchor;
+  return $('page').querySelector<HTMLElement>('.home-portrait .forge-places-key') ?? tabs.get('plugin');
+}
+
+function togglePlugins(anchor: HTMLElement) {
+  if (current !== 'home') {
+    // Forge and Git are all desk now. Home has the area, even when there is nothing installed to put in it.
+    void select('home');
+    setPluginsOpen(true);
+  } else setPluginsOpen(!pluginsOpen());
+  pluginKey(anchor)?.focus({preventScroll: true});
+}
+
+// On the key or in the opened area, Escape puts the area away and returns to the visible way in.
+// When the Places menu itself is open, its capturing Escape closes the menu first.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented || current !== 'home' || !pluginsOpen()) return;
+  const at = event.target, key = pluginKey();
+  const area = $('page').querySelector('.home-portrait .plugins:not([hidden])');
+  if (!(at instanceof Node) || !(key?.contains(at) || area?.contains(at))) return;
+  event.preventDefault();
+  setPluginsOpen(false);
+  key?.focus({preventScroll: true});
+});
+
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
@@ -180,21 +240,11 @@ function railButton(id: PurposeId): HTMLButtonElement {
     // page drawn takes that answer (servers.ts), not waiting on one of its own.
     button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
   } else if (id === 'plugin') {
-    // The plug opens the plugin area, and closes it, where there is one: over what waits on Home, at the top of Git's
-    // pane; elsewhere (Forge is all desk, and has none) it opens it on Home. It says the area is out only where the
-    // area is: on another page it is kept for coming back, not out. Escape on the plug puts it away, as Escape does
-    // File's tree.
-    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'git' || current === 'home')));
+    // The area is out only on Home; on another page it is kept for coming back.
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && current === 'home'));
     plugState();
     onPlugins(() => plugState());
-    button.addEventListener('click', () => {
-      const there = current === 'git' || current === 'home';
-      if (!there) select('home');
-      setPluginsOpen(!there || !pluginsOpen());
-    });
-    button.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }
-    });
+    button.addEventListener('click', () => togglePlugins(button));
   } else {
     // A place in the rail is a link to a page, the one shown marked current; File and Server open over it. Pressed
     // with a mouse it goes as the button goes down, as a browser's tab does: on the click, the page stood still for
@@ -251,7 +301,8 @@ let asked = 0;
 function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlace): Promise<void> {
   const bringing = brought(id), mine = ++asked;
   if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped, place); });
-  closeMorePlaces(false);
+  searchTrail.leave(false);
+  me.leavePlaces();
   if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
   stopStage($('page'));
@@ -269,10 +320,20 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
  * page to send to another, and what the address carries is asked once (an invitation, a key) and taken out.
  */
 window.addEventListener('popstate', (event) => {
-  const was = (event.state as {place?: unknown} | null)?.place;
-  if (typeof was !== 'string' || !opened) return;
-  const id = restorePurpose(was);
-  if (id !== current) void select(id, false, true);
+  const state = event.state as {place?: unknown; search?: unknown} | null;
+  if (typeof state?.place !== 'string' || !opened) return;
+  const id = restorePurpose(state.place), search = searchTrail.step(state.search);
+  if (search === null) searchTrail.leave(id === current);
+  if (id === current) {
+    if (search !== null) searchTrail.enter(search);
+  } else {
+    // Git is redrawn after a result opens Forge; use the desk that actually started Search, not the result's repo.
+    const origin = search !== null && id === 'git' ? searchTrail.origin(search) : null;
+    if (origin && origin !== openRepo) ctx.remember(origin);
+    void select(id, search !== null, true).then(() => {
+      if (search !== null && current === id && history.state?.search === search) searchTrail.enter(search);
+    });
+  }
 });
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
@@ -317,7 +378,11 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   document.body.classList.toggle('work-places', isWorkPage(id));
   // A step in the window's history: the first place the OS opens on is the step it is at (read again after a reload,
   // it is that one still); every other place gone to, a step on from it (unless Back or Forward came to it).
-  if (first) history.replaceState({...(history.state as object | null), place: id}, '');
+  if (first) {
+    const state = {...(history.state as {search?: unknown} | null), place: id};
+    delete state.search; // Searches are private to this live window.
+    history.replaceState(state, '');
+  }
   else if (from !== id && !stepped) history.pushState({place: id}, '');
   for (const [tabId, tab] of tabs) {
     // (A place's far side is in that place: its icon is the one lit.)
@@ -326,7 +391,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (id === 'home' || id === 'runtime' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();
@@ -349,7 +414,7 @@ function railOpening() { document.documentElement.classList.remove('opening'); }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
 const named = () => {
-  document.title = `${t(purpose(current).label)} · why*`;
+  document.title = `${t(searchTrail.open ? 'Search' : purpose(current).label)} · why*`;
   // The app's window is named the same in the host's window list (a browser's tab already is); not renamed, it keeps the OS's name.
   void setWindowTitle(document.title).catch(() => {});
 };
@@ -402,35 +467,6 @@ $('rail-me').append(me.element);
 
 $('rail-tabs').append(...RAIL.map((p) => railButton(p.id)));
 
-// On a work desk the same rail and personal controls are brought out by More Places, not by a second router.
-const forgeRail = document.querySelector<HTMLElement>('body > .rail')!;
-const forgeTools = h('div', {class: 'forge-route-tools'});
-forgeRail.append(forgeTools);
-let forgeAnchor: HTMLElement | null = null;
-function openMorePlaces(anchor: HTMLElement, tools: readonly {label: string; run(): void}[]) {
-  forgeAnchor = anchor;
-  forgeTools.replaceChildren(...tools.map(({label, run}) => {
-    const key = h('button', {type: 'button', class: 'forge-menu-item'}, label);
-    key.addEventListener('click', () => { closeMorePlaces(); run(); });
-    return key;
-  }));
-  document.body.classList.add('forge-routes');
-  forgeRail.querySelector<HTMLElement>('.rail-item')?.focus({preventScroll: true});
-}
-function closeMorePlaces(back = true) {
-  if (!forgeAnchor) return;
-  const anchor = forgeAnchor; forgeAnchor = null;
-  document.body.classList.remove('forge-routes');
-  if (back && anchor.isConnected && !anchor.closest('[hidden]')) anchor.focus({preventScroll: true});
-}
-document.addEventListener('pointerdown', (event) => {
-  const at = event.target as Node;
-  if (!forgeRail.contains(at) && !fileTree.element.contains(at)) closeMorePlaces(false);
-});
-document.addEventListener('keydown', (event) => {
-  if (!forgeAnchor || event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
-  event.preventDefault(); closeMorePlaces();
-});
 // Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
 // off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
 const tagAt = (e: Event) => {
@@ -507,6 +543,7 @@ onReach(() => {
 onConnection(() => {
   void look();
   const now = whoIsIn(), same = now !== null && now === wasIn && !!connection()?.user;
+  if (wasIn !== now) searchTrail.forget();
   wasIn = now;
   if (current === 'remote') me.paint(); else if (opened && !same) void render();
 });

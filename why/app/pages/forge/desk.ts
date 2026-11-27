@@ -386,6 +386,13 @@ export class Desk {
   /** Places measured again (a piece grew or shrank): the pieces go where they now belong, the desk with them. */
   relayout() { this.#relay(); }
 
+  /** A companion gave the viewport back. Keep the previously seen position, including on the next resize notice. */
+  restoreTurn(left: number) {
+    this.#pressed = true;
+    this.#relay();
+    this.#go(left, false);
+  }
+
   /** The pieces to their places, the desk turned to the one in hand: at once (or, on its way, going on to where it now
    * goes), or gliding there (`glide`: the desk changed under it, a piece taken off). */
   #relay(glide = false) {
