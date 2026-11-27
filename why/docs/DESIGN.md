@@ -167,8 +167,8 @@ edge) and the window travels between them.
 
 One world, and the window looks at it.
 
-- **Down: the places.** The places lie one under another in the order of the rail (§4). To go to a place further
-  down the rail is to go down.
+- **Along: the places.** The places lie side by side in the order of the rail (§4), left to right. The rail and
+  Places list keep their vertical arrangement; going to another screen moves the world sideways.
 - **Along, past the row: a place's far side.** Some pages are not places of their own but the far side of one: the
   same thing seen from its other side (a work written, then recorded; what is one's own here, then where it is kept;
   where many talk, then what was said to one). A far side is a whole screen, a step along from its place, reached
@@ -189,7 +189,8 @@ cells).
 
 **What is out of sight is known.** Because the desk rests only with a piece at its edge (§6) and the places lie in
 the rail's order, what is past any edge of the window follows from what is in it: the next piece starts a piece's
-width and two cells along; the place below is the next one down the rail.
+width and two cells along; the next place to the right is the next one down the rail, with a far side beside its
+own place.
 
 ### The window is a camera
 
@@ -200,7 +201,7 @@ frame, kept as rules here:
 | The film-maker says | Here |
 |---|---|
 | One lens and one camera height for a whole film (Ozu kept his camera low and level in every shot), so that a cut is a graphic match | **One lens, straight down.** The world is drawn at one scale: a cell is 24 px in every place and at every width. Nothing at rest is drawn at a size the programme does not have (§3): a name with no room at its size breaks over lines, takes the programme's next size down, or is not shown; it is never fitted to its room. Nothing is turned or seen in perspective but a mark that points. The window looks straight down at a desk, as a flat lay is shot: what lies there is square to the frame, on its grid, at one spacing. |
-| A horizon kept at one height from shot to shot | **One horizon.** Every place hangs from the frame's lines: the world's first row at y = 48 (a sheet's top, a piece's name), a piece's top at 72, every edge on a line of the grid (§3). So going down the rail the frame's architecture does not move; only what is on it changes. |
+| A horizon kept at one height from shot to shot | **One horizon.** Every place hangs from the frame's lines: the world's first row at y = 48 (a sheet's top, a piece's name), a piece's top at 72, every edge on a line of the grid (§3). So when going to another place the frame's architecture does not move; only what is on it changes. |
 | Separation: one subject, picked out from what is behind it by light and focus, everything else graded down (Barr's "gradation of emphasis", written of CinemaScope) | **One subject in focus.** At every rest one thing casts the shadow and is in focus: the hand's piece, a place's sheet, or what was called up in front, behind which the world is out of focus, its shadow with it. The shadow is the one light's: 12 px right and down (§3). The rest is graded by fill, ink and size (§5). |
 | The frame belongs to the camera, not to the scene | **The frame is never in the scene.** The rail and the band are the camera's instruments: never out of focus, never under what is called up, never moved (§2). |
 | Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, or at the door, at the frame's top left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
@@ -210,7 +211,7 @@ frame, kept as rules here:
 | Look room: the space ahead of a subject is on the side it faces or moves towards | **The row is ahead.** The desk rests with a piece at its left edge, and the subject is that piece unless it was pressed where it lay: so it has the row's next before it, to the right, the way the row runs and the way a far side comes in (§6, §8). The line being written has the sheet's paper before it (§10, Forge at work). |
 | Negative space is part of the composition (a lone figure against an empty sky) | **The ground is the negative space.** A short piece is as tall as what is on it and is not stretched to fill the frame; the desk under it is the desk, one field with nothing set in it, as a flat lay leaves its surface bare. A frame round nothing is no way to fill one (§5). |
 | The camera moves only when something motivates it, and a move ends on a composed frame | **A move is asked, and lands on a shot.** The world moves only for what the hand asked (§8), and every move ends at a rest where each rule here holds. |
-| The 180° line: screen direction is kept from shot to shot | **Directions never reverse.** Down is further down the rail; along is a far side, or the row's next; the world never goes the other way for the same thing (§2, §8). |
+| The 180° line: screen direction is kept from shot to shot | **Directions never reverse.** Right is further down the rail, a far side or the row's next; the world never goes the other way for the same thing (§2, §8). |
 
 Each is measured at every rest of every place, at four widths (`PLACES.md`, D).
 
@@ -836,10 +837,10 @@ its work is trusted more than a short one that shows nothing.
 
 **Three moves, and only these.**
 
-1. **The world up or down, or along:** to another page. Down or up to another place; along to a place's far side,
-   and back along from it. The page left stays in sight as it was and goes out the way the world went by; the page
-   come to follows it at one distance; the dots go with them. The way is the window's height in whole cells,
-   `24 · round(H / 24)`, or along, its width, `24 · round(W / 24)`. The frame stays.
+1. **The world sideways:** to another page. A later place or a place's far side comes from the right; the way back
+   is the opposite. The page left stays in sight as it was and goes out the other edge; the page come to follows it
+   at one distance; the dots go with them. The way is the window's width in whole cells, `24 · round(W / 24)`. The
+   frame stays.
 2. **The desk along its row:** to another piece (§6). The piece left stays as it was in the hand (its fill, its
    edge, its shadow, its words) until the desk is at rest, and the piece gone to is in the hand from the press: what
    moves is seen from the first frame. (Put down at the press, the one piece in the hand's light was the one gone to,
@@ -952,11 +953,11 @@ four ways:
 | **world** | the plane under the frame, `[48, W] × [48, H]`: the desk, the places down it, their far sides along | film's field | measured |
 | **ground** | the world's colour with a dot a cell: what is not anything | squared paper | rendered |
 | **frame** | the rail's column and the band's row, 48 each, the camera's own: quiet, fixed, never in the scene | film's frame line; safe action | measured |
-| **place**, **far side** | what the rail goes to, down; its other page, along through the door | — | given |
+| **place**, **far side** | what the rail goes to, sideways; its other page through the door | — | given |
 | **piece**, **sheet** | a thing with something in it lying on a desk, its edges on the grid; a piece of paper (paper, corner 10) | stationery | measured |
 | **row** | pieces along from the desk's edge, `x(n) = n(W + G)`; a piece's place is its number | a line of words | measured |
 | **rest** | the world still, a piece at the desk's edge: a shot | film's composed frame | measured |
-| **move** | one of three (the world down or along, the desk along, in front and back), by one law | the camera move | measured |
+| **move** | one of three (the world sideways, the desk along, in front and back), by one law | the camera move | measured |
 | **cut** | the subject changing with nothing moving (a piece taken where it lies; the band's name another) | the cut | measured |
 | **take**, **in hand** | the act that makes a piece the subject (a press, a key, a find); the one piece being worked in | picking up | measured |
 | **subject** | the one thing with the shadow at a rest, eight times any other's weight | film's subject in focus | rendered |

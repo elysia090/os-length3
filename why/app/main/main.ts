@@ -314,7 +314,7 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
 /**
  * The places gone to are the window's history, as a link's are (a place in the rail is one): Back, however it is
  * asked (the browser's, the mouse's side button, a phone's edge, Alt+← or ⌘[), goes to the place before, and Forward
- * to the one after, with the world's move the way the rail lies, as any going there does (DESIGN §14, back). Each
+ * to the one after, with the world's move the way the places lie, as any going there does (DESIGN §14, back). Each
  * place gone to is one step; the place one is at, pressed, is none. Before, the places were not in the history: Back
  * left the OS altogether, from wherever it had been gone through. The address is not changed by it: a place is not a
  * page to send to another, and what the address carries is asked once (an invitation, a key) and taken out.
@@ -357,12 +357,10 @@ function readAgain(id: PurposeId) {
 
 function draw(id: PurposeId, quiet: boolean, stepped = false) {
   const from = current;
-  // To another place: the world goes up or down to it, the way it lies along the rail (the place left kept in sight
-  // as it was, from before anything of it changes).
-  // (To a place's far side, or back from it: along, not down. The two are one place.)
-  const along = placeOf(from) === placeOf(id);
-  const arrived = !opened || quiet || from === id ? null
-    : along ? travel($('page'), isFar(id) || id === 'git' ? 1 : -1, 'x') : travel($('page'), Math.sign(depth(id) - depth(from)) || 1);
+  // Every other screen is a step sideways. The rail still gives their order, with a place's far side
+  // (and Git beside Forge) to the right of it. The place left is kept as it was before anything changes.
+  const direction = Math.sign(depth(id) - depth(from)) || (isFar(id) || id === 'git' ? 1 : -1);
+  const arrived = !opened || quiet || from === id ? null : travel($('page'), direction);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -402,7 +400,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   // The first content surface arrives whole, once it is (render): without delaying the frame or staggering its data.
   if (first && !quiet) { void shown.then(() => stage($('page'), 1)); return; }
   if (from !== id) {
-    // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
+    // The rail's ink says where the window is. The page comes from its side of the world.
     const tab = tabs.get(placeOf(id));
     glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
     arrived?.();

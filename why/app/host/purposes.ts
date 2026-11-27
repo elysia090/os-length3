@@ -1,7 +1,6 @@
-// The rail lists the places, top to bottom, one after another two cells apart, and the world lies in that order: to
-// go to a place further down the rail is to go down (ui/glide.ts travel). The order is how far a place is from the
-// person, nearest first: Home (mine), Forge (the work), Server (people), Runtime (the machine); then what is not a
-// place: File and the plug, called up in front of whatever place is shown, and +, which makes a repo.
+// The rail lists the places, top to bottom; the world lies left to right in that same order (ui/glide.ts travel).
+// The order is how far a place is from the person, nearest first: Home (mine), Forge (the work), Server (people),
+// Runtime (the machine). Then come File and the plug, called up in front of a place, and +, which makes a repo.
 //
 // Git and Forge are peers on the same work level; both have the Places key. The Remote and Inbox are still each a
 // place's far side, reached by the door at the head of that place: Home's repos where they are kept and Server's
@@ -71,7 +70,7 @@ export const isFar = (id: PurposeId): boolean => id in FAR;
 /** Rail order, top to bottom, as keyboard navigation walks it: the places, then what is not a place. */
 export const RAIL: readonly Purpose[] = [...PURPOSES.filter((p) => !(p.id in FAR) && p.id !== 'git'), NEW_REPO];
 
-/** Where a page lies in the world, down from Home: its place's number on the rail. */
+/** Where a page lies in the world, to the right of Home: its place's number on the rail. */
 export const depth = (id: PurposeId): number => RAIL.findIndex((p) => p.id === placeOf(id));
 
 export const DEFAULT_PURPOSE: PurposeId = 'home';

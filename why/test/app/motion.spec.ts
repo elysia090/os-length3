@@ -348,7 +348,18 @@ test('less motion asked for during a held press keeps it held; let go, it is up 
   await expect(app.forge.places).toBeHidden();
 });
 
-test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
+interface TravelFrame {
+  t: number;
+  left: number | null;
+  come: number | null;
+  dots: number;
+  cross: number;
+  place: string;
+  corner: number[];
+  extraWidth: number;
+}
+
+test('going to another place the world goes sideways: the place left, the place come to and the ground move as one, a window\'s width in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
@@ -360,13 +371,13 @@ test('going to another place the world goes by: the place left, the place come t
     await still(app);
     await expect(destination).toBeVisible();
     const from = await app.main.getAttribute('data-place');
-    const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);
+    const far = U * Math.round((await app.page.evaluate(() => innerWidth)) / U);
     // Every frame of the move: how far the place left has gone, the place come to, and the ground's dots.
-    const frames = app.page.evaluate(() => new Promise<{t: number; left: number | null; come: number | null; dots: number; place: string}[]>((done) => {
-      const out: {t: number; left: number | null; come: number | null; dots: number; place: string}[] = [], t0 = performance.now();
+    const frames = app.page.evaluate(() => new Promise<TravelFrame[]>((done) => {
+      const out: TravelFrame[] = [], t0 = performance.now();
       // When the press went down (on the page's clock, as the frames are).
-      addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, place: 'pressed'}); }, {capture: true, once: true});
-      const y = (el: Element | null) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
+      addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, cross: 0, place: 'pressed', corner: [], extraWidth: 0}); }, {capture: true, once: true});
+      const at = (el: Element | null) => el ? new DOMMatrix(getComputedStyle(el).transform) : null;
       const page = document.getElementById('page')!;
       let coming: Element | null = null;
       const step = () => {
@@ -376,9 +387,15 @@ test('going to another place the world goes by: the place left, the place come t
         if (left && !coming?.isConnected) {
           const effects = document.getAnimations().map((a) => a.effect as KeyframeEffect | null);
           coming = effects.find((e) => e?.target && page.contains(e.target)
-            && e.getKeyframes().some((k) => /translateY/.test(String(k.transform ?? ''))))?.target ?? null;
+            && e.getKeyframes().some((k) => /translateX/.test(String(k.transform ?? ''))))?.target ?? null;
         }
-        out.push({t, left: y(left), come: left ? y(coming) : null, dots: parseFloat(getComputedStyle(document.body).backgroundPositionY) || 0, place: page.dataset.place ?? ''});
+        const outAt = at(left), inAt = left ? at(coming) : null, ground = getComputedStyle(document.body);
+        const corner = [...page.querySelectorAll('.forge-search-key, .forge-places-key')].filter((key) => key.getClientRects().length);
+        out.push({t, left: outAt?.m41 ?? null, come: inAt?.m41 ?? null, dots: parseFloat(ground.backgroundPositionX) || 0,
+          cross: Math.max(Math.abs(outAt?.m42 ?? 0), Math.abs(inAt?.m42 ?? 0), Math.abs(parseFloat(ground.backgroundPositionY) || 0)),
+          corner: corner.flatMap((key) => { const r = key.getBoundingClientRect(); return [r.x, r.y]; }),
+          extraWidth: Math.max(0, document.scrollingElement!.scrollWidth - innerWidth),
+          place: page.dataset.place ?? ''});
         if (t < 800) requestAnimationFrame(step); else done(out);
       };
       requestAnimationFrame(step);
@@ -397,7 +414,12 @@ test('going to another place the world goes by: the place left, the place come t
     // opens or closes between them, and the ground's dots go as they do.
     expect(moving.length, `to ${to}`).toBeGreaterThan(5);
     expect(moving.some((f) => f.come !== null), `to ${to}: the incoming page moves as well`).toBe(true);
+    const end = all.at(-1)!;
+    expect(end.corner).toHaveLength(4);
     for (const f of moving) {
+      expect(f.corner, `to ${to}: the corner stays at the same coordinates`).toEqual(end.corner);
+      expect(f.extraWidth, `to ${to}: the viewport cannot be scrolled sideways`).toBe(0);
+      expect(f.cross, `to ${to}: no vertical movement`).toBe(0);
       if (f.come !== null) expect(Math.abs(f.come - dir * far - f.left!), `to ${to}: the two places a window apart`).toBeLessThan(1.5);
       expect(Math.abs(f.dots - f.left!), `to ${to}: the dots with the places`).toBeLessThan(1.5);
     }
@@ -407,7 +429,6 @@ test('going to another place the world goes by: the place left, the place come t
     expect(Math.abs(third.left!) / far, `to ${to}: off at once`).toBeGreaterThan(.6);
     expect(last.t - first.t, `to ${to}: its time`).toBeLessThanOrEqual(470);
     // At rest: the place left is gone, the dots stand where they stood, and the way was whole cells.
-    const end = all.at(-1)!;
     expect([end.left, end.dots, end.place], `to ${to}: at rest`).toEqual([null, 0, to]);
     expect(far % U).toBe(0);
     await still(app);
