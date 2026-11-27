@@ -146,5 +146,5 @@
 }
 .git-ledger-status { margin: calc(var(--u) / 2) var(--u) 0; color: var(--sub); line-height: var(--u); }
 
-.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus))::before { display: none; }
-.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus)) > button { color: var(--quiet); font-weight: 400; }
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus-visible))::before { display: none; }
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus-visible)) > button { color: var(--quiet); font-weight: 400; }
