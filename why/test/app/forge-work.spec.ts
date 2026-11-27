@@ -387,6 +387,31 @@ test('the repo Files row keeps its real deeds without a second command in Places
   await expect(app.forge.editor('lib/util.c')).toBeVisible();
 });
 
+test('Files Rename leaves caret movement and Shift selection to the name field', async ({app, page}) => {
+  await app.forge.use('Files');
+  const files = page.getByRole('tree', {name: 'hello', exact: true});
+  const src = files.getByRole('treeitem', {name: 'src', exact: true});
+  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'Open src', exact: true}).click();
+  const row = src.getByRole('button', {name: 'main.c', exact: true});
+  await row.press('Shift+F10');
+  await page.getByRole('menu', {name: 'main.c', exact: true}).getByRole('menuitem', {name: 'Rename', exact: true}).press('Enter');
+  const name = files.getByRole('textbox', {name: 'New name', exact: true});
+  const range = () => name.evaluate((f: HTMLInputElement) => [f.selectionStart, f.selectionEnd]);
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue('main.c');
+  expect(await range()).toEqual([0, 4]);
+  for (const [key, first, last] of [['End', 6, 6], ['Shift+ArrowLeft', 5, 6], ['Home', 0, 0], ['ArrowRight', 1, 1], ['Shift+End', 1, 6]] as const) {
+    await page.keyboard.press(key);
+    await expect(name).toBeFocused();
+    expect(await range(), key).toEqual([first, last]);
+  }
+  await page.keyboard.press('Escape');
+  await expect(name).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(src.getByRole('button', {name: 'src', exact: true})).toBeFocused();
+});
+
 test('Prompt keeps its own steady material when the file has focus; a note has a send word, and Escape returns to the document', async ({app}) => {
   await app.rail.go('forge');
   const term = app.main.locator('.forge-prompt-slot'), stand = term.locator('.desk-term.stand:visible'), own = app.forge.editor('README.md');

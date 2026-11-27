@@ -275,7 +275,7 @@ export class FileTree {
   /** The keyboard along the tree: only the names it shows, in order. */
   private step(event: KeyboardEvent) {
     if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
-    const names = [...this.root.querySelectorAll<HTMLElement>('.tree-name')].filter((b) => b.getClientRects().length > 0);
+    const names = [...this.root.querySelectorAll<HTMLElement>('button.tree-name')].filter((b) => b.getClientRects().length > 0);
     const at = names.indexOf(document.activeElement as HTMLElement);
     if (at < 0) return;
     event.preventDefault();
