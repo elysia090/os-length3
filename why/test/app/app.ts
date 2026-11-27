@@ -183,7 +183,7 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server') return false;
+    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server' && here !== 'new-repo') return false;
     // A redraw (e.g. after changing language) can briefly show neither entrance. Do not fall back to a hidden rail.
     const corner = this.app.forge.placesKey;
     await expect(this.navigation.or(corner).filter({visible: true}).first()).toBeVisible();

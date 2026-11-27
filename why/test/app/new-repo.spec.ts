@@ -69,30 +69,35 @@ test('what will be made is the new repo alone, as File will show it, its files m
 
 test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a piece wide, its name at a name\'s size on its first line, what will be made inside it under a rule', async ({app}) => {
   const U = 24, NAME = 24 / .727;
-  for (const size of [{width: 1400, height: 900}, {width: 390, height: 844}]) {
+  for (const size of [{width: 1400, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
     await app.page.setViewportSize(size);
     await app.rail.go('new-repo');
     const box = app.main.locator('.nr-box'), label = app.main.locator('.nr-label');
     await app.newRepo.name.fill('count');
     // A piece wide (24 cells, or as many whole cells as the window has room for with its shadow), its place in the
-    // cell over its corner, its top a cell under the band, its foot on a line of the grid.
-    const wide = U * Math.min(24, Math.max(10, Math.floor((size.width - 2 * U - U / 2) / U)));
+    // cell over its corner, the paper starts on its own line and ends on a line of the grid.
+    const narrow = size.width <= 600, edge = narrow ? U : 2 * U;
+    const wide = U * Math.min(24, Math.floor((size.width - 2 * edge - 4) / U));
     await expect(async () => {
       const b = (await box.boundingBox())!, l = (await label.boundingBox())!;
-      expect([b.x, b.y, b.width], `the piece at ${size.width}`).toEqual([2 * U, 3 * U, wide]);
+      expect([b.x, b.y, b.width], `the piece at ${size.width}`).toEqual([edge, 3 * U, wide]);
       expect(b.height % U).toBe(0);
-      expect([l.x, l.y, l.height]).toEqual([2 * U, 2 * U, U]);
+      expect([l.x, l.y, l.height]).toEqual([edge, 2 * U, U]);
     }).toPass();
     // The hand's: paper, the one light's shadow; and the only shadow on the desk.
-    expect(await box.evaluate((e) => getComputedStyle(e).boxShadow)).toBe('rgb(23, 22, 21) 12px 12px 0px 0px');
-    expect(await app.main.evaluate((m) => [...m.querySelectorAll('*')].filter((e) => getComputedStyle(e).boxShadow.includes('12px 12px')).length)).toBe(1);
+    await expect(box).toHaveCSS('background-color', 'rgb(239, 235, 227)');
+    await expect(box).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
+    const lifted = await app.main.evaluate((m) => [...m.querySelectorAll('*')].filter((e) => e.getClientRects().length && getComputedStyle(e).boxShadow !== 'none').length);
+    expect(lifted).toBe(1);
+    await expect(app.main.getByRole('button', {name: 'Search', exact: true})).toHaveCount(1);
+    await expect(app.page.getByRole('navigation', {name: 'Purposes'})).toBeHidden();
     // The name at a name's size, never fitted to its room, its capitals on the box's first line of the grid, a cell in.
     const name = await app.newRepo.name.evaluate((e: HTMLInputElement) => {
       const b = e.closest('.nr-box')!.getBoundingClientRect(), n = e.getBoundingClientRect(), cs = getComputedStyle(e);
       return {size: parseFloat(cs.fontSize), left: n.left + parseFloat(cs.paddingLeft) - b.left, top: n.top - b.top};
     });
     expect(Math.abs(name.size - NAME)).toBeLessThan(.01);
-    expect(name.left).toBe(U);
+    expect(name.left).toBe(narrow ? 16 : U);
     expect(Math.abs(name.top - (U - .2043 * U))).toBeLessThan(1);
     await app.newRepo.name.fill('length3-blobs-mirror-of-main-and-more');
     expect(Math.abs(await app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)) - NAME)).toBeLessThan(.01);
@@ -120,16 +125,29 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
     });
     for (const l of sheet.lines) {
       const key = /button/.test(l.what);
-      expect((l.top - (key ? U / 4 : 0)) % U, `${l.what} at ${l.top}, on a cell${key ? ' (a key: a quarter cell into its field)' : ''}`).toBe(0);
-      expect(key ? l.height : l.height % U, `${l.what} ${l.height} tall`).toBe(key ? 1.5 * U : 0);
+      expect((l.top - (key ? (narrow ? U / 2 + (2 * U - 44) / 2 : U / 4) : 0)) % U, `${l.what} at ${l.top}, on its own cell`).toBe(0);
+      expect(key ? l.height : l.height % U, `${l.what} ${l.height} tall`).toBe(key ? narrow ? 44 : 1.5 * U : 0);
     }
     expect(sheet.sizes, 'the words on it at the words\' size, one size (DESIGN §3)').toEqual(['17px']);
     expect(sheet.filled, 'nothing filled in it but its key').toBe(0);
     // Its place over its corner stands on a patch of the ground, no dot of the grid under its words.
-    expect(await label.evaluate((e) => [getComputedStyle(e).backgroundColor, e.getBoundingClientRect().width <= e.scrollWidth + 1])).toEqual(['rgb(220, 217, 212)', true]);
+    expect(await label.evaluate((e) => [getComputedStyle(e).backgroundColor, e.getBoundingClientRect().width <= e.scrollWidth + 1])).toEqual(['rgb(58, 61, 54)', true]);
     // Each row's deeds are one mark, a chevron, always there.
     await expect(files.locator('li[data-path="README.md"] button[aria-haspopup="menu"]')).toHaveCount(1);
     await expect(files.locator('li[data-path="README.md"] button:not([aria-haspopup]):not(.tree-name)')).toHaveCount(0);
+    await expect(files.getByRole('button', {name: 'docs', exact: true})).toHaveText('docs/');
+    const readmeFirst = (await files.getByRole('button', {name: 'README.md', exact: true}).boundingBox())!;
+    const about = (await app.newRepo.summary.boundingBox())!;
+    expect(readmeFirst.x).toBe(about.x);
+    expect(about.height).toBeGreaterThanOrEqual(2 * U);
+    expect(await app.page.evaluate(() => document.documentElement.scrollWidth)).toBe(size.width);
+    if (narrow) {
+      const keys = ['New file', 'New folder', 'Actions for README.md'].map((name) => files.getByRole('button', {name, exact: true}));
+      for (const key of [...keys, app.newRepo.create]) {
+        const target = (await key.boundingBox())!;
+        expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
+      }
+    }
   }
 });
 
@@ -157,6 +175,8 @@ test('nothing named yet, the name\'s place says so quietly and Create asks for o
   await expect(app.newRepo.name).toHaveValue('');
   await expect(app.newRepo.name).not.toHaveAttribute('placeholder');
   await expect(app.main.locator('.nr-box')).toHaveAttribute('data-empty', 'name');
+  await expect(app.newRepo.summary).toHaveAttribute('placeholder', 'Write the README…');
+  await expect(app.main.locator('li[data-path="README.md"] .tree-meta')).toBeHidden();
   await expect(app.newRepo.problem).toBeHidden();
   await app.newRepo.create.click();
   await expect(app.newRepo.problem).toHaveText('Please enter a name first');
@@ -174,4 +194,58 @@ test('nothing named yet, the name\'s place says so quietly and Create asks for o
   await expect(app.newRepo.problem).toBeHidden();
   await expect(where).toHaveText('tide');
   await expect(where.locator('mark')).toHaveCount(0);
+});
+
+
+test('on a phone, the draft returns from Search and Create hands its renamed README to Forge', async ({app}) => {
+  const {page, newRepo} = app;
+  await page.setViewportSize({width: 320, height: 568});
+  await app.rail.go('new-repo');
+  await expect(newRepo.name).toBeFocused();
+  await newRepo.name.fill('field-notes');
+  await newRepo.summary.fill('Keep the forecast with the field notes.');
+  await newRepo.summary.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 17, 'backward'));
+  await newRepo.summary.press('Control+k');
+  const search = page.getByRole('main', {name: 'Search', exact: true}).getByRole('searchbox');
+  await expect(search).toBeFocused();
+  await search.press('Escape');
+  await expect(newRepo.summary).toBeFocused();
+  await expect(newRepo.summary).toHaveValue('Keep the forecast with the field notes.');
+  expect(await newRepo.summary.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd, el.selectionDirection])).toEqual([5, 17, 'backward']);
+
+  const files = app.main.getByRole('region', {name: 'Items to create'});
+  await files.getByRole('button', {name: 'README.md', exact: true}).press('Enter');
+  const field = files.getByRole('textbox', {name: 'New name'});
+  await expect(field).toBeFocused();
+  await field.fill('docs/fieldwork.md');
+  await field.press('Enter');
+  await expect(files.getByRole('button', {name: 'fieldwork.md', exact: true})).toBeFocused();
+  // A shorter viewport approximates the visible space left above the software keyboard.
+  await page.setViewportSize({width: 320, height: 440});
+  await newRepo.summary.focus();
+  await expect(newRepo.summary).toBeInViewport();
+  await newRepo.create.scrollIntoViewIfNeeded();
+  await expect(newRepo.create).toBeInViewport({ratio: 1});
+  await newRepo.create.click();
+  const readme = app.forge.editor('docs/fieldwork.md');
+  const readmeText = '# field-notes\n\nKeep the forecast with the field notes.\n';
+  await expect(readme).toHaveValue(readmeText);
+  await expect(readme).toBeFocused();
+  expect(await readme.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([readmeText.length, readmeText.length]);
+  const plainRoot = await app.file.item('field-notes', '', {open: true});
+  await expect(plainRoot.getByRole('treeitem', {name: 'README.md', exact: true})).toHaveCount(0);
+});
+
+test('leaving the README out also removes its writing field without inventing another file', async ({app}) => {
+  await app.rail.go('new-repo');
+  await app.newRepo.name.fill('paperless');
+  await app.newRepo.summary.fill('This would only go into the README.');
+  const files = app.main.getByRole('region', {name: 'Items to create'});
+  await files.getByRole('button', {name: 'Actions for README.md'}).click();
+  await app.page.getByRole('menuitem', {name: 'Leave out README.md'}).click();
+  await expect(app.newRepo.summary).toBeHidden();
+  await app.newRepo.create.click();
+  await expect(app.newRepo.madeIn('paperless')).toBeVisible();
+  const repo = await app.file.item('paperless', '', {open: true});
+  await expect(repo.getByRole('treeitem', {name: 'README.md', exact: true})).toHaveCount(0);
 });

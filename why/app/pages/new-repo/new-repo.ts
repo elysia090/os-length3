@@ -6,12 +6,12 @@ import {plan} from '../../../shipto/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
 import {remoteOnly} from '../../../shipto/lifecycle.ts';
 import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
-import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {menuItem} from '../kit/common.ts';
 import {deedsUnder} from '../kit/file-deeds.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
 import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {cut as record} from '../../../repo/history.ts';
@@ -70,15 +70,12 @@ function nest(made: readonly Made[]): Item[] {
   return root.children;
 }
 
-function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; tail: Node}> = {}): HTMLElement {
-  // A folder is said as File's tree says one, its name and a slash after it (heard as its name), with nothing drawn
-  // before it: one tree, one way (DESIGN §1).
-  const lead = h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
-  const named = name instanceof HTMLElement ? name : h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name));
-  const slash = dir ? h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/') : null;
-  return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named, slash,
-      typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
+function row(item: Item, name: HTMLElement, depth: number, meta?: HTMLElement, tail?: HTMLElement): HTMLElement {
+  // The slash is part of the written folder name, not a column of its own.
+  if (item.dir && name instanceof HTMLButtonElement)
+    name.append(h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/'));
+  return h('li', {class: `${item.dir ? 'tree-dir' : 'tree-file'} tree-ours`, 'data-path': item.path},
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, name, meta ?? null, tail ?? null));
 }
 
 /**
@@ -142,16 +139,15 @@ export function newRepo(ctx: Context): Node[] {
       for (const it of nodes) {
         const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name'}, it.name);
         if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
-        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`,
-          meta: it.readme ? readmeSize : undefined,
-          tail: rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li))});
-        li.dataset.path = it.path;
+        const li = row(it, named, depth, it.readme ? readmeSize : undefined,
+          rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li)));
         rows.push(li);
         if (it.dir) walk(it.children, depth + 1);
       }
     };
     walk(nest(made), 0);
     preview.replaceChildren(...rows);
+    summaryBox.hidden = !made.some((m) => m.readme && !m.dir);
     const come = came ? preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(came)}"]`) : null;
     if (come) unfold(come, 200);
     const editing = preview.querySelector<HTMLInputElement>('.tree-rename');
@@ -170,12 +166,14 @@ export function newRepo(ctx: Context): Node[] {
     let done = false;
     const end = (take: boolean) => {
       if (done) return;
-      const said = take ? moved(path, f.value) : '';
-      if (said) { fileError.textContent = said; nudge(f); f.focus(); return; }
+      const result = take ? moved(path, f.value) : {path};
+      if ('error' in result) { fileError.textContent = result.error; nudge(f); f.focus(); return; }
+      const keyboard = document.activeElement === f;
       done = true;
       renaming = null;
       keep();
       showFiles();
+      if (keyboard) preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(result.path)}"] .tree-name`)?.focus({preventScroll: true});
     };
     f.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
@@ -187,19 +185,19 @@ export function newRepo(ctx: Context): Node[] {
   };
   /**
    * `path` given the name `written` (a path from its folder moves it there: notes/plan.md, its folders made with it),
-   * and all in it with it; '' when done, else why it cannot be.
+   * and all in it with it; the row now in hand, or why it cannot be.
    */
-  const moved = (path: string, written: string): string => {
+  const moved = (path: string, written: string): {path: string} | {error: string} => {
     const to = written.trim().replace(/^\/+|\/+$/g, '');
-    if (!to || to === baseOf(path)) return '';
+    if (!to || to === baseOf(path)) return {path};
     const dir = parentOf(path), full = dir ? `${dir}/${to}` : to;
-    if (!plainPath(full)) return t('Paths joined by "/", segments cannot start with "."');
-    if (isIssues(full)) return t('"{name}" is where the repo\'s issues are kept', {name: ISSUES});
-    if (made.some((m) => m.path === full || m.path.startsWith(`${full}/`))) return t('"{name}" already exists', {name: to});
+    if (!plainPath(full)) return {error: t('Paths joined by "/", segments cannot start with "."')};
+    if (isIssues(full)) return {error: t('"{name}" is where the repo\'s issues are kept', {name: ISSUES})};
+    if (made.some((m) => m.path === full || m.path.startsWith(`${full}/`))) return {error: t('"{name}" already exists', {name: to})};
     made = made.map((m) => (m.path === path || m.path.startsWith(`${path}/`) ? {...m, path: full + m.path.slice(path.length)} : m));
     // The folders a path written goes into are made with it.
     for (let up = parentOf(full); up && up !== dir; up = parentOf(up)) if (!made.some((m) => m.path === up)) made.push({path: up, dir: true});
-    return '';
+    return {path: full};
   };
   const rename = (path: string) => { fileError.textContent = ''; renaming = path; showFiles(); };
   /** `path` and all in it not made: its row folds away and the rows under it close up. */
@@ -217,27 +215,23 @@ export function newRepo(ctx: Context): Node[] {
     renaming = path;
     showFiles(path);
   };
-  const newFile = h('button', {type: 'button', class: 'tree-make'}, mark('new-file'), h('span', {}, t('New file')));
-  const newFolder = h('button', {type: 'button', class: 'tree-make'}, mark('new-folder'), h('span', {}, t('New folder')));
+  const newFile = h('button', {type: 'button', class: 'tree-make'}, t('New file'));
+  const newFolder = h('button', {type: 'button', class: 'tree-make'}, t('New folder'));
   newFile.addEventListener('click', () => add(false));
   newFolder.addEventListener('click', () => add(true));
-  void store.names().then((names) => { others = names.sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
+  void store.names().then((names) => { others = names; judge(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree, the repo's own.
   const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
-  const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
+  const card = h('section', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
     h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
   // Where it will stand, said over its box as a file's place is over a box on the desk: ~/ and the name as written.
   const place = h('span', {class: 'nr-where'});
   // A letter no name can have is marked there, where it is, as the name will stand.
-  const placed = () => {
-    place.replaceChildren(...marked(name.value.trim()));
-    kind.hidden = false;
-    if (label.isConnected && label.scrollWidth > (label.parentElement?.clientWidth ?? Infinity)) kind.hidden = true;
-  };
+  const placed = () => place.replaceChildren(...marked(name.value.trim()));
   const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
   // What it is for, under the name in the box, the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000', rows: '1',
-    placeholder: t('Description / Purpose'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
+    placeholder: t('Write the README…'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
   /** The README as Create writes it: under the title what it is for, or the scaffold's own README. */
@@ -245,10 +239,14 @@ export function newRepo(ctx: Context): Node[] {
     const about = summary.value.trim();
     return about ? `# ${n}\n\n${about}\n` : templateFiles(n, SCAFFOLD).get('README.md') ?? '';
   };
-  const sized = () => { readmeSize.textContent = bytes(new TextEncoder().encode(readme(name.value.trim())).length); };
+  const sized = () => {
+    const n = name.value.trim();
+    readmeSize.hidden = !validName(n);
+    if (!readmeSize.hidden) readmeSize.textContent = bytes(new TextEncoder().encode(readme(n)).length);
+  };
   // The whole box is the field, as the TODO's is.
   summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
-  // As tall as what is written in it, a line to begin with: the box grows with the words, never a field's empty room.
+  // Two lines to begin with; the paper grows with what is written there.
   const grow = () => { summary.style.height = 'auto'; summary.style.height = `${summary.scrollHeight}px`; };
   summary.addEventListener('input', () => { keep(); sized(); grow(); });
   // Narrowed or widened, the words fold again: as tall as they are at that width (not when it grows itself).
@@ -294,11 +292,8 @@ export function newRepo(ctx: Context): Node[] {
     // Why it cannot be, in the cell under the name, where it is put right: the sheet's top never moves for it.
     error,
     h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
-  // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
-  // One line: ~/ and the name as written, then New repo, which gives way (whole, or not there) where the line has no
-  // room for it.
-  const kind = h('span', {class: 'nr-kind'}, t('New repo'));
-  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), kind);
+  // The path alone sits above the paper; it has no second title to crowd it at narrow widths.
+  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place));
   // One piece, the hand's: its place over its corner, and in it the name, what it is for, what will be made (under a
   // rule) and Create at its foot. The name stands at the size of every name (a cell's capitals), never made smaller or
   // larger for its room: one that is longer than the line goes on past it, as a field's words do.
@@ -312,7 +307,7 @@ export function newRepo(ctx: Context): Node[] {
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
+  name.addEventListener('input', () => { keep(); sized(); judge(); placed(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
@@ -365,6 +360,42 @@ export function newRepo(ctx: Context): Node[] {
   sized();
   placed();
   queueMicrotask(() => name.focus({preventScroll: true}));
-  // On the ground with Home's and Forge's band and pane: the rail goes between the three as a camera over one desk.
-  return [onTheGround(h('div', {class: 'home-main new-repo-main', 'aria-label': t('New repo')}, form), ctx, store.list().catch(() => null))];
+  return [writingDesk(form, ctx)];
+}
+
+/** New repo's paper is the subject. Commands for a different repo only appear when there is one to act on. */
+function writingDesk(form: HTMLElement, ctx: Context) {
+  const desk = h('div', {class: 'home-layout new-repo-desk'}, form);
+  let repo = ctx.repo;
+  void store.list().then((all) => {
+    if (!all.some((r) => r.name === repo)) repo = all[0]?.name ?? null;
+  }, () => {});
+  const elsewhere = (at: string, ask: 'termNext' | 'deedsNext') => {
+    void import('../forge/forge.ts').then((forge) => {
+      if (desk.isConnected) { forge[ask](); ctx.openRepo(at); }
+    });
+  };
+  const find = deskSearch(ctx, () => repo);
+  const places = placesMenu(desk, ['New repo'], 'New repo', () => {}, () => {
+    const at = repo;
+    return [
+      ...(ctx.placeCommands?.(['new-repo']) ?? []),
+      ...(at ? [
+        {label: 'Prompt', run: () => elsewhere(at, 'termNext')},
+        {label: 'File actions', run: () => elsewhere(at, 'deedsNext')},
+      ] : []),
+    ];
+  }, {find});
+  function keys(event: KeyboardEvent) {
+    if (!desk.isConnected) { document.removeEventListener('keydown', keys); return; }
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || desk.closest('[inert]')) return;
+    const key = event.key.toLowerCase();
+    if (((key === 'k' || key === 'p') && !event.shiftKey) || (key === 'f' && event.shiftKey)) {
+      event.preventDefault();
+      places.close();
+      find(document.activeElement);
+    }
+  }
+  document.addEventListener('keydown', keys);
+  return desk;
 }

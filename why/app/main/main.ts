@@ -139,7 +139,7 @@ const ctx: Context = {
   forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
-    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime'] as const).some((desk) => current === desk)) return;
+    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime', 'new-repo'] as const).some((desk) => current === desk)) return;
     ++asked;
     searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
   },
@@ -153,7 +153,7 @@ const ctx: Context = {
           else void select(id);
         },
       })),
-      ...((current === 'home' || current === 'runtime') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
+      ...((current === 'home' || current === 'runtime' || current === 'new-repo') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
       {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
     ];
   },
@@ -322,7 +322,8 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
 window.addEventListener('popstate', (event) => {
   const state = event.state as {place?: unknown; search?: unknown} | null;
   if (typeof state?.place !== 'string' || !opened) return;
-  const id = restorePurpose(state.place), search = searchTrail.step(state.search);
+  // New repo isn't the place for a fresh session, but it is a live history entry with a draft and selection.
+  const id = state.place === 'new-repo' ? state.place : restorePurpose(state.place), search = searchTrail.step(state.search);
   if (search === null) searchTrail.leave(id === current);
   if (id === current) {
     if (search !== null) searchTrail.enter(search);
@@ -398,7 +399,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (id === 'home' || id === 'runtime' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (id === 'home' || id === 'runtime' || id === 'new-repo' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();

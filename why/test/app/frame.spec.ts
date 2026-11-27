@@ -16,7 +16,7 @@ const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
 const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)';
 const QUIET = 'rgb(193, 190, 176)', PAPER = 'rgb(239, 235, 227)';
-const CORNER: Partial<Record<typeof PLACES[number], string>> = {home: QUIET, forge: QUIET, git: QUIET, server: QUIET, inbox: PAPER, runtime: QUIET};
+const CORNER: Partial<Record<typeof PLACES[number], string>> = {home: QUIET, 'new-repo': QUIET, forge: QUIET, git: QUIET, server: QUIET, inbox: PAPER, runtime: QUIET};
 
 /** The frame as it stands now: run in the page. */
 function framed() {
@@ -32,7 +32,7 @@ function framed() {
   const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .server-masthead, .server-sidebar, .server-overline, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .runtime-masthead > h1, .forge-places-key, .forge-search-key, .sr-only';
   // A narrow desk can use one cell of left margin; the top strip does not change.
   const place = document.getElementById('page')?.dataset.place;
-  const one = place === 'home' || place === 'runtime' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
+  const one = place === 'home' || place === 'runtime' || place === 'new-repo' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
   const left = W <= one ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {

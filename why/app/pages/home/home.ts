@@ -15,10 +15,8 @@ import {repoList} from './repo-list.ts';
 import {recentGlass} from './recent-glass.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
-import {Reference} from '../bench/reference.ts';
 import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
-import {mark, type MarkName} from '../../ui/icons.ts';
 import {inkEdge} from '../../ui/optical.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -109,56 +107,6 @@ function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
       find(document.activeElement);
     }
   }
-  document.addEventListener('keydown', keys);
-  return layout;
-}
-
-/**
- * Home (and New repo) on the desk: the band's keys at its top (the terminal of the repo last worked in, its file
- * deeds, the search Forge has), and under them what the page lays on the ground. There is no pane: what waits is a
- * slip at the foot of Home itself.
- */
-export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
-  // The search Forge has, on the band as Forge's is: in the repo last worked in (named in it, there being no repos on
-  // the band to say which), what is found dropped as a sheet over Home and opened in Forge, at its line.
-  let repo = ctx.repo;
-  const reference = new Reference({reveal: (path, line, write) => { if (repo) ctx.openRepo(repo, path, write ?? false, undefined, line ?? 0); }}, {band: true});
-  reference.search.querySelector('form')?.prepend(mark('search'));
-  const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
-  aim(repo);
-  // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
-  // in, the files button to its file deeds there (New, Rename, Delete), then the search.
-  const tool = (name: MarkName, label: string, press: () => void) => {
-    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label}, mark(name));
-    b.addEventListener('click', press);
-    return b;
-  };
-  const inForge = (ask: 'termNext' | 'deedsNext') => () => {
-    const at = repo;
-    if (at) void import('../forge/forge.ts').then((f) => { f[ask](); ctx.openRepo(at); });
-  };
-  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')},
-    tool('term', t('Terminal'), inForge('termNext')), tool('new-file', t('Files: New, Rename, Delete'), inForge('deedsNext')), reference.search));
-  const layout = h('div', {class: 'home-layout'}, band, main);
-  // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
-  // box is never there to be pressed for nothing.
-  void listed.then((all) => { if (all && layout.isConnected && !(repo && all.some((r) => r.name === repo))) aim(all[0]?.name ?? null); });
-  // What the search finds drops as Forge's does, across the page under the band (forge-band.css): measured, it knows
-  // how wide and tall that is and where the box stands in it.
-  new ResizeObserver(() => {
-    // (The band starts at the rail's corner, left of the page's own edge: the sheet is the page's width, from its edge.)
-    const at = band.getBoundingClientRect(), page = layout.getBoundingClientRect();
-    layout.style.setProperty('--center-w', `${layout.clientWidth}px`);
-    layout.style.setProperty('--center-h', `${window.innerHeight - at.bottom}px`);
-    layout.style.setProperty('--search-x', `${reference.search.getBoundingClientRect().left - page.left}px`);
-  }).observe(band);
-  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search (⌘ on a Mac).
-  const keys = (event: KeyboardEvent) => {
-    if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
-    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || document.getElementById('page')?.hasAttribute('inert')) return;
-    const k = event.key.toLowerCase();
-    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) { event.preventDefault(); reference.findNow(); }
-  };
   document.addEventListener('keydown', keys);
   return layout;
 }

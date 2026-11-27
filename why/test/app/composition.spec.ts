@@ -7,7 +7,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //
 //   one lens        nothing in sight is drawn scaled, zoomed or in perspective
 //   one horizon     the subject's edges on the grid
-//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and Forge's paper
+//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and the Forge and New repo papers
 //   the frame       under what is called up, the available frame controls stay in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
@@ -29,7 +29,7 @@ const NAME = 33.0124, PERSON = 66.0248;
 /** Each place, what is its subject (the one thing with the shadow at rest), and what may stand at the frame's corner. */
 const PLACES = {
   home: {subject: '.home-own > .section', corner: '.home-own', anchor: '.home-person h1'},
-  'new-repo': {subject: '.nr-box', corner: '.new-repo'},
+  'new-repo': {subject: '.nr-box', corner: '.new-repo', anchor: '.nr-label'},
   // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
   forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
@@ -230,7 +230,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = (place === 'home' || place === 'forge') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
+    const shade = (place === 'home' || place === 'forge' || place === 'new-repo') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
     expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual(place === 'server' && !called ? [2, 4, 0] : [shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();

@@ -1,25 +1,40 @@
-/* New repo: one piece at the desk's edge, and it is the hand's (DESIGN §10): its place said in the cell over its corner,
-   as a piece's name is (~/ and the name as written, then New repo; why a name cannot be after them); in it, a cell of
-   paper each side, the name on its first line in the display face, its capitals a cell tall as every name's (never
-   made larger or smaller for its room: a name longer than the line goes on past it, as a field's words do; the word
-   for it quiet where nothing is written yet); what the repo is for under it; under a rule what will be made with it,
-   as File will show it; Create at its foot. As wide as a piece (§3), as tall as what is in it to the grid's next line
-   (new-repo.ts wholeCells). Its paper, its ink edge and its shadow are the hand's: the one shadow on the desk.
-   (Before: two boxes side by side, each with a shadow of its own size, the name fitted from 28 to 64 px to its room,
-   the files' box fading in beside the name's or under it as the name grew.) */
-.new-repo-main { --nr-in: var(--u); padding: 0 0 calc(2 * var(--u)); }
-.new-repo { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); display: grid; width: var(--piece); }
-.nr-label { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 0 var(--s2); width: fit-content; max-width: 100%; min-height: var(--u); margin: 0; padding: 0;
-  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
-.nr-kind { font-weight: 400; color: var(--sub); }
-.nr-kind::before { content: '·'; content: '·' / ''; margin-right: var(--s2); }
-.nr-label > .nr-path { min-width: 0; overflow-wrap: anywhere; }
+/* New repo is the first sheet of work, not a dialog or a strip of tools. Keep it at the desk's left,
+   on the same stock as the sheet it will become in Forge. */
+:is(body:has(> #page[data-place='new-repo'] > .new-repo-desk), .place-left > .page[data-place='new-repo']:has(> .new-repo-desk)) {
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
+}
+body:has(> #page[data-place='new-repo'] > .new-repo-desk) { padding: 0; grid-template-columns: minmax(0, 1fr); }
+body:has(> #page[data-place='new-repo'] > .new-repo-desk) > :is(.rail, .door) { display: none; }
+.page[data-place='new-repo']:has(> .new-repo-desk) { min-width: 0; width: 100%; max-width: none; margin: 0; padding: 0; }
+.new-repo-desk {
+  --nr-in: var(--u); --nr-edge: calc(2 * var(--u)); --nr-shadow: var(--s1);
+  --paper: var(--nighthawks-paper); --sub: var(--nighthawks-paper-sub); --rule: var(--nighthawks-rule); --ground: var(--nighthawks-ground);
+  --slot: var(--nighthawks-paper-selected); --places-down: var(--nighthawks-shadow);
+  min-height: 100dvh; padding: calc(2 * var(--u)) var(--nr-edge);
+}
+.new-repo-desk :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
+.new-repo-desk :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
+.new-repo-desk .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
+.place-left > .page[data-place='new-repo'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
+.new-repo { display: grid; grid-template-columns: minmax(0, 1fr); width: min(calc(24 * var(--u)), calc(100% - var(--nr-shadow))); width: min(calc(24 * var(--u)), round(down, 100% - var(--nr-shadow), var(--u))); }
+.nr-label {
+  display: flex; width: fit-content; max-width: 100%; min-height: var(--u); margin: 0; padding: 0;
+  background: var(--nighthawks-ground); color: var(--nighthawks-paper); font: 700 var(--t-word)/var(--u) var(--mono);
+}
+.nr-label > .nr-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nr-label .bad-char { color: var(--del-tint); text-decoration-color: currentColor; }
+@media (max-width: 600px) {
+  .new-repo-desk { --nr-edge: var(--u); --nr-in: var(--s4); }
+  /* While the upper keys belong to the corner, even a long draft path stays clear of them. */
+  .nr-label { max-width: min(100%, calc(100vw - var(--nr-edge) - 100px)); }
+}
 /* Why the name cannot be: in the cell under it, the words' small size on lines of a cell, an off dot before them. The
    description comes down by the cells it takes; the sheet's top stays on the horizon. */
 .nr-box > .error { margin: var(--u) var(--nr-in) 0; font: 400 var(--t-word)/var(--u) var(--sans); }
 .nr-box > .error:empty { display: none; }
 .nr-box { position: relative; display: flex; flex-direction: column; min-width: 0; padding: var(--u) 0 calc(var(--u) + var(--to-grid, 0px));
-  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+  --ground: var(--paper); background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px;
+  box-shadow: var(--nr-shadow) var(--nr-shadow) 0 var(--nighthawks-shadow); }
 /* The name: a cell's capitals on the box's first line of the grid, its ink a cell in from the paper's edge. */
 .nr-name { display: block; box-sizing: content-box; width: calc(100% - 2 * var(--nr-in)); height: var(--t-head); min-width: 0;
   margin: calc(-.2043 * var(--u)) 0 calc(-.1713 * var(--u)); padding: 0 var(--nr-in); border: 0; background: transparent; color: var(--ink);
@@ -28,26 +43,27 @@
 /* Nothing written yet: the word for what goes there, in the rule's colour where the name will stand (not an example of
    one, and not the field's own words: the field holds nothing). */
 .nr-box:has(> .nr-name:invalid)::before { content: attr(data-empty); position: absolute; left: var(--nr-in); top: calc(var(--u) - .2043 * var(--u));
-  pointer-events: none; font: 900 var(--t-head)/1 var(--display); letter-spacing: -.035em; color: var(--rule); }
+  pointer-events: none; font: 900 var(--t-head)/1 var(--display); letter-spacing: -.035em; color: var(--nighthawks-paper-thumb); }
 /* What it is for, a line under the name: the words written straight in it, on lines of a cell; the box grows with them. */
 .nr-box > .summary-box { flex: none; min-height: 0; margin: var(--u) 0 0; padding: 0 var(--nr-in); border: 0; border-radius: 0; background: transparent; }
-.nr-box > .summary-box > .todo-detail { min-height: var(--u); font: var(--t-word)/var(--u) var(--sans); overflow: hidden; }
+.nr-box > .summary-box > .todo-detail { min-height: calc(2 * var(--u)); font: var(--t-word)/var(--u) var(--sans); overflow: hidden; }
 /* What will be made with it, under a rule: its folders and files as File names them, a line a cell tall each, half a
    cell of paper under the rule (the rule's own pixel in it) and under them (as a sheet has over and under its lines), New file
    and New folder their last line. On the grid from the rule down: so the key under them is too. A folder's depth is a
    cell in, its mark in that cell, the names of one depth in one column. */
 .nr-box > .tree.tree-still { margin: var(--u) var(--nr-in) 0; padding: calc(var(--u) - 1px) 0 0; border: 0; border-top: 1px solid var(--rule);
   border-radius: 0; background: transparent; box-shadow: none; font: var(--t-word)/var(--u) var(--sans); }
-.nr-box .tree-still .tree-row { min-height: var(--u); height: var(--u); padding-left: calc(var(--depth, 0) * var(--u)); border-radius: 0; background: none; }
-.nr-box .tree-still :is(.tree-toggle, .tree-spacer) { width: var(--u); height: var(--u); }
+.nr-box .tree-still .tree-row { min-height: var(--u); height: var(--u); padding-inline-start: min(calc(var(--depth, 0) * var(--u)), 25%); border-radius: 0; background: none; }
 .nr-box .tree-still .tree-name { min-height: var(--u); padding: 0; font: 400 var(--t-word)/var(--u) var(--mono); }
+.nr-box .tree-still .tree-slash { color: var(--sub); }
 .nr-box .tree-still .tree-meta { font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
 /* Its deeds' one mark, quiet, ink under the hand (nothing comes or goes, and nothing is coloured under a pointer). */
 .nr-box .tree-still .tree-more { display: grid; place-items: center; flex: none; width: var(--u); height: var(--u); padding: 0; border: 0; border-radius: 0;
   background: none; color: var(--sub); cursor: var(--cursor-hand); }
 .nr-box .tree-still .tree-more .mark { width: 16px; height: 16px; }
 .nr-box .tree-still > .error:not(:empty) { margin: 0; font: var(--t-word)/var(--u) var(--sans); }
-.nr-box .tree-still .tree-more:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--ink); outline: none; }
+.nr-box .tree-still .tree-more:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--ink); }
+.nr-box :is(.tree-more, .tree-make):focus-visible { outline: 1px solid var(--ink); outline-offset: -2px; }
 /* Its foot: the plan's word if any, Create, the key that makes it beside its word: a key the frame's square tall. */
 .nr-box > .answers { margin: var(--u) 0 0; padding: 0 var(--nr-in); }
 .nr-box > .answers > .button { height: calc(1.5 * var(--u)); min-height: 0; }
@@ -70,14 +86,11 @@
 /* A name being written over: in its place, as the name is set, a rule under it in ink. */
 .tree-rename { flex: 0 1 auto; min-width: 0; max-width: 100%; height: calc(var(--h-row) - 10px); margin: 0 var(--s1); padding: 0; border: 0; border-bottom: 1px solid var(--ink);
   border-radius: 0; background: transparent; color: var(--ink); font: inherit; outline: none; }
-/* New file and New folder, the list's last line, in words: what can be added is said, not hidden behind a mark. Each
-   mark in the cell a folder's mark stands in, its words in the names' column; quiet, ink under the hand. */
+/* The two creation deeds stand on the names' edge; pressing one writes straight into that row. */
 .tree-makes { display: flex; flex-wrap: wrap; gap: 0 var(--u); }
-.tree-make { display: inline-flex; align-items: center; gap: 0; height: var(--u); padding: 0; border: 0; border-radius: 0; background: none;
+.tree-make { display: inline-flex; align-items: center; min-height: var(--u); padding: 0; border: 0; border-radius: 0; background: none;
   color: var(--sub); font: var(--t-word)/var(--u) var(--sans); cursor: var(--cursor-hand); }
-.tree-make .mark { width: 16px; height: 16px; margin: 0 4px; }
-.tree-make > span { margin-left: 0; }
-.tree-make:hover, .tree-make:focus-visible { color: var(--ink); outline: none; }
+.tree-make:is(:hover, :focus-visible) { color: var(--ink); }
 .tree-still > .error:not(:empty) { margin: var(--s2) var(--s2) 0; display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
 .tree-still > .error:not(:empty)::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--off); translate: 0 -1px; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
@@ -91,3 +104,12 @@
 .summary-box > .todo-detail::placeholder { color: var(--sub); }
 .new-repo .row { align-items: center; flex-wrap: wrap; }
 .made { margin-right: var(--s2); font-weight: 700; }
+
+/* On a finger-width desk the same rows and commands have room for a finger, not another menu. */
+@media (max-width: 600px) {
+  .nr-box .tree-still .tree-row, .nr-box .tree-makes .tree-make { height: calc(2 * var(--u)); min-height: calc(2 * var(--u)); }
+  .nr-box .tree-still :is(.tree-name, .tree-more) { min-height: 44px; }
+  .nr-box .tree-still .tree-more { width: 44px; margin-inline-end: 0; }
+  .nr-box > .answers { margin-block-start: var(--s3); }
+  .nr-box > .answers > .button { height: 44px; }
+}

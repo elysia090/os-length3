@@ -42,7 +42,7 @@ Places replaces the rail, an ink dot marks the corner key and the destination: I
 Inbox is a step beyond it), Server for new posts. Reading, not merely opening Places, clears the mark.
 
 The band's keys: Home and Forge, the door, the terminal's key, the files' key, the search; Git, the door, the
-terminal's key, the search; New repo, the terminal's key, the files' key, the search (it has no far side). At its
+terminal's key, the search; New repo, the shared Places and Search around one writing sheet (it has no far side). At its
 right end: on Forge the name of what is in the hand; on Git the repo the desk is of.
 
 The widths of DESIGN §3, here: Home's slip 12 cells; the row's first sheet 8 (Git's own, Server's); Inbox's first
@@ -250,16 +250,16 @@ the paper. Wide, there is open desk to the left and below it; narrow, the paper 
 ### New repo (+)
 
 *One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
-ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is, on one line
-and on a patch of the ground its own size: `~/` and the name as written, a letter no name can have marked where it
-is; then New repo, quiet, which gives way where the line has no room for it whole. In it, a cell of paper each side:
+ink edge, its short shadow: the one on the desk). Standard Places and Search take the ways out of it, with no rail or
+band above the paper. Its place sits on one line above its corner: `~/` and the name as written, a letter no name can
+have marked where it is. The path, the name and the writing are not three separate papers.
 
 1. the name on its first line in the display face, its capitals a cell tall as every name's (a name longer than the
    line goes on past it as a field's words do: never made smaller for its room); nothing written, the word for what
    goes there, quiet;
 2. a cell; why the name cannot be, where there is a reason, in the small size on lines of a cell (what is under it
    comes down by the cells it takes; the sheet's top never moves);
-3. what the repo is for, on lines of a cell;
+3. the words of its README, two lines to begin with, growing with the words; absent if that file is left out;
 4. a cell; a rule; a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
    cell in; New file and New folder their last line;
 5. a cell; Create, a key the frame's square tall.
@@ -2317,29 +2317,24 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-One piece being born at the desk's edge, with Home's and Forge's band round
-it (the rail goes between the three as a camera over one desk), and it is the
-hand's: paper, an ink edge, its shadow, the one shadow on the desk. Over its
-corner, in the cell a piece's name stands in, ~/ and the name as written,
-then New repo; its top a cell under the band, as every piece's is. It is a
-piece wide (24 cells, or as many as the window has room for), and as tall as
-what is in it to the grid's next line.
-In it, a cell of paper each side. Its first line, the name, in the display
+One piece being born at the desk's edge, the hand's: paper, an ink edge and
+one short shadow. Standard Places and Search stay out of the writing measure.
+Its path (`~/` and the name as written) stands over the paper, one line with
+no other name. It is a piece wide (24 cells, or as many as the window has
+room for), and as tall as what is in it to the grid's next line.
+On a narrow desk the inset is smaller, and the same rows and keys have room
+for a finger. Its first line, the name, in the display
 face at the size of every name (its capitals a cell tall), never made larger
 or smaller for its room: a name longer than the line runs on past it as a
 field's words do. Nothing written yet, the word name stands there in the
 rule's colour (the field itself holds no example: one there reads as a name
 given, and its row as the repo to be made).
-Under it, a sentence's size, what the repo is for (概要): the words go
-into its README.md under its title, and the box grows with them, a line to
-begin with. Under a rule under that, what will be made with it (作成され
-るもの), as File will show it: the repo's own row, its name again in ink
-(dashed where nothing is named), and the one scaffold every repo starts from
-(nothing to choose: why/repo/templates.json's `standard`, as `why repo new`
-makes it: README.md with docs/ and issue/, no language of its own; C's files
-are `why repo new -t c`'s), each row renamed or left out where it stands,
-New file and New folder at its foot, README.md's size at its row's end as
-File gives it, of what it will say. Create, the one primary action, at the
+Under it are the words of the README, two lines to begin with, written into
+that file under the title (also if the file is renamed). Under a rule are the
+actual folders and files to be made, never a second row for the repo: the
+standard scaffold is README.md and docs/, with no language of its own.
+Rows are renamed or left out in place; New file and New folder are at their
+foot. The projected README size is said only after a valid name is written. Create, the one primary action, at the
 box's foot, ↵ beside its word. A name that cannot be is said as it is
 written, not once Create is pressed: over the box, after where it will
 stand, in the off colour with an off dot before it; the name itself in the

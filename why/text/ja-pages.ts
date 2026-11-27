@@ -71,7 +71,7 @@ export default {
   'Failed to create: {message}': '作成できませんでした：{message}',
   'A repo named "{name}" already exists': '「{name}」という名前の repo は既に存在します',
   'Summary': '概要',
-  'Description / Purpose': 'この repo の用途',
+  'Write the README…': 'README を書く…',
   'Failed to write {what} ({why})': '{what}に書き込めませんでした（{why}）',
 
   // File (the tree of "/")
@@ -190,7 +190,7 @@ export default {
   'Draft kept as {path}.': '未保存の変更を{path}に保存しました。',
   'Automatic saving is paused. Keep your draft in a new file or check the original again.': '自動保存を停止しています。未保存の変更を別ファイルに保存するか、元のファイルをもう一度確認できます。',
   'Could not save {path}. Nothing was moved.': '{path}を保存できませんでした。移動していません。',
-  'Files: New, Rename, Delete': 'ファイル：新規作成・名前変更・削除',
+  'File actions': 'ファイル操作',
   'Files in {name}': '{name}のファイル一覧',
   'Move to {where}': '{where}に追加',
   'Search results': '検索結果',
