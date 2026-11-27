@@ -1,6 +1,6 @@
 import {expect, test} from './fixtures.ts';
 
-const work = ['Prompt', 'Forge', 'Files', 'Git', 'Home', 'Server', 'Runtime', 'Plugin', 'New repo', 'Account'];
+const work = ['Forge', 'Files', 'Git', 'Prompt', 'Home', 'Server', 'Runtime', 'Plugin', 'New repo', 'Account'];
 
 test('Places shows five whole rows, scrolls in the menu, and keeps its actual destinations', async ({signedIn: app}) => {
   const {page, forge} = app;
@@ -12,6 +12,12 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   const entries = menu.locator('button[role^="menuitem"]');
   await key.click();
   await expect(entries).toHaveText(work);
+  await expect(menu.getByRole('menuitemradio', {name: 'Forge', exact: true})).toBeFocused();
+  for (const name of work.slice(1, 4)) {
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', {name, exact: true}).or(
+      menu.getByRole('menuitemradio', {name, exact: true}))).toBeFocused();
+  }
   await expect(menu.getByRole('separator')).toHaveCount(0);
   await expect(key.locator('svg path')).toHaveAttribute('d', glyph!);
   expect(await key.evaluate(el => getComputedStyle(el, '::before').width)).toBe('28px');
@@ -58,6 +64,13 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await key.click();
   await expect(entries).toHaveText(work);
   const current = menu.getByRole('menuitemradio', {name: 'Git', exact: true});
+  await expect(current).toBeFocused();
+  await expect(current).toBeInViewport({ratio: 1});
+  expect(await scroll()).toBe(0);
+  await current.press('Escape');
+  // Git is now the third row. At two rows, the focused destination must still scroll fully into view.
+  await page.setViewportSize({width: 1536, height: 140});
+  await key.click();
   await expect(current).toBeFocused();
   await expect(current).toBeInViewport({ratio: 1});
   await expect.poll(scroll).toBeGreaterThan(0);

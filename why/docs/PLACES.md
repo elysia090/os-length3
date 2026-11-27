@@ -588,8 +588,8 @@ it; there is no pane beside the desk, no pill over it and no Prompt under it.
 **At the corner.** Two 44 px keys, 12 px from the upper and right edges:
 Places at the edge and a lens beside it. Each mark is 18 px.
 The two windows in the Places mark do not change when pressed; the key
-sinks into 28 px of the desk and the menu is the paper. Prompt, Forge,
-Files, Git, Home, Server, Runtime, Plugin, New repo and Account are on one
+sinks into 28 px of the desk and the menu is the paper. Forge, Files,
+Git, Prompt, Home, Server, Runtime, Plugin, New repo and Account are on one
 scrolling list. Five lines of 28 px fit in the ordinary menu, four in a window
 360 px tall or less when there is room. Arrow keys, Home and End bring the
 focused line into view, and Escape puts the list away. Files is the current

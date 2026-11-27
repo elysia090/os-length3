@@ -4,7 +4,7 @@ import {activateOnPress} from '../../ui/press.ts';
 import {t} from '../../../text/i18n.ts';
 import {marks, news, onNews, type News} from '../../../shipto/news.ts';
 
-export const WORK_PLACES = ['Prompt', 'Forge', 'Files', 'Git'] as const;
+export const WORK_PLACES = ['Forge', 'Files', 'Git', 'Prompt'] as const;
 export type WorkPlace = typeof WORK_PLACES[number];
 export type ForgePlace = Exclude<WorkPlace, 'Git'>;
 export interface PlaceCommand {
