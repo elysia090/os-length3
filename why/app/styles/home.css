@@ -41,6 +41,10 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   margin-block-start: calc(var(--cap) * var(--u) - (var(--pitch) + var(--size)) / 2 + .1245 * var(--size));
   text-wrap: balance;
 }
+/* Below fourteen cells of writing measure, the larger crown breaks ordinary names within their words. */
+@container home-portrait (width < 348px) {
+  .home-row .identity > h1 { --cap: 1.75; }
+}
 @media (min-width: 1110px) { .home-beside { padding-block-start: calc(3 * var(--u) - var(--s1)); } }
 .home-row .identity > :is(.counts, .handle, .bio, .bio-ask) { color: var(--nighthawks-desk-quiet); }
 .home-row .identity [contenteditable] { caret-color: var(--nighthawks-paper); }

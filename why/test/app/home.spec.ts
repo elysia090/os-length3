@@ -238,6 +238,52 @@ test('Home gives the note one full measure, with paired repo names and New repo 
   await expect(app.home.todo).toHaveCSS('box-shadow', /4px 4px 0px 0px$/);
 });
 
+test('the narrow Home name wraps at words before splitting an unbroken name', async ({signedIn: app}) => {
+  await app.rail.go('home');
+  const name = app.main.locator('#profile-name');
+  const write = async (text: string) => {
+    await name.click();
+    await name.fill(text);
+    await name.press('Enter');
+    await expect(name).toHaveText(text);
+  };
+  const lines = () => name.evaluate((el) => {
+    const text = el.firstChild as Text;
+    let start = 0;
+    return text.data.split(' ').map((word) => {
+      const range = document.createRange();
+      range.setStart(text, start);
+      range.setEnd(text, start + word.length);
+      start += word.length + 1;
+      return [...range.getClientRects()].map((line) => ({top: line.top, right: line.right}));
+    });
+  });
+  await write('Alexandra Longwind');
+  for (const width of [320, 390]) {
+    await app.page.setViewportSize({width, height: 844});
+    const [first, last] = await lines();
+    expect(first).toHaveLength(1);
+    expect(last).toHaveLength(1);
+    expect(last![0]!.top).toBeGreaterThan(first![0]!.top);
+    expect(await app.page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(width);
+  }
+
+  await app.page.setViewportSize({width: 320, height: 640});
+  for (const text of ['Ada Gray', '田村 蓮']) {
+    await write(text);
+    const rows = (await lines()).flat();
+    expect(new Set(rows.map((row) => row.top)).size).toBe(1);
+    expect(rows.every((row) => row.right <= 320)).toBe(true);
+  }
+
+  // If a single word really exceeds the measure, a forced line still fits the paper.
+  await write('BartholomewThistlethwaiteTheSecond');
+  const word = (await lines())[0]!;
+  expect(word.length).toBeGreaterThan(1);
+  expect(word.every((row) => row.right <= 320)).toBe(true);
+  expect(await app.page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(320);
+});
+
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
   await app.rail.go('home');
   const name = app.page.locator('#profile-name');
