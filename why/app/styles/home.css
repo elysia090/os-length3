@@ -19,14 +19,29 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 .home-portrait :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
 .home-portrait :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
 .home-portrait .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
-@media (max-width: 600px) { .page > .home-portrait { --name-cap: 2.25; padding-inline-start: calc(var(--u) - var(--outer)); } }
+@media (max-width: 600px) {
+  .page > .home-portrait {
+    --name-cap: 2; --home-section-gap: calc(1.5 * var(--u));
+    padding-inline-start: calc(var(--u) - var(--outer));
+  }
+}
+@media (max-width: 359px) {
+  .home-portrait { --home-note-gap: var(--u); }
+}
 /* The first capitals still stand together on the room's line; note and destinations have different depth. */
 .home-main { display: block; }
 .home-row {
   --available: round(down, 100% - var(--shade), var(--u));
   --own-width: min(var(--own-measure), var(--available));
   --beside-width: min(var(--available), clamp(16 * var(--u), var(--available) - var(--own-measure) - 2 * var(--u), 18 * var(--u)));
-  display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u)); padding-bottom: calc(2 * var(--u));
+  /* The whole picture moves by cells. Let the open right side keep more room than the side behind it. */
+  margin-inline-start: clamp(0px, round(down, (100% - var(--own-measure) - 22 * var(--u)) / 2, var(--u)), calc(7 * var(--u)));
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: var(--home-note-gap, var(--home-section-gap, calc(2 * var(--u)))) calc(2 * var(--u));
+  padding-bottom: calc(2 * var(--u));
+}
+@container home-portrait (width > 1152px) {
+  .home-row { padding-block-start: calc(2 * var(--u)); }
 }
 .home-row > * { flex: none; box-sizing: border-box; min-width: 0; }
 .home-row .clearing { --ground: var(--nighthawks-ground); }
@@ -65,7 +80,7 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 /* Clear completed is at the foot only when it can act; the first line is the writing. */
 .home-own .todo-left { display: flex; justify-content: flex-end; margin-inline: var(--note-gutter); font: 400 var(--t-word)/var(--u) var(--mono); }
 @media (max-width: 600px) {
-  .home-own > .section { --note-gutter: calc(1.5 * var(--u)); --note-writing: 18px; min-height: calc(13 * var(--u)); }
+  .home-own > .section { --note-gutter: calc(1.5 * var(--u)); --note-writing: 18px; }
 }
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
 .home-own .todo-clear:hover { color: var(--ink); }
@@ -93,6 +108,8 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 .home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
 .home-own .todo-head > .todo-strike { height: 2px; margin-top: 1px; background: var(--note-quiet); }
 .home-own .todo-detail { width: calc(100% - 2 * var(--note-gutter)); margin: 0 0 0 var(--note-gutter); font: 400 var(--note-writing)/calc(var(--u) + var(--s1)) var(--sans); }
+/* On a phone the detail belongs to its line, not to the next task. Leave all of the row's press area. */
+@media (max-width: 600px) { .home-own .todo-detail { line-height: var(--u); } }
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
 .home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/var(--u) var(--mono); }
 .home-own .todo-dates-detail .todo-created { margin: 0 0 0 var(--note-gutter); }
@@ -157,13 +174,15 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   color: var(--nighthawks-desk-quiet); font: 700 var(--t-word)/var(--u) var(--mono);
   text-align: start; text-transform: lowercase; white-space: nowrap;
 }
+/* On the 320px measure the label already keeps its own column. Do not reserve dead space after the add key, either. */
+@media (max-width: 359px) { .grid.repo-grid.home-repos > .card.new { padding-inline-end: var(--s1); } }
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
 .grid.repo-grid.home-repos > .card.new:hover { color: var(--nighthawks-paper); }
 .home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); overflow-wrap: anywhere; }
 /* Recent activity is an index back to the work. A single quiet glass behind its controls, not the writing itself
    and not another raised sheet. Keep the words and their positions unchanged. */
-.home-waits { --glass-inset: var(--s2); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: calc(2 * var(--u)); }
+.home-waits { --glass-inset: var(--s2); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: var(--home-section-gap, calc(2 * var(--u))); }
 /* The return names sit in stronger ink; brighten the commands, not the glass underneath them. */
 .home-waits > .lately {
   --recent-heading: color-mix(in srgb, var(--nighthawks-paper) 22%, var(--nighthawks-desk-quiet));

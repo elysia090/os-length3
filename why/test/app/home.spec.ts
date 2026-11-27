@@ -216,7 +216,7 @@ test('Home gives the note one full measure, with paired repo names and New repo 
     await expect(async () => {
       const note = await box(app.home.todo);
       const repos = await box(main.getByRole('region', {name: 'Repos'}));
-      expect(note.x).toBe(size.width === 390 ? 24 : 48);
+      expect(note.x).toBe(size.width === 1440 ? 144 : size.width === 390 ? 24 : 48);
       expect(note.width).toBe(size.width === 390 ? 336 : 624);
       expect(note.height).toBeGreaterThanOrEqual(288);
       if (size.width === 1440) expect(repos.x).toBeGreaterThan(note.x + note.width);
@@ -488,7 +488,7 @@ test('Home is a shot: its title keeps its size at any length, over lines on the 
         fits: lines.every((r) => r.left >= bounds.left - 1 && r.right <= bounds.right + 1)};
     });
     expect(layout.size).toBe(short);
-    expect(parseFloat(layout.size)).toBeCloseTo(24 * (size.width === 390 ? 2.25 : 3) / .727, 1);
+    expect(parseFloat(layout.size)).toBeCloseTo(24 * (size.width === 390 ? 2 : 3) / .727, 1);
     expect(layout.lines).toBeGreaterThan(1);
     expect(layout.fits).toBe(true);
   }
