@@ -119,8 +119,9 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
 }
 /* Places borrows the focus, not a piece of paper. Repaint the one light over the whole work surface, at the
    desk's original dot phase: neither the work nor the desk has a seam at the list's edge. */
+.desk-caption:has(> .forge-places-key[aria-expanded='true']) { touch-action: none; }
 .desk-caption:has(> .forge-places-key[aria-expanded='true'])::before {
-  content: ''; position: fixed; z-index: -1; inset: 0; pointer-events: none; opacity: .97;
+  content: ''; position: fixed; z-index: -1; inset: 0; pointer-events: auto; opacity: .97;
   background: var(--places-ground, var(--ground)) var(--places-grid, var(--dots)) 0 0 / var(--u) var(--u);
 }
 .desk-caption > .forge-places-key[aria-haspopup='menu'] {

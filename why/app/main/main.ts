@@ -338,6 +338,10 @@ window.addEventListener('popstate', (event) => {
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
 const readTo = new Map<PurposeId, number>();
+/** A step chosen from the frame leaves its keyboard there on return, not in a closed menu. */
+const keyAt = new Set<PurposeId>();
+const placeKey = (page: HTMLElement) => [...page.querySelectorAll<HTMLButtonElement>('.forge-places-key')]
+  .find(key => !key.closest('[hidden], [inert]'));
 
 /**
  * Come back to, a page is where it was read to. Still coming in (its lists drawn once they are read), it is put there
@@ -356,11 +360,16 @@ function readAgain(id: PurposeId) {
 }
 
 function draw(id: PurposeId, quiet: boolean, stepped = false) {
-  const from = current;
+  const from = current, page = $('page');
+  const fromKey = document.activeElement;
+  const followed = from !== id && !!fromKey?.matches('.forge-places-key') && page.contains(fromKey);
+  if (opened && from !== id) {
+    if (followed) keyAt.add(from); else keyAt.delete(from);
+  }
   // Every other screen is a step sideways. The rail still gives their order, with a place's far side
   // (and Git beside Forge) to the right of it. The place left is kept as it was before anything changes.
   const direction = Math.sign(depth(id) - depth(from)) || (isFar(id) || id === 'git' ? 1 : -1);
-  const arrived = !opened || quiet || from === id ? null : travel($('page'), direction);
+  const arrived = !opened || quiet || from === id ? null : travel(page, direction);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -394,7 +403,11 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   named();
   const shown = render();
   hang();
-  if (from !== id) readAgain(id);
+  if (from !== id) {
+    readAgain(id);
+    if ((followed || stepped && keyAt.has(id)) && (document.activeElement === document.body || document.activeElement === fromKey))
+      placeKey(page)?.focus({preventScroll: true});
+  }
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
   // The first content surface arrives whole, once it is (render): without delaying the frame or staggering its data.

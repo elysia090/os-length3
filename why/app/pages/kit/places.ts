@@ -81,6 +81,11 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     watching?.disconnect(); watching = null;
     if (back && owner.isConnected && !owner.closest('[hidden]')) key.focus({preventScroll: true});
   };
+  // The quiet ground takes an outside press itself; the work underneath does not receive a second deed.
+  const ground = (e: Event) => e.target === caption && !menu.hidden;
+  caption.addEventListener('pointerdown', e => { if (ground(e) && e.isPrimary && e.button === 0) e.preventDefault(); });
+  caption.addEventListener('click', e => { if (ground(e)) close(true); });
+  caption.addEventListener('wheel', e => { if (ground(e)) e.preventDefault(); }, {passive: false});
   const item = (name: string, role: string, go: () => void, onPress = false) => {
     const b = h('button', {class: 'forge-menu-item', type: 'button', role, tabindex: '-1', 'aria-label': t(name)},
       h('span', {'data-press-face': ''}, t(name))) as HTMLButtonElement;
@@ -93,7 +98,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   const tabs = places.map((place) => {
     const acts = action(place);
     return item(place, acts ? 'menuitem' : 'menuitemradio', () => {
-      close(!acts && place === here);
+      close(true);
       if (acts || place !== here) select(place);
     });
   });
@@ -124,7 +129,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   key.addEventListener('click', () => {
     if (!menu.hidden) { close(true); return; }
     commands.forEach((button) => button.remove());
-    commands = extra().map(({label, run, onPress}) => item(label, 'menuitem', () => { close(); run(key); }, onPress));
+    commands = extra().map(({label, run, onPress}) => item(label, 'menuitem', () => { close(true); run(key); }, onPress));
     paintNews(key, menu);
     beside();
     menu.hidden = false;
@@ -139,7 +144,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     signal.addEventListener('abort', () => fit.disconnect(), {once: true});
     window.addEventListener('resize', beside, {signal});
     document.addEventListener('pointerdown', (e) => {
-      if (e.target instanceof Node && !menu.contains(e.target) && !key.contains(e.target)) close();
+      if (e.target instanceof Node && !menu.contains(e.target) && !caption.contains(e.target)) close();
     }, {capture: true, signal});
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || e.isComposing) return;

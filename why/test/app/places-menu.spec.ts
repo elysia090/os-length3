@@ -1,4 +1,5 @@
 import {expect, test} from './fixtures.ts';
+import type {App} from './app.ts';
 
 const work = ['Forge', 'Files', 'Git', 'Prompt', 'Home', 'Server', 'Runtime', 'Plugin', 'New repo', 'Account'];
 
@@ -38,7 +39,7 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
     return {ground: style.backgroundColor, dots: style.backgroundImage};
   });
   const lower = await quiet();
-  expect(lower).toMatchObject({...desk, viewport: ['0px', '0px', '0px', '0px'], animation: 'none', pointer: 'none'});
+  expect(lower).toMatchObject({...desk, viewport: ['0px', '0px', '0px', '0px'], animation: 'none', pointer: 'auto'});
   expect(lower.content).not.toBe('none');
   expect(lower.opacity).toBeGreaterThan(0);
   expect(lower.opacity).toBeLessThan(1);
@@ -133,6 +134,64 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await expect(key).toBeFocused();
 });
 
+const paperClose = (app: App) =>
+  app.forge.piece('README.md').locator('.desk-close');
+
+test('an outside press puts only the menu away; the next press can act on the paper', async ({app}) => {
+  const {page, forge} = app;
+  await app.newRepo.make('field-notes');
+  const paper = forge.piece('README.md');
+  const {x, y, width, height} = (await paperClose(app).boundingBox())!;
+  const press = () => page.mouse.click(x + width / 2, y + height / 2);
+  await forge.placesKey.click();
+  await expect(forge.places).toBeVisible();
+  const lens = app.main.getByRole('button', {name: 'Search', exact: true});
+  await lens.click();
+  const search = page.getByRole('main', {name: 'Search', exact: true}).getByRole('searchbox');
+  await expect(search).toBeFocused();
+  await search.press('Escape');
+  await expect(lens).toBeFocused();
+  await forge.placesKey.click();
+  await expect(forge.places).toBeVisible();
+  await press();
+  await expect(forge.places).toBeHidden();
+  await expect(forge.placesKey).toBeFocused();
+  await expect(paper).toBeVisible();
+  await press();
+  await expect(paper).toBeHidden();
+});
+
+test('Places takes the keyboard to the next desk and to the desks seen in browser history', async ({app}) => {
+  const {page, forge} = app;
+  await app.newRepo.make('field-notes');
+  const editor = forge.editor('README.md');
+  await editor.fill(Array.from({length: 220}, (_, i) => `Line ${i} has its own place.`).join('\n'));
+  const position = () => editor.evaluate((el: HTMLTextAreaElement) =>
+    [el.selectionStart, el.selectionEnd, el.closest<HTMLElement>('.desk-file')!.scrollTop]);
+  await editor.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(4500, 4504, 'forward');
+    el.closest<HTMLElement>('.desk-file')!.scrollTop = 1617;
+  });
+  const before = await position();
+  expect(before[2]).toBeGreaterThan(1000);
+  await forge.placesKey.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(forge.places.getByRole('menuitemradio', {name: 'Git', exact: true})).toBeFocused();
+  await page.keyboard.press('Enter');
+  const at = async (name: string) => {
+    await expect(forge.placesKey).toHaveAccessibleName(name);
+    await expect(forge.placesKey).toBeFocused();
+  };
+  await at('Git');
+  await page.goBack();
+  await at('Forge');
+  await expect(editor).toBeVisible();
+  expect(await position()).toEqual(before);
+  await page.goForward();
+  await at('Git');
+});
+
 test.describe('touch', () => {
   test.use({hasTouch: true, isMobile: true});
 
@@ -167,6 +226,13 @@ test.describe('touch', () => {
       await menu.getByRole('menuitemradio', {name: 'Forge', exact: true}).tap();
       await expect(key).toHaveAccessibleName('Forge');
       await expect(menu).toBeHidden();
+      const off = (await paperClose(app).boundingBox())!;
+      await key.tap();
+      await expect(menu).toBeVisible();
+      await app.page.touchscreen.tap(off.x + off.width / 2, off.y + off.height / 2);
+      await expect(menu).toBeHidden();
+      await expect(key).toBeFocused();
+      await expect(app.forge.piece('README.md')).toBeVisible();
       // The quick sequence is not taken as a double-tap zoom on the adjacent name and option.
       expect(await app.page.evaluate(() => visualViewport!.scale)).toBe(1);
     }
