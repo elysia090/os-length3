@@ -47,7 +47,7 @@ test('a piece of 24 cells divides into 1, 2, 3, 4 and 6 columns with nothing ove
   assert.ok(48 + 24 * (10 + 2 + 24 + 2 + 24) + 12 > 1536);
 });
 
-test('the side sheets and Inbox address track keep their exact cell widths', () => {
+test('the Home activity glass, side sheets and Inbox address track keep their exact cell widths', () => {
   const style = (name: string, selector: string | RegExp, prop: string) => {
     const css = readFileSync(new URL(`../styles/${name}.css`, import.meta.url), 'utf8');
     const values = readSheet(css).nodes.flatMap((rule) => rule.kind === 'rule'
@@ -57,8 +57,14 @@ test('the side sheets and Inbox address track keep their exact cell widths', () 
     return values[0];
   };
   const cells = (n: number) => `calc(${n} * var(--u))`;
-  assert.equal(style('home', '.home-waits > .lately', 'width'), cells(12));
-  assert.equal(style('server', '.slide-track > .server-side', 'width'), cells(8));
+  // The 15-cell activity glass follows its beside column. The two smaller Home sheets keep their own measure.
+  assert.equal(style('home', '.home-waits > .lately', 'width'), cells(15));
+  assert.equal(style('home', '.home-waits > .plugins', 'width'), cells(12));
+  assert.equal(style('home', '.home-waits > .agent-cards', 'width'), cells(12));
+  // The Server index used to stand in a row of sheets. It still caps at eight cells, with a cell clear of the
+  // centered paper; the available width can be smaller, so do not measure it as a fixed sheet.
+  assert.equal(style('server-desk', '.server-sidebar', 'width'),
+    `min(${cells(8)}, calc(var(--server-paper-left) - var(--server-edge) - var(--u)))`);
   assert.equal(style('git-desk', '.git-desk > .git-side', 'width'), cells(8));
   assert.equal(style('page', /^\.page:not\(\.page-work\)/, 'max-width'), cells(48));
 

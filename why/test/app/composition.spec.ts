@@ -113,10 +113,22 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   // is a cell of the grid, its middle on a row of the dots). Not a key's or a field's words (a thing's, centred in its
   // field), nor words on a name's line (they stand on its baseline: its servants), nor the frame's.
   const offGrid: string[] = [];
+  const offCell = (line: number, pitch: number) => line - pitch * Math.round(line / pitch);
+  // In Server, the text lives in ruled boxes: the mixed fonts don't share the same glyph center, and a
+  // shared glyph baseline must not grow the 24px row. Measure the boxes, including wrapped paragraphs.
+  const transcriptRows = '.board-talk :is(.tl-who, .tl-who > *, .tl-body)';
+  for (const el of all.filter((el) => el.matches(transcriptRows))) {
+    const transcript = el.closest('.board-talk')!;
+    const origin = transcript.getBoundingClientRect().top - transcript.scrollTop + 1;
+    const {top, height} = el.getBoundingClientRect(), {lineHeight} = getComputedStyle(el);
+    if (Math.abs(offCell(top - origin, 24)) > .1 || Math.abs(offCell(height, 24)) > .1 || lineHeight !== '24px')
+      offGrid.push(`Server "${el.textContent!.trim().slice(0, 24)}" at ${(top - origin).toFixed(2)}, ${height}px high, line ${lineHeight}`);
+  }
   const lines = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = lines.nextNode(); n; n = lines.nextNode()) {
     const el = n.parentElement!;
     if (!n.textContent!.trim() || !inSight(el) || el.closest('.sr-only, button, [role=button], [role=tab], [role=menuitem], kbd, input, textarea, [contenteditable], .rail, .band, .home-band, .bar, .chip, .state-chip, .lately-badge, .tl-face, .prompt, .screen')) continue;
+    if (el.closest(transcriptRows)) continue;
     const c = getComputedStyle(el);
     if (Math.abs(parseFloat(c.fontSize) - 17) > .01 || Number(c.opacity) === 0) continue;
     let heard = false;
@@ -158,13 +170,13 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       : letterLine ? letterLine.getBoundingClientRect().top + pitch / 2
       : homeHead ? homeHead.getBoundingClientRect().top + pitch / 2
       : transcript ? transcript.getBoundingClientRect().top - transcript.scrollTop + 1 + pitch / 2 : runtimeFirst ?? 12;
-    // The 17px inline monospace times sit on the sentence's baseline, not on a separate 24px line.
-    // Their text Range centers one pixel above the regular line's text Range; compare their shared baseline.
-    const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.tl-who > time, .bubble-time') ? 1 : 0;
+    // A 17px inline monospace time sits on the sentence's baseline, not on a separate 24px line.
+    // Its text Range centers one pixel above the regular line's text Range.
+    const baseline = parseFloat(c.lineHeight) === 17 && el.matches('.bubble-time') ? 1 : 0;
     for (const b of range.getClientRects()) {
       if (b.width < 2 || b.top < 48 || b.left < 48 || b.bottom > H || b.right > W) continue;
       const line = b.top + b.height / 2 + baseline - first;
-      const off = line - pitch * Math.round(line / pitch);
+      const off = offCell(line, pitch);
       if (Math.abs(off) > 1) offGrid.push(`"${n.textContent!.trim().slice(0, 24)}" ${off > 0 ? '+' : ''}${off.toFixed(1)}`);
     }
   }
@@ -354,7 +366,8 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
   await expect(readme).toHaveValue(text);
   await app.server.make('Trip', `${app.handle}-trip`);
   await app.server.makeBoard('Packing');
-  await app.server.post('Packing', 'Who brings the tent?');
+  const post = 'Who brings the tent?\nI have the stove.';
+  await app.server.post('Packing', post);
   const bo = await another('Bo');
   await bo.inbox.named();
   await app.inbox.named();
@@ -365,6 +378,11 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
     for (const place of Object.keys(PLACES) as Place[]) {
       await app.rail.go(place);
       if (place === 'forge') await app.forge.editor('README.md').focus();
+      if (place === 'server') {
+        const paragraph = app.server.talk('Packing').locator('.tl-body');
+        await expect(paragraph).toHaveText(post);
+        await expect(paragraph).toHaveCSS('height', `${2 * U}px`);
+      }
       if (place === 'inbox') {
         const thread = app.inbox.thread(bo.handle);
         // Returning holds the same letter. On a narrow window the index is beside it, not a fallback to poke

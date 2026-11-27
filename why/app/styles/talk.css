@@ -6,8 +6,10 @@
 .tl-page { display: flow-root; }
 .tl-post { position: relative; margin: 0; padding: 0 0 var(--u); }
 .tl-page > .tl-post:last-child { padding-bottom: var(--u); }
+/* The attribution and its smaller monospace time share row edges, not font metrics. Baseline-aligning
+   two full cells can make the flex line taller than a cell and move every line of the post below it. */
 .tl-who {
-  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start;
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-start;
   gap: 0 var(--s3); min-width: 0; min-height: var(--u); line-height: var(--u);
 }
 .tl-who > b { min-width: 0; overflow-wrap: anywhere; }
