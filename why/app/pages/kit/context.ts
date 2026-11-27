@@ -4,9 +4,9 @@ import type {Carry} from '../../ui/glide.ts';
 
 /**
  * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
- * was left), its name (a file just made, named first, then written in), or not in it (false).
+ * was left), its saved selection (resume), its name (a file just made), or not in it (false).
  */
-export type Writing = boolean | 'end' | 'name' | {at: number};
+export type Writing = boolean | 'end' | 'name' | 'resume' | {at: number};
 
 /** What a page may ask of the shell. */
 export interface Context extends SearchDesk {
@@ -22,7 +22,7 @@ export interface Context extends SearchDesk {
   /** Record the repo Forge shows, without leaving or redrawing the page. */
   remember(name: string): void;
   /** Present the existing File tree inside Forge without a modal veil; null puts that pane away. */
-  forgeFiles?(repo: string | null, focus?: boolean): void;
+  forgeFiles?(repo: string | null, focus?: boolean, index?: boolean): void;
   /** Go through the shell's Forge route, with the named place in hand when its repo is ready. */
   forgePlace?(place: ForgePlace): Promise<void>;
   /** The shell's existing places and tools not already offered on this desk. */

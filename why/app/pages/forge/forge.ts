@@ -140,6 +140,7 @@ class Forge {
   private paperReturn: PaperReturn | null = null;
   private paperMoved = false;
   private placeInHand: ForgePlace = 'Forge';
+  private readonly filesBeside = matchMedia('(min-width: 1001px)');
   private folderOut: (() => void) | null = null;
   private startOut: (() => void) | null = null;
   private readonly listening = new AbortController();
@@ -180,6 +181,12 @@ class Forge {
       }});
     this.element = this.work.element;
     this.element.classList.add('forge-layout');
+    this.filesBeside.addEventListener('change', () => {
+      const repo = this.now.repo;
+      if (!repo || !this.visible()) return;
+      if (this.filesBeside.matches) this.selectPlace(this.placeInHand, false);
+      else this.ctx.forgeFiles?.(null);
+    }, {signal: this.listening.signal});
     this.element.prepend(h('h1', {class: 'forge-title'}));
     this.switcher = workPlaces(this.element, (place) => {
       if (place === 'Git') void ctx.go('git');
@@ -433,13 +440,15 @@ class Forge {
     const repo=this.now.repo;
     if(!repo)return;
     if(place==='Prompt'){this.promptWindow(true,focus);return;}
-    if(place==='Files')this.promptWindow(false,false);
-    this.placeInHand=place;
-    this.center.dataset.place=place;
-    this.switcher.set(place,true);
-    this.hand(place);
-    this.ctx.forgeFiles?.(place==='Files'?repo:null,focus);
-    if(focus&&place==='Forge')this.deskOf(repo).desk.focusHeld();
+    const beside = this.filesBeside.matches;
+    if (place === 'Files' && !beside) this.promptWindow(false, false);
+    const face = beside ? 'Forge' : place;
+    this.placeInHand = face;
+    this.center.dataset.place = face;
+    this.switcher.set(face, true);
+    if (!beside || (focus && place === 'Forge') || this.prompt.hidden) this.hand(face);
+    this.ctx.forgeFiles?.(beside || place === 'Files' ? repo : null, focus && place === 'Files', beside);
+    if (focus && place === 'Forge') this.deskOf(repo).desk.focusHeld();
   }
 
   private closeStart() {
@@ -462,7 +471,7 @@ class Forge {
     });
   }
 
-  filesClosed() { if (this.placeInHand === 'Files') this.selectPlace('Forge'); }
+  filesClosed() { if (this.placeInHand === 'Files' || this.filesBeside.matches) this.selectPlace('Forge'); }
   filesTaken() { if (this.placeInHand === 'Files') this.hand('Files'); }
 
   away() {
@@ -606,7 +615,7 @@ class Forge {
     const d = this.deskOf(repo);
     const kept = d.files.get(path);
     // Files takes the paper back into the hand, not to the top of a paper already being worked on.
-    const resume = this.placeInHand === 'Files' && write === true && line === 0 && kept?.hasEditor;
+    const resume = (write === 'resume' || this.placeInHand === 'Files' && write === true) && line === 0 && kept?.hasEditor;
     if (this.placeInHand !== 'Forge' && matchMedia('(max-width: 1000px)').matches) this.selectPlace('Forge', false);
     else if (keyboard) this.hand('Forge');
     // Chosen from the band's search while its sheet is down, the desk out of sight under it: the camera is put where

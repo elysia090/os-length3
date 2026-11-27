@@ -260,6 +260,13 @@ body {
   --t-inbox-title: 38px;
 }
 
+/* The Forge file index uses the same text scale as an Inbox sender and its excerpt. */
+.file-tree[data-forge-index] {
+  --forge-index-ink: #e5d5b8;
+  --forge-index-quiet: #d4c3a8;
+  --t-file-index-detail: 14px;
+}
+
 /* The Forge Prompt is a warm neutral, quieter in colour than the paper beside it. */
 body.forge-place {
   --prompt-edge: #242424;

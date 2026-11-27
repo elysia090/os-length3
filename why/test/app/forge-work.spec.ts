@@ -329,7 +329,7 @@ test('the repo Files row keeps its real deeds without a second command in Places
   await app.forge.use('Files');
   const files = app.page.getByRole('tree', {name: 'hello', exact: true});
   const src = files.getByRole('treeitem', {name: 'src', exact: true});
-  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'Open src', exact: true}).click();
+  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'src', exact: true}).click();
   const action = async (name: string) => {
     if (!await files.isVisible()) await app.forge.use('Files');
     const row = files.getByRole('button', {name, exact: true});
@@ -391,7 +391,7 @@ test('Files Rename leaves caret movement and Shift selection to the name field',
   await app.forge.use('Files');
   const files = page.getByRole('tree', {name: 'hello', exact: true});
   const src = files.getByRole('treeitem', {name: 'src', exact: true});
-  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'Open src', exact: true}).click();
+  if (await src.getAttribute('aria-expanded') === 'false') await src.getByRole('button', {name: 'src', exact: true}).click();
   const row = src.getByRole('button', {name: 'main.c', exact: true});
   await row.press('Shift+F10');
   await page.getByRole('menu', {name: 'main.c', exact: true}).getByRole('menuitem', {name: 'Rename', exact: true}).press('Enter');

@@ -56,7 +56,8 @@ test('a place uses the common type scale or its scoped writing measure, and ever
   const allowed = (file: string, size: string) => SIZES.test(size)
     || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME].includes(size)
     || file === 'server-desk.css' && SERVER_SIZE.has(size) && size !== 'var(--t-server-time)'
-    || file === 'talk.css' && size === 'var(--t-server-time)';
+    || file === 'talk.css' && size === 'var(--t-server-time)'
+    || file === 'forge-index.css' && size === 'var(--t-file-index-detail)';
   for (const [f, s] of sheets) {
     for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.ok(allowed(f, m[1]!.trim()), `${f}: font-size ${m[1]}`);
     for (const m of s.matchAll(/(?<![-\w])font:\s*([^;}]+)/g)) {

@@ -26,7 +26,7 @@ test('short, long and blank documents share a full writing surface without addin
   await expect.poll(() => forge.desk.evaluate((el) => el.scrollLeft)).toBe(0);
   const boxes = () => Promise.all(names.map((name) => forge.piece(name).boundingBox()));
   const full = await boxes();
-  expect(full).toEqual([48, 636, 1224].map((x) => ({x, y: 90, width: 576, height: 744})));
+  expect(full).toEqual([312, 900, 1488].map((x) => ({x, y: 96, width: 576, height: 744})));
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(58, 61, 54)');
   for (const name of names) {
     await expect(forge.piece(name)).toHaveCSS('background-image', /^conic-gradient/);
@@ -84,7 +84,7 @@ test('short, long and blank documents share a full writing surface without addin
   const close = main.getByRole('button', {name: 'Close main.c', exact: true});
   await expect(close.locator('svg')).toHaveCount(1);
   await expect(close).toHaveText('');
-  expect(await close.boundingBox()).toEqual({x: 1188, y: 66, width: 24, height: 24});
+  expect(await close.boundingBox()).toEqual({x: 1452, y: 72, width: 24, height: 24});
   await close.click();
   await expect(main).toHaveCount(0);
   await expect(readme).toHaveValue('# hello\n');
@@ -92,7 +92,7 @@ test('short, long and blank documents share a full writing surface without addin
 
   await forge.use('Files');
   const folder = page.getByRole('tree', {name: 'hello', exact: true}).getByRole('treeitem', {name: 'src', exact: true});
-  const toggle = folder.getByRole('button', {name: /^(Open|Close) src$/}).first();
+  const toggle = folder.getByRole('button', {name: 'src', exact: true});
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   await folder.getByRole('button', {name: 'main.c', exact: true}).click();
   await expect(editor).toHaveValue(text);

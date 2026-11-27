@@ -106,40 +106,34 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(editor).toBeFocused();
   await expect.poll(position).toEqual(before);
 
+  // On a wide desk Files is already beside the paper. A held name opens a real contextual menu, not hover tools.
   await forge.use('Files');
   const row = page.getByRole('tree', {name: 'pine', exact: true}).getByRole('treeitem', {name: 'README.md', exact: true});
   const name = row.getByRole('button', {name: 'README.md', exact: true});
-  await expect(name).toBeVisible();
-  await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeHidden();
-  await name.hover();
-  await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeVisible();
-  await expect(row.getByRole('button', {name: 'Delete', exact: true})).toBeVisible();
-  const at = await name.boundingBox();
-  await row.getByRole('button', {name: 'Rename', exact: true}).click();
   const actions = page.getByRole('menu', {name: 'README.md', exact: true});
   const rename = row.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(name).toBeFocused();
+  await name.hover();
+  await expect(actions).toBeHidden();
+  const start = (await name.locator('.file-shelf-primary').boundingBox())!.x;
+  await name.click({button: 'right'});
+  await actions.getByRole('menuitem', {name: 'Rename', exact: true}).click();
   await expect(rename).toBeFocused();
   await expect(rename).toHaveValue('README.md');
-  expect(await rename.boundingBox()).toEqual(at);
+  expect(await rename.evaluate(input => input.getBoundingClientRect().x + parseFloat(getComputedStyle(input).paddingLeft))).toBe(start);
   expect(await rename.evaluate((n: HTMLInputElement) => n.value.slice(n.selectionStart!, n.selectionEnd!))).toBe('README');
   await rename.fill('Not kept.md');
   await page.keyboard.press('Escape');
   await expect(rename).toBeHidden();
   await expect(actions).toBeHidden();
   await expect(name).toBeFocused();
-  await editor.hover();
-  await expect(row.getByRole('button', {name: 'Rename', exact: true})).toBeHidden();
 
   await name.press('Shift+F10');
-  const renameItem = actions.getByRole('menuitem', {name: 'Rename', exact: true});
-  await expect(renameItem).toBeVisible();
-  await renameItem.press('Enter');
+  await actions.getByRole('menuitem', {name: 'Rename', exact: true}).press('Enter');
   await expect(rename).toBeFocused();
   await expect(actions).toBeHidden();
-  expect(await rename.boundingBox()).toEqual(at);
   await page.keyboard.press('Escape');
   await expect(rename).toBeHidden();
-  await expect(actions).toBeHidden();
   await expect(name).toBeFocused();
 });
 

@@ -600,7 +600,11 @@ whole rows fit in the ordinary menu, four in a window 360 px tall or less when t
 least 44 px. Arrow keys, Home and End bring the focused line into view. Escape, pressing the name again, or pressing
 the quiet desk puts only the list away and gives the name the keyboard back. A choice takes the keyboard to its new
 place unless that place has its own first act. Back and Forward keep a keyboard left at the frame with the frame.
-Files is the current repo's tree, with actions on its rows. The whole filesystem is still File.
+Files is the current repo's tree, fixed beside the paper on a wide desk and its own face on a narrow one. A folder
+previews one real child; pressing its name or the existing right chevron reads and opens its children there, without
+moving the paper. Only an open branch has the ink behind its name. A file's name opens its paper where the caret
+and scroll were left. Right-click or Shift+F10 calls up a row's operations in its right lane; Escape returns to the
+name, not to another document. The whole filesystem is still File.
 With no repo, Open Folder is the empty desk's own first move.
 
 The standards here are the [UIKit title menu](https://developer.apple.com/videos/play/wwdc2022/10068/?time=1052)

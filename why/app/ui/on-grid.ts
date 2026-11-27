@@ -33,11 +33,16 @@ export function laid(r: {left: number; top: number; width: number; height: numbe
 
 const seen = new WeakSet<HTMLElement>();
 const keys = new WeakMap<HTMLElement, HTMLElement>();
+const rowMenus = new WeakSet<HTMLElement>();
+
+/** Actions sharing their row's lane keep its exact position, not the nearest sheet cell. */
+export function keepAtRow(menu: HTMLElement) { rowMenus.add(menu); }
 
 /** A menu on a scrolling desk may turn above its key rather than making the desk scroll. */
 export function pinOnGrid(menu: HTMLElement, key: HTMLElement) { keys.set(menu, key); }
 
 function place(el: HTMLElement) {
+  if (rowMenus.has(el)) return;
   el.style.translate = '';
   el.style.minWidth = '';
   const r = el.getBoundingClientRect();

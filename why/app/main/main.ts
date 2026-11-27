@@ -136,7 +136,7 @@ const ctx: Context = {
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
-  forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
+  forgeFiles(repo, focus, index) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus, index); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
     if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime', 'new-repo'] as const).some((desk) => current === desk)) return;
