@@ -137,8 +137,12 @@
 @media (max-width: 920px) {
   .git-desk .issue-box.git-paper { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; min-height: 0; }
   .git-desk .git-paper > :is(.issue-words, .issue-summary-wrap, .git-work, .git-totals, .git-paper-review, .issue-foot) { grid-area: auto; }
+  /* The number is already in the line here; the words can use the whole measure. */
+  .git-desk .git-paper .issue-big-head:not(.peek) { padding-inline-end: 0; }
+  .git-desk .git-paper > .issue-words h2 { max-inline-size: min(calc(15 * var(--u)), 100%); }
   .git-desk .git-paper > .issue-summary-wrap { margin: var(--u) 0; }
   .git-desk .git-paper > :is(.git-totals, .git-paper-review) { margin-block-start: var(--u); }
+  .git-desk .git-paper > .git-paper-review { flex-wrap: wrap; }
 }
 .git-ledger-status { margin: calc(var(--u) / 2) var(--u) 0; color: var(--sub); line-height: var(--u); }
 
