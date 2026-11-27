@@ -8,7 +8,7 @@ import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {ground} from '../../ui/row.ts';
 import {rowMap, type Piece} from '../../ui/row-desk.ts';
-import {ahead, atRest, eased, GAP, GRID, next, PAD, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
+import {ahead, atRest, eased, GAP, GRID, next, PAD, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, widthOn} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
 // every piece is one width (fifty letters), its name over its top-left corner, its top on one line. What is under a
@@ -131,6 +131,8 @@ export class Desk {
    * press on the desk), it was turned by hand, and the eye is where it looked. */
   #aim = 0;
   #handAt = 0;
+  /** A click in the visible text of a clipped paper keeps that text still until an actual edit or caret key. */
+  #textUnderHand = false;
   /** The width every piece had when the row was last laid. */
   #bw = 0;
   /** The row's map at the window's foot (ui/row-desk.ts): what is out of sight, which way and how far, and the way to it by a press. */
@@ -177,11 +179,16 @@ export class Desk {
       if ((at as Element | null)?.closest?.('.desk-label')) return;
       const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
-      if (this.#framed) { this.#framed = null; this.#look(true); }
+      if (this.#textUnderHand) {
+        this.#textUnderHand = this.#pressed = false;
+        this.#framed = null;
+        this.#look(false);
+      } else if (this.#framed) { this.#framed = null; this.#look(true); }
     };
     this.element.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
-      writtenIn(e.target);
+      if (e.isComposing || e.altKey) return;
+      const caret = this.#textUnderHand && /^(?:Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(e.key);
+      if (caret || (!e.ctrlKey && !e.metaKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace'))) writtenIn(e.target);
     }, true);
     // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
@@ -283,8 +290,13 @@ export class Desk {
     scrollMarks(el);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the desk turns after the
     // press, never under it.
-    el.addEventListener('click', () => {
-      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, true);
+    el.addEventListener('click', (e) => {
+      const inside = el.contains(document.activeElement);
+      if (this.#held === key && inside) return;
+      const paper = el.getBoundingClientRect(), view = this.element.getBoundingClientRect();
+      const clippedText = e.detail > 0 && (e.target as Element).matches('textarea.code-edit') &&
+        (paper.left < view.left || paper.right + SHADOW > view.right);
+      this.take(key, !inside, true, true, clippedText);
     });
     this.#plane.append(el);
     this.#sized.observe(el);
@@ -347,7 +359,7 @@ export class Desk {
 
   /** `key` in hand, the desk turned to it (gliding there, unless `glide` is false), with the keyboard (`focus`):
    * `pressed`, by a press on it, so it stays under the hand; gone to any other way, it comes to the desk's edge. */
-  take(key: string, focus = true, glide = true, pressed = false) {
+  take(key: string, focus = true, glide = true, pressed = false, textUnderHand = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
     const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
@@ -355,6 +367,7 @@ export class Desk {
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
     this.#pressed = pressed;
+    this.#textUnderHand = textUnderHand;
     this.#framed = null;
     this.#look(glide);
     // The piece put down stays as it was in the hand while the desk turns away from it, and is put down once the desk
@@ -425,10 +438,11 @@ export class Desk {
     if (this.#away) { this.#away = false; this.#pressed = false; }
     // Where the line being written may stand in a sheet (§2 look room): out of the third it goes towards.
     const lead = ahead(hgt);
-    // Every piece fifty letters wide, or as wide as the face has room for with its shadow (a phone's: the one rule).
-    const fit = Math.max(10 * GRID, GRID * Math.floor((w - PAD - SHADOW) / GRID));
-    const bw = this.#stays() ? fit : Math.min(WIDTH, fit);
+    // The wide desk normally fits one sheet. The explicit Beside toggle keeps both views of that file in sight.
+    const beside = this.#row.some(key => this.#boxes.get(key)!.laid.companion);
+    const bw = widthOn(w, this.#stays(), beside);
     const resized = this.#bw !== 0 && this.#bw !== bw;
+    if (resized && this.#textUnderHand) this.#textUnderHand = this.#pressed = false;
     this.#bw = bw;
     const {at, end} = row(this.#row, bw);
     for (const key of this.#row) {
@@ -469,7 +483,8 @@ export class Desk {
     if (!b) return;
     const now = atRest(this.#glide?.to ?? this.element.scrollLeft, this.#starts());
     // (Over the Agent's work the desk turns as little as shows it; the piece in hand by how it was taken.)
-    const to = this.#framed ? turnedTo(now, b.x, b.w, w, this.#starts()) : restFor(this.#pressed, now, b.x, b.w, w, this.#starts());
+    const to = this.#framed ? turnedTo(now, b.x, b.w, w, this.#starts())
+      : this.#textUnderHand ? now : restFor(this.#pressed, now, b.x, b.w, w, this.#starts());
     this.#go(to, moving && !still());
   }
 

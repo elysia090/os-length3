@@ -56,7 +56,9 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(editor).toBeFocused();
   await editor.press('Control+Home');
   await editor.press('Shift+ArrowRight');
-  const position = () => editor.evaluate((area: HTMLTextAreaElement) => {
+  // The retained textarea is deliberately outside the accessibility tree while Prompt is in hand.
+  const retained = forge.piece('README.md').locator('textarea.code-edit');
+  const position = () => retained.evaluate((area: HTMLTextAreaElement) => {
     const rect = area.getBoundingClientRect();
     return [rect.x, rect.y, area.selectionStart, area.selectionEnd, area.scrollTop, area.scrollLeft];
   });
@@ -77,6 +79,7 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(terminal).toHaveCSS('outline-width', '2px');
   await expect(forge.promptBox).toBeFocused();
   await expect(editor).toBeHidden();
+  await expect(retained).toHaveCount(1);
   await expect.poll(position).toEqual(before);
   await expect(terminal.locator('.terminal-paper-head > button')).toHaveCount(2);
   const rules = await terminal.locator('.terminal-paper-rule').evaluateAll(rs =>
@@ -150,13 +153,14 @@ test('an open Prompt stays open after returning to the same workspace', async ({
   await forge.openPrompt();
   await right.click();
   await expect(right).toHaveAttribute('aria-current', 'true');
-  await app.rail.go('home');
-  await expect(forge.promptBox).toBeHidden();
-
-  await app.rail.go('forge');
-  await expect(forge.promptBox).toBeVisible();
-  await forge.openPrompt();
-  await expect(right).toHaveAttribute('aria-current', 'true');
+  await forge.promptBox.fill('not sent');
+  for (const place of ['home', 'git'] as const) {
+    await app.rail.go(place);
+    await expect(app.main.locator('.forge-prompt-slot')).toBeHidden();
+    await app.rail.go('forge');
+    await expect(forge.promptBox).toHaveValue('not sent');
+    await expect(right).toHaveAttribute('aria-current', 'true');
+  }
   // The actual Places command still toggles the companion both ways.
   await forge.use('Prompt');
   await expect(forge.promptBox).toBeHidden();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ahead, atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
+import {ahead, atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH, widthOn} from './desk-layout.ts';
 
 // The desk's places and how far it is turned (desk-layout.ts), as numbers.
 
@@ -25,6 +25,20 @@ test('a window half a screen wide shows one piece and the edge of the next; a wh
   const {at} = row(keys), half = 768 - 48, whole = 1536 - 48;
   assert.ok(at.get('term')! + WIDTH + SHADOW <= half && at.get('a.c')! < half && at.get('a.c')! + WIDTH > half);
   assert.ok(at.get('a.c')! + WIDTH + SHADOW <= whole && at.get('README.md')! < whole && at.get('README.md')! + WIDTH > whole);
+});
+
+test('a fitted work bay holds one whole paper, or a real Beside pair without going off the edge', () => {
+  for (const face of [688, 984, 1200, 1560]) {
+    const one = widthOn(face, true), pair = widthOn(face, true, true);
+    assert.ok(one + SHADOW <= face && one + SHADOW + GRID > face);
+    assert.ok(2 * pair + GAP + SHADOW <= face);
+    assert.ok(pair === WIDTH || 2 * (pair + GRID) + GAP + SHADOW > face);
+    assert.equal(pair % GRID, 0);
+  }
+  assert.equal(widthOn(1200, true), 1176);
+  assert.equal(widthOn(1200, true, true), WIDTH);
+  assert.equal(widthOn(932, false, true), WIDTH);
+  assert.equal(widthOn(342, false), 336);
 });
 
 test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {

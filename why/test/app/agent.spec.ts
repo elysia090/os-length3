@@ -8,7 +8,11 @@ import {expect, personName, test} from './fixtures.ts';
 
 test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-const KEY = `sk-ant-api03-${'Zq7'.repeat(30)}a9fAA`;
+// This value belongs only to maker()'s intercepted provider. Build its required shape from visibly
+// non-secret text so the real form validator and passkey paths run without a supplied credential.
+const TEST_AGENT_MARKER = 'LOCAL_TEST_PROVIDER_NO_CREDENTIAL';
+const TEST_AGENT_INPUT = `sk-ant-api03-${TEST_AGENT_MARKER.padEnd(91, '_')}00AA`;
+const TEST_AGENT_DISPLAY = 'sk-ant-…00AA';
 const CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*'};
 
 interface Asked { system?: string; tools?: {name: string}[]; messages: {role: string; content: unknown}[] }
@@ -20,6 +24,8 @@ async function maker(page: Page, told: string[], turns: (asked: Asked) => Block[
   await page.route('https://api.anthropic.com/**', async (route) => {
     const r = route.request();
     if (r.method() === 'OPTIONS') return route.fulfill({status: 204, headers: CORS});
+    if (r.headers()['x-api-key'] !== TEST_AGENT_INPUT)
+      return route.fulfill({status: 401, headers: CORS, json: {error: {message: 'Expected the local example input.'}}});
     if (r.url().endsWith('/models')) return route.fulfill({headers: CORS, json: {data: [{id: 'model-one', created_at: '2025-01-01T00:00:00Z'}]}});
     const asked = r.postDataJSON() as Asked;
     // The ping that finds the model the key opens: no tools offered.
@@ -38,10 +44,10 @@ test('a key given in Runtime: `agent` run in Prompt is asked of the Agent, on it
   const told: string[] = [];
   await maker(app.page, told, () => [{type: 'text', text: 'Run it so:\n\n```sh\nmake\n```\n'}]);
   await app.runtime.open('Agent');
-  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(TEST_AGENT_INPUT);
   await app.main.getByRole('button', {name: 'Use', exact: true}).click();
   // Shown by its start and last four, never whole; the model it opens beside.
-  await expect(app.main.locator('.agent-line')).toContainText('sk-ant-…9fAA');
+  await expect(app.main.locator('.agent-line')).toContainText(TEST_AGENT_DISPLAY);
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
 
   await app.rail.go('forge');
@@ -52,17 +58,15 @@ test('a key given in Runtime: `agent` run in Prompt is asked of the Agent, on it
   await box.focus();
   await box.fill('agent How is it built?');
   await box.press('Enter');
-  // The line is the person's: run in their terminal, the box empty for the next at once.
-  await expect(box).toHaveValue('');
-  await expect(app.forge.prompt.locator('.term-out')).toContainText('agent How is it built?');
+  // A successful ask takes us to the Agent's own paper. It does not print the reply in the person's terminal.
+  await expect(box).toBeHidden();
   // The Agent's terminal, a box of the desk: what it was asked, then its words.
   const agent = app.main.getByRole('region', {name: 'Agent', exact: true});
   await expect(agent.locator('.agent-asked')).toHaveText('How is it built?');
   await expect(agent.locator('.agent-words')).toContainText('Run it so:');
   await expect(agent.locator('.agent-words .answer-code')).toHaveText('make');
-  // The Prompt stays in its own slot. The Agent is on the row beside the document, not in the Prompt's transcript.
-  await expect(app.forge.prompt).toBeVisible();
-  await expect(app.forge.prompt.getByRole('region', {name: 'Agent', exact: true})).toHaveCount(0);
+  // The Agent is on the retained row beside the document, not a replacement for the person's shell.
+  await expect(app.forge.prompt).toBeHidden();
   const file = (await app.forge.piece('README.md').boundingBox())!;
   const beside = (await app.forge.piece('agent').boundingBox())!;
   const order = await app.forge.desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.key));
@@ -74,6 +78,12 @@ test('a key given in Runtime: `agent` run in Prompt is asked of the Agent, on it
   expect(told[0]).toContain('"hello"');
   expect(told[0]).toContain('The file in front of the person: README.md');
   await expect(app.page.locator('.work.bench:not([hidden]) .pane-answer')).toHaveCount(0);
+  // The same shell is there when asked for again, its command shown and its line ready for another.
+  await app.forge.openPrompt();
+  await expect(box).toHaveValue('');
+  await expect(app.forge.prompt.locator('.term-out')).toContainText('agent How is it built?');
+  await expect(app.forge.prompt.getByRole('region', {name: 'Agent', exact: true})).toHaveCount(0);
+  await expect(agent).toBeHidden();
   // The box has no Agent of its own on the desk: it is the terminal's.
   await box.press('Alt+ArrowDown');
   await expect(app.main.getByRole('menuitemradio', {name: /Run in Prompt/})).toBeVisible();
@@ -98,12 +108,12 @@ test('signed in with a passkey, the key given is sealed by it: kept as given now
   await app.main.getByRole('region', {name: 'Add passkey'}).getByRole('button', {name: 'Add passkey'}).click();
   await expect(app.main.getByText('Passkey added', {exact: true})).toBeVisible();
   await app.runtime.open('Agent');
-  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(TEST_AGENT_INPUT);
   await app.main.getByRole('button', {name: 'Use', exact: true}).click();
-  await expect(app.main.locator('.agent-line')).toContainText('sk-ant-…9fAA');
+  await expect(app.main.locator('.agent-line')).toContainText(TEST_AGENT_DISPLAY);
   await expect(app.main.locator('.agent-note')).toContainText('Sealed by your passkey');
   // Nothing the page keeps holds the key as given.
-  expect((await app.kept()).includes(KEY.slice(13, 40)), 'the key, as given, is in nothing the page keeps').toBe(false);
+  expect((await app.kept()).includes(TEST_AGENT_MARKER), 'the key, as given, is in nothing the page keeps').toBe(false);
 
   // A new session: the Agent asked, the passkey opens the key (the authenticator here answers at once), and it answers.
   await app.page.reload();
@@ -129,7 +139,7 @@ test('handed an issue\'s work, the Agent reads and writes its files: its termina
   });
   await app.newRepo.make('hello');
   await app.runtime.open('Agent');
-  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(TEST_AGENT_INPUT);
   await app.main.getByRole('button', {name: 'Use', exact: true}).click();
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
   // The repo on the issue's work: what the Agent is asked there is the issue's, and it may write.
@@ -178,7 +188,7 @@ test('what the Agent changes on seeing a run is shown after that run\'s output, 
   }, 700);
   await app.newRepo.make('say');
   await app.runtime.open('Agent');
-  await app.main.getByRole('textbox', {name: 'API key'}).fill(KEY);
+  await app.main.getByRole('textbox', {name: 'API key'}).fill(TEST_AGENT_INPUT);
   await app.main.getByRole('button', {name: 'Use', exact: true}).click();
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
   await app.git.write('say', 'Say the value');

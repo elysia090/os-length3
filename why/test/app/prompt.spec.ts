@@ -437,9 +437,11 @@ test('the Prompt is a real terminal: colours as programs give them, a line rewri
   await app.page.keyboard.type(':wq');
   await app.page.keyboard.press('Enter');
   await expect(app.page.locator('.vt-screen')).toHaveCount(0, {timeout: 60_000});
-  await expect(app.forge.editor('README.md')).toHaveValue(/\n\tWritten in vi\.\n?$/, {timeout: 60_000});
-  // Given back, the line one types at is the box's again.
+  // Given back, the line one types at is the box's again. Back shows the live document without stopping that shell.
   await expect(app.page.locator('form.prompt[data-raw]')).toHaveCount(0);
+  await app.forge.backFromPrompt();
+  await expect(app.forge.editor('README.md')).toHaveValue(/\n\tWritten in vi\.\n?$/, {timeout: 60_000});
+  await app.forge.openPrompt();
   await box.fill('echo after');
   await box.press('Enter');
   await expect(out).toContainText(/^after$/m);

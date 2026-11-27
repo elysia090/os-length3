@@ -17,10 +17,9 @@ test('Places opens the Inbox desk before Remote answers and keeps the same frame
   const held = new Promise<void>((resolve) => { letIn = resolve; });
   const asked = page.waitForRequest((r) => new URL(r.url()).pathname === '/v1/inbox/me');
   await page.route('**/v1/inbox/me', async (route) => { await held; await route.continue(); });
-  const key = main.getByRole('button', {name: 'Places', exact: true});
+  const key = app.forge.placesKey;
   try {
-    await key.click();
-    await main.getByRole('menu', {name: 'Places', exact: true}).getByRole('menuitem', {name: 'Inbox', exact: true}).click();
+    await (await app.rail.destination('inbox')).click();
     await asked;
     await expect(main).toHaveAttribute('data-place', 'inbox');
     await expect(main.getByRole('heading', {level: 1, name: 'Inbox', exact: true})).toBeVisible();

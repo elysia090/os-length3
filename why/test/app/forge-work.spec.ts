@@ -121,6 +121,7 @@ test('what was written is undone after going to Runtime and back, and to another
   await app.forge.open('hello');
   const editor = app.forge.editor('README.md');
   const was = await editor.inputValue();
+  await app.forge.takePaper('README.md');
   await editor.click();
   await app.page.keyboard.press('Control+End');
   // One edit, one Undo (typed key by key, each key is its own step, as it was before).
@@ -756,10 +757,25 @@ test('nothing on the desk changes size: a piece pressed twice is as wide as it w
   const text = (await own.boundingBox())!;
   await app.page.mouse.dblclick(text.x + 20, text.y + 12);
   expect(await app.forge.selected('README.md')).toBe('one');
-  // A piece not yet gone into, pressed twice: taken in hand, as pressed once, and no larger.
-  await main.locator('.code').dblclick({position: {x: 30, y: 12}});
+  // The next sheet is clipped but its first words can be read. Both physical presses must reach that same text,
+  // not turn the next file under the second press.
+  const c = app.forge.editor('src/main.c');
+  const edge = (await app.forge.desk.boundingBox())!.x;
+  const clipped = (await main.boundingBox())!;
+  expect(clipped.x + 80).toBeLessThan(980);
+  expect(clipped.x + clipped.width).toBeGreaterThan(980);
+  await c.dblclick({position: {x: 30, y: 12}});
   await expect(main).toHaveClass(/held/);
+  await expect(c).toBeFocused();
+  expect(await app.forge.selected('src/main.c')).not.toBe('');
+  expect(await main.boundingBox()).toEqual(clipped);
   expect(await size(main)).toEqual({w: WIDTH, font: 17});
+  // Actually writing now gives the caret the whole sheet, without affecting a different file.
+  const untouched = await app.forge.editor('Makefile').inputValue();
+  await app.page.keyboard.insertText('draft');
+  await expect(c).toHaveValue(/draft/);
+  await expect.poll(async () => (await main.boundingBox())!.x).toBe(edge);
+  expect(await app.forge.editor('Makefile').inputValue()).toBe(untouched);
 });
 
 test('only the paper in hand is filled, casts a thin shadow and exposes Close; Prompt does not activate a second paper', async ({app}) => {

@@ -36,33 +36,36 @@ test('the issue and review keys fit their paper at phone widths without widening
   for (const width of [320, 390]) {
     await test.step(`on a ${width}px paper`, async () => {
       if (width === 390) await page.setViewportSize({width, height: 844});
-      const box = await paper.evaluate(el => {
-        const at = (selector?: string) => {
-          const {left, right, top, bottom, width, height} = (selector ? el.querySelector(selector)! : el).getBoundingClientRect();
-          return {left, right, top, bottom, width, height};
-        };
-        return {
-          paper: at(),
-          words: at('.issue-words'), title: at('h2'), foot: at('.git-paper-review'),
-          comment: at('.git-review-comment'), approve: at('.git-review-approve'), diff: at('.git-diff-scroll'),
-          pageWidth: document.scrollingElement!.scrollWidth,
-        };
-      });
-      expect(box.pageWidth).toBe(width);
-      expect(box.title.width).toBeCloseTo(box.words.width);
-      expect(box.title.left).toBeCloseTo(box.words.left);
-      expect(box.foot.top).toBeGreaterThanOrEqual(box.diff.bottom);
-      expect(box.foot.left).toBeGreaterThanOrEqual(box.paper.left);
-      expect(box.foot.right).toBeLessThanOrEqual(box.paper.right);
-      for (const key of [box.comment, box.approve]) {
-        expect(key.left).toBeGreaterThanOrEqual(box.foot.left);
-        expect(key.right).toBeLessThanOrEqual(box.foot.right);
-        expect(key.height).toBeGreaterThanOrEqual(36);
-      }
-      if (width === 320) {
-        expect(box.approve.top).toBeGreaterThanOrEqual(box.comment.bottom);
-        expect(box.approve.left).toBeCloseTo(box.comment.left);
-      } else expect(box.approve.top).toBeCloseTo(box.comment.top);
+      // At a new width wait for the camera to lay its paper at the new measure.
+      await expect(async () => {
+        const box = await paper.evaluate(el => {
+          const at = (selector?: string) => {
+            const {left, right, top, bottom, width, height} = (selector ? el.querySelector(selector)! : el).getBoundingClientRect();
+            return {left, right, top, bottom, width, height};
+          };
+          return {
+            paper: at(),
+            words: at('.issue-words'), title: at('h2'), foot: at('.git-paper-review'),
+            comment: at('.git-review-comment'), approve: at('.git-review-approve'), diff: at('.git-diff-scroll'),
+            pageWidth: document.scrollingElement!.scrollWidth,
+          };
+        });
+        expect(box.pageWidth).toBe(width);
+        expect(box.title.width).toBeCloseTo(box.words.width);
+        expect(box.title.left).toBeCloseTo(box.words.left);
+        expect(box.foot.top).toBeGreaterThanOrEqual(box.diff.bottom);
+        expect(box.foot.left).toBeGreaterThanOrEqual(box.paper.left);
+        expect(box.foot.right).toBeLessThanOrEqual(box.paper.right);
+        for (const key of [box.comment, box.approve]) {
+          expect(key.left).toBeGreaterThanOrEqual(box.foot.left);
+          expect(key.right).toBeLessThanOrEqual(box.foot.right);
+          expect(key.height).toBeGreaterThanOrEqual(36);
+        }
+        if (width === 320) {
+          expect(box.approve.top).toBeGreaterThanOrEqual(box.comment.bottom);
+          expect(box.approve.left).toBeCloseTo(box.comment.left);
+        } else expect(box.approve.top).toBeCloseTo(box.comment.top);
+      }).toPass({timeout: 5000});
     });
   }
 

@@ -218,7 +218,7 @@ test('a letter typed is there in the frame after its key, in every field; and wh
   await app.inbox.writeTo(bo.handle, 'Question: are you coming?');
   const fields = [
     {place: 'git', to: () => app.git.toNew(), field: () => app.git.firstLine, text: 'Fix: Mind the gap'},
-    {place: 'forge', to: null, field: () => app.forge.editor('README.md'), text: 'tide'},
+    {place: 'forge', to: () => app.forge.takePaper('README.md'), field: () => app.forge.editor('README.md'), text: 'tide'},
     {place: 'inbox', to: null, field: () => app.inbox.message, text: 'See you there'},
   ] as const;
   for (const f of fields) {

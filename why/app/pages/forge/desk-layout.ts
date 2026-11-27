@@ -29,6 +29,14 @@ export const GAP = GRID / 2;
 /** The desk's ground before its first piece (none: it starts where the band's keys do), over the pieces (their names
  * stand in it), and under them. */
 export const PAD = 0;
+
+/** Fitted work paper on a wide desk, or two full opposite pages when the first explicitly asks for Beside. */
+export function widthOn(face: number, fitted: boolean, beside = false): number {
+  const floor = (width: number) => Math.max(10 * GRID, GRID * Math.floor(width / GRID));
+  if (fitted && beside) return Math.min(WIDTH, floor((face - PAD - SHADOW - GAP) / 2));
+  const fits = floor(face - PAD - SHADOW);
+  return fitted ? fits : Math.min(WIDTH, fits);
+}
 export const TOP = GRID;
 export const FOOT = GRID;
 /** The active paper's shadow (forge-places.css). */

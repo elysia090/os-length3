@@ -30,7 +30,7 @@ const NAME = 33.0124, PERSON = 66.0248;
 const PLACES = {
   home: {subject: '.home-own > .section', corner: '.home-own', anchor: '.home-person h1'},
   'new-repo': {subject: '.nr-box', corner: '.new-repo', anchor: '.nr-label'},
-  // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
+  // Forge's named corner leads to the flat Files index and then the active paper at wide widths.
   forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   server: {subject: '.server-paper', corner: '.server-sidebar, .server-paper', anchor: '.server-masthead > h1'},
@@ -102,11 +102,14 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     }
   })()];
   // Every size of type in sight, of words and of fields alike (DESIGN §3: three, one, two and four times).
-  const sizes = new Set<number>();
+  const sizes = new Set<number>(), indexSizes = new Set<number>();
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     const el = n.parentElement!;
-    if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+    if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) {
+      const type = el.closest('.file-tree.on-forge-desk[data-forge-index]') ? indexSizes : sizes;
+      type.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+    }
   }
   for (const el of document.querySelectorAll('input, textarea, [contenteditable]')) if (inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
   // Every line of words in the world, where its middle falls against the grid (DESIGN §3, whole cells: a line of type
@@ -183,18 +186,26 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   // What stands just past the frame's corner, where the eye is after a move.
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const utility = sheet?.matches('.runtime-paper') && s;
-  // Runtime's paper starts after an open desk. Probe just inside it, past both its radius and the tabs' focus padding.
-  const at = utility ? document.elementFromPoint(utility.left + 24, utility.top + 12) : document.elementFromPoint(84, 96);
+  const forge = W > 1000 && sheet?.matches('.forge-layout > .center .desk-box') && s;
+  const index = forge ? document.querySelector('.file-tree.on-forge-desk[data-forge-index]') : null;
+  const left = index && inSight(index) ? index.getBoundingClientRect() : null;
+  const named = document.elementFromPoint(84, 96);
+  // Runtime starts after an open desk; Forge starts after its fixed file index. Probe both real surfaces.
+  const paper = utility || forge;
+  const at = paper ? document.elementFromPoint(paper.left + 24, paper.top + 12) : named;
   const landed = !!at?.closest(corner);
+  const forgeIndex = left && forge && index ? {seen: !!named && index.contains(named),
+    sameTop: Math.abs(forge.top - left.top) < 1, edges: [left.left,left.width,forge.left].map(Math.round),
+    gap: Math.round(forge.left - left.right), cast: getComputedStyle(index).boxShadow} : null;
   // How far that is from the place's visible name, rail control, or door to a far side.
   const from = anchor ? all.find((el) => el.matches(anchor))
     : all.find((el) => el.matches('.door')) ?? all.find((el) => el.matches('.rail .rail-item[aria-current="page"]'));
-  const fr = utility && from ? (() => {
+  const fr = (utility || forge) && from ? (() => {
     const name = document.createRange();
     name.selectNodeContents(from);
     return name.getBoundingClientRect();
   })() : from?.getBoundingClientRect();
-  const lr = at?.closest(corner)?.getBoundingClientRect();
+  const lr = left ?? at?.closest(corner)?.getBoundingClientRect();
   const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
     Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;
   // The band's name of what is in hand: whole at its size, inside the window clear of its edge, or not there.
@@ -219,7 +230,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper, home};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], indexSizes: [...indexSizes], forgeIndex, offGrid, quietPaper, home};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -246,10 +257,19 @@ async function shot(app: App, place: Place, size: {width: number; height: number
           // On Home the note follows the portrait's last line, measured on the portrait grid below.
           if (place === 'home' && edge === 'top') continue;
           // Forge and Runtime on a phone leave room for the name and controls above the paper.
-          const origin = edge === 'top' ? place === 'forge' ? 90 : place === 'runtime' && size.width <= 600 ? U / 2 : 0 : 0;
+          const origin = edge === 'top'
+            ? place === 'forge' ? (size.width > 1000 ? 4 * U : 90)
+              : place === 'runtime' && size.width <= 600 ? U / 2 : 0
+            : 0;
           expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
         }
         expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
+        if (place === 'forge' && size.width > 1000) {
+          expect(f.forgeIndex, `${what}: an unraised Files index precedes the real work paper on one horizon`).toEqual({
+            seen:true, sameTop:true, edges:[36,232,312], gap:44, cast:'none',
+          });
+          expect(f.indexSizes.sort(), `${what}: only names and their subordinate preview in Files`).toEqual([14,17]);
+        }
         // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
         expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
       }
@@ -309,7 +329,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   // a row's first sheet (Server's first board), or the place's index (Inbox's who wrote).
   const before = !called && f.subject && f.subject.x > 2 * U + .5 ? await app.page.evaluate(() => {
     const seen = (sel: string) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0);
-    return seen('.inbox-index') ? 'index' : seen('.git-side:not(.none)') ? 'side' : 'sheet';
+    return seen('.inbox-index, .file-tree.on-forge-desk[data-forge-index]') ? 'index'
+      : seen('.git-side:not(.none)') ? 'side' : 'sheet';
   }) : null;
   // Look room (Thompson and Bowen; Palmer, Gardner and Wickens 2008): ahead at least behind, wherever the subject
   // stands. (Where the place's index stands before it, what can be done next outranks the plane, §2, the order of

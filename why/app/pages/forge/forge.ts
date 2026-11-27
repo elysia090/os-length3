@@ -181,6 +181,14 @@ class Forge {
         // The Agent's own terminal is a piece of the desk, laid after the one in hand.
         const {desk} = this.deskOf(repo);
         if (!desk.has(AGENT)) desk.lay(AGENT, {element, name: 'agent', dir: '', after: `/root/${repo}`, kind: 'agent', focus: () => element.focus({preventScroll: true})});
+        // A real Agent run has its own work paper; do not draw its work behind the parked desk.
+        // A delayed answer never steals another repo or place.
+        if (this.now.repo === repo && this.visible() && this.center.hasAttribute('data-prompt-bay-open')) {
+          const heldPrompt = this.prompt.contains(document.activeElement);
+          desk.take(AGENT, false, false);
+          this.promptWindow(false, false, true);
+          if (heldPrompt) desk.focusHeld();
+        }
       },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
@@ -200,7 +208,12 @@ class Forge {
     this.switcher = workPlaces(this.element, (place) => {
       if (place === 'Git') void ctx.go('git');
       else if (place === 'Prompt') this.promptWindow(!this.promptOpen, true);
-      else this.selectPlace(place);
+      else {
+        // Forge in its own menu deliberately returns to writing. From another place, arriving at Forge
+        // instead restores whichever paper (or Prompt) was there.
+        if (place === 'Forge' && this.promptOpen) this.promptWindow(false, true);
+        this.selectPlace(place);
+      }
     }, () => ctx.placeCommands?.(['forge']) ?? [], deskSearch(ctx, () => this.now.repo));
     this.switcher.set('Forge', false);
     this.promptPaper = new PromptPaper(this.center, this.work, () => this.promptWindow(false, true), () => this.filesBeside.matches);
@@ -489,7 +502,11 @@ class Forge {
       if(!this.promptOpen) {
         this.settlePromptTurn();
         if(this.placeInHand==='Files')this.selectPlace('Forge',false);
-        const field=this.lastEditor;
+        // The desk can take another paper with an arrow without focusing its editor first.
+        // Back belongs to the paper actually in hand, not an editor last used on a different paper.
+        const held = desk.element.querySelector('.desk-box.held');
+        const field = this.lastEditor && held?.contains(this.lastEditor)
+          ? this.lastEditor : held?.querySelector<HTMLTextAreaElement>('textarea.code-edit');
         this.paperReturn=field?.isConnected&&!field.closest('[hidden],[inert]')?returnTo(field):null;
         this.paperMoved=false;
         this.promptPaper.show();
@@ -533,14 +550,16 @@ class Forge {
     if(place==='Prompt'){this.promptWindow(true,focus);return;}
     const beside = this.filesBeside.matches;
     if (place === 'Files' && !beside) this.promptWindow(false, false);
-    if (place === 'Forge' && focus && this.promptOpen) this.promptWindow(false, true);
     const face = beside ? 'Forge' : place;
     this.placeInHand = face;
     this.center.dataset.place = face;
     this.switcher.set(face, true);
     this.hand(this.promptOpen ? 'Prompt' : face);
     this.ctx.forgeFiles?.(beside || place === 'Files' ? repo : null, focus && place === 'Files', beside);
-    if (focus && place === 'Forge') this.deskOf(repo).desk.focusHeld();
+    if (focus && place === 'Forge') {
+      if (this.promptOpen) this.work.showPrompt();
+      else this.deskOf(repo).desk.focusHeld();
+    }
   }
 
   private closeStart() {

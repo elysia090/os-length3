@@ -35,9 +35,14 @@ test('the corner keys take presses at their edges; the rail, door and band still
     await app.rail.door.click();
     await expect(page.locator('#page')).toHaveAttribute('data-place', 'home');
 
-    // New repo keeps the tool band that Home no longer draws.
+    // New repo shares the named corners instead of using the old tool band.
     await app.rail.go('new-repo');
-    expect(await at(72, 0), `${what}: the window's top over the band's first key`).toBe('band-tool');
+    await expect(app.forge.placesKey).toHaveAccessibleName('New repo');
+    const creation = (await app.forge.placesKey.boundingBox())!;
+    const find = (await app.main.getByRole('button', {name: 'Search', exact: true}).boundingBox())!;
+    expect([creation.height, find.height]).toEqual([44, 44]);
+    expect([await at(creation.x + 1, creation.y + 1), await at(find.x + find.width - 1, find.y + 1)], what)
+      .toEqual(['forge-places-key', 'forge-search-key']);
   }
 });
 

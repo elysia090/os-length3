@@ -48,6 +48,8 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   await expect(files.getByRole('treeitem', {name: 'README.md', exact: true})).toBeVisible();
   await expect(files.getByRole('treeitem', {name: /^(issue|#1)$/})).toHaveCount(0);
   await app.forge.openPrompt();
+  // Files has the keyboard even though on desktop the terminal stays out. Click the same line to resume it.
+  await box.click();
   await expect(box).toBeFocused();
   // Alt+3 from the box: TODO, at once.
   await box.press('Alt+3');

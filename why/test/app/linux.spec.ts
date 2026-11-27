@@ -85,10 +85,12 @@ test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
   });
 
   test('the editor and the shell are one repo: a file saved in Forge is the shell\'s, what the shell writes is the editor\'s and the tree\'s', async ({app}) => {
+    await app.forge.backFromPrompt();
     await app.forge.editFile('README.md', 'from-forge\n');
     // What the editor saves comes into the shell's copy by itself, a moment after: read when it has.
     await says(app, 'for i in $(seq 100); do grep -qx from-forge README.md && break; sleep 0.1; done; cat README.md', 'from-forge');
     await says(app, 'echo from-shell >> README.md; echo made-here > sync.txt; echo written', 'written');
+    await app.forge.backFromPrompt();
     await expect(app.forge.editor('README.md')).toHaveValue('from-forge\nfrom-shell\n', {timeout: 30_000});
     await app.file.open('hello', 'sync.txt');
     await expect(app.forge.editor('sync.txt')).toHaveValue('made-here\n', {timeout: 30_000});

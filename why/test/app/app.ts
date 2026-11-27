@@ -351,11 +351,20 @@ class Forge extends Part {
   /** Issue, diff or Output, side by side under the box. */
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
+  /** Take the actual paper mark before trying to press a file that may be clipped out of sight. */
+  async takePaper(path: string) {
+    const paper = this.piece(path);
+    if (await paper.evaluate(el => el.classList.contains('held') && !el.closest('[inert]'))) return;
+    await this.main.locator('.desk-room > .row-map').getByRole('button', {name: path, exact: true}).click();
+    await expect(paper).toHaveClass(/\bheld\b/);
+  }
+
   /** A file's name in its head (its path in the repo), pressed to write it over. */
   fileName(path: string) { return this.main.locator(`.desk-box[data-key="${path}"] .desk-name`).locator('visible=true'); }
 
   /** A file renamed from its head: its name pressed, `written` (a name in its folder) written over it, Enter. */
   async rename(path: string, written: string) {
+    await this.takePaper(path);
     await this.fileName(path).click();
     const field = this.main.getByRole('textbox', {name: 'New name', exact: true});
     await expect(field).toBeFocused();
@@ -378,6 +387,7 @@ class Forge extends Part {
 
   /** Write `text` as the whole of `path` and leave it, which saves it; saved, its header says nothing. */
   async editFile(path: string, text: string) {
+    await this.takePaper(path);
     const editor = this.editor(path);
     await editor.fill(text);
     // Not waited for as "Unsaved": a pause of 0.7 s saves it, and a slow machine may take longer than
@@ -425,6 +435,13 @@ class Forge extends Part {
     const heading = this.main.getByRole('heading', {name: 'Prompt', exact: true});
     if (!await heading.isVisible()) await this.use('Prompt');
     await expect(heading).toBeVisible();
+  }
+
+  /** Return by the same work-bay key the person opened; neither shell is stopped. */
+  async backFromPrompt() {
+    const back = this.main.getByRole('button', {name: 'Back', exact: true}).and(this.main.locator('.forge-prompt-approach'));
+    if (await back.isVisible()) await back.click(); else await this.promptBox.press('Escape');
+    await expect(this.promptBox).toBeHidden();
   }
 
   /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
