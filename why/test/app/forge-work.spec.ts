@@ -268,47 +268,61 @@ test('what is searched lines up sideways: the one in hand fills the box, the sea
   await expect(app.forge.results.locator('.found-item')).toHaveText([/^File\s*README\.md$/, /^Search history\s*written$/]);
 });
 
-test('the plug opens a plain plugin area on Home, over what waits there, and closes it; Forge is all desk and has none, so from there it goes to Home with it out', async ({app}) => {
+test('the Plugin command toggles the plain Home area, and leads there from desks without it', async ({app}) => {
   const area = app.main.getByRole('region', {name: 'Plugins', exact: true});
+  const plugin = () => app.rail.destination('plugin');
+  const home = () => expect(app.main).toHaveAttribute('data-place', 'home');
   await expect(area).toHaveCount(0);
-  await app.rail.go('plugin');
-  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
+  await (await plugin()).click();
+  await home();
   await expect(area).toBeVisible();
-  // With none installed it is a plain area, no words in it (issue #45).
+  // With none installed, the area is plain, with neither copy nor fake controls (issue #45).
   await expect(area).toBeEmpty();
-  await expect(app.rail.button('plugin')).toHaveAttribute('aria-expanded', 'true');
-  // On Home the plug opens and closes it there, Home staying.
-  await app.rail.button('plugin').click();
+  await expect(app.forge.placesKey).toBeFocused({timeout: 1500});
+  await (await plugin()).click();
   await expect(area).toBeHidden();
-  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
-  await app.rail.button('plugin').click();
-  await expect(area).not.toHaveAttribute('hidden');
-  await app.rail.button('plugin').click();
-  await expect(area).toBeHidden();
-  // Elsewhere it opens Home with it out.
-  await app.rail.go('runtime');
-  await app.rail.button('plugin').click();
-  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
+  await home();
+  await (await plugin()).click();
   await expect(area).toBeVisible();
+  await (await plugin()).click();
+  await expect(area).toBeHidden();
+  // Forge, Runtime and the current Git desk have no plugin area of their own.
+  for (const place of ['forge', 'runtime', 'git'] as const) {
+    await app.rail.go(place);
+    await expect(area).toHaveCount(0);
+    await (await plugin()).click();
+    await home();
+    await expect(area).toBeVisible();
+    await expect(app.forge.placesKey).toBeFocused({timeout: 1500});
+    await (await plugin()).click();
+    await expect(area).toBeHidden();
+  }
 });
 
-test('the plug says the area is out only where it is, and Escape on it puts the area away', async ({app}) => {
+test('the Plugin area waits off Home; Escape puts away Places first, then the plain area', async ({app}) => {
   const area = app.main.getByRole('region', {name: 'Plugins', exact: true});
-  const plug = app.rail.button('plugin');
-  await app.rail.go('plugin');
+  await (await app.rail.destination('plugin')).press('Enter');
   await expect(area).toBeVisible();
-  // Runtime has no plugin area: the plug is not shown out there, and the area waits for Home.
   await app.rail.go('runtime');
-  await expect(plug).toHaveAttribute('aria-expanded', 'false');
+  await expect(area).toHaveCount(0);
   await app.rail.go('forge');
-  await expect(plug).toHaveAttribute('aria-expanded', 'false');
+  await expect(area).toHaveCount(0);
   await app.rail.go('home');
   await expect(area).toBeVisible();
-  await expect(plug).toHaveAttribute('aria-expanded', 'true');
-  await plug.focus();
-  await plug.press('Escape');
-  await expect(area).toBeHidden();
-  await expect(plug).toHaveAttribute('aria-expanded', 'false');
+  const places = app.forge.placesKey;
+  await places.press('Enter');
+  await expect(app.forge.places).toBeVisible();
+  await app.page.keyboard.press('Escape');
+  await expect(app.forge.places).toBeHidden();
+  await expect(area).toBeVisible();
+  await expect(places).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(area).toBeHidden({timeout: 1500});
+  await expect(places).toBeFocused();
+  // It can be opened with the same keys again without changing pages.
+  await (await app.rail.destination('plugin')).press('Space');
+  await expect(area).toBeVisible();
+  await expect(places).toBeFocused();
 });
 
 test('the repo Files row keeps its real deeds without a second command in Places', async ({app}) => {

@@ -1,5 +1,5 @@
-// The optional plugin area at the top of the center (Forge's, Git's): plain
-// until it is opened from the rail's plug, and able to hold up to seven
+// The optional plugin area on Home: plain
+// until it is opened from Places, and able to hold up to seven
 // plugins side by side, one shown at a time and switched sideways. Which
 // plugins there are is not decided yet, so none comes with the OS and none
 // can be installed from outside; this is only the room and its switch.
@@ -42,7 +42,7 @@ export const slots = new Slots();
 let open = false;
 const listeners = new Set<() => void>();
 
-/** Whether the area is out (the rail's plug pressed). */
+/** Whether the area was left out on Home. */
 export const pluginsOpen = () => open;
 
 export function setPluginsOpen(on: boolean) {

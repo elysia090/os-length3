@@ -148,8 +148,8 @@ const ctx: Context = {
       ...RAIL.filter(p => p.id !== 'file' && !omit.includes(p.id)).map(({id, label}) => ({
         label,
         onPress: id !== 'plugin',
-        run: () => {
-          if (id === 'plugin') togglePlugins();
+        run: (anchor: HTMLElement) => {
+          if (id === 'plugin') togglePlugins(anchor);
           else void select(id);
         },
       })),
@@ -198,11 +198,33 @@ scrollbars();
 // once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
 const worn = () => { wear(inEffect()[LOOK]); };
 onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
-function togglePlugins() {
-  const there = current === 'git' || current === 'home';
-  if (!there) select('home');
-  setPluginsOpen(!there || !pluginsOpen());
+function pluginKey(anchor?: HTMLElement) {
+  // A choice made on another desk leaves its corner behind; that desk's key may still be kept, but out of sight.
+  if (anchor?.isConnected && !anchor.closest('[inert]') && anchor.getClientRects().length) return anchor;
+  return $('page').querySelector<HTMLElement>('.home-portrait .forge-places-key') ?? tabs.get('plugin');
 }
+
+function togglePlugins(anchor: HTMLElement) {
+  if (current !== 'home') {
+    // Forge and Git are all desk now. Home has the area, even when there is nothing installed to put in it.
+    void select('home');
+    setPluginsOpen(true);
+  } else setPluginsOpen(!pluginsOpen());
+  pluginKey(anchor)?.focus({preventScroll: true});
+}
+
+// On the key or in the opened area, Escape puts the area away and returns to the visible way in.
+// When the Places menu itself is open, its capturing Escape closes the menu first.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented || current !== 'home' || !pluginsOpen()) return;
+  const at = event.target, key = pluginKey();
+  const area = $('page').querySelector('.home-portrait .plugins:not([hidden])');
+  if (!(at instanceof Node) || !(key?.contains(at) || area?.contains(at))) return;
+  event.preventDefault();
+  setPluginsOpen(false);
+  key?.focus({preventScroll: true});
+});
+
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
@@ -218,17 +240,11 @@ function railButton(id: PurposeId): HTMLButtonElement {
     // page drawn takes that answer (servers.ts), not waiting on one of its own.
     button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
   } else if (id === 'plugin') {
-    // The plug opens the plugin area, and closes it, where there is one: over what waits on Home, at the top of Git's
-    // pane; elsewhere (Forge is all desk, and has none) it opens it on Home. It says the area is out only where the
-    // area is: on another page it is kept for coming back, not out. Escape on the plug puts it away, as Escape does
-    // File's tree.
-    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'git' || current === 'home')));
+    // The area is out only on Home; on another page it is kept for coming back.
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && current === 'home'));
     plugState();
     onPlugins(() => plugState());
-    button.addEventListener('click', togglePlugins);
-    button.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }
-    });
+    button.addEventListener('click', () => togglePlugins(button));
   } else {
     // A place in the rail is a link to a page, the one shown marked current; File and Server open over it. Pressed
     // with a mouse it goes as the button goes down, as a browser's tab does: on the click, the page stood still for

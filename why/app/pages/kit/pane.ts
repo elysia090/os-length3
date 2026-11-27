@@ -3,7 +3,7 @@ import {after, arrive, closeUp, paneIn, paneOut} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import * as inbox from '../../../shipto/inbox.ts';
 import {news, onNews} from '../../../shipto/news.ts';
-import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../../host/plugins.ts';
+import {onPlugins, pluginsOpen, slots} from '../../host/plugins.ts';
 import {connection} from '../../../shipto/connection.ts';
 import {kindWords} from './todo-list.ts';
 
@@ -101,7 +101,7 @@ export class Pane {
 
 /**
  * The plugin area: nothing until it is opened; opened, the plugins side by side (one in full, ← → or an edge to
- * the next). With none, it stays plain: nothing is put there to fill it (issue #45), the rail's plug is the way in.
+ * the next). With none, it stays plain: nothing is put there to fill it (issue #45); the Places command is the way in.
  */
 export function pluginArea(): HTMLElement {
   const area = h('section', {class: 'plugins', 'aria-label': t('Plugins'), hidden: ''});
@@ -126,7 +126,6 @@ export function pluginArea(): HTMLElement {
     };
     const stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Plugins')}, track, edge(-1), edge(1));
     stage.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { event.preventDefault(); setPluginsOpen(false); return; }
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       slots.step(event.key === 'ArrowRight' ? 1 : -1);
