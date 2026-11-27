@@ -284,6 +284,94 @@ test('the conversation index, opened-paper marks and Places are independent', as
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 });
 
+for (const width of [320, 390]) test.describe(`Inbox at ${width}px`, () => {
+  test.use({viewport: {width, height: width === 320 ? 640 : 844}, isMobile: true, hasTouch: true});
+
+  test('a long recipient and the letter’s controls stay on the paper without sending', async ({signedIn: app, another}) => {
+    const peer = await another('Mobile Letter Recipient');
+    await peer.inbox.named();
+    const {page, inbox} = app;
+    let sent = 0;
+    await page.route('**/v1/inbox/messages', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      sent++; await route.abort();
+    });
+    await inbox.named();
+    await inbox.newMessage.tap();
+    const to = inbox.recipient.getByRole('textbox', {name: 'Recipient address'});
+    await expect(to).toBeFocused();
+    await to.fill(peer.handle);
+    await inbox.recipient.getByRole('button', {name: 'Open', exact: true}).tap();
+    const paper = inbox.thread(peer.handle);
+    const title = paper.getByRole('heading', {name: peer.handle, exact: true});
+    await expect(title).toBeVisible();
+    await expect(title).toHaveAccessibleName(peer.handle);
+    await expect(inbox.message).toBeFocused();
+    await inbox.message.tap();
+    await inbox.message.fill('An unsent draft.');
+    const back = paper.getByRole('button', {name: 'Inbox', exact: true});
+    const send = paper.getByRole('button', {name: 'Send', exact: true});
+    await expect(back).toBeInViewport({ratio: 1});
+    await expect(send).toBeInViewport({ratio: 1});
+    expect(await title.evaluate((el) => {
+      const paper = el.closest('.inbox-thread')!;
+      const bounds = paper.getBoundingClientRect();
+      const words = document.createRange();
+      words.selectNodeContents(el);
+      const lines = [...words.getClientRects()];
+      return {
+        whole: lines.every((line) => line.left >= bounds.left && line.right <= bounds.right && line.bottom <= bounds.bottom),
+        wrapped: lines.length > 1, sideways: paper.scrollWidth - paper.clientWidth, pageWidth: document.scrollingElement!.scrollWidth,
+      };
+    })).toEqual({whole: true, wrapped: true, sideways: 0, pageWidth: width});
+
+    await back.tap();
+    await expect(inbox.conversations).toBeVisible();
+    await expect(paper).toBeHidden();
+    // A first letter has no index row until there is a message. The address slip's Back gives it back.
+    await inbox.newMessage.tap();
+    await expect(inbox.recipient).toBeVisible();
+    await app.main.getByRole('button', {name: '← Back', exact: true}).tap();
+    await expect(inbox.message).toHaveValue('An unsent draft.');
+    expect(sent).toBe(0);
+  });
+});
+
+test.describe('a full custom address on a phone', () => {
+  test.use({viewport: {width: 320, height: 640}, isMobile: true, hasTouch: true});
+
+  test('the exact address can be read without pushing the writer out of the paper', async ({signedIn: app}) => {
+    const {page, inbox} = app;
+    // Substitute nothing but the Remote's answer for a near-limit verified domain. There is no real lookup or send.
+    const address = 'reader-to-follow-up-with-people@' + ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(55), 'test'].join('.');
+    await page.route((url) => url.pathname === '/v1/inbox/lookup' && url.searchParams.get('address') === address,
+      (route) => route.fulfill({json: {address, reachable: true}}));
+    await page.route((url) => decodeURIComponent(url.pathname) === `/v1/inbox/threads/${address}`,
+      (route) => route.fulfill({json: {address, state: 'request', mutual: false, messages: []}}));
+    await inbox.named();
+    await inbox.newMessage.tap();
+    await inbox.recipient.getByRole('textbox', {name: 'Recipient address'}).fill(address);
+    await inbox.recipient.getByRole('button', {name: 'Open', exact: true}).tap();
+    const paper = inbox.thread(address);
+    await expect(paper.getByRole('heading', {name: address, exact: true})).toBeVisible();
+    await expect(inbox.message).toBeInViewport({ratio: 1});
+    await expect(paper.getByRole('button', {name: 'Inbox', exact: true})).toBeInViewport({ratio: 1});
+    const head = paper.locator('.inbox-top');
+    expect(await head.evaluate((el) => {
+      const full = document.createRange();
+      full.selectNodeContents(el.querySelector('h2')!);
+      const below = full.getBoundingClientRect().bottom > el.getBoundingClientRect().bottom;
+      el.scrollTop = el.scrollHeight;
+      return below && el.scrollTop > 0 && full.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom;
+    })).toBe(true);
+    await expect(inbox.message).toBeInViewport({ratio: 1});
+    await inbox.message.tap();
+    await inbox.message.fill('First line\nSecond line');
+    await expect(inbox.message).toHaveCSS('height', '48px');
+    await expect(paper.getByRole('button', {name: 'Send', exact: true})).toBeInViewport({ratio: 1});
+  });
+});
+
 test('a first letter waits for the actual thread, then uses the ordinary writing line without sending', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   const me = await bo.page.request.get('/v1/inbox/me');
