@@ -43,6 +43,13 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   expect(lower.content).not.toBe('none');
   expect(lower.opacity).toBeGreaterThan(0);
   expect(lower.opacity).toBeLessThan(1);
+  for (const piece of [paper, key, menu]) {
+    expect(await piece.evaluate(el => {
+      for (let node: Element | null = el; node; node = node.parentElement)
+        if (getComputedStyle(node).opacity !== '1') return false;
+      return true;
+    })).toBe(true);
+  }
   expect(await key.boundingBox()).toEqual(keyAt);
   expect(await paper.boundingBox()).toEqual(first);
   const beside = async () => {
