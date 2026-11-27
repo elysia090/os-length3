@@ -117,6 +117,12 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
   position: fixed; z-index: 19; display: inline-flex; margin: 0; padding: 0; background: none; pointer-events: auto;
   inset: calc(var(--u) - (var(--places-hit) - var(--u)) / 2) auto auto calc(var(--places-start) - var(--s2));
 }
+/* Places borrows the focus, not a piece of paper. Repaint the one light over the whole work surface, at the
+   desk's original dot phase: neither the work nor the desk has a seam at the list's edge. */
+.desk-caption:has(> .forge-places-key[aria-expanded='true'])::before {
+  content: ''; position: fixed; z-index: -1; inset: 0; pointer-events: none; opacity: .97;
+  background: var(--places-ground, var(--ground)) var(--places-grid, var(--dots)) 0 0 / var(--u) var(--u);
+}
 .desk-caption > .forge-places-key[aria-haspopup='menu'] {
   display: inline-flex; position: relative; align-items: center; justify-content: flex-start;
   min-inline-size: var(--places-hit); block-size: var(--places-hit); padding: 0 calc(var(--s2) + var(--s1)) 0 var(--s2);
@@ -142,12 +148,9 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-search-key:is(:hover
   max-height: calc(100dvh - 12px); overflow: auto; border: 1px solid var(--ink); border-radius: var(--r-field); color: var(--ink); background: var(--paper);
   font: 400 var(--t-word)/19px var(--mono); }
 .forge-places {
-  /* Words on the desk, not a second paper. Where the list overlaps work, its own ground keeps every row legible. */
   position: fixed; z-index: 24; inset: var(--places-list-top) auto auto calc(var(--places-start) - var(--s4));
   display: grid; min-width: calc(5 * var(--u)); max-width: calc(100vw - var(--u)); overflow: auto;
   color: var(--places-ink, var(--ink));
-  background: var(--places-ground, var(--ground)) var(--places-grid, var(--dots))
-    calc(var(--s4) - var(--places-start)) calc(-1 * var(--places-list-top)) / var(--u) var(--u);
   font: 400 var(--t-word)/var(--u) var(--mono);
   overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent;
   --places-rows: 5;

@@ -24,10 +24,24 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
   await expect(key).toHaveAttribute('aria-expanded', 'true');
   await expect(key.locator('svg')).toHaveCount(0);
   expect(await label.boundingBox()).toEqual(at);
+  const quiet = () => key.evaluate(el => {
+    const light = getComputedStyle(el.parentElement!, '::before');
+    return {content: light.content, ground: light.backgroundColor, dots: light.backgroundImage, opacity: Number(light.opacity),
+      viewport: [light.top, light.right, light.bottom, light.left], animation: light.animationName, pointer: light.pointerEvents};
+  });
   expect(await menu.evaluate(el => {
     const style = getComputedStyle(el);
-    return [style.borderTopWidth, style.borderTopLeftRadius, style.boxShadow, style.backgroundColor, getComputedStyle(document.body).backgroundColor];
-  })).toEqual(['0px', '0px', 'none', 'rgb(58, 61, 54)', 'rgb(58, 61, 54)']);
+    return [style.borderTopWidth, style.borderTopLeftRadius, style.boxShadow, style.backgroundColor, style.backgroundImage];
+  })).toEqual(['0px', '0px', 'none', 'rgba(0, 0, 0, 0)', 'none']);
+  const desk = await page.evaluate(() => {
+    const style = getComputedStyle(document.body);
+    return {ground: style.backgroundColor, dots: style.backgroundImage};
+  });
+  const lower = await quiet();
+  expect(lower).toMatchObject({...desk, viewport: ['0px', '0px', '0px', '0px'], animation: 'none', pointer: 'none'});
+  expect(lower.content).not.toBe('none');
+  expect(lower.opacity).toBeGreaterThan(0);
+  expect(lower.opacity).toBeLessThan(1);
   expect(await key.boundingBox()).toEqual(keyAt);
   expect(await paper.boundingBox()).toEqual(first);
 
@@ -44,6 +58,12 @@ test('Places shows five whole rows, scrolls in the menu, and keeps its actual de
     return {names, cut, height: frame.height};
   });
   expect(await visible()).toEqual({names: work.slice(0, 5), cut: [], height: 140});
+  await page.mouse.click(1400, 700);
+  await expect(menu).toBeHidden();
+  expect((await quiet()).content).toBe('none');
+  expect(await paper.boundingBox()).toEqual(first);
+  await key.click();
+  await expect(menu).toBeVisible();
   await page.setViewportSize({width: 1536, height: 320});
   await expect.poll(visible).toEqual({names: work.slice(0, 4), cut: [], height: 112});
   const scroll = () => menu.evaluate(el => el.scrollTop);
