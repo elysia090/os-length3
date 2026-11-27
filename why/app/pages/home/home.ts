@@ -3,7 +3,7 @@ import {agentCards} from '../kit/agent-cards.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {LIMITS, normalize, parse, type Profile} from '../../../home/profile.ts';
-import {connection, myName, rename} from '../../../shipto/connection.ts';
+import {connection, myName, onConnection, rename} from '../../../shipto/connection.ts';
 import {getState, onState, setState, settingName, unreadable} from '../../../home/state.ts';
 import * as servers from '../../../shipto/servers.ts';
 import * as inbox from '../../../shipto/inbox.ts';
@@ -13,6 +13,7 @@ import {homeIsHeld} from '../../../shipto/lifecycle.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {repoList} from './repo-list.ts';
 import {recentGlass} from './recent-glass.ts';
+import {RecentSnapshot, recentScope} from './recent.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
 import type {Context} from '../kit/context.ts';
@@ -117,18 +118,64 @@ function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
  * and the boards they write in as a guest.
  * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
  */
-/** What waited when Home was last drawn: drawn again at once with it (a redraw is the same page, not a box empty a
- * moment), then as it is now. */
-let latelyWas: HTMLElement[] = [];
+type Recent =
+  | {kind: 'file'; left: NonNullable<Context['leftOff']>; quote: string | undefined}
+  | {kind: 'letter'; thread: inbox.Thread}
+  | {kind: 'board'; board: string; name: string; room: string; server?: string};
+
+// Keep data, not the previous desk's buttons, and invalidate it even while Home is not on screen.
+const recent = new RecentSnapshot<Recent[]>();
+let rejoinRecent: ((scope: string | null) => void) | undefined;
+function recentIdentityChanged() {
+  const scope = recentScope(connection());
+  recent.read(scope);
+  rejoinRecent?.(scope);
+}
+onConnection(recentIdentityChanged);
+onState((key) => { if (key === 'remote') recentIdentityChanged(); });
+
+function recentRow(row: Recent, ctx: Context) {
+  switch (row.kind) {
+    case 'file': {
+      const {left, quote} = row;
+      const key = latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {
+        quote, heard: !quote, place: left.repo,
+        go: () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at}),
+      });
+      key.classList.add('pane-resume');
+      return key;
+    }
+    case 'letter': {
+      const {thread} = row;
+      return latelyRow(thread.name || inbox.shown(thread.address), wordLine(thread), {
+        fresh: true, go: () => { openNext(thread.address); void ctx.go('inbox'); },
+      });
+    }
+    case 'board':
+      return latelyRow(row.name, row.server ? t('{server} · New posts', {server: row.room}) : t('{server} · Joined as guest', {server: row.room}), {
+        fresh: !!row.server, go: () => { remember({server: row.server, board: row.board}); void ctx.go('server'); },
+      });
+  }
+}
 
 function lately(ctx: Context): HTMLElement {
-  const list = h('div', {class: 'lately-list'}, ...latelyWas);
+  const list = h('div', {class: 'lately-list'});
   arrowKeys(list, '.pane-row');
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, recentGlass(), h('h2', {id: 'lately-title'}, t('Recent activity')), list);
-  let asked = 0;
+  const show = (rows: Recent[] | undefined) => list.replaceChildren(...(rows?.length ? rows.map((row) => recentRow(row, ctx))
+    : rows ? [h('p', {class: 'muted small lately-none'}, t('Nothing new'))] : []));
+  let shown = recentScope(connection());
+  show(recent.read(shown));
+  const take = (scope: string | null) => {
+    if (scope === shown) return false;
+    shown = scope;
+    show(recent.read(scope));
+    return true;
+  };
   const paint = async () => {
-    const mine = ++asked;
-    const rows: HTMLElement[] = [];
+    const now = () => { const scope = recentScope(connection()); take(scope); return scope; };
+    const scope = now(), mine = recent.begin(scope);
+    const rows: Recent[] = [];
     const left = ctx.leftOff;
     if (left && (await store.names().catch((): string[] => [])).includes(left.repo)) {
       // The line it was left at, as it is now: what was being written, to be taken up again; or the nearest above it
@@ -136,47 +183,38 @@ function lately(ctx: Context): HTMLElement {
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => /[\p{L}\p{N}]/u.test(l))?.trim() ?? '';
-      const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
-      // A line that only says the names (a README's title is often its repo's) says nothing of where one was: then
-      // nothing is said under the file but its repo, once (the words are heard only).
+      // A line that only says the names (a README's title is often its repo's) says nothing of where one was.
       const names = [left.repo, shownName(left.path), left.path.split('/').pop() ?? ''].map((n) => n.toLowerCase());
       const telling = !!quote && !names.includes(quote.replace(/^[\s#/*>;-]+|[\s*/;]+$/g, '').toLowerCase());
-      const resume = latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}),
-        {quote: telling ? quote : undefined, heard: !telling, place: left.repo, go: goOn});
-      resume.classList.add('pane-resume');
-      rows.push(resume);
+      rows.push({kind: 'file', left, quote: telling ? quote : undefined});
     }
-    // The servers and the conversations asked at once: neither waits on the other (one round to the Remote, not two).
-    const [all, threads] = connection()
+    if (!recent.current(now(), mine)) return;
+    // Reply and board reads share one generation and never wait on one another.
+    const [all, threads] = scope !== null
       ? await Promise.all([servers.servers().catch(() => []), inbox.threads().catch(() => [])])
       : [[], []];
-    if (connection()) {
-      for (const th of waiting(threads, 3)) {
-        const who = th.name || inbox.shown(th.address);
-        const answer = () => { openNext(th.address); void ctx.go('inbox'); };
-        rows.push(latelyRow(who, wordLine(th), {fresh: true, go: answer}));
-      }
-      for (const b of news().boards.slice(0, 3)) {
-        const s = all.find((x) => x.id === b.server);
-        const board = s?.boards.find((x) => x.id === b.id);
-        if (!s || !board) continue;
-        const there = () => {
-          remember({server: s.id, board: board.id});
-          void ctx.go('server');
-        };
-        rows.push(latelyRow(board.name, t('{server} · New posts', {server: s.name}), {fresh: true, go: there}));
-      }
+    // Even a synchronous signed-out read belongs to a mounted desk, not one removed during the read.
+    await Promise.resolve();
+    if (!box.isConnected || !recent.current(now(), mine)) return;
+    for (const thread of waiting(threads, 3)) {
+      // Only the first line is drawn. The rest of the message does not belong in this cache.
+      rows.push({kind: 'letter', thread: {...thread, last: {...thread.last, body: thread.last.body.split('\n', 1)[0]}}});
     }
-    // The boards this browser writes in as a guest (none of its servers'): where one writes, a way back always,
-    // signed in or not; its look reads the board and writes in it as the guest.
+    if (scope !== null) for (const b of news().boards.slice(0, 3)) {
+      const s = all.find((x) => x.id === b.server);
+      const board = s?.boards.find((x) => x.id === b.id);
+      if (s && board) rows.push({kind: 'board', server: s.id, board: board.id, name: board.name, room: s.name});
+    }
+    // A board this device writes in as a guest is available whether or not the device is signed in.
     const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
     for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
-      const there = () => { remember({board: id}); void ctx.go('server'); };
-      rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {go: there}));
+      rows.push({kind: 'board', board: id, name: here.name, room: here.server});
     }
-    if (mine !== asked) return;
-    latelyWas = rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))];
-    list.replaceChildren(...latelyWas);
+    if (recent.keep(now(), mine, rows)) show(rows);
+  };
+  rejoinRecent = (scope) => {
+    if (!box.isConnected) { rejoinRecent = undefined; return; }
+    if (take(scope)) queueMicrotask(() => { if (box.isConnected) void paint(); });
   };
   // (Home is not seen before what waits is read: ui/whole.ts.)
   void whole(paint());
