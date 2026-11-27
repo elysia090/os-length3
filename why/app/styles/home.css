@@ -137,6 +137,9 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 /* A name is a destination, not another piece of paper; a pointed-to name just comes up in ink. */
 .home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { color: var(--nighthawks-paper); }
 .home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); color: var(--ink); }
+/* Before the action list is laid on the grid, its natural position must not widen the mobile viewport. */
+:root:has(> body > #page[data-place='home'] .home-repos .repo-gear-button[aria-expanded='true']),
+body:has(> #page[data-place='home'] .home-repos .repo-gear-button[aria-expanded='true']) { overflow-x: clip; }
 /* The gear is always after the name, taking its own room even when the names wrap. */
 .home-repos > .gear-card > .repo-gear {
   position: static; flex: none; align-self: flex-start; display: grid; place-items: center;
@@ -151,6 +154,7 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   width: min(12 * var(--u), round(down, 100vw - 2.5 * var(--u), var(--u)));
   overflow-wrap: anywhere; text-align: left;
 }
+.home-repos .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; }
 .grid.repo-grid.home-repos > .card.new {
   display: inline-block; width: max-content; height: var(--h-control); margin: 0;
   padding-block: calc((var(--h-control) - var(--u)) / 2); padding-inline-end: var(--s3);

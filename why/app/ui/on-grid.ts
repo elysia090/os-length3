@@ -15,22 +15,37 @@ export interface Laid { dx: number; dy: number; width: number }
  * whole cells, then along by whole cells, left or up, while its shadow would pass the window's edge; never past the
  * frame's corner (48, 48) by that.
  */
-export function laid(r: {left: number; top: number; width: number; height: number}, w: number, h: number): Laid {
-  const width = Math.ceil(r.width / U) * U;
+export function laid(r: {left: number; top: number; width: number; height: number}, w: number, h: number,
+  anchor?: {top: number; bottom: number}): Laid {
+  const width = Math.ceil(r.width / U) * U, height = Math.ceil(r.height / U) * U;
   let left = Math.round(r.left / U) * U, top = Math.round(r.top / U) * U;
+  if (anchor) {
+    // Leave the key in sight and under the hand: when the menu cannot fit below it, turn the menu above it.
+    const after = Math.max(top, Math.ceil(anchor.bottom / U) * U);
+    const before = Math.floor((anchor.top - height - SHADE) / U) * U;
+    if (after + height + SHADE <= h) top = after;
+    else if (before >= 2 * U) top = before;
+  }
   while (left + width + SHADE > w && left - U >= 2 * U) left -= U;
-  while (top + Math.ceil(r.height / U) * U + SHADE > h && top - U >= 2 * U) top -= U;
+  while (top + height + SHADE > h && top - U >= 2 * U) top -= U;
   return {dx: left - r.left, dy: top - r.top, width};
 }
 
 const seen = new WeakSet<HTMLElement>();
+const keys = new WeakMap<HTMLElement, HTMLElement>();
+
+/** A menu on a scrolling desk may turn above its key rather than making the desk scroll. */
+export function pinOnGrid(menu: HTMLElement, key: HTMLElement) { keys.set(menu, key); }
 
 function place(el: HTMLElement) {
   el.style.translate = '';
   el.style.minWidth = '';
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) return;
-  const at = laid(r, innerWidth, innerHeight);
+  const key = keys.get(el)?.getBoundingClientRect();
+  // A mobile window's inner size may include horizontal overflow, including a menu not yet laid down.
+  const view = document.documentElement;
+  const at = laid(r, key ? view.clientWidth : innerWidth, key ? view.clientHeight : innerHeight, key);
   el.style.minWidth = `${at.width}px`;
   el.style.translate = at.dx || at.dy ? `${at.dx}px ${at.dy}px` : '';
 }

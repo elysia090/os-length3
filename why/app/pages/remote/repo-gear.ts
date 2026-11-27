@@ -12,6 +12,7 @@ import {openRepoPlace} from './repos.ts';
 import {askFirst} from './repo-off.ts';
 import type {Context} from '../kit/context.ts';
 import {wayOut} from '../../ui/way-out.ts';
+import {pinOnGrid} from '../../ui/on-grid.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards and Runtime): near a repo (the pointer on it, or the keyboard in it) a
 // small gear shows at its edge; pressed, it offers what is done to the repo
@@ -39,6 +40,8 @@ import {wayOut} from '../../ui/way-out.ts';
 interface GearWays {
   /** An inline inventory row offers directional choice as Places does. */
   arrowKeys?: boolean;
+  /** A card's actions open beside it without scrolling a desk being read. */
+  pinned?: boolean;
   /** Why it cannot be freed from this device now, or null when it can (read when the list opens). */
   why(): Promise<string | null>;
   /** A storage row can know an identical Remote copy before the UI's list has refreshed. */
@@ -64,6 +67,7 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
   const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys);
+  if (w.pinned) pinOnGrid(list, gear);
   let fetching = false;
   let fetchError = '';
   /** Done (renamed, freed, deleted): the list is put away and the place drawn again as it is now. */
@@ -125,7 +129,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     del.addEventListener('click', () => (there ? askRemote(del, there.offAt ? 'discard' : 'delete', holds === 'idle') : askHere(del, holds === 'idle')));
     rows.push(menuRule(), del, ...(busy ? [note(busy)] : []));
     list.replaceChildren(...rows);
-    rows[0].focus();
+    rows[0].focus({preventScroll: w.pinned});
     if (!free) return;
     void w.why().then((no) => {
       if (!list.contains(free)) return;

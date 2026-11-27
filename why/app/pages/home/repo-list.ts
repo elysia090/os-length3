@@ -37,7 +37,7 @@ async function whyKept(name: string): Promise<string | null> {
  * first, its card saying so meanwhile); its gear, at the top right, offers what is done to the repo itself (its card on
  * the Remote, Rename, Free from this device, Delete: repo-gear.ts). `again` draws the list once something changed.
  */
-function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, again: () => Promise<void>): HTMLElement {
+function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, again: () => Promise<void>, pinned: boolean): HTMLElement {
   const body = h('button', {type: 'button', class: 'card-open'}, h('span', {class: 'card-title'}, name), ...lines);
   const sync = () => body.querySelector('.card-sync') as HTMLElement;
   body.addEventListener('click', async () => {
@@ -48,6 +48,7 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
     try { await bring(name); ctx.openRepo(name); } catch (e) { sync().textContent = errorText(e); card.removeAttribute('aria-busy'); }
   });
   const {gear, list} = repoGear(ctx, name, {
+    pinned,
     why: () => whyKept(name),
     free: async () => {
       const r = await free([`repo:${name}`]);
@@ -61,20 +62,20 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
   return card;
 }
 
-function repoCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said): HTMLElement {
+function repoCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said, pinned: boolean): HTMLElement {
   // What it is, in the words it was made with: its README's first plain line, under its name, once read.
   const what = h('span', {class: 'card-summary'});
   void summaryOf(name).then((line) => { what.textContent = line; });
   return gearCard(ctx, name, [what, h('span', {class: 'muted', 'data-size': ''}, said(size, modified)),
     // Where it stands against the Remote; filled in once it is known.
-    h('span', {class: 'muted card-sync'})], false, again);
+    h('span', {class: 'muted card-sync'})], false, again, pinned);
 }
 
 
 /** A repo on the Remote and not here: pressed, it is brought here and opened. */
-function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said): HTMLElement {
+function awayCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>, said: Said, pinned: boolean): HTMLElement {
   return gearCard(ctx, name, [h('span', {class: 'muted'}, said(size, modified)),
-    h('span', {class: 'muted card-sync'}, t('Remote only'))], true, again);
+    h('span', {class: 'muted card-sync'}, t('Remote only'))], true, again, pinned);
 }
 
 function newRepoCard(ctx: Context): HTMLElement {
@@ -95,7 +96,7 @@ let reposWere: RepoSummary[] | null = null;
 
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void; brief?: boolean}): RepoList {
   // The same cards wherever the list is (Home, New repo): one size, one title; Home's say only when each changed.
-  const said = options.brief ? whenOnly : sizeAndWhen;
+  const pinned = !!options.brief, said = pinned ? whenOnly : sizeAndWhen;
   // (Nothing in it before the repos are read: a page is not seen before its lists are, ui/whole.ts.)
   const grid = h('div', {class: 'grid repo-grid'});
   arrowKeys(grid, '.card-open, .card.new', {horizontalRowFirst: options.brief});
@@ -104,8 +105,8 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
     options.counted?.(repos.length + remoteOnly().length);
     // What is drawn of the Remote is what a change is told from (signed out, its cards go at the next look).
     known = remoteOnly().map((r) => r.name).join('\n');
-    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again, said)),
-      ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again, said)),
+    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again, said, pinned)),
+      ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again, said, pinned)),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('div', {class: 'empty'}, t('No repos yet')));
     marks();
