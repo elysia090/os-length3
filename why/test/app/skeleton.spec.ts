@@ -2,53 +2,65 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// The skeleton every place is set on (styles/tokens.css, base.css): the frame is the rail's column and the band's row,
-// two cells each, and the world starts at their corner, 48 px in and 48 down, at every width (a phone's too: there is
-// no other skeleton for a narrow window). A place is a desk (Home, New repo, Forge, Git), its band one bar from the
-// desk's edge, 36 px tall about the row's middle; or one thing to read (Runtime, the Remote; Inbox signed out), a sheet
-// of paper from the desk's corner; or a desk with a row (Server, Inbox). A place that goes its own way is told from one
-// that stands with the rest.
-
+// New repo retains the framed band. Home, the work desks and Runtime share two corner keys, not a permanent rail.
+// The Remote and signed-out Inbox still frame a sheet; Server and signed-in Inbox hold a reading paper in a desk.
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
 
-/** A desk: its band is one bar from the desk's edge on the row of the rail's first place, whole cells wide; where the
- * place has a far side (or is one), the door is the bar's first two cells. */
-async function desk(app: App, what: string, door: boolean) {
+/** New repo still has a whole-cell band on the rail's first row, with no door. */
+async function newRepoDesk(app: App, what: string) {
   await expect(async () => {
-    const bar = await at(app.main.locator('.band-tools')), first = await at(app.rail.button('home'));
-    await expect(app.rail.door).toBeVisible({visible: door});
-    const from = door ? (await app.rail.door.boundingBox())! : bar;
-    if (door) {
-      expect([from.width, from.height, from.y], `${what}: its door two cells wide, on the band's row`).toEqual([2 * U, first.height, first.y]);
-      expect(Math.abs(bar.x - (from.x + from.width)), `${what}: its band goes on from the door`).toBeLessThan(1);
-    }
-    expect(Math.abs(from.x - 2 * U), `${what}: its band's left edge`).toBeLessThan(1);
-    expect(Math.abs(bar.y - first.y), `${what}: its band's top, the rail's first place's`).toBeLessThan(1);
-    expect(Math.abs(bar.height - first.height), `${what}: its band as tall as a place`).toBeLessThan(1);
-    expect((bar.x + bar.width - from.x) % U, `${what}: its band whole cells wide`).toBeLessThan(1);
+    const bar = await at(app.main.getByRole('group', {name: 'Tools', exact: true}));
+    const first = await at(app.rail.button('home'));
+    await expect(app.rail.door).toBeHidden();
+    expect(bar.x, `${what}: band's left edge`).toBe(2 * U);
+    expect([bar.y, bar.height], `${what}: band on the rail's first row`).toEqual([first.y, first.height]);
+    expect(bar.width % U, `${what}: band whole cells wide`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
-/** The two work desks replace the permanent frame with the same corner switch. */
-async function workDesk(app: App, place: 'Forge' | 'Git', width: number) {
-  await expect(app.page.getByRole('navigation', {name: 'Purposes', exact: true})).toBeHidden();
+
+/** The corner supplies the frame, not two ways to do the same work. */
+async function corner(app: App, width: number) {
+  await expect(app.page.getByRole('navigation', {name: 'Purposes', exact: true, includeHidden: true})).toBeHidden();
   await expect(app.rail.door).toBeHidden();
-  const key = app.main.getByRole('button', {name: 'Places', exact: true});
-  await expect(key).toBeVisible();
-  expect(await key.boundingBox()).toMatchObject({x: width - 56, y: 12, width: 44, height: 44});
+  for (const [name, right] of [['Search', 56], ['Places', 12]] as const) {
+    const key = app.main.getByRole('button', {name, exact: true});
+    await expect(key).toBeVisible();
+    expect(await key.boundingBox()).toEqual({x: width - right - 44, y: 12, width: 44, height: 44});
+  }
+}
+
+async function homeDesk(app: App, width: number) {
+  await corner(app, width);
+  await expect(app.main.getByRole('group', {name: 'Tools', exact: true})).toBeHidden();
+  const line = width <= 600 ? U : 2 * U;
+  const name = app.main.locator('.home-portrait').getByRole('heading', {level: 1});
+  const note = app.home.todo;
+  await expect(name).toBeVisible();
+  await expect(note).toBeVisible();
+  const portrait = await at(name), paper = await at(note);
+  expect(portrait.x).toBe(line);
+  expect(paper.x).toBe(line);
+  expect(paper.y).toBeGreaterThanOrEqual(portrait.y + portrait.height);
+  expect(paper.width).toBe(width <= 600 ? 14 * U : 26 * U);
+  await expect(note).toHaveCSS('background-color', 'rgb(215, 197, 90)');
+}
+
+async function workDesk(app: App, place: 'Forge' | 'Git', width: number) {
+  await corner(app, width);
   await expect(app.main.getByRole('heading', {name: place, exact: true})).toBeVisible();
 }
 /** A sheet: paper from the desk's corner; where it is a place's far side, the door over its corner on the band's row. */
-async function sheet(app: App, what: string, door: boolean) {
+async function sheet(app: App, what: string, door: boolean, paper = 'rgb(253, 250, 244)') {
   await expect(async () => {
     await expect(app.rail.door).toBeVisible({visible: door});
     if (door) expect(await app.rail.door.boundingBox(), `${what}: its door`).toMatchObject({x: 2 * U, width: 2 * U});
     const page = await at(app.main);
     expect(Math.abs(page.x - 2 * U), `${what}: its left edge`).toBeLessThan(1);
     expect(Math.abs(page.y - 2 * U), `${what}: its top`).toBeLessThan(1);
-    expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe('rgb(253, 250, 244)');
+    expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe(paper);
   }).toPass({timeout: 4000});
 }
 /** The ground is the desk's dots, under every place. */
@@ -56,21 +68,25 @@ const dotted = (app: App) => app.page.evaluate(() => getComputedStyle(document.b
 /** How far the page is wider than the window (it never is). */
 const sideways = (app: App) => app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 
-test('signed out, every place starts at the frame\'s corner: a desk\'s band from the desk\'s edge, a sheet from the desk\'s corner, at every width', async ({app}) => {
+test('signed out, each place keeps its own frame and reading edge at every width', async ({app}) => {
   await app.newRepo.make('hello', {template: 'C'});
   for (const size of SIZES) {
     await app.page.setViewportSize(size);
     const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     for (const place of ['home', 'new-repo', 'forge', 'git'] as const) {
       await app.rail.go(place);
-      if (place === 'forge' || place === 'git') await workDesk(app, place === 'forge' ? 'Forge' : 'Git', size.width);
-      else await desk(app, what(place), place !== 'new-repo');
+      if (place === 'home') await homeDesk(app, size.width);
+      else if (place === 'new-repo') await newRepoDesk(app, what(place));
+      else await workDesk(app, place === 'forge' ? 'Forge' : 'Git', size.width);
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
     for (const place of ['runtime', 'remote', 'inbox'] as const) {
       await app.rail.go(place);
-      await sheet(app, what(place), place !== 'runtime');
+      if (place === 'runtime') {
+        await corner(app, size.width);
+        await sheet(app, what(place), false, 'rgb(239, 235, 227)');
+      } else await sheet(app, what(place), true);
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
@@ -97,8 +113,7 @@ async function inboxDesk(app: App, size: {width: number; height: number}) {
   const desk = size.width >= 1000;
   const x = desk ? 312 : 24, y = desk ? 96 : 72;
   const held = app.main.locator('.inbox-thread');
-  await expect(app.rail.door).toBeHidden();
-  await expect(app.forge.placesKey).toBeVisible();
+  await corner(app, size.width);
   await expect(held).toBeInViewport({ratio: 1});
   expect(await held.boundingBox()).toEqual({x, y, width: Math.min(816, size.width - x - (desk ? 48 : 24)), height: Math.min(552, size.height - y - 38)});
   await expect(held).toHaveCSS('background-color', 'rgb(239, 235, 227)');
