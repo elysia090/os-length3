@@ -49,9 +49,9 @@ test("a board's TODO keeps what its people write in it", async ({signedIn: app})
   const first = app.server.todo.getByRole('listitem').first();
   await first.getByRole('textbox', {name: 'Task description'}).fill('Buy: tent pegs');
   await expect(first).toContainText('Buy：');
-  await expect(app.server.view.locator('.server-overline > span')).toHaveText('TODO');
+  await expect(app.server.view.locator('.server-overline > .sr-only')).toHaveText('TODO');
   await first.getByRole('button', {name: 'Mark as done'}).click();
-  await expect(app.server.view.locator('.server-overline > span')).toHaveText('TODO');
+  await expect(app.server.view.locator('.server-overline > .sr-only')).toHaveText('TODO');
 
   // Remote storage used a moment after the writing stops: opened again, it is read from there.
   const kept = app.server.todo.getByRole('listitem').first();
@@ -548,34 +548,68 @@ test('one grained paper holds Talk and TODO; switching topics restores the actua
   await expect(talk.getByText('A reply not yet posted.', {exact: true})).toBeInViewport();
 });
 
-test('the held topic has one quiet upper rule on its own measure, independent of its face', async ({signedIn: app}) => {
+test('one compact name and its face key sit above the held topic without changing its paper', async ({signedIn: app}) => {
   const {page, server} = app;
   await server.makeBoard('Release notes');
-  const head = server.paper.locator('.board-head');
-  const over = server.view.locator('.server-overline');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const heading = server.board('Release notes');
+  const overline = server.view.locator('.server-overline');
   const footer = server.paper.locator('.dock');
-  const bounds = async () => head.evaluate((el) => {
-    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-    return {x: r.x, y: r.bottom, w: r.width, px: s.borderBottomWidth, color: s.borderBottomColor};
-  });
-  for (const size of [{width: 1440, height: 960}, {width: 768, height: 864}, {width: 390, height: 844}]) {
+  const writing = footer.locator('form.prompt');
+  const reading = server.talk('Release notes');
+  for (const size of [{width: 1440, height: 960}, {width: 1024, height: 768}, {width: 768, height: 864}, {width: 390, height: 844}]) {
     await page.setViewportSize(size);
-    const paper = await box(server.paper);
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveCount(1);
+    await expect(server.paper.getByRole('heading', {name: 'Release notes', exact: true})).toHaveCount(0);
+    const paper = await box(server.paper), name = await box(heading), reply = await box(footer);
     expect(Math.abs(paper.x + paper.width / 2 - size.width / 2)).toBeLessThan(1);
     const inset = Math.max(24, Math.min(40, size.width * .04));
-    expect(paper.width).toBeCloseTo(size.width === 1440 ? 768 : size.width - 2 * inset, 1);
-    const rule = await bounds(), talk = await box(server.talk('Release notes')), reply = await box(footer);
-    expect([rule.px, rule.color]).toEqual(['1px', 'rgb(169, 164, 155)']);
-    expect([rule.x, rule.w]).toEqual([reply.x, reply.width]);
-    expect(talk.x).toBe(rule.x);
-    expect(talk.y - rule.y).toBe(size.width > 999 ? 20 : 12);
-    await expect(over).toHaveCSS('border-bottom-width', '0px');
-    await expect(footer).toHaveCSS('border-top-width', '1px');
+    const wide = size.width >= 1000;
+    expect(paper.width).toBeCloseTo(wide ? Math.min(768, size.width - 480) : size.width - 2 * inset, 1);
+    const switcher = await box(server.face('TODO'));
+    expect(name.x).toBe(paper.x);
+    await expect(overline).toHaveCSS('padding-bottom', '2px');
+    // A compact 1.1 line-height can put the matched baseline a fraction of a pixel higher than the pad.
+    const gap = paper.y - (name.y + name.height);
+    expect(gap).toBeGreaterThanOrEqual(2);
+    expect(gap).toBeLessThan(3);
+    expect(switcher.y).toBeLessThan(paper.y);
+    expect(switcher.x + switcher.width).toBeCloseTo(paper.x + paper.width, 1);
+    expect(switcher.height).toBe(44);
+    expect((await box(reading)).y - paper.y).toBe(24);
+    await expect(heading).toHaveCSS('font-size', wide ? '36px' : '34px');
+    await expect(overline).toHaveCSS('border-bottom-width', '0px');
+    await expect(footer).toHaveCSS('border-top-width', '0px');
+    await expect(writing).toHaveCSS('border-bottom-width', '1px');
+    await expect(writing).toHaveCSS('border-bottom-color', 'rgb(169, 164, 155)');
+    if (size.width === 1440) {
+      expect(paper).toEqual({x: 336, y: 216, width: 768, height: 528});
+      const room = await box(server.view.locator('.server-sidebar .server-display-name'));
+      expect([room.x, room.y]).toEqual([48, 197]);
+      const line = await box(writing);
+      expect(line.y + line.height - 1).toBe(715);
+    }
+    await expect(server.face('TODO')).toHaveText('TODO →');
+    await expect(server.face('Talk')).toHaveCount(0);
     await server.face('TODO').click();
-    expect(await bounds()).toEqual(rule);
+    await expect(server.todo).toBeVisible();
+    await expect(server.face('Talk')).toHaveText('← Talk');
+    expect(await box(heading)).toEqual(name);
+    expect(await box(server.paper)).toEqual(paper);
     await server.face('Talk').click();
     expect(await box(footer)).toEqual(reply);
   }
+  const long = 'Designing for old screens and verifying the installation guide';
+  await server.makeBoard(long);
+  const name = server.board(long);
+  const bounds = await box(name);
+  expect(bounds.height).toBeGreaterThan(37.4 * 2);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await expect(server.topics.getByRole('button', {name: 'New thread…', exact: true})).toBeInViewport({ratio: 1});
+  await server.post(long, 'A long title still leaves a working foot.');
+  await expect(server.talk(long)).toContainText('A long title still leaves a working foot.');
   await server.newBoard();
-  await expect(head).toHaveCSS('border-bottom-width', '0px');
+  await expect(server.paper.getByRole('heading', {name: 'New thread', exact: true})).toBeVisible();
+  await expect(name).toHaveCount(0);
 });

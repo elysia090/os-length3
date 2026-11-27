@@ -18,7 +18,7 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   --server-paper-top: calc((100dvh - var(--server-paper-h)) / 2);
   --server-paper-left: calc((100% - var(--server-paper-w)) / 2);
   --server-inset: calc(2 * var(--u));
-  --server-head-gap: 27px; --server-after-rule: 20px;
+  --server-head-top: calc(var(--u) + var(--s2)); --server-head-gap: 27px;
   /* The desk's established measure: index, metadata, words and the one title. */
   --t-server-control: 16px; --t-server-meta: 14px; --t-server-time: 13px;
   --t-server-word: 18px; --t-server-title: 36px;
@@ -39,7 +39,7 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   --ground: var(--nighthawks-ground); --ink: var(--nighthawks-paper);
   --sub: var(--nighthawks-desk-quiet); --edge: var(--nighthawks-desk-disabled);
   position: absolute; z-index: 2;
-  inset: calc(var(--server-paper-top) + 36px) auto auto var(--server-edge);
+  inset: calc(var(--server-paper-top) + 49px) auto auto var(--server-edge);
   width: min(calc(8 * var(--u)), calc(var(--server-paper-left) - var(--server-edge) - var(--u)));
 }
 .server-sidebar :focus-visible { outline-color: var(--nighthawks-paper); }
@@ -75,10 +75,27 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   width: var(--server-paper-w); height: var(--server-paper-h); min-width: 0;
 }
 .server-topic { position: relative; height: 100%; min-width: 0; }
+.server-topic:has(> .server-overline) { display: flex; flex-direction: column; }
+.server-topic:has(> .server-overline) > .server-paper { flex: 0 1 var(--server-paper-h); min-height: 360px; }
+/* The name and the switch are one row; the paper's top edge is its only upper rule. */
 .server-overline {
-  position: absolute; inset: auto 0 100%; margin-bottom: 6px; height: 27px;
-  display: flex; align-items: center; justify-content: space-between; background: var(--nighthawks-ground);
-  color: var(--nighthawks-desk-quiet); font: 400 var(--t-server-control)/var(--u) var(--mono);
+  --ink: var(--nighthawks-paper); --sub: var(--nighthawks-desk-quiet);
+  display: grid; grid-template-columns: minmax(0, 1fr) calc(3 * var(--u));
+  align-items: baseline; align-content: end; gap: 0 var(--s3);
+  flex: none; min-height: var(--server-overline-space, 0px); padding-block-end: 2px;
+}
+.server-overline:has(> .topic-face-key[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.server-overline > .topic-source { grid-column: 1 / -1; }
+@media (min-width: 1000px) and (min-height: 684px) {
+  .server-focus:has(> .server-topic:not([hidden]) > .server-overline) {
+    --server-name-floor: calc(3 * var(--u));
+    --server-overline-space: max(0px, calc(var(--server-paper-top) - var(--server-name-floor)));
+    top: var(--server-name-floor); height: calc(100% - var(--server-name-floor) - var(--u));
+  }
+  .server-center:has(.server-topic:not([hidden]) > .server-overline) > .server-sidebar {
+    /* Workshop's ink ends against the paper's border, as it did against the old rule. */
+    inset-block-start: calc(var(--server-paper-top) - var(--u) - 1px);
+  }
 }
 .topic-face-key {
   min-height: 27px; padding: 0; border: 0; border-radius: 0; background: none; color: inherit;
@@ -86,7 +103,6 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 }
 .topic-face-key:is(:hover, :focus-visible):not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
 .topic-face-key:disabled { color: var(--nighthawks-paper-sub); cursor: var(--cursor-arrow); }
-.server-overline .topic-face-key { color: var(--nighthawks-paper); outline-color: currentColor; }
 :is(.server-paper, .server-sheet) {
   --paper: var(--nighthawks-paper); --ground: var(--paper);
   --ink: var(--nighthawks-paper-ink); --sub: var(--nighthawks-paper-sub);
@@ -111,15 +127,15 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; min-width: 0;
   margin: 0; background: none;
 }
-.server-paper .board-head { margin: 32px var(--server-inset) var(--server-head-gap); min-width: 0; }
-/* As on an Inbox letter, the heading ends in one quiet rule on the text's measure.
-   Use the existing gap so neither the reading area nor the reply moves. Both faces share this heading. */
-.server-paper[data-material='topic'] > .board-card > .board-head {
-  margin-block-end: var(--server-after-rule);
-  padding-block-end: calc(var(--server-head-gap) - var(--server-after-rule) - 1px);
-  border-bottom: 1px solid var(--rule);
+.server-paper .board-head { margin: var(--server-head-top) var(--server-inset) var(--server-head-gap); min-width: 0; }
+.server-paper[data-material='topic'] > .board-card { grid-template-rows: minmax(0, 1fr); padding-block-start: var(--u); }
+/* A 44px target around the words doesn't change their shared baseline. */
+.server-overline > .topic-face-key {
+  min-height: 44px; margin-block: -10px; padding-block: 10px; text-align: end;
+  color: var(--sub); outline-color: currentColor; white-space: nowrap;
 }
-.server-paper .board-head > h2 {
+.server-overline > .topic-face-key:is(:hover, :focus-visible) { color: var(--ink); }
+:is(.server-paper .board-head, .server-overline) > h2 {
   margin: 0; color: var(--ink); text-transform: uppercase;
   font: 900 var(--t-server-title)/48px var(--display); letter-spacing: -.018em; overflow-wrap: anywhere;
 }
@@ -154,8 +170,9 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 }
 .server-paper .board-todo .todo-clear { min-height: var(--u); }
 .server-paper > .dock {
+  --server-dock-pad: 36px;
   position: static; inset: auto; display: block; z-index: auto;
-  flex: none; max-width: none; padding: 9px 0 36px; margin: var(--u) var(--server-inset) 0;
+  flex: none; max-width: none; padding: 9px 0 var(--server-dock-pad); margin: var(--u) var(--server-inset) 0;
   border-top: 1px solid var(--rule); transform: none;
 }
 .server-paper > .dock:empty,
@@ -165,6 +182,14 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   display: flex; align-items: flex-end; gap: var(--u); min-height: 26px;
   border: 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
 }
+/* The writing line holds the same place; its rule now sits below the field and its action. */
+.server-paper > .dock:has(> form.prompt) {
+  padding-top: 10px; padding-bottom: calc(var(--server-dock-pad) - var(--s2)); border-top-width: 0;
+}
+.server-paper > .dock > form:is(.prompt, .prompt:focus-within) {
+  min-height: calc(26px + var(--s2)); padding-bottom: calc(var(--s2) - 1px); border-bottom: 1px solid var(--rule);
+}
+.server-paper > .dock > form.prompt:focus-within { border-bottom-color: var(--ink); }
 .server-paper .prompt-in {
   flex: 1; min-height: var(--u); max-height: calc(3 * var(--u)); resize: none; padding: 0;
   overflow-y: auto; scrollbar-width: thin; font: 400 var(--t-server-word)/var(--u) var(--sans);
@@ -188,7 +213,7 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
 @media (max-width: 999px), (max-height: 683px) {
   .page[data-place='server'] > .server-work {
     --server-edge: clamp(24px, 4vw, 40px); --server-inset: clamp(20px, 4vw, 36px);
-    --server-head-gap: var(--s4); --server-after-rule: var(--s3);
+    --server-head-top: var(--u); --server-head-gap: var(--s4);
     --t-server-word: var(--t-word); --t-server-title: min(34px, 9vw);
     display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 62px minmax(0, 1fr);
   }
@@ -200,10 +225,16 @@ body:has(> #page[data-place='server'] > .server-work) > :is(.rail, .door) { disp
   }
   .server-sidebar { position: relative; inset: auto; width: 100%; flex: none; margin-bottom: 35px; }
   .server-sidebar .server-top:has(.server-chooser:not([hidden])) { margin-bottom: 4px; }
-  .server-index { max-height: calc(6 * var(--u)); }
+  /* Keep New thread visible; only the topic names scroll on a narrow desk. */
+  .server-index { max-height: none; overflow: visible; }
+  .server-topics {
+    max-height: calc(4 * var(--u)); overflow: auto; scrollbar-width: thin;
+    padding-inline-start: 12px; margin-inline-start: -12px;
+  }
   .server-focus { position: relative; inset: auto; flex: 1; width: 100%; height: auto; min-height: 360px; }
-  .server-paper .board-head { margin-block-start: var(--u); }
-  .server-paper .board-head > h2 { line-height: 1.1; }
-  .server-paper > .dock { margin-top: var(--s3); padding-bottom: var(--s4); }
+  .server-center:has(.server-topic:not([hidden]) > .server-overline) > .server-sidebar { margin-bottom: var(--s3); }
+  .server-topic:has(> .server-overline) > .server-paper { flex-grow: 1; }
+  :is(.server-paper .board-head, .server-overline) > h2 { line-height: 1.1; }
+  .server-paper > .dock { --server-dock-pad: var(--s4); margin-top: var(--s3); }
   .board-create-foot { margin-bottom: var(--s4); }
 }
