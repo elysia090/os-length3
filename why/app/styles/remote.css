@@ -16,10 +16,15 @@
 .sign-in-card h1, .sign-in-card h2 { margin: 0; font-size: var(--t-word); font-weight: 700; }
 /* What signing in opens here, and that the rest does not wait on it: two quiet lines under the title. */
 .sign-in-what { margin: 0; }
+.remote-join { display: grid; gap: var(--s3); max-width: 560px; }
+.remote-join .line-in { flex: 1; }
 .sign-in-card .remote-join { max-width: none; }
 .sign-in-card .sign-in-row { display: grid; gap: var(--s2); }
 .sign-in-card .sign-in-row .button { width: 100%; }
 .device-page { grid-column: 1 / -1; width: 100%; min-height: 100dvh; padding: 0 var(--s4) 5vh; }
+/* Credential and device rows keep their deeds in line with their names. */
+.usage-prompt { align-items: center; }
+.usage-prompt .button { min-height: var(--h-control); padding-block: 0; }
 @media (max-width: 560px) {
   /* A phone: the window's own gutter is the page's right edge, so the two do not stack up. */
   .page { padding-right: 0; }
