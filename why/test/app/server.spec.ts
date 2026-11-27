@@ -6,8 +6,8 @@ import type {App} from './app.ts';
 // TODO kept together: a post goes into its talk, an item into its TODO, and
 // both are what the Remote keeps (they are there when it is opened again).
 // Someone is added by their name, asked in their Inbox; once they accept they
-// are in it. What others post and one has not seen is marked on the rail and
-// on the room name; what one half wrote stays with its board.
+// are in it. What others post and one has not seen is marked where Server
+// is chosen and on the room name; what one half wrote stays with its board.
 
 test.beforeEach(async ({signedIn: app}) => {
   await app.server.make('Trip', `${app.handle}-trip`);
@@ -119,20 +119,32 @@ test('someone added by name is asked in their Inbox, and is in the server once t
   await expect(again).toHaveText(`${bo.handle} is already a member`);
 });
 
-test('a post by someone else is marked on the rail and the room name until its board is seen', async ({signedIn: ada, another}) => {
+test('new posts update an open Places menu without moving focus, until the board is read', async ({signedIn: ada, another}) => {
   const bo = await addBo(ada, another);
-  await ada.server.close();
-  await ada.rail.go('remote');
+  await ada.server.view.getByRole('button', {name: 'Done', exact: true}).click();
+  await ada.server.makeBoard('Packing');
   await bo.server.open();
+  const {placesKey: key, places} = ada.forge;
+  await key.press('Enter');
+  const server = places.getByRole('menuitemradio', {name: 'Server', exact: true});
+  await expect(server).toBeFocused();
+  await expect(server).toHaveAccessibleDescription('');
+
   await bo.server.post('general', 'I have the tent.');
   await expect(bo.server.talk('general')).toContainText('I have the tent.');
-
   await ada.comeBack();
-  await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
-  await ada.server.open();
+  await expect(key).toHaveAccessibleDescription('New posts in server');
+  await expect(server).toHaveAccessibleDescription('New posts in server');
+  await expect(server).toBeChecked();
+  await expect(server).toBeFocused();
+  await expect(places.getByRole('menuitem', {name: 'Inbox', exact: true})).toHaveAccessibleDescription('');
+  await server.press('Escape');
+  await expect(ada.server.room('Trip')).toHaveAccessibleName('Trip (new posts)');
+
+  await ada.server.goBoard('general');
   // Its talk's foot in view, what came is seen: the marks go.
   await expect(ada.server.talk('general')).toContainText('I have the tent.');
-  await expect(ada.rail.button('server')).toHaveAttribute('aria-label', 'Server');
+  await expect(key).toHaveAccessibleDescription('');
   await expect(ada.server.room('Trip')).toHaveAccessibleName('Trip');
 });
 

@@ -37,8 +37,9 @@ Each far side, and its door:
 | the Remote | Home | what is mine here, then where it is kept |
 | Inbox | Server | where many talk, then what was said to one |
 
-A red dot on Home while the Remote does not answer; an ink dot on Server while something in Inbox is unread. Only
-these six pages have a door; Runtime, File, the plug and + lead nowhere further.
+A red dot on Home while the Remote does not answer. The rail marks Server while there is unread talk or mail. Where
+Places replaces the rail, an ink dot marks the corner key and the destination: Inbox for unread mail (Server if
+Inbox is a step beyond it), Server for new posts. Reading, not merely opening Places, clears the mark.
 
 The band's keys: Home and Forge, the door, the terminal's key, the files' key, the search; Git, the door, the
 terminal's key, the search; New repo, the terminal's key, the files' key, the search (it has no far side). At its

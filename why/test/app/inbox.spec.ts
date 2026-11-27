@@ -1,32 +1,58 @@
 import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 
-// Inbox: one person writes to another by their name; the other is told on
-// the rail, finds it among their requests, and what they half write back
-// stays with the conversation. A name no one has is said where it was written.
+// Inbox: one person writes to another by their name; Places says what came,
+// and what they half write back stays with the conversation.
 
-test('what one person writes to another arrives in their Inbox, and the rail says so', async ({signedIn: ada, another}) => {
+const unreadMail = 'Unread messages in Inbox';
+const hasNewsDot = (control: Locator) => control.evaluate((el) => {
+  const dot = getComputedStyle(el, '::after');
+  return dot.content === '""' && parseFloat(dot.width) > 0 && parseFloat(dot.height) > 0 && dot.backgroundColor === getComputedStyle(el).color;
+});
+
+test('what one person writes arrives live on the Places key and Inbox, and reading clears both marks', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   await bo.inbox.named();
   await ada.inbox.named();
   await bo.rail.go('home');
+  const {placesKey: key, places} = bo.forge;
+  await expect(key).toBeVisible();
+  await expect(key).toHaveAccessibleDescription('');
+  expect(await hasNewsDot(key)).toBe(false);
 
   await ada.inbox.writeTo(bo.handle, 'Question: are you coming on Saturday?');
   await expect(ada.inbox.thread(bo.handle).getByText('are you coming on Saturday?', {exact: true})).toBeVisible();
 
-  // Bo's rail says a message is not read, without opening anything (once Bo's app has looked).
+  // The browser coming back looks at the real Remote. No reload or opening Inbox to see the news.
   await bo.comeBack();
-  // (Inbox is Server's far side: what is unread there is said on Server's icon, its own name first.)
-  await expect(bo.rail.button('server')).toHaveAccessibleName('Server · Unread messages in Inbox');
-  await bo.rail.go('inbox');
+  await expect(key).toHaveAccessibleName('Places');
+  await expect(key).toHaveAccessibleDescription(unreadMail);
+  expect(await hasNewsDot(key)).toBe(true);
+  await expect(places).toBeHidden();
+  await key.press('Enter');
+  const inbox = places.getByRole('menuitem', {name: 'Inbox', exact: true});
+  await expect(inbox).toHaveAccessibleDescription(unreadMail);
+  expect(await hasNewsDot(inbox)).toBe(true);
+  // Here Inbox has its own row: don't mark its parent as if it contained this letter, too.
+  await expect(places.getByRole('menuitem', {name: 'Server', exact: true})).toHaveAccessibleDescription('');
+  await inbox.press('Enter');
+  await expect(bo.main).toHaveAttribute('data-place', 'inbox');
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeVisible();
+  await expect(key).toHaveAccessibleDescription(unreadMail);
   await bo.inbox.conversation(ada.handle).click();
   const thread = bo.inbox.thread(ada.handle);
   await expect(thread.getByText('are you coming on Saturday?', {exact: true})).toBeVisible();
   await expect(thread.getByText('Question', {exact: true})).toBeVisible();
   await expect(bo.inbox.message).toHaveCount(0);
   // Opened, it is read, but nothing has been accepted.
-  await expect(bo.rail.button('server')).toHaveAttribute('aria-label', 'Server');
+  await expect(key).toHaveAccessibleDescription('');
+  expect(await hasNewsDot(key)).toBe(false);
+  await key.press('Enter');
+  const readInbox = places.getByRole('menuitemradio', {name: 'Inbox', exact: true});
+  await expect(readInbox).toBeChecked();
+  await expect(readInbox).toHaveAccessibleDescription('');
+  expect(await hasNewsDot(readInbox)).toBe(false);
+  await readInbox.press('Escape');
   await expect(thread.getByRole('button', {name: 'Accept'})).toBeVisible();
 
   // Accepted, the two know each other: Bo's answer goes back, and Ada has it.
@@ -53,6 +79,12 @@ test('word that comes while one works in Git comes up at the page\'s foot, and p
 
   await bo.inbox.writeTo(ada.handle, 'Review: hello reads well; louder?');
   await ada.comeBack();
+  const {placesKey: key, places} = ada.forge;
+  await expect(key).toHaveAccessibleDescription(unreadMail);
+  await key.press('Enter');
+  // Work goes by way of Server when there is no direct Inbox entry.
+  await expect(places.getByRole('menuitem', {name: 'Server', exact: true})).toHaveAccessibleDescription(unreadMail);
+  await ada.page.keyboard.press('Escape');
   const word = ada.main.getByRole('region', {name: 'New messages'}).getByRole('button');
   await expect(word).toContainText('Bo');
   await expect(word).toContainText('Review');

@@ -158,6 +158,16 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout, .git-layout 
 .forge-menu-item:is(:hover, :focus-visible):not(:disabled) { background: var(--slot); outline-offset: -2px; }
 .forge-menu-item:disabled { color: var(--sub); cursor: var(--cursor-arrow); }
 .forge-places > .forge-menu-item { padding-inline-start: 26px; position: relative; min-height: var(--places-row); scroll-snap-align: start; }
+/* Something not seen: the ink dot on its way there. Leave space for it without moving or tinting the row. */
+.forge-places > .forge-menu-item[data-news-place] { padding-inline-end: calc(2 * var(--s2)); }
+.forge-places-key.places-news::after, .forge-places > .forge-menu-item.places-news::after {
+  content: ''; position: absolute; inline-size: var(--s1); block-size: var(--s1); border-radius: 50%; background: currentColor;
+  pointer-events: none;
+}
+.forge-places-key.places-news::after { inset-block-start: var(--s1); inset-inline-end: var(--s1); }
+.forge-places > .forge-menu-item.places-news::after {
+  inset-block-start: calc(50% - var(--s1) / 2); inset-inline-end: var(--s2);
+}
 .forge-document-menu { min-width: 0; width: max-content; border-radius: var(--r-key); padding: 2px; }
 .forge-document-menu .forge-menu-item { min-height: 24px; padding: 1px 7px; }
 .forge-document-menu:has([role='menuitemcheckbox']) .forge-menu-item { padding-inline-start: 21px; position: relative; }

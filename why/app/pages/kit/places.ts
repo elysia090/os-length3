@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
 import {activateOnPress} from '../../ui/press.ts';
 import {t} from '../../../text/i18n.ts';
+import {marks, news, onNews, type News} from '../../../shipto/news.ts';
 
 export const WORK_PLACES = ['Prompt', 'Forge', 'Files', 'Git'] as const;
 export type WorkPlace = typeof WORK_PLACES[number];
@@ -27,6 +28,32 @@ interface PlaceKeys<K> {
 
 let made = 0;
 
+function tellNews(at: HTMLElement, ...words: string[]) {
+  const description = words.filter(Boolean).join(' · ');
+  at.classList.toggle('places-news', !!description);
+  if (description) at.setAttribute('aria-description', description);
+  else at.removeAttribute('aria-description');
+}
+
+/** One ink dot, not a new destination. If Inbox is another step away, Server tells what waits on its far side. */
+function paintNews(key: HTMLElement, menu: HTMLElement, state = news()) {
+  const {inbox, server} = marks(state);
+  const letters = inbox ? t('Unread messages in Inbox') : '', posts = server ? t('New posts in server') : '';
+  tellNews(key, letters, posts);
+  const inboxRow = menu.querySelector<HTMLElement>('[data-news-place="Inbox"]');
+  if (inboxRow) tellNews(inboxRow, letters);
+  const serverRow = menu.querySelector<HTMLElement>('[data-news-place="Server"]');
+  if (serverRow) tellNews(serverRow, posts, inboxRow ? '' : letters);
+}
+
+// The shell already looks for news. Update the desks in this document; abandoned desks leave no listeners behind.
+onNews((state: News) => {
+  for (const key of document.querySelectorAll<HTMLElement>('#page .forge-places-key[aria-controls]')) {
+    const menu = document.getElementById(key.getAttribute('aria-controls')!);
+    if (menu?.classList.contains('forge-places')) paintNews(key, menu, state);
+  }
+});
+
 /** Route the corner key to the same Search, using the repo of the desk in hand, if any. */
 export function deskSearch(ctx: SearchDesk, repo: () => string | null = () => ctx.repo): Find {
   return (origin) => ctx.searchRepo?.(repo(), origin, () => document.querySelector<HTMLElement>('#page .forge-search-key'));
@@ -51,6 +78,7 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
   };
   const item = (name: string, role: string, go: () => void, onPress = false) => {
     const b = h('button', {class: 'forge-menu-item', type: 'button', role, tabindex: '-1', 'aria-label': t(name)}, t(name)) as HTMLButtonElement;
+    if (name === 'Inbox' || name === 'Server') b.dataset.newsPlace = name;
     if (onPress) activateOnPress(b, go);
     else b.addEventListener('click', go);
     menu.append(b);
@@ -84,10 +112,12 @@ export function placesMenu<K extends string>(owner: HTMLElement, places: readonl
     });
   };
   set(start);
+  paintNews(key, menu);
   key.addEventListener('click', () => {
     if (!menu.hidden) { close(true); return; }
     commands.forEach((button) => button.remove());
     commands = extra().map(({label, run, onPress}) => item(label, 'menuitem', () => { close(); run(key); }, onPress));
+    paintNews(key, menu);
     menu.hidden = false;
     key.setAttribute('aria-expanded', 'true');
     menu.dataset.keys = '';
