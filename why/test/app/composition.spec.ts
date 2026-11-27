@@ -206,8 +206,10 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
   // The frame over what is called up: the available controls, not a hidden band's old bounding box.
-  const frameControl = all.find((el) => el.matches('body > .rail, #page[data-place="home"] > .home-portrait .forge-places-key'));
-  const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
+  const frameControl = all.find((el) => el.matches('body > .rail .rail-item[aria-current="page"], #page[data-place="home"] > .home-portrait .forge-places-key'));
+  const frameRect = frameControl?.getBoundingClientRect();
+  const frameHit = frameRect && document.elementFromPoint(frameRect.x + frameRect.width / 2, frameRect.y + frameRect.height / 2);
+  const frameOver = !!veil && !!frameHit && !!frameControl?.contains(frameHit);
   const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
     const {left, top, right, bottom} = el.getBoundingClientRect();
     const c = getComputedStyle(el);
