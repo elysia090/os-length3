@@ -101,10 +101,11 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
 /* The place's small name is also its navigation at the left. Search alone keeps the right corner. */
 :root {
   --places-start: calc(2 * var(--u));
-  --places-hit: 44px;
   --places-list-top: calc(2 * var(--u) + var(--s3));
 }
 @media (max-width: 1000px) { :root { --places-start: var(--u); } }
+/* The navigation's hit area is a floor, not a customizable appearance setting. */
+:is(.desk-caption, .forge-places) { --places-hit: 44px; }
 :is(.home-portrait, .new-repo-desk, .git-layout, .server-masthead, .inbox-shell, #page[data-place='runtime']),
 body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
   --places-ground: var(--nighthawks-ground);
