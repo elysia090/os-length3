@@ -3,7 +3,7 @@ import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
 // New repo retains the framed band. Home, the work desks and Runtime share two corner keys, not a permanent rail.
-// The Remote and signed-out Inbox still frame a sheet; Server and signed-in Inbox hold a reading paper in a desk.
+// The Remote still frames a sheet; Inbox uses its desk on either side of sign-in.
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
@@ -81,7 +81,7 @@ test('signed out, each place keeps its own frame and reading edge at every width
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
-    for (const place of ['runtime', 'remote', 'inbox'] as const) {
+    for (const place of ['runtime', 'remote'] as const) {
       await app.rail.go(place);
       if (place === 'runtime') {
         await corner(app, size.width);
@@ -90,6 +90,16 @@ test('signed out, each place keeps its own frame and reading edge at every width
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
+    await app.rail.go('inbox');
+    await corner(app, size.width);
+    await expect(app.main.getByRole('heading', {name: 'Inbox', level: 1, exact: true})).toBeVisible();
+    const signIn = app.main.getByRole('region', {name: 'Sign in', exact: true});
+    await expect(signIn.getByRole('button', {name: 'Continue with Development', exact: true})).toBeVisible();
+    const {x, y, width} = await at(signIn);
+    expect([x, y, width], what('inbox')).toEqual(size.width >= 1000 ? [312, 96, 440] : [24, 72, size.width - 48]);
+    await expect(signIn).toHaveCSS('background-color', 'rgb(239, 235, 227)');
+    expect(await dotted(app), what('inbox')).toBe(true);
+    expect(await sideways(app), what('inbox')).toBeLessThanOrEqual(0);
   }
 });
 

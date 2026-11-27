@@ -161,14 +161,20 @@ test('Cancel at the provider\'s consent comes back to the card, which says so by
   await expect(app.remote.part('Repos')).toBeVisible();
 });
 
-test('signing in from Inbox comes back to Inbox, signed in', async ({app}, info) => {
-  await app.rail.go('inbox');
+test('signing in from the Inbox reached through Places comes back to the Inbox desk', async ({app}, info) => {
+  await app.rail.go('home');
+  const key = app.main.getByRole('button', {name: 'Places', exact: true});
+  const menu = app.main.getByRole('menu', {name: 'Places', exact: true});
+  await key.click();
+  await menu.getByRole('menuitem', {name: 'Inbox', exact: true}).click();
   await app.main.getByRole('region', {name: 'Sign in'}).getByRole('button', {name: 'Continue with Development'}).click();
   await app.atProvider(personName(info));
   await app.settled();
-  await expect(app.page.locator('#page')).toHaveAttribute('data-place', 'inbox');
-  await expect(app.rail.button('server')).toHaveAttribute('aria-current', 'page');
+  await expect(app.main).toHaveAttribute('data-place', 'inbox');
+  await expect(app.inbox.newMessage).toBeVisible();
   await expect(app.main.getByRole('region', {name: 'Sign in'})).toHaveCount(0);
+  await key.click();
+  await expect(menu.getByRole('menuitemradio', {name: 'Inbox', exact: true})).toBeChecked();
 });
 
 test('called off at the provider, the card says so, and the provider is there to try again', async ({app}) => {
@@ -192,22 +198,22 @@ test('a device\'s code that cannot be used says what that means, and another is 
   await expect(app.page.getByRole('textbox', {name: 'Device pairing code'})).toBeVisible();
 });
 
-test('signed out, the sign-in card stands at one place on Remote and Inbox, wide or narrow, and nothing under it', async ({app}) => {
+test('signed out, both Remote and Inbox offer the same way in and show no private work', async ({app}) => {
   await app.newRepo.make('draft');
-  const card = app.main.getByRole('region', {name: 'Sign in'});
-  // This device's repos are Home's to show: the Remote, signed out, is its way in and nothing more.
-  await app.rail.go('remote');
-  await expect(card).toBeVisible();
-  await expect(app.main.getByText('draft').filter({visible: true})).toHaveCount(0);
+  const card = app.main.getByRole('region', {name: 'Sign in', exact: true});
   for (const [width, height] of [[1280, 800], [1024, 768], [390, 844]]) {
     await app.page.setViewportSize({width, height});
-    const at: Record<string, {x: number; y: number; width: number}> = {};
     for (const place of ['remote', 'inbox'] as const) {
       await app.rail.go(place);
-      await expect(card).toBeVisible();
-      const box = (await card.boundingBox())!;
-      at[place] = {x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width)};
+      await expect(card).toBeInViewport({ratio: 1});
+      await expect(card.getByRole('button', {name: 'Continue with Development', exact: true})).toBeVisible();
+      await expect(app.main.getByText('draft').filter({visible: true})).toHaveCount(0);
+      if (place === 'inbox') {
+        // Authentication is at the reading edge in Inbox, without reviving Remote's frame.
+        const {x, y} = (await card.boundingBox())!;
+        expect([x, y]).toEqual(width >= 1000 ? [312, 96] : [24, 72]);
+        await expect(app.inbox.newMessage).toHaveCount(0);
+      }
     }
-    expect(at.inbox, `${width} wide`).toEqual(at.remote);
   }
 });

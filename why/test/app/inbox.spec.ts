@@ -10,6 +10,40 @@ const hasNewsDot = (control: Locator) => control.evaluate((el) => {
   return dot.content === '""' && parseFloat(dot.width) > 0 && parseFloat(dot.height) > 0 && dot.backgroundColor === getComputedStyle(el).color;
 });
 
+test('Places opens the Inbox desk before Remote answers and keeps the same frame afterwards', async ({signedIn: app}) => {
+  const {main, page} = app;
+  await app.rail.go('home');
+  let letIn!: () => void;
+  const held = new Promise<void>((resolve) => { letIn = resolve; });
+  const asked = page.waitForRequest((r) => new URL(r.url()).pathname === '/v1/inbox/me');
+  await page.route('**/v1/inbox/me', async (route) => { await held; await route.continue(); });
+  const key = main.getByRole('button', {name: 'Places', exact: true});
+  try {
+    await key.click();
+    await main.getByRole('menu', {name: 'Places', exact: true}).getByRole('menuitem', {name: 'Inbox', exact: true}).click();
+    await asked;
+    await expect(main).toHaveAttribute('data-place', 'inbox');
+    await expect(main.getByRole('heading', {level: 1, name: 'Inbox', exact: true})).toBeVisible();
+    await expect(main.getByRole('status')).toHaveText('Loading…');
+    await expect(page.locator('body > .rail')).toBeHidden();
+    await expect(main.locator('.page-head')).toHaveCount(0);
+    await expect(key).toBeVisible();
+    await expect(app.inbox.newMessage).toHaveCount(0);
+    const corner = await key.elementHandle();
+    letIn();
+    await expect(app.inbox.newMessage).toBeVisible();
+    await expect(main.getByText('No messages yet', {exact: true})).toBeVisible();
+    await expect(main.getByRole('status')).toHaveCount(0);
+    expect(await key.evaluate((shown, first) => shown === first, corner)).toBe(true);
+  } finally { letIn(); }
+  await page.goBack();
+  await expect(main).toHaveAttribute('data-place', 'home');
+  await page.goForward();
+  await expect(app.inbox.newMessage).toBeVisible();
+  await app.inbox.newMessage.click();
+  await expect(app.inbox.recipient.getByRole('textbox', {name: 'Recipient address'})).toBeFocused();
+});
+
 test('what one person writes arrives live on the Places key and Inbox, and reading clears both marks', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   await bo.inbox.named();

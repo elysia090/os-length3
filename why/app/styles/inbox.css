@@ -1,5 +1,4 @@
-/* Inbox: a quiet address index, one letter in hand, and the same map of the actual open papers as the work desks.
-   The sign-in card still belongs to the normal unconnected shell. */
+/* Inbox: one desk from the moment it opens, with an address index and one letter in hand when connected. */
 body:has(> .page.page-inbox > .inbox-shell) {
   padding: 0; grid-template-columns: minmax(0, 1fr);
   background: var(--inbox-desk) var(--inbox-dots) 0 0 / var(--u) var(--u);
@@ -8,7 +7,6 @@ body:has(> .page.page-inbox > .inbox-shell) {
 body:has(> .page.page-inbox > .inbox-shell) > .door,
 body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
 .page.page-inbox:has(> .inbox-shell) { padding: 0; margin: 0; height: 100dvh; min-width: 0; }
-.page.page-inbox:has(> .inbox-shell) > .page-head { display: none; }
 .page.page-inbox > .inbox-shell {
   --paper: var(--inbox-paper); --sub: var(--inbox-muted); --rule: var(--inbox-rule); --slot: var(--inbox-selection);
   --inbox-edge: calc(2 * var(--u)); --inbox-top: calc(4 * var(--u));
@@ -26,6 +24,10 @@ body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
   display: grid; grid-template-columns: var(--inbox-index-width) var(--inbox-paper-width);
   grid-template-rows: minmax(0, 1fr); column-gap: var(--inbox-gap);
 }
+/* A gate keeps the letter's position, not the older sheet and rail. Its actual actions still come from sign-in. */
+.inbox-gate { grid-column: 2; grid-row: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+.inbox-gate > .sign-in-place { padding-block-start: 0; }
+.inbox-pending { margin: 0; color: var(--inbox-desk-quiet); line-height: var(--u); }
 .inbox-over {
   display: flex; align-items: center; justify-content: flex-end;
   position: absolute; inset: -36px 0 auto auto; height: 32px; color: var(--paper);
@@ -177,7 +179,7 @@ body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
     --inbox-paper-width: min(calc(34 * var(--u)), calc(100vw - 2 * var(--inbox-edge)));
   }
   .inbox-page { grid-template-columns: var(--inbox-paper-width); }
-  .inbox-thread { grid-column: 1; }
+  :is(.inbox-thread, .inbox-gate) { grid-column: 1; }
   .inbox-page[data-narrow=index] > .inbox-thread, .inbox-page[data-narrow=paper] > .inbox-index { display: none; }
   .inbox-over { top: -52px; right: 86px; }
   .inbox-index-key { display: block; position: absolute; inset: 4px 0 auto auto; font-size: var(--t-inbox-meta); }

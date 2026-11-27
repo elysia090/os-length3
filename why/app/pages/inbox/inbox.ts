@@ -8,7 +8,6 @@ import {t} from '../../../text/i18n.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
 import {nudge, paced, still} from '../../ui/glide.ts';
 import {whole} from '../../ui/whole.ts';
-import {pageHead} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {takeNext} from '../kit/next.ts';
 import {deskSearch, placesMenu} from '../kit/places.ts';
@@ -20,58 +19,55 @@ import {InboxPapers, paperSwitch, recipientPaper} from './papers.ts';
 import {addressStub} from './usernames.ts';
 
 const PLACES = ['Server', 'Inbox'] as const;
-const inboxPlaces = (holder: HTMLElement, ctx: Context, showNames?: () => void) =>
-  placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
-    () => [
-      ...(showNames ? [{label: 'Your usernames', run: showNames}] : []),
-      ...(ctx.placeCommands?.(['server']) ?? []),
-    ], {find: deskSearch(ctx)});
 type OpenedLetter = Awaited<ReturnType<typeof inbox.thread>>;
 
 /** Don't carry the other account's drafts or opened names into a new Remote or sign-in. */
 let kept: {scope: string; papers: InboxPapers} | null = null;
 
 export function inboxPage(ctx: Context): Node[] {
-  const holder = h('div', {class: 'inbox-holder'});
-  const beforeDesk = (...nodes: Node[]) => {
-    holder.classList.remove('inbox-shell');
-    holder.replaceChildren(...nodes);
-    inboxPlaces(holder, ctx);
-  };
-  let stopDesk: (() => void) | null = null;
+  // A place has one frame. Loading, signing in and reaching the Remote change what is on the desk, not the desk.
+  const desk = h('div', {class: 'inbox-page'});
+  const holder = h('div', {class: 'inbox-shell'}, h('h1', {class: 'inbox-title'}, t('Inbox')), desk);
+  let shown: ReturnType<typeof showDesk> | null = null;
+  const menus = placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
+    () => [
+      ...(shown ? [{label: 'Your usernames', run: shown.showNames}] : []),
+      ...(ctx.placeCommands?.(['server']) ?? []),
+    ], {find: deskSearch(ctx)});
+  const gate = (...nodes: Node[]) => desk.replaceChildren(h('div', {class: 'inbox-gate'}, ...nodes));
   let reading = 0;
   const paint = async () => {
     const asked = ++reading;
-    stopDesk?.();
-    stopDesk = null;
+    shown?.stop();
+    shown = null;
+    menus.close();
     const from = connection();
     if (!from) {
       kept = null;
-      beforeDesk(signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you claim a username to receive reviews and questions.')), signInBox(() => void paint())));
+      gate(signInPlace(t('Sign in'), ...signInLead(t('Signing in lets you claim a username to receive reviews and questions.')), signInBox(() => void paint())));
       return;
     }
+    gate(h('p', {class: 'inbox-pending', role: 'status'}, t('Loading…')));
     const me = await inbox.me().catch((e: unknown) => e instanceof Error ? e : new Error(errorText(e)));
     if (asked !== reading || !holder.isConnected) return;
     if (me instanceof Error) {
-      beforeDesk(unreachedError(me) ? unreachedPlace(t('Conversations will reappear once Remote responds'), () => void paint()) : h('p', {class: 'error'}, errorText(me)));
+      gate(unreachedError(me) ? unreachedPlace(t('Conversations will reappear once Remote responds'), () => void paint()) : h('p', {class: 'error', role: 'alert'}, errorText(me)));
       return;
     }
     if (!me.addresses.length) {
-      beforeDesk(signInPlace(t('Claim username'), addressStub(me, () => void paint(), () => goToPlan(ctx)).holder));
+      gate(signInPlace(t('Claim username'), addressStub(me, () => void paint(), () => goToPlan(ctx)).holder));
       return;
     }
     const scope = JSON.stringify([from.url, me.account]);
     if (kept?.scope !== scope) kept = {scope, papers: new InboxPapers()};
-    holder.classList.add('inbox-shell');
-    const desk = showDesk(holder, ctx, me, kept.papers, () => void paint());
-    stopDesk = desk.stop;
-    await desk.ready;
+    shown = showDesk(holder, desk, ctx, me, kept.papers, () => void paint());
+    await shown.ready;
   };
   void whole(paint());
-  return [pageHead('inbox'), holder];
+  return [holder];
 }
 
-function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: InboxPapers, again: () => void) {
+function showDesk(holder: HTMLElement, desk: HTMLElement, ctx: Context, me: inbox.Me, papers: InboxPapers, again: () => void) {
   let ended = false;
   let letterView: LetterView | null = null;
   let opened = 0, listed = 0;
@@ -86,20 +82,18 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
   const name = (address: string) => threads.get(address)?.name || inbox.shown(address);
   const rows = h('nav', {class: 'inbox-index', 'aria-label': t('Conversations')});
   arrowKeys(rows, '.inbox-row');
-  const title = h('h1', {class: 'inbox-title'}, t('Inbox'));
   const newMessage = h('button', {type: 'button', class: 'inbox-deed', 'aria-label': t('New message')}, t('New message'), ' →');
   const back = h('button', {type: 'button', class: 'inbox-deed', hidden: ''}, '← ', t('Back'));
   const over = h('div', {class: 'inbox-over'}, newMessage, back);
   const pane = h('section', {class: 'inbox-thread', tabindex: '-1', hidden: ''});
-  const desk = h('div', {class: 'inbox-page'}, rows, over, pane);
   const names = h('div', {class: 'inbox-names', hidden: ''});
   const stub = addressStub(me, again, () => goToPlan(ctx), () => { names.hidden = true; });
   names.append(stub.holder);
   const showNames = () => { names.hidden = false; stub.open(); };
   const maps = paperSwitch(papers, (key) => key === recipientPaper ? t('New message') : t('Conversation with {who}', {who: name(key)}), (key) => void take(key));
 
-  holder.replaceChildren(title, desk, maps.element, names);
-  const menus = inboxPlaces(holder, ctx, showNames);
+  desk.replaceChildren(rows, over, pane);
+  holder.append(maps.element, names);
 
   const unread = (th: inbox.Thread) => th.unread > 0 && th.last.time > (readThrough.get(th.address) ?? -1);
   const updateIndex = () => {
@@ -321,12 +315,13 @@ function showDesk(holder: HTMLElement, ctx: Context, me: inbox.Me, papers: Inbox
     keys.abort();
     leaving.disconnect();
     unheard();
-    menus.drop();
     stub.close();
+    maps.element.remove();
+    names.remove();
   };
   const ready = (async () => {
     await refresh();
     if (alive()) await take(takeNext() ?? papers.active);
   })();
-  return {ready, stop};
+  return {ready, stop, showNames};
 }
