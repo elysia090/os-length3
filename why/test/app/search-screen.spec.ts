@@ -1,5 +1,18 @@
+import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import {App} from './app.ts';
+
+/** The actual heading ink and the outer search paper keep one center, regardless of the query or suggestions. */
+async function expectCenteredHeading(screen: Locator) {
+  const offset = await screen.evaluate((el) => {
+    const title = el.querySelector('h1')!, paper = el.querySelector('.search-screen-paper')!;
+    const words = document.createRange();
+    words.selectNodeContents(title);
+    const ink = words.getBoundingClientRect(), box = paper.getBoundingClientRect();
+    return (ink.x + ink.width / 2) - (box.x + box.width / 2);
+  });
+  expect(offset, 'Search heading centered over its paper').toBeCloseTo(0, 1);
+}
 
 test('Search is a separate history step, with the work kept and the matched line opened in Forge', async ({app}) => {
   const {page, forge} = app;
@@ -94,6 +107,7 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await expect(suggested).toHaveCount(0);
   await expect(paper).toHaveCSS('height', '50px');
   const emptyAt = await input.boundingBox();
+  await expectCenteredHeading(stage);
 
   // Focus alone (including moving away and tabbing back) is not a request to suggest.
   await input.press('Shift+Tab');
@@ -104,6 +118,7 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await input.click();
   await expect(first).toBeVisible();
   expect(await input.boundingBox()).toEqual(emptyAt);
+  await expectCenteredHeading(stage);
 
   await input.press('Tab');
   await expect(first).toBeFocused();
@@ -260,7 +275,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   const title = stage.getByRole('heading', {name:'Search',exact:true});
   const at = (await query.boundingBox())!, head = (await title.boundingBox())!;
   const corner = (await scope.boundingBox())!;
-  expect(head.x + head.width / 2).toBe(at.x + at.width / 2 - (24 + 4));
+  await expectCenteredHeading(stage);
   expect(corner.x).toBeGreaterThan(head.x + head.width);
   expect(corner.y + corner.height).toBeLessThan(head.y);
 
