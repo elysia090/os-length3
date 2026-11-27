@@ -223,8 +223,24 @@ its native lane runs the guest even when its separate Chrome flag is off.
 The preflight uses a separately pinned official Debian archive keyring,
 extracted without installing a package. A successful run logs
 `QUICKSHELL_SNAPSHOT_COLD_AUDITED` with the revision and lock SHA-256 after
-verifying all objects. It discards the temporary inputs and does not assemble
-or upload a fixture, run the guest, or launch Chrome.
+verifying all objects. The default remains audit-only and discards its
+temporary inputs.
+
+The manual `assemble_fixture` option additionally builds mapped Sods, Muk and
+the pointer listener on the stock runner. It uses the same pinned Wayland
+sources and scanner checks as native CI, extracting the pinned layer-shell
+XML without installing the Alpine package. It builds and compares two
+fixtures byte for byte with the same verified inputs and tool bytes before
+logging `QUICKSHELL_FIXTURE_ASSEMBLED`. This proves only same-run assembly.
+Both copies and the listener are private to the job and discarded; nothing
+is cached or uploaded, and this option does not run the fixture.
+
+A separately reviewed stock Chrome check would have to rebuild and consume
+that private `staged/fixture`, `staged/index-sha256.txt` and
+`wayland/wayland-quickshell-pointer-listener` before cleanup in its own job.
+It would use the runner's package-owned Chrome and the existing namespace and
+seccomp sandbox checks. The generated digest in these logs is not a pin for
+an imported fixture.
 
 #### Assemble the browser fixture from the audited cache
 
