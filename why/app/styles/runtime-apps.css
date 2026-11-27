@@ -1,14 +1,19 @@
 /* A Runtime tab changes the reading, not the sheet or the reading edge. */
-#page[data-place='runtime'] .runtime-leaf { margin-block-start: var(--u); max-inline-size: calc(29 * var(--u)); }
-#page[data-place='runtime'] .runtime-lead {
+.runtime-paper .runtime-leaf { margin-block-start: 0; max-inline-size: var(--runtime-reading-measure); }
+.runtime-paper .runtime-lead {
   margin: 0 0 var(--s2); font: 900 var(--t-head) var(--display); line-height: calc(2 * var(--u)); letter-spacing: -.035em;
   justify-content: start;
 }
-#page[data-place='runtime'] .runtime-lead:focus { outline: none; }
-#page[data-place='runtime'] .runtime-group-heading { margin: var(--u) 0 var(--s1); font-size: var(--t-word); font-weight: 700; }
-#page[data-place='runtime'] .runtime-leaf .error:empty { display: none; }
-.runtime-leaf .button:not(.power):not(.primary) { background: none; border-color: transparent; min-height: var(--h-control); padding-inline: 0; }
-.runtime-leaf .button:not(.power):not(.primary):not(:disabled):is(:hover, :focus-visible) { text-decoration: underline; text-underline-offset: var(--s1); }
+.runtime-paper .runtime-lead:focus { outline: none; }
+.runtime-paper .runtime-group-heading { margin: var(--u) 0 var(--s1); font-size: var(--t-word); font-weight: 700; }
+.runtime-paper .runtime-leaf .error:empty { display: none; }
+/* Text actions share the same measure and read as actions, never as a dividing rule. */
+.runtime-paper :is(.runtime-leaf, .storage-batch) .button:not(.power):not(.primary) {
+  background: none; border-color: transparent; min-height: var(--h-control); padding-inline: 0;
+}
+.runtime-paper :is(.runtime-leaf, .storage-batch) .button:not(.power):not(.primary):not(:disabled):is(:hover, :focus-visible) {
+  text-decoration: underline; text-decoration-thickness: var(--line-frame); text-underline-offset: var(--s1);
+}
 
 /* Active root first; other platforms below, each in its own measured row. */
 .runtime-environments :is([aria-labelledby='env-title'], .runtime-desktop, .runtime-ssh) { margin: 0; }
@@ -22,7 +27,7 @@
 .runtime-environments .env-row > :nth-child(3) { grid-column: 2; grid-row: 1 / span 2; justify-self: end; }
 .runtime-environments .env-sha { font-family: var(--mono); overflow-wrap: anywhere; }
 .runtime-environments .env-why { margin: var(--s2) 0 0; }
-#page[data-place='runtime'] .runtime-lead .version, .runtime-environments .version { font: 400 var(--t-word) var(--mono); color: var(--sub); letter-spacing: normal; }
+.runtime-paper .runtime-lead .version, .runtime-environments .version { font: 400 var(--t-word) var(--mono); color: var(--sub); letter-spacing: normal; }
 .runtime-environments .app-card { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: var(--s2) var(--s3); padding-block: var(--s2); }
 .runtime-environments .app-description { display: grid; min-width: 0; }
 .runtime-environments .download {
@@ -35,19 +40,20 @@
 .runtime-ssh .ssh-card { border: 0; padding: var(--s2) 0; min-height: 0; }
 
 /* Filenames are an index. Only an opened file has a text field and actions. */
-.dot-list { display: grid; min-width: 0; border-top: var(--line-frame) solid var(--rule); padding-block-start: var(--s1); }
+.dot-list { display: grid; grid-template-columns: minmax(min-content, 1fr); border-top: var(--line-frame) solid var(--rule); padding-block-start: var(--s1); }
 .dot-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); min-width: 0; min-height: var(--h-control);
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); min-inline-size: min-content; min-height: var(--h-control);
   padding: var(--s1) 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
 }
 .dot-row.current { font-weight: 700; }
 .dot-row.current .dot-row-name { text-decoration: underline; text-underline-offset: var(--s1); }
-.dot-row-name { min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+.runtime-paper .dotfiles-part { inline-size: min(100%, var(--runtime-reading-measure)); min-inline-size: min-content; max-inline-size: none; }
+.dot-row-name { white-space: nowrap; font-family: var(--mono); }
 .dot-row > .muted { text-align: end; }
 .dot-row.new { justify-content: flex-start; gap: var(--s2); color: var(--sub); }
 .dot-row.new:hover { color: var(--ink); }
 .dot-editor { display: grid; gap: var(--s2); margin-block: var(--s2) var(--u); }
-.dot-head { align-items: baseline; gap: 0; margin-top: 0; overflow-wrap: anywhere; }
+.dot-head { align-items: baseline; gap: 0; margin-top: 0; white-space: nowrap; }
 .dot-head .dot-name { padding-inline-start: 0; }
 .dot-text { min-height: calc(8 * var(--u)); resize: vertical; padding: var(--s2) var(--s3); font: var(--t-word)/var(--u) var(--mono); }
 .dot-editor .work-act { margin: 0; }

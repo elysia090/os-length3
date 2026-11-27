@@ -239,7 +239,9 @@ There are no bubbles. A board's talk uses an axis (§5):
 ### Runtime: this device
 
 *The machine one is at: what it holds, what runs on it, how it is set.* A sheet. A place of figures: the figures
-are the one thing with weight (700), everything else is said at 400, the quieter in `sub`.
+are the one thing with weight (700), everything else is said at 400, the quieter in `sub`. Its name stays at the
+desk's upper left. The horizontal switch sits just above the paper, at its edge. Only the selected reading is on
+the paper. Wide, there is open desk to the left and below it; narrow, the paper keeps that room for the work.
 
 ### The Remote: Home's far side, where the repos are kept
 
@@ -1384,14 +1386,19 @@ and right named only where the same repo runs both.
   storage. No minimum drawn width pretends a few bytes are a large share.
   The host's available space and total or quota are independent facts at the
   other end, marked 推定 only where estimated; when unavailable, neither is
-  drawn as zero. The local parts switch across the same paper: plain words,
-  with only the chosen word underlined.
+  drawn as zero. The local parts switch above the same paper: plain words
+  on the desk, with only the chosen word underlined. The figure and each
+  other part begin one cell inside the paper; extra room is at the foot.
 - Below it, a narrower left-aligned inventory: **in this browser** (on this
   device) shows each thing once, with its bytes and the outcome of freeing it.
   The row's action, and its confirmation, open at that row. **Remote only**
   follows as a separate group: its contents do not count toward the local
-  strip, and Fetch appears in an item's own actions. A row is the thing, its
-  size, and its actions:
+  strip, and Fetch appears in an item's own actions. A long inventory scrolls
+  down with the figure still in sight, and comes back where it was read
+  in the same session. In a short window the page itself takes the vertical scroll.
+  If a name will not fit, the whole paper scrolls sideways without moving
+  the tabs or figure. The horizontal thumb answers the hand rather than
+  drawing a line at rest. A row is the thing, its size, and its actions:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
     has (it comes back when opened), a root that is neither the current one
     nor one a Prompt runs on (the Remote has the release), a temporary this

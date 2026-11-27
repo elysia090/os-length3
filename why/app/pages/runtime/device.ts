@@ -71,7 +71,7 @@ function row(id: string, name: Node | string, size: number, notes: string | read
 }
 
 /** A single inventory. A repo's readiness belongs to its existing row; it is not listed again as a recommendation. */
-export function device(ctx: Context, u: Space, last: Freed | null, again: Redraw): HTMLElement {
+export function device(ctx: Context, u: Space, last: Freed | null, again: Redraw) {
   const error = h('p', {class: 'error storage-error', role: 'alert'});
   const repo = repoParts(ctx, again, error);
   const local = u.items.map((i) => {
@@ -88,11 +88,10 @@ export function device(ctx: Context, u: Space, last: Freed | null, again: Redraw
   const here = region('here-col', isNative ? t('On this device') : t('In this browser'), local, t('No repos yet'),
     freeable.length > 1 ? batch(freeable, u.freeable, again) : undefined);
   const remote = remoteRegion(repo, again, error);
-  return h('section', {class: 'section device-part', 'aria-label': isNative ? t('This device') : t('This browser')},
-    capacity(u),
-    h('div', {class: 'storage-inventory'},
-      last ? result(last) : null,
-      here, remote, error));
+  return {
+    capacity: capacity(u),
+    inventory: h('div', {class: 'storage-inventory'}, last ? result(last) : null, here, remote, error),
+  };
 }
 
 /** The only bulk deed is for the measured list. Core free rechecks each item, sends first and never releases a kept copy. */

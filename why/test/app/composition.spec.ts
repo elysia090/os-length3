@@ -35,8 +35,8 @@ const PLACES = {
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   server: {subject: '.server-paper', corner: '.server-sidebar, .server-paper', anchor: '.server-masthead > h1'},
   inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread', anchor: '.inbox-title'},
-  // The Utility has no rail or door: its actual visible caption is the corner's eye-trace anchor.
-  runtime: {subject: 'main#page', corner: '.page-head', anchor: '.page-head > h1'},
+  // The Utility's caption and switch are on the desk; its paper is the subject.
+  runtime: {subject: '.runtime-paper', corner: '.runtime-paper', anchor: '.runtime-masthead > h1'},
   remote: {subject: 'main#page', corner: '.page-head'},
 } as const;
 type Place = keyof typeof PLACES;
@@ -154,12 +154,12 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     // Runtime's utility paper has its own measured rows: a line beside the large number, a host readout,
     // an inline key and inventory sections. Their first line is inset from the paper's edge, then wraps by a cell.
     const runtimeLine = el.closest('.page[data-place="runtime"]') && el.closest(
-      '.page-head > h1, .storage-amount > span, .storage-host, .storage-key > div, .storage-caption > h3, '
+      '.runtime-masthead > h1, .storage-amount > span, .storage-host, .storage-key > div, .storage-caption > h3, '
       + '.space-what, .space-measure, .space-empty, .reclaimed, .storage-error');
     const runtimeFirst = runtimeLine ? (() => {
       const css = getComputedStyle(runtimeLine);
       const top = runtimeLine.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth);
-      return top + (runtimeLine.matches('.page-head > h1') ? parseFloat(css.lineHeight) : 24) / 2;
+      return top + (runtimeLine.matches('.runtime-masthead > h1') ? parseFloat(css.lineHeight) : 24) / 2;
     })() : null;
     const pitch = code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
@@ -182,12 +182,19 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   }
   // What stands just past the frame's corner, where the eye is after a move.
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
-  const at = document.elementFromPoint(84, 96);
+  const utility = sheet?.matches('.runtime-paper') && s;
+  // Runtime's paper starts after an open desk. Probe just inside it, past both its radius and the tabs' focus padding.
+  const at = utility ? document.elementFromPoint(utility.left + 24, utility.top + 12) : document.elementFromPoint(84, 96);
   const landed = !!at?.closest(corner);
   // How far that is from the place's visible name, rail control, or door to a far side.
   const from = anchor ? all.find((el) => el.matches(anchor))
     : all.find((el) => el.matches('.door')) ?? all.find((el) => el.matches('.rail .rail-item[aria-current="page"]'));
-  const fr = from?.getBoundingClientRect(), lr = at?.closest(corner)?.getBoundingClientRect();
+  const fr = utility && from ? (() => {
+    const name = document.createRange();
+    name.selectNodeContents(from);
+    return name.getBoundingClientRect();
+  })() : from?.getBoundingClientRect();
+  const lr = at?.closest(corner)?.getBoundingClientRect();
   const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
     Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;
   // The band's name of what is in hand: whole at its size, inside the window clear of its edge, or not there.
@@ -236,8 +243,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
         for (const [edge, v] of [['left', f.subject!.x], ['top', f.subject!.y]] as const) {
           // On Home the note follows the portrait's last line, measured on the portrait grid below.
           if (place === 'home' && edge === 'top') continue;
-          // Forge's paper starts at y=90; the name and the ground still keep the window grid.
-          const origin = place === 'forge' && edge === 'top' ? 90 : 0;
+          // Forge and Runtime on a phone leave room for the name and controls above the paper.
+          const origin = edge === 'top' ? place === 'forge' ? 90 : place === 'runtime' && size.width <= 600 ? U / 2 : 0 : 0;
           expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
         }
         expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);

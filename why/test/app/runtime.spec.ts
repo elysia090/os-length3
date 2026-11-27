@@ -75,9 +75,14 @@ test("Runtime's local switches keep a single underline and do not discard anothe
     await expect(tab).toHaveCSS('border-top-width', '0px');
     expect(await tab.evaluate((el) => getComputedStyle(el, '::after').content)).toBe(p === 'This browser' ? '""' : 'none');
   }
-  // Under the pointer its words go to ink, and nothing is laid under it (DESIGN §3: white is the hand's, with its shadow).
+  // Outside the paper, the tabs read in the desk's ink, without a second fill or shadow.
+  const paper = app.main.locator('.runtime-paper');
+  const name = app.main.getByRole('heading', {name: 'Runtime', exact: true});
+  await expect(name).toBeVisible();
+  expect(await paper.evaluate((e) => !!e.querySelector('h1, [role="tablist"]'))).toBe(false);
+  expect((await tabs.boundingBox())!.y).toBeLessThan((await paper.boundingBox())!.y);
   await app.runtime.part('Dotfiles').hover();
-  await expect(app.runtime.part('Dotfiles')).toHaveCSS('color', 'rgb(23, 22, 21)');
+  await expect(app.runtime.part('Dotfiles')).toHaveCSS('color', 'rgb(239, 235, 227)');
   await expect(app.runtime.part('Dotfiles')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   // A dotfile half written stays while another part is shown.
   await app.runtime.part('Dotfiles').click();
@@ -197,6 +202,67 @@ test('a confirmed Runtime batch only removes reclaimable local copies and leaves
   await expect(remote.getByRole('button', {name: /^(left|right)$/})).toHaveCount(2);
   await expect(app.main.getByRole('status').filter({hasText: 'Released'})).toContainText('2 items');
   await expect(here.getByRole('heading')).toBeFocused();
+  await expect(here.getByRole('heading')).toBeInViewport({ratio: 1});
+});
+
+test('a long inventory stays on its paper and restores the reading and the deed’s visible focus', async ({signedIn: app}) => {
+  const {main, page} = app;
+  await page.setViewportSize({width: 1440, height: 900});
+  const names = Array.from({length: 14}, (_, i) => `reading-${i + 1}`);
+  for (const name of names) await app.newRepo.make(name);
+  await app.runtime.open('This browser');
+  const here = main.getByRole('region', {name: 'In this browser', exact: true});
+  const remote = main.getByRole('region', {name: 'Remote only', exact: true});
+  const rows = here.locator('[data-space-item^="repo:"]');
+  await expect(rows.locator('.space-mark[data-capacity="free"]')).toHaveCount(names.length);
+  const paper = main.locator('.runtime-paper');
+  const figure = main.locator('.storage-hero');
+  const reading = main.locator('.runtime-scroll');
+  const tabs = main.locator('.runtime-tabs');
+  expect(await paper.boundingBox()).toEqual({x: 216, y: 96, width: 960, height: 624});
+  const fig = (await figure.boundingBox())!, row = (await tabs.boundingBox())!;
+  expect([row.x, row.y + row.height, fig.x, fig.y]).toEqual([216, 96, 240, 120]);
+  const position = () => reading.evaluate((el) => [el.scrollTop, el.scrollHeight - el.clientHeight]);
+  const doc = () => page.evaluate(() => {
+    const el = document.scrollingElement!;
+    return [el.scrollTop, el.scrollHeight - el.clientHeight, el.scrollLeft, el.scrollWidth - el.clientWidth];
+  });
+  expect((await position())[1]).toBeGreaterThan(300);
+  await reading.hover({position: {x: 120, y: 80}});
+  await page.mouse.wheel(0, 230);
+  await expect.poll(async () => (await position())[0]).toBe(230);
+  expect(await figure.boundingBox()).toEqual(fig);
+  expect(await tabs.boundingBox()).toEqual(row);
+  expect(await doc()).toEqual([0, 0, 0, 0]);
+
+  await app.runtime.part('Dotfiles').click();
+  expect((await main.locator('.runtime-panel:not([hidden]) .runtime-lead').boundingBox())!.y).toBe(120);
+  await app.runtime.part('This browser').click();
+  await expect.poll(async () => (await position())[0]).toBe(230);
+  const search = main.getByRole('button', {name: 'Search', exact: true});
+  await search.press('Enter');
+  await page.getByRole('main', {name: 'Search', exact: true}).getByRole('button', {name: 'Back', exact: true}).click();
+  await expect(search).toBeFocused();
+  await expect.poll(async () => (await position())[0]).toBe(230);
+  await app.rail.go('home');
+  await app.rail.go('runtime');
+  await expect.poll(async () => (await position())[0]).toBe(230);
+
+  const batch = here.getByRole('button', {name: 'Free all', exact: true});
+  await batch.press('Enter');
+  const ask = here.getByRole('group', {name: /^Free /});
+  await expect(ask).toContainText(`${names.length} items`);
+  await app.answer(ask.getByRole('button', {name: 'Free space', exact: true}), ask);
+  const heading = here.getByRole('heading');
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport({ratio: 1});
+  await expect(rows).toHaveCount(0);
+  await expect(remote.locator('[data-space-item^="repo:"]')).toHaveCount(names.length);
+  await reading.hover({position: {x: 120, y: 80}});
+  await page.mouse.wheel(0, 1600);
+  await expect.poll(async () => { const [top, range] = await position(); return Math.round(range! - top!); }).toBe(0);
+  await expect(remote.getByRole('button', {name: /^reading-\d+$/}).last()).toBeInViewport({ratio: 1});
+  expect(await doc()).toEqual([0, 0, 0, 0]);
 });
 
 test('unknown browser quota does not replace the independently measured local bytes with zero', async ({app}) => {
@@ -268,6 +334,55 @@ test.describe('narrow Runtime', () => {
     await expect(ask).toHaveCount(0);
     await expect(command).toBeFocused();
   });
+
+  test('real overflow pans the entire paper by touch, but never moves the figure, tabs, or desk', async ({signedIn: app}) => {
+    const {main, page} = app;
+    const panel = main.getByRole('tabpanel', {name: 'This browser'});
+    const figure = main.locator('.storage-hero');
+    const tabs = main.getByRole('tablist', {name: 'Runtime'});
+    const widths = () => panel.evaluate((el) => {
+      const {left, width} = el.getBoundingClientRect();
+      const paper = el.closest('.runtime-paper')!.getBoundingClientRect();
+      return [left, width, paper.left, paper.width, el.scrollWidth - el.clientWidth];
+    });
+    await app.newRepo.make('short-notes');
+    await app.runtime.open('This browser');
+    await expect(panel.getByRole('button', {name: 'short-notes', exact: true})).toBeVisible();
+    expect(await widths()).toEqual([24, 342, 24, 342, 0]);
+    const fig = (await figure.boundingBox())!, row = (await tabs.boundingBox())!;
+    expect([fig.x, fig.y]).toEqual([48, 132]);
+
+    const long = 'publication-assets-build-configuration-archived-from-workbench';
+    await app.newRepo.make(long);
+    await app.runtime.open('This browser');
+    await expect(panel.getByRole('button', {name: long, exact: true})).toBeVisible();
+    await expect(panel.locator('[data-space-item^="repo:"] .space-mark[data-capacity="free"]')).toHaveCount(2);
+    const wide = await widths();
+    expect(wide.slice(0, 4)).toEqual([24, 342, 24, 342]);
+    expect(wide[4]).toBeGreaterThan(100);
+    await expect(panel).toHaveCSS('--runtime-thumb', 'transparent');
+    const cdp = await page.context().newCDPSession(page);
+    const reading = (await panel.locator('.runtime-scroll').boundingBox())!;
+    const y = reading.y + 90;
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x: 340, y}]});
+    for (const x of [310, 280, 250, 220, 190, 160, 130, 100])
+      await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x, y}]});
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+    await expect.poll(() => panel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+    await expect(panel).toHaveClass(/\bscrolling\b/);
+    expect((await figure.boundingBox())!.x).toBeCloseTo(fig.x, 0);
+    expect(await tabs.boundingBox()).toEqual(row);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollWidth - document.scrollingElement!.clientWidth)).toBe(0);
+    await expect(panel).not.toHaveClass(/\bscrolling\b/);
+    await expect(panel).toHaveCSS('--runtime-thumb', 'transparent');
+    // The outer tablist is still independent of the paper below it.
+    const dotfiles = app.runtime.part('Dotfiles');
+    await dotfiles.tap();
+    await dotfiles.press('ArrowRight');
+    await expect(app.runtime.part('Agent')).toBeFocused();
+    await expect(app.runtime.part('Agent')).toBeInViewport({ratio: 1});
+  });
+
 });
 
 test('environments, desktop installer and SSH read in one line of measure: real version and one download', async ({signedIn: app}) => {

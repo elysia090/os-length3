@@ -1,8 +1,18 @@
-/* One paper on the desk. The global Places key remains independent. */
-body:has(> #page[data-place='runtime']) { background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u); }
+/* The place's name is on the desk, just as the paper has only what is being read. */
+body:has(> #page[data-place='runtime']) {
+  padding: 0; grid-template-columns: minmax(0, 1fr);
+  background: var(--nighthawks-ground) var(--nighthawks-dots) 0 0 / var(--u) var(--u);
+}
 body:has(> #page[data-place='runtime']) > .rail { display: none; }
-#page[data-place='runtime'] { grid-column: 2; }
+#page[data-place='runtime'] { grid-column: 1; }
 :is(#page, .place-left > .page)[data-place='runtime'] {
+  --runtime-measure: calc(40 * var(--u));
+  --runtime-reading-measure: calc(29 * var(--u));
+  --runtime-head-block: calc(2 * var(--u));
+  --runtime-tab-block: var(--row);
+  --runtime-name-edge: calc(2 * var(--u));
+  /* Up to the width of Inbox's index; stop opening before the room left on the right is lost. */
+  --runtime-desk-edge: clamp(calc(2 * var(--u)), round(down, calc((100vw - var(--runtime-measure) - var(--u)) / 2), var(--u)), calc(9 * var(--u)));
   --paper: var(--nighthawks-paper);
   --ground: var(--paper);
   --sub: var(--nighthawks-paper-sub);
@@ -11,27 +21,121 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
   --rule: var(--nighthawks-rule);
   --raised: var(--nighthawks-paper-grain);
   --slot: var(--nighthawks-paper-selected);
+  max-inline-size: none; padding: 0; margin: 0; border-radius: 0; outline: none; background: none; box-shadow: none;
+}
+.runtime-masthead {
+  block-size: var(--runtime-head-block); max-inline-size: none;
+  padding: var(--u) 0 0 var(--runtime-name-edge);
+}
+.runtime-masthead > h1 {
+  margin: 0; color: var(--nighthawks-paper); font: 700 var(--t-word)/var(--u) var(--sans);
+}
+.runtime-work {
+  container-type: inline-size;
+  inline-size: min(var(--runtime-measure), calc(100% - var(--runtime-desk-edge) - var(--u)));
+  margin: 0 var(--u) var(--u) var(--runtime-desk-edge);
+}
+.runtime-tabs {
+  --paper: var(--nighthawks-ground);
+  --ground: var(--nighthawks-ground);
+  --ink: var(--nighthawks-paper);
+  --sub: var(--nighthawks-desk-quiet);
+  min-block-size: var(--runtime-tab-block);
+}
+.runtime-paper {
+  display: flex; flex-direction: column;
+  --runtime-available: calc(100dvh - var(--runtime-head-block) - var(--runtime-tab-block) - var(--u));
+  max-block-size: var(--runtime-available);
+  overflow: clip;
+  border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px;
+  background: var(--paper);
   box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow);
+}
+/* Leave the desk below the paper on a wide display; keep that space for reading on a phone. */
+@media (min-width: 1000px) {
+  .runtime-paper { max-block-size: min(var(--runtime-available), calc(26 * var(--u))); }
+}
+@media (max-width: 600px) {
+  :is(#page, .place-left > .page)[data-place='runtime'] {
+    --runtime-desk-edge: var(--u); --runtime-name-edge: var(--u);
+    --runtime-head-block: calc(2 * var(--u) + var(--s3));
+  }
 }
 #page[data-place='runtime'] :is(.forge-places-key, .forge-search-key) { --places-down: var(--nighthawks-shadow); color: var(--nighthawks-desk-quiet); }
 #page[data-place='runtime'] :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--paper); }
 #page[data-place='runtime'] .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
 .place-left > .page[data-place='runtime'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
 
-/* The local views are one quiet horizontal strip, and the chosen word its only line. */
-#page[data-place='runtime'] .part { background: none; border: 0; border-radius: 0; position: relative; padding-inline: 0; }
-#page[data-place='runtime'] .parts { gap: var(--s5); padding-inline-start: var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
-#page[data-place='runtime'] .part[aria-selected='true'] { color: var(--ink); }
-#page[data-place='runtime'] .part[aria-selected='true']::after {
+/* A part can travel sideways across the whole paper. Its reading may move vertically underneath its heading.
+   Both use native scrollbars, with no thumb unless the corresponding content actually goes beyond its edge. */
+.runtime-panel:not([hidden]), .runtime-face, .runtime-face > .device-part { display: flex; flex-direction: column; min-block-size: 0; }
+.runtime-panel { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+.runtime-panel:focus-visible { outline-offset: calc(-1 * var(--s1)); }
+.runtime-face { inline-size: fit-content; min-inline-size: 100%; padding: var(--u); }
+/* The figure keeps the paper's measure and stays in sight when a long identifier is read sideways. */
+.runtime-capacity {
+  position: sticky; inset-inline-start: var(--u);
+  flex: none; display: flow-root; inline-size: calc(100cqi - 2 * var(--u));
+}
+.runtime-capacity > :is(.error, .muted) { margin: 0; }
+:is(.runtime-reading, .runtime-scroll) {
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+  min-inline-size: min-content; min-block-size: 0;
+  margin-inline-end: calc(-1 * var(--s3)); padding-inline-end: var(--s2);
+  scrollbar-gutter: stable;
+}
+/* Keep the frame's natural height; the breathing room belongs after the work, not before its first line. */
+:is(.runtime-reading, .runtime-scroll):not(:empty) { padding-block-end: var(--u); }
+/* The vertical ruler still shows remaining reading. The crosswise thumb answers the hand when the paper moves. */
+.runtime-panel { --runtime-thumb: transparent; }
+:is(.runtime-reading, .runtime-scroll) { --runtime-thumb: var(--quiet); }
+:is(.runtime-panel, .runtime-reading, .runtime-scroll) {
+  scrollbar-width: thin; scrollbar-color: var(--runtime-thumb) transparent;
+}
+.runtime-panel:is(:focus-visible, .scrolling),
+:is(.runtime-reading, .runtime-scroll):is(:hover, :focus-within, .scrolling) { --runtime-thumb: var(--edge); }
+@supports not (scrollbar-color: auto) {
+  :is(.runtime-reading, .runtime-scroll)::-webkit-scrollbar-thumb { background: var(--runtime-thumb) padding-box; }
+}
+/* The native thumb itself can be found by a mouse at the foot, without lighting the rail on every hover. */
+@media not (forced-colors: active) {
+  @supports selector(::-webkit-scrollbar-thumb) {
+    .runtime-panel { scrollbar-width: auto; scrollbar-color: auto; }
+    .runtime-panel::-webkit-scrollbar { height: var(--s2); width: 0; }
+    .runtime-panel::-webkit-scrollbar-track { background: transparent; }
+    .runtime-panel::-webkit-scrollbar-thumb {
+      border: 0; border-block: calc(2 * var(--line-frame)) solid transparent;
+      border-radius: var(--r-key); background: var(--runtime-thumb) padding-box;
+    }
+    .runtime-panel::-webkit-scrollbar-thumb:hover, .runtime-panel::-webkit-scrollbar-thumb:active {
+      background: var(--edge) padding-box;
+    }
+  }
+}
+@media (forced-colors: active) {
+  :is(.runtime-panel, .runtime-reading, .runtime-scroll) { scrollbar-color: auto; scrollbar-width: auto; }
+}
+/* In an unusually short window the window is the one vertical scrollbar instead of adding a trap. */
+@media (max-height: 520px) {
+  .runtime-paper { max-block-size: none; }
+  :is(.runtime-reading, .runtime-scroll) { overflow: visible; margin-inline-end: 0; padding-inline-end: 0; }
+}
+
+/* The switch lies on the desk at the paper's reading edge. Only the active word gains a short line. */
+.runtime-tabs .part[aria-selected] { background: none; border: 0; border-radius: 0; position: relative; padding-inline: 0; }
+.runtime-tabs .parts { gap: var(--s5); padding-inline-start: var(--s1); margin-inline-start: calc(-1 * var(--s1)); }
+.runtime-tabs .part[aria-selected='true'] { color: var(--ink); }
+.runtime-tabs .part[aria-selected='true']::after {
   content: ''; position: absolute; inset: auto 0 0; block-size: var(--line-frame); background: currentColor;
 }
-#page[data-place='runtime'] .part:focus-visible { outline-offset: -1px; }
-.page[data-place='runtime'] > .page-head h1 {
-  font-family: var(--sans); font-size: var(--t-word); font-weight: 700; letter-spacing: 0;
+.runtime-tabs .part:focus-visible { outline-offset: -1px; }
+@media (max-width: 600px) {
+  .runtime-tabs .parts { gap: var(--s3); padding-inline-end: var(--line-frame); }
+  .runtime-tabs .parts-on { inset-inline-end: calc(-1 * var(--line-frame)); }
 }
 
 /* Read the extent in one sweep, then what it means. The denominator is Why's local footprint. */
-.device-part .storage-hero { margin-block: var(--u) calc(2 * var(--u)); }
+.device-part .storage-hero { margin-block: 0 calc(2 * var(--u)); }
 .storage-figures { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: var(--s3) var(--s5); }
 .storage-figures p { margin: 0; }
 .storage-amount { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--s3); }
@@ -56,15 +160,11 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
 .storage-key dd { margin: 0; white-space: nowrap; }
 
 /* Less measure for the list than for the graph. The right-hand paper says nothing until it has something to say. */
-.storage-inventory { max-inline-size: calc(29 * var(--u)); }
+.storage-inventory { inline-size: min(100%, var(--runtime-reading-measure)); min-inline-size: min-content; }
 .storage-group + .storage-group, .reclaimed + .storage-group { margin-block-start: var(--u); }
 .storage-caption { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; column-gap: var(--s3); min-height: var(--h-control); }
 .storage-caption h3 { font-weight: 700; font-size: var(--t-word); margin: 0; }
 .storage-caption h3:focus { outline: none; }
-.storage-batch .button {
-  border-color: transparent; background: none; padding-inline: 0; min-height: var(--h-control);
-  text-decoration: underline; text-underline-offset: var(--s1);
-}
 .storage-batch:has(.storage-batch-ask) { flex-basis: 100%; margin-block-end: var(--s2); }
 .storage-batch-ask { padding: var(--s3) 0; border-block-start: 1px solid var(--rule); }
 .storage-batch-ask p, .storage-error, .reclaimed p { margin: 0; }
@@ -74,13 +174,14 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
 .device-part .space-list { border-block-start: 1px solid var(--rule); }
 .device-part .space-empty { margin: 0; padding-block-start: var(--s2); }
 .device-part .space-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) max-content var(--h-control); align-items: start;
+  position: relative; /* Anchor the screen-reader text in this row, inside the scroller. */
+  display: grid; grid-template-columns: minmax(min-content, 1fr) max-content var(--h-control); align-items: start;
   gap: 0 var(--s3); min-block-size: var(--h-control); padding-block: var(--s1);
 }
 .device-part .space-what, .device-part .space-measure { padding-block-start: calc((var(--h-control) - var(--u)) / 2); }
 .device-part .space-what { display: grid; min-width: 0; overflow-wrap: anywhere; }
 .device-part .space-name { font-weight: 700; }
-.device-part .space-name .link-name { font: 400 var(--t-word)/var(--u) var(--mono); }
+.device-part .space-name .link-name { font: 400 var(--t-word)/var(--u) var(--mono); white-space: nowrap; }
 .device-part .space-name [role='status']:not(:empty) { display: block; font-weight: 400; }
 .device-part .space-measure { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: var(--s2); }
 .device-part .space-size { white-space: nowrap; font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
@@ -88,7 +189,7 @@ body:has(> #page[data-place='runtime']) > .rail { display: none; }
 .device-part .space-row > .repo-gear-pop { grid-column: 1 / -1; min-width: 0; margin: var(--s1) 0 var(--s3); }
 .device-part .space-row > .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
 .device-part .space-row > .repo-gear-button[aria-expanded='true'] .mark { transform: rotate(.5turn); }
-#page[data-place='runtime']:has(.device-part .repo-gear-button[aria-expanded='true']) { box-shadow: none; }
+.runtime-paper:has(.device-part .repo-gear-button[aria-expanded='true']) { box-shadow: none; }
 .device-part .repo-gear-pop { box-shadow: var(--shade) var(--shade) 0 var(--nighthawks-shadow); }
 .device-part .reclaimed > p:first-child { font-weight: 700; }
 .device-part .link-name {
