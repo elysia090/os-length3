@@ -250,7 +250,7 @@ the paper. Wide, there is open desk to the left and below it; narrow, the paper 
 ### New repo (+)
 
 *One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
-ink edge, its short shadow: the one on the desk). Standard Places and Search take the ways out of it, with no rail or
+ink edge, its short shadow: the one on the desk). Its small New repo name opens the shared Places at the left; Search alone stands at the right. There is no rail or
 band above the paper. Its place sits on one line above its corner: `~/` and the name as written, a letter no name can
 have marked where it is. The path, the name and the writing are not three separate papers.
 
@@ -269,7 +269,11 @@ As wide as a piece, as tall as what is in it to the grid's next line, every line
 The repo itself is the sheet, its name the sheet's title: said once, large, and not drawn again as a row of the
 list under it (it was, filled with ink as File fills the repo in hand: a second fill on the sheet, and the name said
 twice). A row's name pressed is written over in its place; what else can be done to it (Rename, Leave out) is its one
-mark's menu, the chevron at its right end, always there and quiet (§5). Nothing on it is coloured by the pointer.
+mark's menu, the chevron at its right end, always there and quiet (§5). A new row proposed under the hand is not
+in the scaffold until its name is taken. Escape puts it away, or leaves a renamed row as it was. Search can be put
+away without taking the name. Back puts the keyboard and selection back where the draft was left, at its old
+scroll. The phone's keyboard moves the paper only enough to keep the current line in view. Create takes the README's
+written lines, including their spaces and blank lines, straight into Forge. Nothing on it is coloured by the pointer.
 Three sizes on it, as on any sheet: the name's, the words' (15), the small (13); and the key's own name.
 
 ### File

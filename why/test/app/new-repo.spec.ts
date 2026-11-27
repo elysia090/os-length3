@@ -249,3 +249,104 @@ test('leaving the README out also removes its writing field without inventing an
   const repo = await app.file.item('paperless', '', {open: true});
   await expect(repo.getByRole('treeitem', {name: 'README.md', exact: true})).toHaveCount(0);
 });
+
+const fieldNotes = Array.from({length: 25}, (_, i) => `Field note ${i + 1}`).join('\n');
+const range = (f: HTMLInputElement | HTMLTextAreaElement) => [f.selectionStart, f.selectionEnd, f.selectionDirection];
+
+test('a file takes a name where it will be; Search can borrow the hand and Escape leaves nothing made', async ({app}) => {
+  const {page, newRepo} = app;
+  await page.setViewportSize({width: 320, height: 420});
+  await app.rail.go('new-repo');
+  await newRepo.name.fill('seashore');
+  const files = app.main.getByRole('region', {name: 'Items to create'});
+  const add = files.getByRole('button', {name: 'New file', exact: true});
+  await add.click();
+  const file = files.getByRole('textbox', {name: 'New name'});
+  await expect(file).toBeFocused();
+  await expect(file).toBeInViewport({ratio: 1});
+  expect((await file.evaluate(range)).slice(0, 2)).toEqual([0, 8]); // leave .md alone
+  const readme = files.getByRole('button', {name: 'README.md', exact: true});
+  expect((await file.boundingBox())!.x).toBe((await readme.boundingBox())!.x);
+  await expect(file).toHaveCSS('font-family', await readme.evaluate((f) => getComputedStyle(f).fontFamily));
+  await file.pressSequentially('notes');
+  await file.evaluate((f: HTMLInputElement) => f.setSelectionRange(2, 4, 'backward'));
+  await file.press('Control+k');
+  const search = page.getByRole('main', {name: 'Search', exact: true}).getByRole('searchbox');
+  await expect(search).toBeFocused();
+  await search.press('Escape');
+  await expect(file).toBeFocused();
+  await expect(file).toHaveValue('notes.md');
+  expect(await file.evaluate(range)).toEqual([2, 4, 'backward']);
+  await file.press('Escape');
+  await expect(files.locator('.tree-name')).toHaveText(['docs/', 'README.md']);
+  await expect(add).toBeFocused();
+});
+
+test('Back restores the README selection, its own keyboard, and the place on the paper', async ({app}) => {
+  const {page, newRepo} = app;
+  await page.setViewportSize({width: 390, height: 440});
+  await app.rail.go('new-repo');
+  await newRepo.name.fill('seashore');
+  await newRepo.summary.fill(fieldNotes);
+  await newRepo.summary.evaluate((f: HTMLTextAreaElement) => f.setSelectionRange(f.value.length - 6, f.value.length - 4, 'backward'));
+  await page.evaluate(() => window.scrollTo(0, 500));
+  const selection = await newRepo.summary.evaluate(range);
+  const scroll = await page.evaluate(() => window.scrollY);
+  expect(scroll).toBeGreaterThan(320);
+  await app.forge.placesKey.click();
+  await page.getByRole('menuitem', {name: 'Home', exact: true}).click();
+  await expect(page.getByRole('main', {name: 'Home', exact: true})).toBeVisible();
+  await page.goBack();
+  await expect(newRepo.summary).toHaveValue(fieldNotes);
+  await expect(newRepo.summary).toBeFocused();
+  expect(await newRepo.summary.evaluate(range)).toEqual(selection);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scroll);
+});
+
+test('on a keyboard-sized screen the active written line stays visible, not recentered', async ({app}) => {
+  const {page, newRepo} = app;
+  await page.setViewportSize({width: 390, height: 844});
+  await app.rail.go('new-repo');
+  await newRepo.name.fill('seashore');
+  await newRepo.summary.fill(fieldNotes);
+  await newRepo.summary.press('Control+End');
+  const bottom = () => newRepo.summary.evaluate((f: HTMLTextAreaElement) => {
+    // Every fixture line fits once, so its occupied baseline can be measured independently of the app's caret code.
+    const line = f.value.slice(0, f.selectionEnd).split('\n').length;
+    return f.getBoundingClientRect().top + line * parseFloat(getComputedStyle(f).lineHeight) - f.scrollTop;
+  });
+  expect(await bottom()).toBeGreaterThan(400);
+  await page.setViewportSize({width: 390, height: 400});
+  await expect.poll(bottom).toBeLessThanOrEqual(400);
+  expect(await bottom()).toBeGreaterThan(376); // don't throw the current work to the middle or the top
+  await expect(newRepo.summary).toBeFocused();
+  expect((await newRepo.summary.evaluate(range)).slice(0, 2)).toEqual([fieldNotes.length, fieldNotes.length]);
+});
+
+test('an invalid row keeps the hand, then one Create carries the written Markdown verbatim to Forge', async ({app}) => {
+  const {newRepo} = app;
+  await app.rail.go('new-repo');
+  await newRepo.name.fill('seashore');
+  const written = '\nKeep this Markdown break.  \n\nAnd this final line.  \n\n';
+  await newRepo.summary.fill(written);
+  const files = app.main.getByRole('region', {name: 'Items to create'});
+  await files.getByRole('button', {name: 'New file', exact: true}).click();
+  const field = files.getByRole('textbox', {name: 'New name'});
+  await field.fill('README.md');
+  await field.press('Enter');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(files.getByRole('alert')).toHaveText('"README.md" already exists');
+  await field.fill('field-notes.md');
+  // The next row is editable on its first click, even with a valid new name still in hand.
+  await files.getByRole('button', {name: 'README.md', exact: true}).click();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('README.md');
+  await expect(files.getByRole('button', {name: 'field-notes.md', exact: true})).toBeVisible();
+  await field.press('Escape');
+  await newRepo.create.click();
+  const readme = app.forge.editor('README.md');
+  await expect(readme).toHaveValue(`# seashore\n\n${written}`);
+  await expect(readme).toBeFocused();
+  expect((await readme.evaluate(range)).slice(0, 2)).toEqual([`# seashore\n\n${written}`.length, `# seashore\n\n${written}`.length]);
+});

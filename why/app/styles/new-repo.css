@@ -7,16 +7,15 @@ body:has(> #page[data-place='new-repo'] > .new-repo-desk) { padding: 0; grid-tem
 body:has(> #page[data-place='new-repo'] > .new-repo-desk) > :is(.rail, .door) { display: none; }
 .page[data-place='new-repo']:has(> .new-repo-desk) { min-width: 0; width: 100%; max-width: none; margin: 0; padding: 0; }
 .new-repo-desk {
-  --nr-in: var(--u); --nr-edge: calc(2 * var(--u)); --nr-shadow: var(--s1);
+  --nr-in: var(--u); --nr-edge: var(--places-start); --nr-shadow: var(--s1);
   --paper: var(--nighthawks-paper); --sub: var(--nighthawks-paper-sub); --rule: var(--nighthawks-rule); --ground: var(--nighthawks-ground);
   --slot: var(--nighthawks-paper-selected); --places-down: var(--nighthawks-shadow);
   min-height: 100dvh; padding: calc(2 * var(--u)) var(--nr-edge);
 }
-.new-repo-desk :is(.forge-places-key, .forge-search-key) { color: var(--nighthawks-desk-quiet); }
-.new-repo-desk :is(.forge-places-key, .forge-search-key):is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
-.new-repo-desk .forge-places-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
+.new-repo-desk .forge-search-key { color: var(--nighthawks-desk-quiet); }
+.new-repo-desk .forge-search-key:is(:hover, :focus-visible) { color: var(--nighthawks-paper); }
 .place-left > .page[data-place='new-repo'] :is(.forge-places-key, .forge-search-key, .forge-places) { display: none; }
-.new-repo { display: grid; grid-template-columns: minmax(0, 1fr); width: min(calc(24 * var(--u)), calc(100% - var(--nr-shadow))); width: min(calc(24 * var(--u)), round(down, 100% - var(--nr-shadow), var(--u))); }
+.new-repo { display: grid; padding-block-end: var(--nr-keyboard-inset, 0px); grid-template-columns: minmax(0, 1fr); width: min(calc(24 * var(--u)), calc(100% - var(--nr-shadow))); width: min(calc(24 * var(--u)), round(down, 100% - var(--nr-shadow), var(--u))); }
 .nr-label {
   display: flex; width: fit-content; max-width: 100%; min-height: var(--u); margin: 0; padding: 0;
   background: var(--nighthawks-ground); color: var(--nighthawks-paper); font: 700 var(--t-word)/var(--u) var(--mono);
@@ -24,9 +23,7 @@ body:has(> #page[data-place='new-repo'] > .new-repo-desk) > :is(.rail, .door) { 
 .nr-label > .nr-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nr-label .bad-char { color: var(--del-tint); text-decoration-color: currentColor; }
 @media (max-width: 600px) {
-  .new-repo-desk { --nr-edge: var(--u); --nr-in: var(--s4); }
-  /* While the upper keys belong to the corner, even a long draft path stays clear of them. */
-  .nr-label { max-width: min(100%, calc(100vw - var(--nr-edge) - 100px)); }
+  .new-repo-desk { --nr-in: var(--s4); }
 }
 /* Why the name cannot be: in the cell under it, the words' small size on lines of a cell, an off dot before them. The
    description comes down by the cells it takes; the sheet's top stays on the horizon. */
@@ -54,7 +51,8 @@ body:has(> #page[data-place='new-repo'] > .new-repo-desk) > :is(.rail, .door) { 
 .nr-box > .tree.tree-still { margin: var(--u) var(--nr-in) 0; padding: calc(var(--u) - 1px) 0 0; border: 0; border-top: 1px solid var(--rule);
   border-radius: 0; background: transparent; box-shadow: none; font: var(--t-word)/var(--u) var(--sans); }
 .nr-box .tree-still .tree-row { min-height: var(--u); height: var(--u); padding-inline-start: min(calc(var(--depth, 0) * var(--u)), 25%); border-radius: 0; background: none; }
-.nr-box .tree-still .tree-name { min-height: var(--u); padding: 0; font: 400 var(--t-word)/var(--u) var(--mono); }
+.nr-box .tree-still .tree-name { min-height: var(--u); padding: 0; }
+.nr-box .tree-still :is(.tree-name, .tree-rename) { margin-inline: 0; font: 400 var(--t-word)/var(--u) var(--mono); }
 .nr-box .tree-still .tree-slash { color: var(--sub); }
 .nr-box .tree-still .tree-meta { font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
 /* Its deeds' one mark, quiet, ink under the hand (nothing comes or goes, and nothing is coloured under a pointer). */

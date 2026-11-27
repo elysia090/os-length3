@@ -105,7 +105,7 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
   --places-list-top: calc(2 * var(--u) + var(--s3));
 }
 @media (max-width: 1000px) { :root { --places-start: var(--u); } }
-:is(.home-portrait, .git-layout, .server-masthead, .inbox-shell, #page[data-place='runtime']),
+:is(.home-portrait, .new-repo-desk, .git-layout, .server-masthead, .inbox-shell, #page[data-place='runtime']),
 body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
   --places-ground: var(--nighthawks-ground);
   --places-grid: var(--nighthawks-dots);

@@ -32,7 +32,7 @@ function framed() {
   const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .server-masthead, .server-sidebar, .server-overline, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .runtime-masthead > h1, .forge-places-key, .forge-search-key, .sr-only';
   // A narrow desk can use one cell of left margin; the top strip does not change.
   const place = document.getElementById('page')?.dataset.place;
-  const one = place === 'home' || place === 'runtime' || place === 'new-repo' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
+  const one = place === 'new-repo' ? 1000 : place === 'home' || place === 'runtime' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
   const left = W <= one ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
