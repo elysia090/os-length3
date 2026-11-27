@@ -5,9 +5,10 @@ import {onSync, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
 import {deviceStateKey} from './device-state.ts';
 import {readSpace} from '../../../device/space.ts';
-import {pageHead, parts} from '../kit/common.ts';
+import {parts} from '../kit/common.ts';
 import {deskSearch, placesMenu} from '../kit/places.ts';
 import type {Context} from '../kit/context.ts';
+import {purpose} from '../../host/purposes.ts';
 import {allSessions} from '../bench/sessions.ts';
 import {errorText} from '../../../api/errors.ts';
 import {device} from './device.ts';
@@ -27,16 +28,37 @@ import {agentSection} from './agent-part.ts';
 // the dotfiles. Only the part chosen shows; the others are hidden, never
 // stopped or emptied (a Prompt runs on, a dotfile half written stays).
 
+// Only the current person's live reading position, never stored in settings or history.
+let inventoryReading: {person: string | null; y: number} | undefined;
+type RuntimePart = 'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent';
+
 /**
  * Runtime, in parts as Remote's page is: this device and what can go from it and come to it, the Prompts
  * running (offered while there is one), the environments, and the dotfiles. Hidden parts go on: a Prompt runs,
  * what is read is read again, a dotfile half written stays.
  */
 export function runtime(ctx: Context): Node[] {
-  const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
+  const page = parts<RuntimePart>('runtime', [
     {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Running Prompts')},
     {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}], undefined, 'quiet');
-  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
+  const capacity = h('div', {class: 'runtime-capacity'}, h('p', {class: 'muted'}, t('Calculating storage…')));
+  const inventory = h('div', {class: 'runtime-scroll'});
+  const holder = h('section', {class: 'section device-part', 'aria-label': isNative ? t('This device') : t('This browser')}, capacity, inventory);
+  // Read into the same viewport. Coming back from another place, or another tab, keeps the reading position.
+  const person = connection()?.user ?? null;
+  let readAt = inventoryReading?.person === person ? inventoryReading.y : 0;
+  let restore = readAt > 0;
+  const remember = () => {
+    if (!inventory.clientHeight || restore) return;
+    readAt = inventory.scrollTop;
+    inventoryReading = {person, y: readAt};
+  };
+  inventory.addEventListener('scroll', remember, {passive: true});
+  const laid = new ResizeObserver(() => {
+    if (!inventory.isConnected) { laid.disconnect(); return; }
+    if (restore && inventory.clientHeight) { restore = false; inventory.scrollTop = readAt; remember(); }
+  });
+  laid.observe(inventory);
   let last: Freed | null = null;
   let requestedFocus: string | undefined;
   let drawn = '', generation = 0;
@@ -56,10 +78,17 @@ export function runtime(ctx: Context): Node[] {
         drawn = now;
         const at = document.activeElement;
         const onSheet = holder.contains(at);
-        const requested = onSheet || at === document.body ? requestedFocus : undefined;
+        // A busy row can lose its focused button to the enclosing tabpanel before its read comes back.
+        const samePart = onSheet || at === page.panel('device');
+        const requested = samePart || at === document.body ? requestedFocus : undefined;
         const key = requested ?? (onSheet && at instanceof HTMLElement ? at.dataset.spaceFocus : undefined);
         requestedFocus = undefined;
-        holder.replaceChildren(device(ctx, u, last, (r, focus) => { last = r; requestedFocus = focus; read(); }));
+        remember();
+        const next = device(ctx, u, last, (r, focus) => { last = r; requestedFocus = focus; read(); });
+        capacity.replaceChildren(next.capacity);
+        inventory.replaceChildren(next.inventory);
+        restore = !inventory.clientHeight;
+        if (!restore) { inventory.scrollTop = readAt; remember(); }
         if (key && holder.isConnected && !holder.closest('[hidden]')) {
           const find = (id: string) => holder.querySelector<HTMLElement>(`[data-space-focus="${CSS.escape(id)}"]`);
           (find(key) ?? find('here-col'))?.focus({preventScroll: !requested});
@@ -70,7 +99,8 @@ export function runtime(ctx: Context): Node[] {
       if (g !== generation) return;
       if (holder.isConnected && inHand()) { defer(); return; }
       drawn = '';
-      holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)}))));
+      capacity.replaceChildren(h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})));
+      inventory.replaceChildren();
     });
   };
   read();
@@ -83,18 +113,27 @@ export function runtime(ctx: Context): Node[] {
   const following = () => { if (holder.isConnected) read(); };
   let running = prompts(heard, following);
   const restarted = () => { const next = prompts(heard, following); running.replaceWith(next); running = next; };
-  page.panel('device').append(holder);
-  page.panel('prompts').append(running);
-  // More about the same device, at the same reading edge; the inactive panels stay live.
-  page.panel('environments').append(h('div', {class: 'runtime-leaf runtime-environments'},
+  // Each part is its own horizontal face; its reading scroll stays with it while it is hidden.
+  const sheet = (part: RuntimePart, content: HTMLElement) => {
+    const panel = page.panel(part);
+    panel.classList.add('runtime-panel');
+    panel.tabIndex = 0;
+    panel.append(h('div', {class: 'runtime-face'}, part === 'device'
+      ? content : h('div', {class: 'runtime-reading'}, content)));
+    return panel;
+  };
+  // More about the same device, at the same reading edge; the inactive parts stay live.
+  const environments = h('div', {class: 'runtime-leaf runtime-environments'},
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Active environment')), environment()),
-    isNative ? null : desktopApp(), sshSection()));
-  page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
+    isNative ? null : desktopApp(), sshSection());
+  const dotfiles = dotfilesSection(restarted, (n) => page.count('dotfiles', n));
   // The Agent's key is local; dotfiles remain the person's on every device.
-  page.panel('agent').append(agentSection());
-  const head = pageHead('runtime', false);
-  // Runtime keeps the page and its parts; navigation moves from the rail to the same Places as the work desks.
+  const head = h('header', {class: 'runtime-masthead'}, h('h1', {}, t(purpose('runtime').label)));
+  // The corner belongs to the desk. Only the current view is on the paper, as on its neighbouring desks.
   placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? [], {find: deskSearch(ctx)});
-  return [head, h('div', {class: 'part-bar'}, page.switch),
-    page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles'), page.panel('agent')];
+  return [head, h('div', {class: 'runtime-work'},
+    h('div', {class: 'part-bar runtime-tabs'}, page.switch),
+    h('div', {class: 'runtime-paper'},
+      sheet('device', holder), sheet('prompts', running), sheet('environments', environments),
+      sheet('dotfiles', dotfiles), sheet('agent', agentSection())))];
 }
