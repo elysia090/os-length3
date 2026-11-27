@@ -69,29 +69,48 @@ test('a press answers in its own frame, sounds as it goes down, is held down a f
   await app.newRepo.make('hello');
   await app.page.setViewportSize({width: 1536, height: 864});
   await app.rail.go('home');
-  for (const name of ['Terminal', 'Actions for hello', '1 repo']) {
-    const b = app.main.getByRole('button', {name, exact: true}).first();
-    if (!(await b.count())) continue;
+  type Trace = {down: number; up: number; sound: number; frames: {t: number; s: number}[]};
+  const trace = () => app.page.evaluate(() => (window as unknown as {__press: Trace}).__press);
+  for (const name of ['Places', 'Actions for hello', 'Search']) {
+    const b = app.main.getByRole('button', {name, exact: true});
+    await expect(b).toBeVisible();
+    await b.hover();
     const box = (await b.boundingBox())!;
-    await app.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await app.page.evaluate(() => {
-      const w = window as unknown as {__t: {down: number; sound: number; frames: {t: number; s: number}[]}; __el?: Element};
-      w.__t = {down: 0, sound: 0, frames: []};
+    await b.evaluate((el) => {
+      const w = window as unknown as {__press: Trace};
+      const press: Trace = w.__press = {down: 0, up: 0, sound: 0, frames: []};
       const proto = AudioBufferSourceNode.prototype as unknown as {start: (...a: unknown[]) => void; __o?: (...a: unknown[]) => void};
-      if (!proto.__o) { proto.__o = proto.start; proto.start = function (this: unknown, ...a: unknown[]) { if (!w.__t.sound) w.__t.sound = performance.now(); return proto.__o!.apply(this, a); }; }
-      addEventListener('pointerdown', (e) => { w.__t.down = performance.now(); w.__el = (e.target as Element).closest('button')!; }, {capture: true, once: true});
-      addEventListener('pointerup', () => { (w.__t as unknown as {up: number}).up = performance.now(); }, {capture: true, once: true});
-      const step = () => {
-        if (w.__el) { const s = getComputedStyle(w.__el).scale; w.__t.frames.push({t: performance.now(), s: s === 'none' || Number.isNaN(parseFloat(s)) ? 1 : parseFloat(s)}); }
-        if (w.__t.frames.length < 50) requestAnimationFrame(step);
+      if (!proto.__o) {
+        proto.__o = proto.start;
+        proto.start = function (this: unknown, ...a: unknown[]) {
+          const current = w.__press;
+          if (current.down && !current.up && !current.sound) current.sound = performance.now();
+          return proto.__o!.apply(this, a);
+        };
+      }
+      // Capture this exact button from its real pointerdown. A frame sampler left over from a previous button can
+      // otherwise finish before the next press on a busy runner, or record the previous detached control.
+      const begin = (e: PointerEvent) => {
+        if (!(e.target instanceof Node) || !el.contains(e.target)) return;
+        removeEventListener('pointerdown', begin, true);
+        press.down = performance.now();
+        addEventListener('pointerup', () => { press.up = performance.now(); }, {capture: true, once: true});
+        let after = 0;
+        const step = () => {
+          const scale = parseFloat(getComputedStyle(el).scale);
+          press.frames.push({t: performance.now(), s: Number.isNaN(scale) ? 1 : scale});
+          if (!press.up || ++after < 4) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
       };
-      requestAnimationFrame(step);
+      addEventListener('pointerdown', begin, true);
     });
+    await app.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await app.page.mouse.down();
-    await app.page.waitForTimeout(150);
-    await app.page.mouse.up();
-    await app.page.waitForTimeout(500);
-    const t = await app.page.evaluate(() => (window as unknown as {__t: {down: number; sound: number; frames: {t: number; s: number}[]}}).__t);
+    try { await expect.poll(async () => (await trace()).frames.length, {message: `${name}: actually pressed`}).toBeGreaterThanOrEqual(4); }
+    finally { await app.page.mouse.up(); }
+    await expect.poll(async () => { const t = await trace(); return t.frames.filter((f) => f.t > t.up).length; }).toBe(4);
+    const t = await trace();
     const first = t.frames.find((f) => f.s < 1);
     expect(first, `${name}: it gives`).toBeTruthy();
     // In the frame it goes down: felt as instant at 50 ms (Swink), as one with the press within 85 (Kaaresoja), and
@@ -100,14 +119,14 @@ test('a press answers in its own frame, sounds as it goes down, is held down a f
     // Heard as it goes down.
     const after = t.frames.filter((f) => f.t >= t.down);
     expect(after.indexOf(first!), `${name}: its own answer, in the frames after the press`).toBeLessThanOrEqual(1);
+    expect(t.sound, `${name}: the press actually sounds`).toBeGreaterThanOrEqual(t.down);
     expect(t.sound - t.down, `${name}: its sound`).toBeLessThanOrEqual(17);
     // A few pixels: never under .92 of itself; home, never past.
     expect(Math.min(...t.frames.map((f) => f.s)), `${name}: its give`).toBeGreaterThanOrEqual(.92);
     expect(Math.max(...t.frames.map((f) => f.s)), `${name}: never past where it was`).toBeLessThanOrEqual(1);
     expect(t.frames.at(-1)!.s, `${name}: home`).toBe(1);
     // Home the moment it is let go: no frame on its way back (the ear hears the let-go; the eye is not told it twice).
-    const up = (t as unknown as {up: number}).up;
-    const back = t.frames.filter((f) => f.t > up);
+    const back = t.frames.filter((f) => f.t > t.up);
     expect(back.slice(1).every((f) => f.s === 1), `${name}: up at once, not drawn coming home (${back.slice(0, 4).map((f) => f.s.toFixed(3)).join(' ')})`).toBe(true);
     await app.page.keyboard.press('Escape');
   }
@@ -256,9 +275,11 @@ test('Back goes to the place before and Forward to the one after, however many w
     expect(app.page.url(), 'still the OS').toBe(os);
     await expect(app.rail.button(place.toLowerCase() as 'home')).toHaveAttribute('aria-current', 'page');
   }
-  // The door is a step as the rail is: there and Back again.
+  // Remote in Home's Places is a step as any other choice: there and Back again.
   await app.rail.go('home');
-  await app.page.locator('#door').click();
+  const remote = await app.rail.destination('remote');
+  await expect(remote).toBeVisible();
+  await remote.click();
   await expect.poll(at).toBe('Remote');
   await app.page.goBack();
   await expect.poll(at).toBe('Home');

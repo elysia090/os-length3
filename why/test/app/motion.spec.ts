@@ -64,68 +64,81 @@ test('leaving a frameless page releases its camera before the shared page is reu
   await whole();
 });
 
-test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {
+/** Two choices in the same frame. Use the real, visible Places menu on the desk in hand, not its hidden rail. */
+const chooseInOneFrame = (app: App, names: string[]) => app.page.evaluate(async (names) => {
+  const page = document.getElementById('page')!;
+  for (const name of names) {
+    const key = [...page.querySelectorAll<HTMLButtonElement>('.forge-places-key')].find((b) => b.checkVisibility());
+    if (!key) throw new Error('No visible Places key');
+    if (key.getAttribute('aria-expanded') !== 'true') key.click();
+    const menu = document.getElementById(key.getAttribute('aria-controls')!);
+    const command = [...menu?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []].find((b) => b.getAttribute('aria-label') === name);
+    if (!command?.checkVisibility()) throw new Error(`No visible Places command "${name}"`);
+    command.click();
+  }
+  const frames: {place: string | undefined; inks: number}[] = [];
+  const to = names.at(-1)?.toLowerCase();
+  const until = performance.now() + 1500;
+  let arrived = 0;
+  do {
+    await new Promise(requestAnimationFrame);
+    frames.push({place: page.dataset.place,
+      inks: [...document.querySelectorAll('.glide-ink')].filter((e) => e.checkVisibility()).length});
+    arrived = page.dataset.place === to ? arrived + 1 : 0;
+  } while (arrived < 4 && performance.now() < until);
+  return frames;
+}, names);
+
+test('pressed again before a frame can paint, Places comes to its last choice; pressed back, it stays', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
-  // Which pages are drawn on the way, and how many inks the rail has at once.
-  const watch = () => app.page.evaluate(() => {
-    const w = window as unknown as {drawn: string[]; inks: number};
-    w.drawn = [];
-    w.inks = 0;
-    new MutationObserver(() => { const at = document.getElementById('page')!.getAttribute('aria-labelledby')!; if (w.drawn.at(-1) !== at) w.drawn.push(at); })
-      .observe(document.getElementById('page')!, {attributes: true, attributeFilter: ['aria-labelledby']});
-    const tick = () => { w.inks = Math.max(w.inks, document.querySelectorAll('#rail-tabs .glide-ink').length); requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  });
-  const seen = () => app.page.evaluate(() => { const w = window as unknown as {drawn: string[]; inks: number}; return {drawn: w.drawn, inks: w.inks}; });
-  // Server, then Runtime in the same moment: Runtime is the page come to, from Home, and Server is never drawn on the way.
-  await watch();
-  await app.page.evaluate(() => { document.getElementById('purpose-server')!.click(); document.getElementById('purpose-runtime')!.click(); });
-  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
+  const live = await chooseInOneFrame(app, ['Server', 'Runtime']);
+  await expect(app.main).toHaveAttribute('data-place', 'runtime');
   await still(app);
-  expect((await seen()).drawn).toEqual(['purpose-runtime']);
-  expect((await seen()).inks).toBeLessThanOrEqual(1);
+  // If the module is still being brought, Home can still be on screen. No frame lands in Server on the way.
+  expect([...new Set(live.map((f) => f.place))].filter((p) => p !== 'home')).toEqual(['runtime']);
+  expect(live.every(({inks}) => inks === 0)).toBe(true);
   await expect(app.main.getByRole('heading', {name: 'Runtime', level: 1})).toBeVisible();
-  // Home, then Runtime again at once: back where it began, it stays; no page comes, none goes.
-  await watch();
-  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-runtime')!.click(); });
+  const back = await chooseInOneFrame(app, ['Home', 'Runtime']);
+  expect([...new Set(back.map((f) => f.place))]).toEqual(['runtime']);
   await still(app);
-  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
-  expect((await seen()).drawn.filter((d) => d !== 'purpose-runtime')).toEqual([]);
+  await expect(app.main).toHaveAttribute('data-place', 'runtime');
+  await expect(app.page.locator('.place-left')).toHaveCount(0);
 });
 
-test('File\'s tree out and away: the rail\'s ink is on File at once and back on the page\'s place at once, never an icon ink on ink and never an ink going between', async ({app}) => {
+test('File\'s tree out and away is a cut: Places stays on the same page and does not move the desk', async ({app}) => {
+  await app.newRepo.make('field-notes');
   await app.rail.go('home');
   await still(app);
-  // Every place on the rail, frame by frame: none drawn in ink on a fill of ink, as an icon would be gone.
-  const watch = () => app.page.evaluate(() => new Promise<string[]>((done) => {
-    const t0 = performance.now(), bad: string[] = [];
-    let inks = 0;
+  const places = app.forge.placesKey;
+  const before = await places.boundingBox();
+  expect(before).not.toBeNull();
+  // The tree may have its own appearance, but Home and its corner are fixed through both directions.
+  const watch = () => places.evaluate((key) => new Promise<{page: string | undefined; x: number; y: number; passing: boolean}[]>((done) => {
+    const seen: {page: string | undefined; x: number; y: number; passing: boolean}[] = [];
+    const page = document.getElementById('page')!;
     const tick = () => {
-      for (const b of document.querySelectorAll<HTMLElement>('#rail-tabs > .rail-item')) {
-        const cs = getComputedStyle(b), bg = cs.backgroundColor, fg = cs.color;
-        // Ink on a fill dark enough to hide it (the fill a third of the way to ink, or more).
-        const dark = (c: string) => { const m = c.match(/[\d.]+/g)!.map(Number); return (m[3] ?? 1) > .35 && m[0] + m[1] + m[2] < 300; };
-        if (dark(bg) && dark(fg)) bad.push(`${b.id} ${bg} ${fg} @${Math.round(performance.now() - t0)}`);
-      }
-      inks = Math.max(inks, document.querySelectorAll('#rail-tabs .glide-ink').length);
-      if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else done([...bad, `inks ${inks}`]);
+      const {x, y} = key.getBoundingClientRect();
+      seen.push({page: page.dataset.place, x, y,
+        passing: !!document.querySelector('.place-left') || document.documentElement.matches(':active-view-transition')
+          || [...document.querySelectorAll('.glide-ink')].some((e) => e.checkVisibility())});
+      if (seen.length < 24) requestAnimationFrame(tick); else done(seen);
     };
     requestAnimationFrame(tick);
   }));
-  // (No ink goes between two places: the place is inked where it is, at once, a cut, DESIGN §8.)
+  const file = await app.rail.destination('file');
   const out = watch();
-  await app.rail.button('file').click();
+  await file.click();
   await expect(app.file.tree).toBeVisible();
-  expect(await out).toEqual(['inks 0']);
+  await expect(app.forge.places).toBeHidden();
+  await expect(app.file.tree.getByRole('button', {name: 'field-notes', exact: true})).toBeFocused();
   const back = watch();
   await app.page.keyboard.press('Escape');
   await expect(app.file.tree).toBeHidden();
-  expect(await back).toEqual(['inks 0']);
-  // Out, File is the one inked place; away, the page's own again.
-  await still(app);
-  expect(await app.rail.button('home').evaluate((b) => getComputedStyle(b).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+  await expect(places).toBeFocused();
+  expect(await places.boundingBox()).toEqual(before);
+  for (const f of [...await out, ...await back]) expect(f).toEqual({page: 'home', x: before!.x, y: before!.y, passing: false});
 });
 
 test('the rail pressed twice before the page has come: the place pressed last is the one inked, at once, and no ink goes between', async ({app}) => {
@@ -296,7 +309,8 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
 test('a press is let go when the pointer is cancelled, and being held is shown with less motion asked for too (a state, not a move)', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
+  const toggle = app.forge.placesKey;
+  await expect(toggle).toBeVisible();
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointercancel');
@@ -307,13 +321,15 @@ test('a press is let go when the pointer is cancelled, and being held is shown w
   expect(Number(await toggle.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointerup', {button: 0});
   expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  await expect(app.forge.places).toBeHidden();
 });
 
 
 test('less motion asked for during a held press keeps it held; let go, it is up at once and nothing is replayed', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
+  const toggle = app.forge.placesKey;
+  await expect(toggle).toBeVisible();
   const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);
@@ -329,6 +345,7 @@ test('less motion asked for during a held press keeps it held; let go, it is up 
   await toggle.dispatchEvent('pointercancel');
   await still(app);
   expect(await scale()).toBe('none');
+  await expect(app.forge.places).toBeHidden();
 });
 
 test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
