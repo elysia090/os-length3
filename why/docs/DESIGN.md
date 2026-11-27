@@ -183,9 +183,9 @@ One world, and the window looks at it.
   world goes by under them.
 
 **The ground.** The world's ground is one sheet of squared paper: the ground colour with a dot in the middle of every
-cell, everywhere, under every place and under the frame. It is never covered by a plain strip. When the world moves
-the dots move with it, and at every rest they stand exactly where they stood (every rest is a whole number of
-cells).
+cell, everywhere, under every place and under the frame. It is never covered by a plain strip. Between places the
+window keeps the ground and its controls in place; the outgoing and incoming content are the only things to move.
+Turning to a piece on a desk still takes its dots with the row (§6).
 
 **What is out of sight is known.** Because the desk rests only with a piece at its edge (§6) and the places lie in
 the rail's order, what is past any edge of the window follows from what is in it: the next piece starts a piece's
@@ -839,7 +839,7 @@ its work is trusted more than a short one that shows nothing.
 
 1. **The world sideways:** to another page. A later place or a place's far side comes from the right; the way back
    is the opposite. The page left stays in sight as it was and goes out the other edge; the page come to follows it
-   at one distance; the dots go with them. The way is the window's width in whole cells, `24 · round(W / 24)`. The
+   at one distance, over the still ground. The way is the window's width in whole cells, `24 · round(W / 24)`. The
    frame stays.
 2. **The desk along its row:** to another piece (§6). The piece left stays as it was in the hand (its fill, its
    edge, its shadow, its words) until the desk is at rest, and the piece gone to is in the hand from the press: what
@@ -1068,7 +1068,7 @@ a good thing" (Kao et al. 2024).
 
 A touch that feels better than expected is not one large effect. It is ordinary parts that agree, every time, with
 one material: a press is a key's (it answers going down, sounds going down, gives, comes home); writing is a
-typewriter's (the strike, the caret, the platen turning a line); going is a camera's (one law, the dots with the
+typewriter's (the strike, the caret, the platen turning a line); going is a camera's (one law, the sheets under the
 world). Each part is ordinary; that they agree with each other and with the thing they are is what is felt (Swink
 counts "metaphor" among the six parts of game feel; Miyamoto: the D-pad is the same hardware in every game, and how
 a press feels differs, "そこの部分が大事"). So a new interaction is made from the repertoire, its material named, and

@@ -3,7 +3,7 @@
 // - glide(): the ink of the thing chosen goes from the one it was on to the one it is on (the rail's places, the
 //   band's pills), under their words, so the eye follows the choice instead of seeing one go out and another
 //   light up.
-// - travel(): another place comes from its side of the world; the old one and the ground go past together.
+// - travel(): the two places go by together, over the ground in a fixed frame.
 //
 // Asked for less motion, neither moves: each thing is where it ends at once.
 
@@ -403,10 +403,13 @@ export function pop(el: Element, by = .16, ms = 380) {
   el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: SPRING});
 }
 
-/** What stays at the window's edge while a page moves past: the corner keys and their menu, the bands, the panes and
- * the row's map. Copying them with the page would send a second set of controls across the desk. */
+/** The window's instruments stay: its title slot, Places, Search, the bands, panes and the row's map.
+ * The room chooser and index in Server, for example, belong to Server's contents, not the window. */
 const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle, .row-map, ' +
-  '.server-top, .server-bar, .forge-places-key, .forge-search-key, .forge-places)';
+  '.forge-places-key, .forge-search-key, .forge-places, .forge-title, .git-title, ' +
+  '.server-masthead > h1, .inbox-title, .runtime-masthead > h1)';
+// Inbox can draw its corner after the address comes back. Its shell cannot travel even while empty.
+const LATE_FRAME = '.inbox-holder';
 
 /** `el` as it is seen now, as a thing of its own that nothing happens to: a copy with what is written in its fields
  * and drawn on its canvases (`settle`, once it is in the document, puts each part where it was scrolled to). */
@@ -427,9 +430,9 @@ function likeness(el: Element): {copy: Element; settle(): void} {
 /**
  * The world goes sideways to another page: `dir` 1 to the right, -1 to the left. Asked before the page is drawn
  * again, it keeps the page left in sight as it was; what it gives back is called once the new one is drawn. Then the
- * page left goes out the way the world went by, the new one comes in from the other side, and the ground goes with
- * them: one move, the window's width in whole cells, by the OS's law (law.ts). The frame stays. Nothing waits on
- * it: the new page is there to be used from the first frame. Asked for less motion, there is no move.
+ * page left goes out the way the world went by and the new one comes in from the other side: one move, the
+ * window's width in whole cells, by the OS's law (law.ts). The ground and the frame stay. The new page is usable
+ * from the first frame. Asked for less motion, there is no move.
  */
 export function travel(root: HTMLElement, dir: number): () => void {
   if (still() || !dir || !root.getClientRects().length) return () => {};
@@ -437,6 +440,8 @@ export function travel(root: HTMLElement, dir: number): () => void {
   const by = (px: number) => `translateX(${px}px)`;
   const at = root.getBoundingClientRect();
   const page = root.cloneNode(false) as HTMLElement;
+  // Copy only the page's paint (a real sheet can be the page), never the desk behind that sheet.
+  page.style.background = getComputedStyle(root).background;
   for (const name of ['id', 'tabindex', 'aria-labelledby']) page.removeAttribute(name);
   const settles: (() => void)[] = [];
   for (const child of root.children) {
@@ -457,12 +462,8 @@ export function travel(root: HTMLElement, dir: number): () => void {
   const gone = () => left.remove();
   const going = left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'});
   going.finished.then(gone, gone);
-  const dots = document.body.animate([{backgroundPositionX: '0px'}, {backgroundPositionX: `${-dir * far}px`}], timing);
-  // One world, one move: the place left, the place come to and the ground set off at the same instant, in the frame
-  // after the place come to is built. Each is made held where it starts and let go together; set off as it is made,
-  // what the page draws itself (the ground) ran a frame or more ahead of what is moved for it (the sheets) whenever
-  // the place come to was long in the building, the dots sliding under sheets that had not yet stirred.
-  const all: Animation[] = [going, dots];
+  // The two places set off in the same frame with one clock. The desk behind both is not copied or animated.
+  const all: Animation[] = [going];
   for (const x of all) x.pause();
   let off = false;
   const setOff = () => {
@@ -492,7 +493,7 @@ export function travel(root: HTMLElement, dir: number): () => void {
 function surfacesOf(root: HTMLElement): HTMLElement[] {
   const parts = (el: HTMLElement): HTMLElement[] => {
     if (!el.getClientRects().length || el.matches(FRAME)) return [];
-    if (!el.querySelector(FRAME)) return [el];
+    if (!el.matches(LATE_FRAME) && !el.querySelector(`${FRAME}, ${LATE_FRAME}`)) return [el];
     return [...el.children].flatMap((child) => parts(child as HTMLElement));
   };
   return parts(root);

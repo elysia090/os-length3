@@ -361,7 +361,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
 | The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
+| Going to another place: the two pages move as one over the still ground, leaving the frame fixed, one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
 | What comes is there at once: an arrival and a band changed are cuts, motion asked for or not (§8) | `why/app/ui/glide.test.ts` |
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
