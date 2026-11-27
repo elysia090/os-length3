@@ -2,23 +2,29 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// New repo retains the framed band. Home, the work desks and Runtime share the labelled Places and Search, not a permanent rail.
+// Home, New repo, the work desks and Runtime share the labelled Places and Search, not a permanent rail.
 // The Remote still frames a sheet; Inbox uses its own desk on either side of sign-in.
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
 
-/** New repo still has a whole-cell band on the rail's first row, with no door. */
-async function newRepoDesk(app: App, what: string) {
-  await expect(async () => {
-    const bar = await at(app.main.getByRole('group', {name: 'Tools', exact: true}));
-    const first = await at(app.rail.button('home'));
-    await expect(app.rail.door).toBeHidden();
-    expect(bar.x, `${what}: band's left edge`).toBe(2 * U);
-    expect([bar.y, bar.height], `${what}: band on the rail's first row`).toEqual([first.y, first.height]);
-    expect(bar.width % U, `${what}: band whole cells wide`).toBeLessThan(1);
-  }).toPass({timeout: 4000});
+/** A new repo starts with one writable paper on the same frame. */
+async function newRepoDesk(app: App, width: number) {
+  await corner(app, width);
+  await expect(app.forge.placesKey).toHaveAccessibleName('New repo');
+  await expect(app.main.getByRole('group', {name: 'Tools', exact: true})).toBeHidden();
+  const paper = app.main.locator('.new-repo > .nr-box');
+  await expect(paper).toHaveCount(1);
+  await expect(paper).toBeInViewport({ratio: 1});
+  const left = width <= 1000 ? U : 2 * U;
+  const {x, y, width: measure} = await at(paper);
+  expect([x, y, measure]).toEqual([left, 3 * U, Math.min(24, Math.floor((width - 2 * left - 4) / U)) * U]);
+  await expect(paper).toHaveCSS('background-color', 'rgb(239, 235, 227)');
+  await expect(app.newRepo.name).toBeEditable();
+  await expect(app.newRepo.name).toHaveValue('');
+  const files = paper.getByRole('region', {name: 'Items to create', exact: true});
+  await expect(files.getByRole('button', {name: 'README.md', exact: true})).toBeVisible();
 }
 
 /** The corner supplies the frame, not two ways to do the same work. */
@@ -94,7 +100,7 @@ test('signed out, each place keeps its own frame and reading edge at every width
     for (const place of ['home', 'new-repo', 'forge', 'git'] as const) {
       await app.rail.go(place);
       if (place === 'home') await homeDesk(app, size.width);
-      else if (place === 'new-repo') await newRepoDesk(app, what(place));
+      else if (place === 'new-repo') await newRepoDesk(app, size.width);
       else await workDesk(app, place === 'forge' ? 'Forge' : 'Git', size.width);
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
