@@ -876,7 +876,13 @@ class Forge {
       // gone into (where it was asked from is gone or still has it; the page, or nothing, has it on the way here).
       const now = document.activeElement;
       const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
-      this.show(ctx.repo, at.path, at.write, at.line, !elsewhere && !termAsked);
+      // A retained paper can already be used while the list of available repos is still coming back.
+      // Do not replay a plain File open over the same paper the hand has taken in the meantime.
+      const laid = this.now.repo === ctx.repo ? this.desks.get(ctx.repo) : undefined;
+      const samePaper = now instanceof HTMLTextAreaElement && now !== at.from &&
+        (laid?.files.get(at.path)?.element.contains(now) || laid?.beside?.path === at.path && laid.beside.file.element.contains(now));
+      const alreadyThere = at.write === true && at.line === 0 && samePaper;
+      this.show(ctx.repo, alreadyThere ? '' : at.path, at.write, at.line, !elsewhere && !termAsked);
       if (place) this.selectPlace(place, !elsewhere);
       else if (termAsked && !elsewhere) this.work.toPrompt();
       // Out under Forge's own files button once the page has come to rest (measured where it stands, not on the way).

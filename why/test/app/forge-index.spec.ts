@@ -152,3 +152,53 @@ test('a preview links to the actual file, even when two long paths end in the sa
     await expect(tree.getByRole('button', {name: dir, exact: true})).toHaveAttribute('aria-expanded', 'false');
   }
 });
+
+test('a remembered paper cannot lose a real selection to a deferred File open', async ({app}) => {
+  const {page, forge, file} = app;
+  await page.route('**/webroot/**', route => route.abort());
+  await page.setViewportSize({width: 1440, height: 900});
+  await app.newRepo.make('tidegate');
+  const writing = Array.from({length: 80}, (_, i) => 'Tide observation '+i).join('\n');
+  await forge.editFile('README.md', writing);
+  // Delay exactly the real read made on returning to Forge. No answer or file is fabricated.
+  type G = {waiting: boolean; release: () => void};
+  await page.evaluate(() => {
+    const w = window as Window & {folderGate?: {waiting: boolean; release: () => void}};
+    const post = Worker.prototype.postMessage;
+    let delayed: (() => void) | null = null;
+    let held = false;
+    const gate: G = {waiting: false, release: () => {
+      const cb = delayed; delayed = null; gate.waiting = false; cb?.();
+    }};
+    w.folderGate = gate;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      type Call = {name?: string};
+      const msg = args[0] as Call & {batch?: Call[]};
+      const listed = msg && (msg.name==='repo_names' || msg.batch?.some(c => c.name==='repo_names'));
+      if (!held && listed && document.querySelector('#page[data-place="forge"]')) {
+        held = gate.waiting = true;
+        delayed = () => Reflect.apply(post, this, args);
+      } else Reflect.apply(post, this, args);
+    };
+  });
+  try {
+    await file.open('tidegate','README.md');
+    await expect.poll(() => page.evaluate(() => (window as Window & {folderGate?:G}).folderGate?.waiting)).toBe(true);
+    await expect(page.locator('.place-left')).toHaveCount(0);
+    const editor = forge.editor('README.md');
+    await editor.click({position:{x:20,y:12}});
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Shift+ArrowLeft');
+    const state = () => editor.evaluate((el: HTMLTextAreaElement) => ({
+      selection: [el.selectionStart, el.selectionEnd, el.selectionDirection], scroll: el.closest('.desk-file')!.scrollTop,
+    }));
+    const selection = [writing.length-1,writing.length,'backward'];
+    await expect.poll(async () => (await state()).selection).toEqual(selection);
+    const before = await state();
+    expect(before.scroll).toBeGreaterThan(0);
+    await page.evaluate(() => (window as Window & {folderGate?: G}).folderGate?.release());
+    await expect(page.getByRole('navigation',{name:'Files in tidegate',exact:true})).toBeVisible();
+    await expect(editor).toBeFocused();
+    expect(await state()).toEqual(before);
+  } finally { await page.evaluate(() => (window as Window & {folderGate?:G}).folderGate?.release()); }
+});
