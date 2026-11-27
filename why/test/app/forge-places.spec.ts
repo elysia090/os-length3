@@ -179,6 +179,45 @@ test('on a narrow desk, selecting a real file shows the editor and hands it the 
   await expect(editor).toBeFocused();
 });
 
+for (const width of [1440, 390]) {
+  test.describe(`choosing an open document at ${width}px`, () => {
+    const touch = width === 390;
+    test.use({viewport: {width, height: 844}, hasTouch: touch, isMobile: touch, reducedMotion: 'reduce'});
+
+    test('Files resumes an open document at its selection and scroll', async ({app}) => {
+      const {page, forge} = app;
+      await page.route('**/webroot/**', (route) => route.abort());
+      await app.newRepo.make('pine');
+      const text = Array.from({length: 96}, (_, n) => `Field note ${n + 1}: tide height in millimetres.`).join('\n');
+      await forge.editFile('README.md', text);
+      const editor = forge.editor('README.md');
+      await expect(editor).toHaveValue(text);
+      await editor.press('Control+End');
+      await editor.press('Shift+ArrowLeft');
+      await editor.press('Shift+ArrowLeft');
+      const view = () => editor.evaluate((area: HTMLTextAreaElement) => {
+        const port = area.closest<HTMLElement>('.desk-file')!;
+        return {start: area.selectionStart, end: area.selectionEnd, direction: area.selectionDirection,
+          left: area.scrollLeft, top: port.scrollTop};
+      });
+      await expect.poll(async () => (await view()).top).toBeGreaterThan(0);
+      const before = await view();
+      expect(before.start).toBe(text.length - 2);
+      expect(before.end).toBe(text.length);
+      expect(before.direction).toBe('backward');
+
+      await forge.use('Files');
+      const tree = page.getByRole('tree', {name: 'pine', exact: true});
+      await expect(tree).toBeVisible();
+      const same = tree.getByRole('button', {name: 'README.md', exact: true});
+      if (touch) await same.tap(); else await same.click();
+      await expect(editor).toBeFocused();
+      await expect(editor).toHaveValue(text);
+      await expect.poll(view).toEqual(before);
+    });
+  });
+}
+
 test.describe('Files rename on touch', () => {
   test.use({hasTouch: true, isMobile: true, viewport: {width: 390, height: 844}});
 

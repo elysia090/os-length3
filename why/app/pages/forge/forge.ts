@@ -603,19 +603,22 @@ class Forge {
   private open(path: string, line = 0, write: Writing = false, keyboard = true) {
     const repo = this.now.repo;
     if (!repo || !path) return;
+    const d = this.deskOf(repo);
+    const kept = d.files.get(path);
+    // Files takes the paper back into the hand, not to the top of a paper already being worked on.
+    const resume = this.placeInHand === 'Files' && write === true && line === 0 && kept?.hasEditor;
     if (this.placeInHand !== 'Forge' && matchMedia('(max-width: 1000px)').matches) this.selectPlace('Forge', false);
     else if (keyboard) this.hand('Forge');
-    const d = this.deskOf(repo);
     // Chosen from the band's search while its sheet is down, the desk out of sight under it: the camera is put where
     // the box is meanwhile, unseen, and the desk comes back already there as the sheet goes up.
     const unseen = !!this.element.querySelector('.band-tools > .search-box:is(:focus-within, .reading):not(.idle, .leaving)');
     // A file laid for the first time goes under the box in hand.
-    const f = d.files.get(path) ?? this.layFile(repo, d, path);
+    const f = kept ?? this.layFile(repo, d, path);
     // Made, it is not gone into yet: in hand, its name to be written, at the size it is read at (the camera does not
     // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
     if (write === 'name') { d.desk.take(path, false, !unseen); return; }
     d.desk.take(path, keyboard, !unseen);
-    if (!keyboard) return;
+    if (!keyboard || resume) return;
     if (typeof write === 'object') {
       f.toOffset(write.at);
       this.ctx.leftAt(repo, path, write.at);

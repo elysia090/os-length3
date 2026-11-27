@@ -22,6 +22,8 @@ import {SPRING} from '../../ui/law.ts';
 // writes comes in as it is played (bench/play.ts).
 
 export interface DeskFile extends Laid {
+  /** Whether this paper has an editor with its own selection and reading position. */
+  readonly hasEditor: boolean;
   /** The line `line` (1-based) chosen in it, the caret there (none: the caret at its top). */
   at(line: number): void;
   /** The keyboard in it, at an existing character offset (Home's last edit, not a line highlighted by search). */
@@ -423,6 +425,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
 
   return {
     element,
+    get hasEditor() { return !!editor; },
     toOffset,
     toEnd: () => toOffset('end'),
     name: cut < 0 ? shown : shown.slice(cut + 1),
