@@ -144,6 +144,10 @@
   .git-desk .git-paper > :is(.git-totals, .git-paper-review) { margin-block-start: var(--u); }
   .git-desk .git-paper > .git-paper-review { flex-wrap: wrap; }
 }
+@media (max-width: 760px) {
+  /* Leave room for the browser's own letter measure; keep the key height and let genuinely longer labels wrap. */
+  .git-desk .git-paper .git-review-key { padding-inline: var(--s2); }
+}
 .git-ledger-status { margin: calc(var(--u) / 2) var(--u) 0; color: var(--sub); line-height: var(--u); }
 
 .git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus-visible))::before { display: none; }

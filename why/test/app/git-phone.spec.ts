@@ -33,9 +33,21 @@ test('the issue and review keys fit their paper at phone widths without widening
   await expect(approve).toBeEnabled();
   await expect(diff.locator('.git-diff-name')).toHaveText(['Makefile', 'README.md', 'src/main.c']);
 
-  for (const width of [320, 390]) {
-    await test.step(`on a ${width}px paper`, async () => {
+  for (const [width, wider] of [[320, false], [390, false], [390, true]] as const) {
+    await test.step(`on a ${width}px paper${wider ? ' with wider type' : ''}`, async () => {
       if (width === 390) await page.setViewportSize({width, height: 844});
+      // Bring the two labels to a wider measure when needed, independently of the runner's own system font.
+      if (wider) await paper.evaluate(el => {
+        const keys = [...el.querySelectorAll<HTMLElement>('.git-review-key')];
+        const range = document.createRange();
+        const ink = keys.reduce((sum, key) => {
+          range.selectNodeContents(key);
+          return sum + range.getBoundingClientRect().width;
+        }, 0);
+        const letters = keys.map(key => key.textContent).join('').length;
+        const spacing = Math.max(0, 164 - ink) / letters;
+        for (const key of keys) key.style.letterSpacing = `${spacing}px`;
+      });
       // At a new width wait for the camera to lay its paper at the new measure.
       await expect(async () => {
         const box = await paper.evaluate(el => {
@@ -66,6 +78,9 @@ test('the issue and review keys fit their paper at phone widths without widening
           expect(box.approve.left).toBeCloseTo(box.comment.left);
         } else expect(box.approve.top).toBeCloseTo(box.comment.top);
       }).toPass({timeout: 5000});
+      if (wider) await paper.evaluate(el => {
+        for (const key of el.querySelectorAll<HTMLElement>('.git-review-key')) key.style.removeProperty('letter-spacing');
+      });
     });
   }
 

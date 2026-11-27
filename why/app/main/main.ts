@@ -647,7 +647,10 @@ if (asking.has('device')) {
     // Discard the derived cache used by older Why builds; userland owns the digest-keyed cache.
     void Promise.resolve().then(() => globalThis.caches?.delete('why-userland')).catch(() => {});
     // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
-    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) return render(); }).finally(() => {
+    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => {
+      // Runtime reads its inventory again on sync. Do not replace its live corner keys under the hand.
+      if (connection() && current !== 'runtime') return render();
+    }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
       // (And the key sounds, fetched and decoded before the first of them is asked for: keys.ts.)

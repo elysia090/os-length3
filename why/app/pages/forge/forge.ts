@@ -350,6 +350,7 @@ class Forge {
     for (const d of this.desks.values()) {
       d.beside?.file.drop();
       for (const f of d.files.values()) f.drop();
+      d.desk.drop();
     }
   }
 
@@ -798,7 +799,7 @@ class Forge {
       // Every desk stays in the page, those not worked at hidden: a text taken out of the page loses its Undo.
       this.center.querySelector('.desk-none')?.remove();
       if (!d.desk.element.isConnected) this.center.append(d.desk.element);
-      for (const o of this.desks.values()) o.desk.element.hidden = o !== d;
+      for (const o of this.desks.values()) o.desk.show(o === d);
       this.center.append(this.promptKey);
     }
     this.closeStart();
@@ -825,7 +826,7 @@ class Forge {
     this.hand('Forge');
     this.switcher.set('Forge', false);
     this.ctx.forgeFiles?.(null);
-    for (const o of this.desks.values()) o.desk.element.hidden = true;
+    for (const o of this.desks.values()) o.desk.show(false);
     if (this.center.querySelector('.desk-none')) return;
     const first = h('button', {type: 'button', class: 'forge-open-folder'}, t('Open Folder')) as HTMLButtonElement;
     const empty = h('div', {class: 'desk-none forge-empty'}, first);
@@ -862,7 +863,7 @@ class Forge {
       const gone = this.desks.get(name)!;
       gone.beside?.file.drop();
       for (const f of gone.files.values()) f.drop();
-      gone.desk.element.remove();
+      gone.desk.drop();
       this.desks.delete(name);
       if (this.now.repo === name) this.now.repo = null;
     }

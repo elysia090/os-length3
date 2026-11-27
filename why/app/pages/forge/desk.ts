@@ -258,6 +258,18 @@ export class Desk {
     if (box) box.laid.focus();
     else this.element.focus({preventScroll: true});
   }
+  /** The map is a sibling of its desk. Neither is reachable while another repo is in hand. */
+  show(shown: boolean) {
+    this.element.hidden = !shown;
+    if (!shown) this.#map.element.hidden = true;
+    else if (this.#map.element.isConnected) this.#map.paint();
+  }
+
+  drop() {
+    this.#sized.disconnect();
+    this.#map.element.remove();
+    this.element.remove();
+  }
   /** Whether `key` lies on the desk. */
   has(key: string): boolean { return this.#boxes.has(key); }
   /** The keys on the desk, along the row. */
@@ -533,7 +545,7 @@ export class Desk {
     if (this.#saying) return;
     this.#saying = requestAnimationFrame(() => {
       this.#saying = 0;
-      if (!this.element.isConnected) return;
+      if (!this.element.isConnected || this.element.hidden) return;
       if (!this.#map.element.isConnected) this.element.parentElement?.append(this.#map.element);
       this.#map.paint();
     });

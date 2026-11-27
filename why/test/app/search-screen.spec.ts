@@ -357,7 +357,21 @@ test('a delayed read from the old scope cannot replace or open a matching path i
   await app.settled();
   await app.newRepo.make('atlas', {template:'C'});
   await forge.editFile('README.md', '# Atlas\nThree before it.\nOne more.\nLaunch target in Atlas.');
+  const retiring = await app.main.locator('.desk-room > .row-map:visible').evaluateHandle((map) => {
+    const desk = document.querySelector<HTMLElement>('.desk[data-repo="atlas"]')!;
+    const state = {hidden: null as boolean | null};
+    const watch = new MutationObserver(() => {
+      if (!desk.hidden) return;
+      state.hidden = map.hasAttribute('hidden');
+      watch.disconnect();
+    });
+    watch.observe(desk, {attributes: true, attributeFilter: ['hidden']});
+    return state;
+  });
   await app.newRepo.make('hello', {template:'C'});
+  // Both repos have a README, but only the map of the repo in hand can take the keyboard or clicks.
+  await expect.poll(() => retiring.evaluate(state => state.hidden)).toBe(true);
+  await expect(app.main.locator('.desk-room > .row-map').getByRole('button', {name: 'README.md', exact: true})).toHaveCount(1);
   await forge.editFile('README.md', '# Hello\nLaunch target in Hello.');
   const source = forge.editor('src/main.c');
   await source.focus();
