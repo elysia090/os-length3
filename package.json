@@ -21,23 +21,23 @@
     "web-release": "sh why/build/web-release.sh"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.16",
+    "@electric-sql/pglite": "^0.5.17",
     "@playwright/test": "1.65.1",
-    "@tauri-apps/cli": "2.12.5",
+    "@tauri-apps/cli": "2.12.6",
     "@types/node": "^26.6.6",
     "drizzle-kit": "^0.31.11",
     "typescript": "7.0.2",
     "vite": "8.3.8",
-    "wrangler": "4.164.0"
+    "wrangler": "4.166.0"
   },
   "dependencies": {
-    "@better-auth/passkey": "^1.7.25",
+    "@better-auth/passkey": "^1.7.27",
     "@neondatabase/serverless": "^1.2.1",
     "@simplewebauthn/browser": "^14.0.0",
     "@tauri-apps/api": "^2.12.5",
     "better-auth": "^1.7.25",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.19"
+    "hono": "^4.13.20"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
