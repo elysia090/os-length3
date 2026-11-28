@@ -165,6 +165,10 @@ body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 }
 .search-screen .sheet-hit mark { mix-blend-mode: multiply; }
 .search-screen .sheet-line { color: var(--sub); }
+/* Let line numbers sit back without shrinking their grid track or moving the excerpts. */
+.search-screen:is(.search-on-home, .search-on-forge) .sheet-line {
+  scale: .86; transform-origin: right 75%;
+}
 /* Wide results keep one row. The filename identifies the line without taking its measure. */
 @media (width > 760px) {
   .search-screen .sheet-file {
@@ -181,7 +185,7 @@ body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 .search-screen.search-on-forge .found-secs .found-sec-head { overflow: hidden; text-overflow: ellipsis; }
 .search-screen.search-on-forge .sheet-hit:focus-visible,
 .search-screen.search-on-forge:has(.search-in:focus) .sheet-hit.first {
-  --search-row-strength: 36%;
+  --search-row-strength: 39%;
 }
 .search-screen.search-on-forge:has(.search-in:focus) .sheet-hit:hover:not(.first),
 .search-screen.search-on-forge .search-screen-matches:has(.sheet-hit:focus-visible) .sheet-hit:hover:not(:focus-visible) {
@@ -269,7 +273,7 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
 /* The choice already in hand is a little stronger than a passing pointer. */
 .search-screen.search-on-home .search-screen-paper .sheet-hit:focus,
 .search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .sheet-hit.first {
-  --home-search-selection-share: 54%;
+  --home-search-selection-share: 57%;
 }
 /* A passing pointer does not compete with the result Enter would open. */
 .search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .sheet-hit:hover:not(.first),

@@ -101,10 +101,11 @@ test('Home Search keeps the centered input still while setting out its own resul
   const mono = await snippet.evaluate(el => getComputedStyle(el).fontFamily);
   expect(mono).not.toBe(sans);
   await expect(rows.first().locator('.sheet-line')).toHaveCSS('font-family', mono);
+  await expect(rows.first().locator('.sheet-line')).toHaveCSS('scale', '0.86');
   const count = result.getByRole('heading', {name: '2 matches for "launch"', exact: true});
   await expect(count).toHaveCSS('font-family', sans);
   expect((await count.boundingBox())!.y).toBe(candidateHeading.y - 2);
-  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '54%');
+  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '57%');
   await rows.last().hover();
   await expect(rows.last()).toHaveCSS('--home-search-selection-share', '40%');
   await expect(rows.last()).toHaveCSS('background-image', /^conic-gradient\(/);
@@ -129,10 +130,10 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(result.locator('.search-screen-enter:visible')).toHaveCount(1);
   await rows.first().hover();
   await expect(rows.first()).toHaveCSS('--home-search-selection-share', '40%');
-  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '54%');
+  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '57%');
   await expect(cue).toBeVisible();
   await page.mouse.move(32, 160);
-  await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(75, 72, 67)');
+  await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(74, 71, 66)');
 
   // A file-name-only match uses the same face, even inside its highlighted match.
   await input.fill('README.md');

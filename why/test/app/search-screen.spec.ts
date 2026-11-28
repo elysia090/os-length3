@@ -302,13 +302,14 @@ test('Forge Search keeps the Enter target distinct from a passing pointer on the
   const mono = await excerpt.evaluate(el => getComputedStyle(el).fontFamily);
   expect(mono).not.toBe(sans);
   await expect(number).toHaveCSS('font-family', mono);
+  await expect(number).toHaveCSS('scale', '0.86');
   await expect(first.locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(first).toHaveCSS('height', '24px');
   expect(await input.boundingBox()).toEqual(position);
   await expect(first.locator('kbd')).toBeHidden();
 
   await last.hover();
-  await expect(first).toHaveCSS('--search-row-strength', '36%');
+  await expect(first).toHaveCSS('--search-row-strength', '39%');
   await expect(last).toHaveCSS('--search-row-strength', '18%');
   await expect(last.locator('kbd')).toBeHidden();
   await expect(last).toHaveCSS('outline-style', 'none');
