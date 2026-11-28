@@ -257,6 +257,7 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
   --marker: var(--home-search-mark);
   mix-blend-mode: normal;
 }
-.search-screen.search-on-home :is(.search-suggestion, .search-suggestions .found-sec-head) {
+/* Names and headings are interface text. Line numbers and their source keep the code face. */
+.search-screen.search-on-home .search-screen-matches :is(.search-suggestion, .found-sec-head, .sheet-file) {
   font-family: var(--sans);
 }

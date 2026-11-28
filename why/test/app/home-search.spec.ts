@@ -96,7 +96,8 @@ test('Home Search keeps the centered input still while setting out its own resul
   const mono = await snippet.evaluate(el => getComputedStyle(el).fontFamily);
   expect(mono).not.toBe(sans);
   await expect(rows.first().locator('.sheet-line')).toHaveCSS('font-family', mono);
-  await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', mono);
+  await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', sans);
+  await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(rows.first().locator('mark')).toHaveCSS('--marker', '#cea239');
   await expect(rows.first()).toHaveCSS('mix-blend-mode', 'normal');
   await input.press('ArrowDown');
@@ -105,8 +106,39 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(rows.last()).toBeFocused();
   await expect(rows.last()).toHaveCSS('outline-width', '2px');
   await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(75, 72, 67)');
+
+  // A file-name-only match uses the same face, even inside its highlighted match.
+  await input.fill('README.md');
+  const named = result.locator('.sheet-name .sheet-file');
+  await expect(named).toHaveText('README.md');
+  await expect(named).toHaveCSS('font-family', sans);
+  await expect(named.locator('mark')).toHaveCSS('font-family', sans);
+
+  // Typing and confirming a line with Enter still opens the same anchored source and Back keeps the matches.
+  await input.fill('launch');
+  await expect(rows).toHaveCount(2);
+  await input.press('ArrowDown');
+  await expect(rows.first()).toBeFocused();
+  await rows.first().press('Enter');
+  await expect(stage).toHaveCount(0);
+  await expect(forge.editor('README.md')).toBeFocused();
+  const exact = forge.piece('README.md').locator('mark.desk-match');
+  await expect(exact).toHaveText('launch');
+  await expect(exact).toHaveAttribute('data-line', '3');
+  await page.goBack();
+  await expect(input).toHaveValue('launch');
+  await expect(rows.first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(stage).toHaveCount(0);
   await expect(home).toHaveCSS('visibility', 'visible');
   await expect(lens).toBeFocused();
+
+  // Forge still uses its original file and count faces.
+  await app.rail.go('forge');
+  await app.main.getByRole('button', {name: 'Search', exact: true}).click();
+  await expect(stage).not.toHaveClass(/search-on-home/);
+  await input.fill('launch');
+  await expect(rows).toHaveCount(2);
+  await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', mono);
+  await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', mono);
 });
