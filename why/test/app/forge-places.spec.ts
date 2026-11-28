@@ -75,8 +75,30 @@ test('the corner switch shows the actual Prompt without moving the paper; docume
   await expect(terminal.getByRole('heading', {name: 'Prompt', exact: true})).toBeVisible();
   await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-color', 'rgb(232, 228, 223)');
   await expect(terminal.locator('.terminal-paper-head')).toHaveCSS('background-image', 'none');
-  await expect(terminal).toHaveCSS('outline-color', 'rgb(169, 166, 162)');
-  await expect(terminal).toHaveCSS('outline-width', '2px');
+  await expect(terminal).toHaveCSS('border-top-left-radius', '3px');
+  const band = terminal.locator('.terminal-paper-head');
+  const [frameBox, bandBox] = await Promise.all([terminal.boundingBox(), band.boundingBox()]);
+  const ruleY = Math.round(bandBox!.y + bandBox!.height - frameBox!.y) - 1;
+  const screenshot = await terminal.screenshot({scale: 'css', animations: 'disabled', caret: 'hide'});
+  const rim = await page.evaluate(async ({png, ruleY}) => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(png), ch => ch.charCodeAt(0))], {type: 'image/png'}));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext('2d')!;
+    context.drawImage(bitmap, 0, 0);
+    const rgb = (x: number, y: number) => Array.from(context.getImageData(x, y, 1, 1).data.slice(0, 3));
+    return {
+      head: rgb(0, ruleY - 1),
+      rule: [0, Math.floor(bitmap.width / 2), bitmap.width - 1].map(x => rgb(x, ruleY)),
+      body: [rgb(1, ruleY + 4), rgb(bitmap.width - 2, ruleY + 4), rgb(Math.floor(bitmap.width / 2), bitmap.height - 2)],
+    };
+  }, {png: screenshot.toString('base64'), ruleY});
+  const near = (actual: number[], wanted: number[]) => {
+    expect(Math.max(...actual.map((color, i) => Math.abs(color - wanted[i]!))),
+      `rim: got ${actual}; expected ${wanted}; measured ${JSON.stringify(rim)}`).toBeLessThanOrEqual(1);
+  };
+  near(rim.head, [232, 228, 223]);
+  for (const color of rim.rule) near(color, [104, 104, 104]);
+  for (const color of rim.body) near(color, [140, 150, 148]);
   await expect(forge.promptBox).toBeFocused();
   await expect(editor).toBeHidden();
   await expect(retained).toHaveCount(1);

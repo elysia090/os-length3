@@ -110,6 +110,8 @@ test('wide Files keeps the document fixed and separates opening a name from its 
   expect((await word('Makefile').boundingBox())!.y).toBe(nextRowY);
   await expect(index).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(sharp('src')).not.toHaveCSS('background-image', 'none');
+  await expect(sharp('src')).toHaveCSS('background-size', 'calc(100% - 2px) 16px, 100% 14px');
+  expect((await sharp('src').boundingBox())!.width).toBe(40);
   await unchanged();
   await photo('03-real-disclosure');
 

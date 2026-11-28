@@ -164,8 +164,13 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       const top = runtimeLine.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth);
       return top + (runtimeLine.matches('.runtime-masthead > h1') ? parseFloat(css.lineHeight) : 24) / 2;
     })() : null;
-    const pitch = code ? 19 : 24;
+    // The wide Files list has a compact local cadence; its heading sits one small gap above that list.
+    const index = el.closest('.file-tree.on-forge-desk[data-forge-index]');
+    const indexRow = index?.querySelector(':scope > .tree-children > .file-shelf-row:not(.file-shelf-meta-last) > .tree-row');
+    const indexOrigin = el.closest('.file-shelf-heading') ?? indexRow;
+    const pitch = indexRow ? parseFloat(getComputedStyle(indexRow).lineHeight) : code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
+      : indexOrigin ? indexOrigin.getBoundingClientRect().top + pitch / 2
       : tag ? paper!.getBoundingClientRect().top - pitch / 2
       : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
@@ -268,7 +273,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
           expect(f.forgeIndex, `${what}: an unraised Files index precedes the real work paper on one horizon`).toEqual({
             seen:true, sameTop:true, edges:[36,232,312], gap:44, cast:'none',
           });
-          expect(f.indexSizes.sort(), `${what}: only names and their subordinate preview in Files`).toEqual([14,17]);
+          expect(f.indexSizes.sort(), `${what}: one text size for names and previews in the Files index`).toEqual([17]);
         }
         // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
         expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
