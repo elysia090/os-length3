@@ -93,7 +93,7 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(scope).toBeFocused();
   await expectSplitPaper();
   await rows.last().hover();
-  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '50%');
+  await expect(rows.last()).toHaveCSS('--search-selection-share', '50%');
   await page.mouse.move(32, 160);
   await input.focus();
 
@@ -105,9 +105,20 @@ test('Home Search keeps the centered input still while setting out its own resul
   const count = result.getByRole('heading', {name: '2 matches for "launch"', exact: true});
   await expect(count).toHaveCSS('font-family', sans);
   expect((await count.boundingBox())!.y).toBe(candidateHeading.y - 2);
-  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '57%');
+  await expect(rows.first()).toHaveCSS('--search-selection-share', '57%');
   await rows.last().hover();
-  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '40%');
+  const choicePaint = (row: typeof rows) => row.evaluate(el => ({
+    fill: getComputedStyle(el).backgroundImage,
+    blend: getComputedStyle(el).mixBlendMode,
+    number: getComputedStyle(el.querySelector('.sheet-line')!).color,
+    mark: getComputedStyle(el.querySelector('mark')!).backgroundImage,
+    markBlend: getComputedStyle(el.querySelector('mark')!).mixBlendMode,
+  }));
+  const homeStock = await result.evaluate(el => getComputedStyle(el).backgroundImage);
+  const homeActive = await choicePaint(rows.first()), homeHover = await choicePaint(rows.last());
+  expect(homeActive.mark).toBe('linear-gradient(rgb(206, 162, 57), rgb(206, 162, 57))');
+  expect(homeActive.markBlend).toBe('normal');
+  await expect(rows.last()).toHaveCSS('--search-selection-share', '40%');
   await expect(rows.last()).toHaveCSS('background-image', /^conic-gradient\(/);
   await expect(result.locator('.search-screen-enter:visible')).toHaveCount(0);
   expect(await rows.first().evaluate(el => getComputedStyle(el).backgroundImage))
@@ -129,8 +140,8 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(cue).toBeVisible();
   await expect(result.locator('.search-screen-enter:visible')).toHaveCount(1);
   await rows.first().hover();
-  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '40%');
-  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '57%');
+  await expect(rows.first()).toHaveCSS('--search-selection-share', '40%');
+  await expect(rows.last()).toHaveCSS('--search-selection-share', '57%');
   await expect(cue).toBeVisible();
   await page.mouse.move(32, 160);
   await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(74, 71, 66)');
@@ -172,12 +183,18 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(home).toHaveCSS('visibility', 'visible');
   await expect(lens).toBeFocused();
 
-  // Forge still uses its original file and count faces.
+  // Forge uses the same pigments inside its own joined sheet and veil.
   await app.rail.go('forge');
   await app.main.getByRole('button', {name: 'Search', exact: true}).click();
-  await expect(stage).not.toHaveClass(/search-on-home/);
+  await expect(stage).toHaveClass(/search-on-forge/);
+  await expect(page.locator('.search-veil.out')).toBeVisible();
   await input.fill('launch');
   await expect(rows).toHaveCount(2);
+  await expect(group).toHaveCSS('overflow', 'clip');
+  await rows.last().hover();
+  expect(await group.evaluate(el => getComputedStyle(el, '::after').backgroundImage)).toBe(homeStock);
+  expect(await choicePaint(rows.first())).toEqual(homeActive);
+  expect(await choicePaint(rows.last())).toEqual(homeHover);
   await expect(result.getByRole('heading', {name: '2 matches for "launch"', exact: true})).toHaveCSS('font-family', sans);
   await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(result.locator('.search-screen-enter')).toHaveCount(2);

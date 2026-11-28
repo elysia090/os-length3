@@ -309,8 +309,8 @@ test('Forge Search keeps the Enter target distinct from a passing pointer on the
   await expect(first.locator('kbd')).toBeHidden();
 
   await last.hover();
-  await expect(first).toHaveCSS('--search-row-strength', '39%');
-  await expect(last).toHaveCSS('--search-row-strength', '18%');
+  await expect(first).toHaveCSS('--search-selection-share', '57%');
+  await expect(last).toHaveCSS('--search-selection-share', '40%');
   await expect(last.locator('kbd')).toBeHidden();
   await expect(last).toHaveCSS('outline-style', 'none');
 
@@ -494,7 +494,7 @@ phone('on a phone the Search veil keeps the field in reach and uses actual saved
   });
   expect(ink).toBe('rgb(23, 22, 21)');
   expect(upperClip).toMatch(/^polygon\(.+44px.+6px 48px.+52px/);
-  expect(grain).toMatch(/rgb\(227, 222, 213\).*rgb\(239, 235, 227\)/);
+  expect(grain).toMatch(/rgb\(209, 196, 166\).*rgb\(221, 209, 180\)/);
   expect(mask).toBe('none');
   expect(lowerClip).toMatch(/^polygon\(.+52px.+6px 48px/);
   await expect(region.locator('.found-sec')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');

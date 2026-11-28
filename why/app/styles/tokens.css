@@ -218,13 +218,13 @@ body {
   --forge-work-quiet: #b2a48f;
 }
 
-/* Home Search's stock and pigments are separate from Forge's. */
-.search-screen.search-on-home {
-  --home-search-paper: #ddd1b4;
-  --home-search-grain: #d1c4a6;
-  --home-search-selection: #afaba0;
-  --home-search-selected-line: #4a4742;
-  --home-search-mark: #cea239;
+/* Home and Forge use the same Search stock without recoloring either desk. */
+.search-screen:is(.search-on-home, .search-on-forge) {
+  --search-results-paper: #ddd1b4;
+  --search-results-grain: #d1c4a6;
+  --search-results-selection: #afaba0;
+  --search-results-selected-line: #4a4742;
+  --search-results-mark: #cea239;
 }
 
 /* The portrait owns its note's stock, on screen as well as on the departing page. */
