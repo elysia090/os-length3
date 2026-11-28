@@ -1,7 +1,5 @@
-// The rail lists the places, top to bottom, one after another two cells apart, and the world lies in that order: to
-// go to a place further down the rail is to go down (ui/glide.ts travel). The order is how far a place is from the
-// person, nearest first: Home (mine), Forge (the work), Server (people), Runtime (the machine); then what is not a
-// place: File and the plug, called up in front of whatever place is shown, and +, which makes a repo.
+// The traditional rail includes both places and contextual tools, ordered nearest first: Home (mine), Forge (the
+// work), Server (people), Runtime (the machine). File and the plug are called up in front of a place; + makes a repo.
 //
 // Git and Forge are peers on the same work level; both have the Places key. The Remote and Inbox are still each a
 // place's far side, reached by the door at the head of that place: Home's repos where they are kept and Server's
@@ -71,8 +69,24 @@ export const isFar = (id: PurposeId): boolean => id in FAR;
 /** Rail order, top to bottom, as keyboard navigation walks it: the places, then what is not a place. */
 export const RAIL: readonly Purpose[] = [...PURPOSES.filter((p) => !(p.id in FAR) && p.id !== 'git'), NEW_REPO];
 
-/** Where a page lies in the world, down from Home: its place's number on the rail. */
+/** Where a page lies in the world, to the right of Home: its place's number on the rail. */
 export const depth = (id: PurposeId): number => RAIL.findIndex((p) => p.id === placeOf(id));
+
+/** These pages form one horizontal row, and that same order is read down the Places chooser. */
+export const PLACE_PAGES = ['home', 'forge', 'git', 'server', 'inbox', 'runtime'] as const satisfies readonly PurposeId[];
+export type PlacePage = typeof PLACE_PAGES[number];
+const placeIndex = (id: PurposeId) => PLACE_PAGES.findIndex(page => page === id);
+
+export function placeStep(id: PurposeId, direction: -1 | 1): PlacePage | null {
+  const at = placeIndex(id);
+  return at < 0 ? null : PLACE_PAGES[at + direction] ?? null;
+}
+
+/** Contextual tools and side pages keep their own navigation; they are not part of the six-page row. */
+export function placeDistance(from: PurposeId, to: PurposeId): number | null {
+  const start = placeIndex(from), end = placeIndex(to);
+  return start < 0 || end < 0 ? null : end - start;
+}
 
 export const DEFAULT_PURPOSE: PurposeId = 'home';
 

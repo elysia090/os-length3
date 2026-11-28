@@ -521,9 +521,9 @@ export class Box {
     if (!use) { run(`agent: ${t('No API key configured on this device; set one in Runtime')}`, 1); return; }
     run('', 0);
     const term = agentTermFor(at);
+    const front = this.#edit.inFront();
     this.#p.besideTerm?.(at, term.element);
     const row = term.asked(question);
-    const front = this.#edit.inFront();
     const stage = this.#stageBeside(at, term);
     // Born, the camera goes with its terminal as it slides out from under the person's (desk.ts lay), and stays there
     // while its model is first asked: it has looked at nothing yet.

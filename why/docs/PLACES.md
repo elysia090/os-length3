@@ -42,7 +42,7 @@ Places replaces the rail, an ink dot marks the corner key and the destination: I
 Inbox is a step beyond it), Server for new posts. Reading, not merely opening Places, clears the mark.
 
 The band's keys: Home and Forge, the door, the terminal's key, the files' key, the search; Git, the door, the
-terminal's key, the search; New repo, the terminal's key, the files' key, the search (it has no far side). At its
+terminal's key, the search; New repo, the shared Places and Search around one writing sheet (it has no far side). At its
 right end: on Forge the name of what is in the hand; on Git the repo the desk is of.
 
 The widths of DESIGN §3, here: Home's slip 12 cells; the row's first sheet 8 (Git's own, Server's); Inbox's first
@@ -203,8 +203,8 @@ accept its sender; Accept may also join any server invitations still eligible fr
 single piece of paper. Open more than one and the marks at the desk's foot switch between just those opened.
 
 New message → brings out the recipient paper, outside the index. Opening an address takes up its letter; Back or
-Escape puts the recipient paper away without losing what was written. The Places key at the upper right gives
-Server, Inbox, Your usernames and the shell's other destinations in one scrolling list. Signed out, or with no name
+Escape puts the recipient paper away without losing what was written. The Inbox name opens Server, Inbox, Your
+usernames and the shell's other destinations in one scrolling list alongside it. Signed out, or with no name
 yet, the same single deed as the Remote's appears instead.
 
 ### What is said: a transcript
@@ -250,16 +250,16 @@ the paper. Wide, there is open desk to the left and below it; narrow, the paper 
 ### New repo (+)
 
 *One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
-ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is, on one line
-and on a patch of the ground its own size: `~/` and the name as written, a letter no name can have marked where it
-is; then New repo, quiet, which gives way where the line has no room for it whole. In it, a cell of paper each side:
+ink edge, its short shadow: the one on the desk). Its small New repo name opens the shared Places at the left; Search alone stands at the right. There is no rail or
+band above the paper. Its place sits on one line above its corner: `~/` and the name as written, a letter no name can
+have marked where it is. The path, the name and the writing are not three separate papers.
 
 1. the name on its first line in the display face, its capitals a cell tall as every name's (a name longer than the
    line goes on past it as a field's words do: never made smaller for its room); nothing written, the word for what
    goes there, quiet;
 2. a cell; why the name cannot be, where there is a reason, in the small size on lines of a cell (what is under it
    comes down by the cells it takes; the sheet's top never moves);
-3. what the repo is for, on lines of a cell;
+3. the words of its README, two lines to begin with, growing with the words; absent if that file is left out;
 4. a cell; a rule; a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
    cell in; New file and New folder their last line;
 5. a cell; Create, a key the frame's square tall.
@@ -269,7 +269,11 @@ As wide as a piece, as tall as what is in it to the grid's next line, every line
 The repo itself is the sheet, its name the sheet's title: said once, large, and not drawn again as a row of the
 list under it (it was, filled with ink as File fills the repo in hand: a second fill on the sheet, and the name said
 twice). A row's name pressed is written over in its place; what else can be done to it (Rename, Leave out) is its one
-mark's menu, the chevron at its right end, always there and quiet (§5). Nothing on it is coloured by the pointer.
+mark's menu, the chevron at its right end, always there and quiet (§5). A new row proposed under the hand is not
+in the scaffold until its name is taken. Escape puts it away, or leaves a renamed row as it was. Search can be put
+away without taking the name. Back puts the keyboard and selection back where the draft was left, at its old
+scroll. The phone's keyboard moves the paper only enough to keep the current line in view. Create takes the README's
+written lines, including their spaces and blank lines, straight into Forge. Nothing on it is coloured by the pointer.
 Three sizes on it, as on any sheet: the name's, the words' (15), the small (13); and the key's own name.
 
 ### File
@@ -361,7 +365,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
 | The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
+| Going to another place: the two pages move as one over the still ground, leaving the frame fixed, one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
 | What comes is there at once: an arrival and a band changed are cuts, motion asked for or not (§8) | `why/app/ui/glide.test.ts` |
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
@@ -585,19 +589,41 @@ The row runs on past the window's right edge, and the piece cut by that edge
 says so: there is more that way. Nothing is under a piece and nothing over
 it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
-**At the corner.** Two 44 px keys, 12 px from the upper and right edges:
-Places at the edge and a lens beside it. Each mark is 18 px.
-The two windows in the Places mark do not change when pressed; the key
-sinks into 28 px of the desk and the menu is the paper. Prompt, Forge,
-Files, Git, Home, Server, Runtime, Plugin, New repo and Account are on one
-scrolling list. Five lines of 28 px fit in the ordinary menu, four in a window
-360 px tall or less when there is room. Arrow keys, Home and End bring the
-focused line into view, and Escape puts the list away. Files is the current
-repo's tree, with actions on its rows. The whole filesystem is still File
-on Home's rail. With no repo, Open Folder is the empty desk's own first move.
+**At the frame.** The name of the place is its Places button: its words start at (48, 24), or (24, 24) in a
+window up to 1000 px wide. The lens keeps the right corner. Each target is at least 44 px tall and wide. The
+name stays in place and a single vertical list opens just below it: Home, Forge, Git, Server, Inbox and Runtime.
+They sit on the desk without a sheet, border, shadow or separator. A shallow veil puts only the work behind the list
+out of focus. The keyboard moves within the list; Escape, the name or the quiet ground puts it away and gives
+the name the keyboard back. A place chosen from this list or by the title's horizontal swipe keeps that keyboard
+in the frame, not in an editor or shell. An adjacent place is one sideways step; a farther choice goes straight there.
+Back and Forward keep a keyboard left at the frame with the frame.
 
-The lens opens a dedicated Search screen. The query has the keyboard as
-it comes in. The editor shortcuts still open the quick in-place search;
+The same title takes a secondary press, Shift+F10, or a stationary hold on touch for the desk's tools.
+The one list then holds contextual actions rather than destinations, including Files and Prompt where applicable,
+and the retained File, Account and other tools. It does not add rows to Places. Prompt also opens by its own key
+beside the work, including on a narrow desk.
+
+Files is the current repo's tree, fixed beside the paper on a wide desk and its own face on a narrow one. A folder
+previews one real child; pressing its name or the existing right chevron reads and opens its children there, without
+moving the paper. On a wide pointer desk the index is printed on the desk's dots, with one left edge, one word
+size and one row rhythm. One preview and one real child occupy the same line. Only an open branch has ink behind
+its name; its chevron stays in place and goes quieter. A file's name opens its paper where the caret and scroll
+were left. File rows on the pointer desk need no chevron; right-click or Shift+F10 calls up operations in the row's
+right lane. Escape returns to the name, not to another document. The whole filesystem is still File.
+With no repo, Open Folder is the empty desk's own first move.
+
+The standards here are the [UIKit title menu](https://developer.apple.com/videos/play/wwdc2022/10068/?time=1052)
+(the name opens the choices), UIKit's [popover](https://developer.apple.com/documentation/uikit/uimodalpresentationstyle/popover)
+(a tap outside dismisses it without acting on the work beneath), [Things' gestures](https://culturedcode.com/things/support/articles/2803582/)
+(distinct gestures for going somewhere and manipulating a list), and [Safari on iPhone](https://www.apple.com/newsroom/2021/09/ios-15-is-available-today-making-iphone-more-personal-and-capable-than-ever/#redesigned-browsing-with-safari)
+(the navigation stays put while another page comes in). Frequent destinations sit together, as in
+[Linear Mobile's pinned navigation](https://linear.app/changelog/2026-01-22-customize-your-navigation-in-linear-mobile).
+The visible target works by a press, without requiring a gesture or an extra button, using the
+[44-point target](https://developer.apple.com/design/human-interface-guidelines/buttons) as its reference.
+
+The lens opens one Search paper over the current desk. Its query has the keyboard as
+it comes in. The same ground wash and three planes of blur as the old band's search
+leave the work visible, quiet, and out of reach until the paper is put away. The editor shortcuts still open the quick in-place search;
 neither puts a permanent search strip on the working desk. The centered
 paper starts as the field alone. A press on the empty field or Down asks
 for real file suggestions, the desk's first. Typed words instead find
@@ -605,27 +631,30 @@ paths, lines and excerpts. Back is on the upper left; the repo name
 on the upper right chooses another repo kept here, without moving or
 clearing the field. Escape puts away open choices first; Escape again,
 or Back, gives the work its keyboard
-and selection back. Enter or a press on a match goes to the saved line
-in Forge; browser Back revisits the search, with its scope and query.
+and selection back. A press on the veil also gives the work back, without pressing through to it.
+Enter or a press on a match takes its regular Forge paper in hand, opening it only
+if it was not open. The words found stay in yellow on that paper, not in the
+editing selection. A line already in view does not move; another comes into view
+with lines around it. Browser Back revisits the search with scope, query, row and
+scroll; closing Search gives the original paper, reading position and selection back.
 The entry moves only its own contents a small step in 140 ms, or no
 motion when the system asks for less.
 
-**The terminal.** Prompt opens a companion on the right of the same
-Forge desk. It does not choose another place, cover a file, or take its
-editor and selection away. Its thin band rises above the working paper;
-the text face and document paper share their upper edge. The text face
-has a fine neutral grain with sharp mono text above it. Twenty rows fit
-at ordinary desktop size, with the history scrolled in the window. The
-two end triangles and the two parts of the band’s ruled strip switch
-between two independent shells of the same repo. Each keeps its draft
-and scrollback. The shared right-click menu’s Close puts the window
-away, not the shells. Opening Prompt again brings the same window out.
-On a narrow desk the terminal sits below the document instead of laying
-over it.
+**The terminal.** On a wide Forge desk, Prompt takes the document's place in
+the same work bay. The Files column stays still. Back, Escape or another
+paper's mark brings the writing back without reopening the file. Prompt has
+one ordinary mark in the paper row while it is open. Its own window keeps a
+silver edge, a centred title and three quiet rules on either side of it.
+The two end triangles and the two small marks inside the window switch
+between its independent shells. Each keeps its draft and scrollback; the
+history uses the same native scrollbar as a document. Close in the shared
+right-click menu puts the window away, not the shells. On a narrow desk
+the terminal is still a companion to the document.
 
 **A file** is a work surface even before a line is written. The open
-documents are 576 px wide at full measure, 12 px apart and top-aligned.
-At 1536 × 864 each stands at y=90, 744 px tall; 720 px of that is its
+documents are 12 px apart and top-aligned. The wide work bay fits each
+paper to its grid; the compact desk caps the paper width at 576 px.
+At 1536 × 864 a paper stands at y=96, 732 px tall; 708 px of that is its
 scrollport, room for 37 full lines at a 19 px pitch. A short, long or blank
 file owns the same space. Only actual lines are numbered. A press below the
 text puts the caret at its end, never adds lines. Real lines past the lower
@@ -647,7 +676,8 @@ the sheet after its edits are saved.
 pressed while fully in sight stays under the hand. The keyboard and the
 row's map can take a piece to the desk's edge; the same stops fit a narrow
 window. The wheel over a paper scrolls that paper itself, not past it into
-the desk. The terminal stays in its own bay as the document row turns.
+the desk. On a wide desk the terminal takes its turn at the same opening; on a narrow
+desk its companion window stays as the document row turns.
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the
@@ -2305,29 +2335,24 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-One piece being born at the desk's edge, with Home's and Forge's band round
-it (the rail goes between the three as a camera over one desk), and it is the
-hand's: paper, an ink edge, its shadow, the one shadow on the desk. Over its
-corner, in the cell a piece's name stands in, ~/ and the name as written,
-then New repo; its top a cell under the band, as every piece's is. It is a
-piece wide (24 cells, or as many as the window has room for), and as tall as
-what is in it to the grid's next line.
-In it, a cell of paper each side. Its first line, the name, in the display
+One piece being born at the desk's edge, the hand's: paper, an ink edge and
+one short shadow. Standard Places and Search stay out of the writing measure.
+Its path (`~/` and the name as written) stands over the paper, one line with
+no other name. It is a piece wide (24 cells, or as many as the window has
+room for), and as tall as what is in it to the grid's next line.
+On a narrow desk the inset is smaller, and the same rows and keys have room
+for a finger. Its first line, the name, in the display
 face at the size of every name (its capitals a cell tall), never made larger
 or smaller for its room: a name longer than the line runs on past it as a
 field's words do. Nothing written yet, the word name stands there in the
 rule's colour (the field itself holds no example: one there reads as a name
 given, and its row as the repo to be made).
-Under it, a sentence's size, what the repo is for (概要): the words go
-into its README.md under its title, and the box grows with them, a line to
-begin with. Under a rule under that, what will be made with it (作成され
-るもの), as File will show it: the repo's own row, its name again in ink
-(dashed where nothing is named), and the one scaffold every repo starts from
-(nothing to choose: why/repo/templates.json's `standard`, as `why repo new`
-makes it: README.md with docs/ and issue/, no language of its own; C's files
-are `why repo new -t c`'s), each row renamed or left out where it stands,
-New file and New folder at its foot, README.md's size at its row's end as
-File gives it, of what it will say. Create, the one primary action, at the
+Under it are the words of the README, two lines to begin with, written into
+that file under the title (also if the file is renamed). Under a rule are the
+actual folders and files to be made, never a second row for the repo: the
+standard scaffold is README.md and docs/, with no language of its own.
+Rows are renamed or left out in place; New file and New folder are at their
+foot. The projected README size is said only after a valid name is written. Create, the one primary action, at the
 box's foot, ↵ beside its word. A name that cannot be is said as it is
 written, not once Create is pressed: over the box, after where it will
 stand, in the off colour with an off dot before it; the name itself in the

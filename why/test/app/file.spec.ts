@@ -22,7 +22,9 @@ test.describe("on 'hello', made from C's files", () => {
 
     await app.forge.use('Files');
     const files = app.page.getByRole('tree', {name: 'hello', exact: true});
-    await expect(files.getByRole('button', {name: 'main.c', exact: true})).toHaveAttribute('aria-current', 'location');
+    const src = files.getByRole('treeitem', {name: 'src', exact: true});
+    if (await src.getAttribute('aria-expanded') !== 'true') await src.getByRole('button', {name: 'src', exact: true}).click();
+    await expect(src.getByRole('button', {name: 'main.c', exact: true})).toHaveAttribute('aria-current', 'location');
     await expect(files.getByRole('button', {name: 'README.md', exact: true})).not.toHaveAttribute('aria-current', 'location');
     await expect(files.getByRole('button', {name: 'hello', exact: true})).toHaveAttribute('aria-current', 'page');
   });

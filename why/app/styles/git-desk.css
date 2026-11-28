@@ -30,7 +30,7 @@ body:has(> #page[data-place='git']) {
   background: var(--ground) var(--git-dots) 0 calc(-1 * var(--outer-top)) / var(--u) var(--u);
 }
 .git-layout .git-switch { --quiet: var(--edge); }
-.git-layout .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']):not(:focus) { color: var(--edge); }
+.git-layout .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']):not(:focus-visible) { color: var(--edge); }
 
 /* Ink follows the reading surface; the tag, history and controls outside the paper stay in desk ink. */
 .git-layout :is(.git-desk .issue-slot:is([aria-current='true'], .leaving) > .issue-card, .forge-menu, .band-tools) {
@@ -78,22 +78,24 @@ body:has(> #page[data-place='git']) {
   outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
-.switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
-.switch-line.next::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
-/* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px.) */
-.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+.switch-line { position: relative; display: flex; min-height: var(--u); }
+.switch-line.next::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); pointer-events: none; }
+/* The whole painted line is the step's one hit target. Keep the inset on its words, not around the button. */
+.git-switch .switch-line > :is(button, span) { position: relative; flex: 1; display: flex; align-items: center;
+  min-width: 0; min-height: var(--u); text-align: start; text-box: normal; margin: 0; padding: 0 var(--u);
+  border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }
 /* The keyboard on a step: the band of ink is where it is, as the chosen row of a menu is. ↑ and ↓ take the band along
-   the four, Enter takes the step under it; with the keyboard elsewhere, the band rests on the step under way. (A ring
+   the four, Enter takes the step under it; pointer focus must not keep the band on the last completed step. (A ring
    drawn round the keyboard's line beside a band that stayed put said two places at once, and ↑ ↓ moved neither.) */
 .git-switch .switch-line > button:focus-visible { outline: none; }
-.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus))::before { display: none; }
-.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus)) > :is(button, span) { font-weight: 400; color: var(--sub); }
-.git-switch .switch-line:has(> button:focus)::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
-.git-switch .switch-line:has(> button:focus) > button { font-weight: 700; color: var(--ground); }
+.git-switch .switch-lines:has(.switch-line > button:focus-visible) .switch-line.next:not(:has(> button:focus-visible))::before { display: none; }
+.git-switch .switch-lines:has(.switch-line > button:focus-visible) .switch-line.next:not(:has(> button:focus-visible)) > :is(button, span) { font-weight: 400; color: var(--sub); }
+.git-switch .switch-line:has(> button:focus-visible)::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); pointer-events: none; }
+.git-switch .switch-line:has(> button:focus-visible) > button { font-weight: 700; color: var(--ground); }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
 /* A key's own menu, not a new piece of paper. No effect on the issue's geometry, fill or shadow. */

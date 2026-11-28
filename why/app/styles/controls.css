@@ -25,6 +25,7 @@
 .error { font-size: var(--t-word); }
 .error:empty { display: none; }
 .row { display: flex; gap: var(--s2); }
+.work-act .grow { flex: 1; }
 /* Declining at the left, going on at the right (common.ts answers). */
 /* (A row of keys: each the frame's square in a field of two cells, DESIGN §3: a quarter cell over and under it, and
    where the keys go onto a second row, the two quarters between.) */

@@ -7,8 +7,8 @@ import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {ground} from '../../ui/row.ts';
-import {rowMap} from '../../ui/row-desk.ts';
-import {ahead, atRest, eased, GRID, next, PAD, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
+import {rowMap, type Piece} from '../../ui/row-desk.ts';
+import {ahead, atRest, eased, GAP, GRID, next, PAD, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, widthOn} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
 // every piece is one width (fifty letters), its name over its top-left corner, its top on one line. What is under a
@@ -100,6 +100,7 @@ function standAt(el: HTMLElement, x: number, y: number) {
 export class Desk {
   readonly element: HTMLElement;
   readonly #plane: HTMLElement;
+  readonly #sideIndex = matchMedia('(min-width: 1001px)');
   readonly #boxes = new Map<string, Box>();
   #row: string[] = [];
   #held: string | null = null;
@@ -130,27 +131,39 @@ export class Desk {
    * press on the desk), it was turned by hand, and the eye is where it looked. */
   #aim = 0;
   #handAt = 0;
+  /** A click in the visible text of a clipped paper keeps that text still until an actual edit or caret key. */
+  #textUnderHand = false;
   /** The width every piece had when the row was last laid. */
   #bw = 0;
   /** The row's map at the window's foot (ui/row-desk.ts): what is out of sight, which way and how far, and the way to it by a press. */
   readonly #map: {element: HTMLElement; paint(): void};
+  #presented: Pick<Piece, 'name' | 'go'> | null = null;
   #turnedTo = 0;
   readonly #shut: (key: string) => void;
   readonly #changed: () => void;
 
   /** `label`: what the desk is called, to be heard (the repo's files), `repo` whose it is; `shut`: a piece's own close pressed (its key);
    * `changed`: what lies where, or which is in hand, changed (to be kept). */
-  constructor(label: string, repo: string, shut: (key: string) => void, changed: () => void = () => {}) {
+  constructor(label: string, repo: string, shut: (key: string) => void, changed: () => void = () => {},
+    mapTake?: (key: string) => boolean) {
     this.#shut = shut;
     this.#changed = changed;
     this.#plane = h('div', {class: 'desk-plane'});
     this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
-    this.#map = rowMap(this.element, () => this.#row.map((key) => {
-      const b = this.#boxes.get(key)!;
-      const name = b.label.textContent?.trim() || key;
-      return {x: b.x, w: b.w, held: key === this.#held,
-        name: b.laid.companion ? t('Beside: {name}', {name}) : name, go: () => this.take(key)};
-    }), undefined, SHADOW);
+    this.#map = rowMap(this.element, () => {
+      const pieces = this.#row.map((key): Piece => {
+        const b = this.#boxes.get(key)!;
+        const name = b.label.textContent?.trim() || key;
+        return {x: b.x, w: b.w, held: !this.element.inert && key === this.#held,
+          name: b.laid.companion ? t('Beside: {name}', {name}) : name, go: () => {
+            if (!mapTake?.(key)) this.take(key);
+          }};
+      });
+      const last = pieces.at(-1);
+      if (this.#presented) pieces.push({x: last ? last.x + last.w + GAP : PAD, w: this.#bw || last?.w || 0,
+        held: true, ...this.#presented});
+      return pieces;
+    }, undefined, SHADOW);
     // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not.
     ownCamera(this.element, {away: () => Promise.resolve(), afar: () => {}, near: () => {}, far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));
@@ -166,11 +179,16 @@ export class Desk {
       if ((at as Element | null)?.closest?.('.desk-label')) return;
       const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
-      if (this.#framed) { this.#framed = null; this.#look(true); }
+      if (this.#textUnderHand) {
+        this.#textUnderHand = this.#pressed = false;
+        this.#framed = null;
+        this.#look(false);
+      } else if (this.#framed) { this.#framed = null; this.#look(true); }
     };
     this.element.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
-      writtenIn(e.target);
+      if (e.isComposing || e.altKey) return;
+      const caret = this.#textUnderHand && /^(?:Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(e.key);
+      if (caret || (!e.ctrlKey && !e.metaKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace'))) writtenIn(e.target);
     }, true);
     // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
@@ -188,8 +206,8 @@ export class Desk {
       // Turned by hand (not by the desk going somewhere): what is in hand stays where the hand left it, as if pressed.
       if (!this.#glide && Math.abs(this.#turnedTo - this.#aim) > .5 && performance.now() - this.#handAt < 1000) this.#pressed = true;
       this.#said();
-      // The ground goes with the pieces: the dots are the desk's, not the window's (whole cells at every rest).
-      ground(this.#turnedTo, GRID);
+      // The adjacent file index belongs to the fixed ground, not to the moving paper row.
+      ground(this.#stays() ? 0 : this.#turnedTo, GRID);
       // Scrolled by hand (not turned to a piece) and then left, where the browser has not brought it to rest at a
       // piece itself (styles: scroll-snap): it goes on to the nearest.
       clearTimeout(this.#letGo);
@@ -224,11 +242,33 @@ export class Desk {
 
   /** The key of the piece in hand. */
   get held(): string | null { return this.#held; }
+
+  #stays(): boolean { return this.#sideIndex.matches && !!this.element.closest('.forge-layout'); }
+
+  /** Keep the papers and their local Undo, and add the presented piece to the same map. */
+  paperInHand(inHand: boolean, presented: Pick<Piece, 'name' | 'go'> | null = null) {
+    this.#presented = presented;
+    this.element.inert = !inHand;
+    this.#map.paint();
+  }
+
   /** A place switch returns the keyboard without turning the file camera. */
   focusHeld() {
     const box = this.#held === null ? null : this.#boxes.get(this.#held);
     if (box) box.laid.focus();
     else this.element.focus({preventScroll: true});
+  }
+  /** The map is a sibling of its desk. Neither is reachable while another repo is in hand. */
+  show(shown: boolean) {
+    this.element.hidden = !shown;
+    if (!shown) this.#map.element.hidden = true;
+    else if (this.#map.element.isConnected) this.#map.paint();
+  }
+
+  drop() {
+    this.#sized.disconnect();
+    this.#map.element.remove();
+    this.element.remove();
   }
   /** Whether `key` lies on the desk. */
   has(key: string): boolean { return this.#boxes.has(key); }
@@ -262,8 +302,13 @@ export class Desk {
     scrollMarks(el);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the desk turns after the
     // press, never under it.
-    el.addEventListener('click', () => {
-      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, true);
+    el.addEventListener('click', (e) => {
+      const inside = el.contains(document.activeElement);
+      if (this.#held === key && inside) return;
+      const paper = el.getBoundingClientRect(), view = this.element.getBoundingClientRect();
+      const clippedText = e.detail > 0 && (e.target as Element).matches('textarea.code-edit') &&
+        (paper.left < view.left || paper.right + SHADOW > view.right);
+      this.take(key, !inside, true, true, clippedText);
     });
     this.#plane.append(el);
     this.#sized.observe(el);
@@ -326,7 +371,7 @@ export class Desk {
 
   /** `key` in hand, the desk turned to it (gliding there, unless `glide` is false), with the keyboard (`focus`):
    * `pressed`, by a press on it, so it stays under the hand; gone to any other way, it comes to the desk's edge. */
-  take(key: string, focus = true, glide = true, pressed = false) {
+  take(key: string, focus = true, glide = true, pressed = false, textUnderHand = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
     const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
@@ -334,6 +379,7 @@ export class Desk {
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
     this.#pressed = pressed;
+    this.#textUnderHand = textUnderHand;
     this.#framed = null;
     this.#look(glide);
     // The piece put down stays as it was in the hand while the desk turns away from it, and is put down once the desk
@@ -404,9 +450,11 @@ export class Desk {
     if (this.#away) { this.#away = false; this.#pressed = false; }
     // Where the line being written may stand in a sheet (§2 look room): out of the third it goes towards.
     const lead = ahead(hgt);
-    // Every piece fifty letters wide, or as wide as the face has room for with its shadow (a phone's: the one rule).
-    const bw = Math.min(WIDTH, Math.max(10 * GRID, GRID * Math.floor((w - PAD - SHADOW) / GRID)));
+    // The wide desk normally fits one sheet. The explicit Beside toggle keeps both views of that file in sight.
+    const beside = this.#row.some(key => this.#boxes.get(key)!.laid.companion);
+    const bw = widthOn(w, this.#stays(), beside);
     const resized = this.#bw !== 0 && this.#bw !== bw;
+    if (resized && this.#textUnderHand) this.#textUnderHand = this.#pressed = false;
     this.#bw = bw;
     const {at, end} = row(this.#row, bw);
     for (const key of this.#row) {
@@ -425,12 +473,13 @@ export class Desk {
       const to = `${x}px ${TOP}px`;
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }
-    // (Wide enough for the last piece to stand at the edge.)
-    const last = this.#row.at(-1);
-    this.#plane.style.width = `${Math.max(end, last === undefined ? w : planeWidth(at.get(last)!, w))}px`;
+    // The fitted desk ends at the last snap, with no extra cell visible past it. The compact row keeps its foot.
+    const last = this.#row.at(-1), edge = last === undefined ? w : planeWidth(at.get(last)!, w);
+    this.#plane.style.width = `${this.#stays() ? edge : Math.max(end, edge)}px`;
     this.#plane.style.height = `${hgt}px`;
     this.#said();
-    this.#look(glide);
+    // A file finishing its own layout does not cancel the running camera; a true width change does.
+    this.#look(glide || (this.#stays() && !resized && this.#glide !== null));
     this.#changed();
   }
 
@@ -446,7 +495,8 @@ export class Desk {
     if (!b) return;
     const now = atRest(this.#glide?.to ?? this.element.scrollLeft, this.#starts());
     // (Over the Agent's work the desk turns as little as shows it; the piece in hand by how it was taken.)
-    const to = this.#framed ? turnedTo(now, b.x, b.w, w, this.#starts()) : restFor(this.#pressed, now, b.x, b.w, w, this.#starts());
+    const to = this.#framed ? turnedTo(now, b.x, b.w, w, this.#starts())
+      : this.#textUnderHand ? now : restFor(this.#pressed, now, b.x, b.w, w, this.#starts());
     this.#go(to, moving && !still());
   }
 
@@ -495,7 +545,7 @@ export class Desk {
     if (this.#saying) return;
     this.#saying = requestAnimationFrame(() => {
       this.#saying = 0;
-      if (!this.element.isConnected) return;
+      if (!this.element.isConnected || this.element.hidden) return;
       if (!this.#map.element.isConnected) this.element.parentElement?.append(this.#map.element);
       this.#map.paint();
     });

@@ -187,6 +187,21 @@ body:has(> .page.page-inbox > .inbox-shell) > .rail { display: none; }
 @media (max-width: 519px) {
   .page.page-inbox > .inbox-shell { --inbox-inset: 20px; }
   .inbox-top h2 { font-size: var(--t-inbox-compact-title); }
+  /* The person's name must not size the letter's column or push its acts off the paper. */
+  .inbox-thread[data-kind=letter] { grid-template-columns: minmax(0, 1fr); }
+  /* Even a full custom domain can be read, without taking the writing line out of the window. */
+  .inbox-thread[data-kind=letter] > .inbox-top {
+    max-block-size: min(calc(9 * var(--u)), 40dvh); overflow: auto;
+  }
+  .inbox-thread[data-kind=letter] > .inbox-top > :is(h2, .inbox-address) {
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .inbox-thread[data-kind=letter] > .inbox-top > h2 {
+    /* Give wrapped lines their own measure while the first line stays on its old baseline. */
+    line-height: calc(1.5 * var(--u)); padding-block: calc(var(--u) / 4); text-wrap: balance;
+  }
   .inbox-words { font-size: var(--t-inbox-write); }
+  /* The address is read above. Only writing, not the placeholder, can grow the writer. */
+  .inbox-thread[data-kind=letter] .inbox-reply:placeholder-shown { max-block-size: var(--u); }
   .inbox-footer { max-height: 168px; }
 }

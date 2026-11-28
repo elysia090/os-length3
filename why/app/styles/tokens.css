@@ -211,6 +211,20 @@ body {
   --nighthawks-paper-selected: #ded3bb;
   --nighthawks-paper-off: var(--off);
   --nighthawks-shadow: #1a1d17;
+  /* Forge's active writing material also belongs to the Search field. */
+  --forge-work-face: #1a272d;
+  --forge-work-grain: #1e2b31;
+  --forge-work-ink: var(--nighthawks-paper);
+  --forge-work-quiet: #b2a48f;
+}
+
+/* Home and Forge Search share their paper and pigments without recoloring either desk. */
+.search-screen:is(.search-on-home, .search-on-forge) {
+  --search-results-paper: #e8e6e3;
+  --search-results-grain: #dcdad7;
+  --search-results-selection: #afaba0;
+  --search-results-selected-line: #4a4742;
+  --search-results-mark: #cea239;
 }
 
 /* The portrait owns its note's stock, on screen as well as on the departing page. */
@@ -260,8 +274,15 @@ body {
   --t-inbox-title: 38px;
 }
 
-/* The Forge Prompt is a warm neutral, quieter in colour than the paper beside it. */
-body.forge-place {
+/* The Forge file index uses the same text scale as an Inbox sender and its excerpt. */
+.file-tree[data-forge-index] {
+  --forge-index-ink: #e5d5b8;
+  --forge-index-quiet: #d4c3a8;
+  --t-file-index-detail: 14px;
+}
+
+/* The Forge Prompt's frame keeps its material when its departing page is copied. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) {
   --prompt-edge: #242424;
   --prompt-face: #edeae5;
   --prompt-grain: #e9e6e1;
@@ -297,6 +318,8 @@ body.forge-place {
   --prompt-turn-hot: #d0cbc5;
   --prompt-turn-hot-ink: #151515;
   --prompt-face-edge: #a9a6a2;
+  --prompt-frame-body: color-mix(in srgb, #657473 70%, var(--prompt-band));
+  --r-prompt-frame: 3px;
   --prompt-face-shade: #b0ada8;
   --prompt-face-light: #f8f5f1;
   --prompt-scroll-track: #dad6d1;
@@ -306,4 +329,11 @@ body.forge-place {
   --prompt-scroll-active: #646464;
   --prompt-scroll-hot: #cac5bf;
   --prompt-scroll-focus: #6b6b6b;
+}
+
+
+/* The ruling and selection of Forge's active work face. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) {
+  --forge-work-rule: #73817f;
+  --forge-work-mark: #36413d;
 }

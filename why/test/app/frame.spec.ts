@@ -6,7 +6,7 @@ import {expect, test} from './fixtures.ts';
 //   one degree      the frame is 2 cells (48 px, about 1° at arm's length) every way, on every screen
 //   receding        it takes no more of a desk screen than film's safe-action margin does (13.5%)
 //   one square      every place of the rail a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at 2 px
-//   constant        the rail the same where it stands; corners pair Search and Places even before a repo exists
+//   constant        the rail the same where it stands; a place name on the left and Search on the right even before a repo exists
 //   two sides       no work through the top strip, or through the desk's left measure (one cell in narrow Forge)
 //   quiet           at rest the frame's marks and words are the frame's quiet colour, its lines the quiet line, nothing
 //                   in it filled with ink; ink only on the place one is in and what is chosen there
@@ -16,7 +16,7 @@ const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
 const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)';
 const QUIET = 'rgb(193, 190, 176)', PAPER = 'rgb(239, 235, 227)';
-const CORNER: Partial<Record<typeof PLACES[number], string>> = {home: QUIET, forge: QUIET, git: QUIET, server: QUIET, inbox: PAPER, runtime: QUIET};
+const CORNER: Partial<Record<typeof PLACES[number], string>> = {home: QUIET, 'new-repo': QUIET, forge: QUIET, git: QUIET, server: QUIET, inbox: PAPER, runtime: QUIET};
 
 /** The frame as it stands now: run in the page. */
 function framed() {
@@ -32,7 +32,7 @@ function framed() {
   const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .server-masthead, .server-sidebar, .server-overline, .band-tools, .band-held, .page-veil, .forge-title, .git-title, .inbox-title, .inbox-over, .runtime-masthead > h1, .forge-places-key, .forge-search-key, .sr-only';
   // A narrow desk can use one cell of left margin; the top strip does not change.
   const place = document.getElementById('page')?.dataset.place;
-  const one = place === 'home' || place === 'runtime' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
+  const one = place === 'new-repo' ? 1000 : place === 'home' || place === 'runtime' ? 600 : place === 'forge' || place === 'inbox' || place === 'server' ? 999 : 0;
   const left = W <= one ? 24 : F;
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
@@ -67,13 +67,16 @@ function framed() {
     for (const line of [c.outlineStyle !== 'none' && c.outlineWidth !== '0px' ? c.outlineColor : '', c.boxShadow.includes(INK) && !c.boxShadow.includes('12px') ? INK : ''])
       if (line === INK) loud.push(`${name}: a line of ink`);
   }
-  const corners = [...document.querySelectorAll('#page :is(.forge-places-key, .forge-search-key)')].filter(shown).map((key) => {
+  const placesKey = [...document.querySelectorAll('#page .forge-places-key')].filter(shown).map((key) => ({
+    key: box(key), label: box(key.querySelector('.places-label')!), text: key.textContent, expanded: key.getAttribute('aria-expanded'),
+  }));
+  const search = [...document.querySelectorAll('#page .forge-search-key')].filter(shown).map((key) => {
     const mark = key.querySelector('svg')!, c = getComputedStyle(key);
-    return {label: key.getAttribute('aria-label'), key: box(key), mark: box(mark), expanded: key.getAttribute('aria-expanded'), color: c.color,
+    return {label: key.getAttribute('aria-label'), key: box(key), mark: box(mark), color: c.color,
       inked: c.backgroundColor === INK || c.outlineStyle !== 'none' || c.boxShadow !== 'none'};
   });
   const door = document.querySelector('.door:not([hidden])');
-  return {W, H, places, corners, door: door && shown(door) ? box(door) : null, intrudes, loud};
+  return {W, H, places, placesKey, search, door: door && shown(door) ? box(door) : null, intrudes, loud};
 }
 
 test('the frame is the camera\'s: one degree, receding, one square, a stable rail or corner, on two sides only, and quiet at rest', async ({signedIn: app}) => {
@@ -114,31 +117,24 @@ test('the frame is the camera\'s: one degree, receding, one square, a stable rai
         if (CORNER[place]) {
           expect(f.places, `${what}: no permanent rail on a work desk`).toHaveLength(0);
           expect(f.door, `${what}: no second way beside the Places key`).toBeNull();
-          const key = (label: 'Places' | 'Search', right: number) => ({
-            label, key: [size.width - right - 44, 12, 44, 44],
-            mark: [size.width - right - 31, 25, 18, 18],
-            expanded: label === 'Places' ? 'false' : null, color: CORNER[place], inked: false,
-          });
-          expect(f.corners, `${what}: Search and Places share one quiet corner`).toEqual([key('Search', 56), key('Places', 12)]);
-          await expect(app.main.getByRole('button', {name: 'Places', exact: true})).toBeVisible();
+          expect(f.search, `${what}: only Search on the right`).toEqual([{
+            label: 'Search', key: [size.width - 12 - 44, 12, 44, 44], mark: [size.width - 12 - 31, 25, 18, 18],
+            color: CORNER[place], inked: false,
+          }]);
+          expect(f.placesKey).toHaveLength(1);
+          const {label, key, text, expanded} = f.placesKey[0]!;
+          expect(text?.toLowerCase()).toBe(place.replace('-', ' '));
+          const edge = size.width <= 1000 ? U : F;
+          expect([label[0], label[1], label[3]], `${what}: place name follows Forge's anchor`).toEqual([edge, U, U]);
+          expect([key[0], key[1], key[3], expanded]).toEqual([edge - 8, 14, 44, 'false']);
+          expect(key[2]).toBeGreaterThanOrEqual(44);
+          await expect(app.forge.placesKey).toHaveAccessibleName(text!);
           if (place === 'runtime') {
-            // Its name belongs to the frame, but only where it is written, not underneath the corner keys.
             const name = app.main.getByRole('heading', {name: 'Runtime', exact: true});
-            await expect(name).toBeVisible();
-            const title = (await name.boundingBox())!;
-            expect([title.x, title.y, title.height], `${what}: the place name stands in the frame`).toEqual([
-              size.width <= 600 ? U : F, U, U,
-            ]);
-            const ink = await name.evaluate((el) => {
-              const range = document.createRange();
-              range.selectNodeContents(el);
-              return range.getBoundingClientRect().width;
-            });
-            expect(title.width, `${what}: the place name ends with its ink`).toBeCloseTo(ink, 1);
-            expect(title.x + title.width, `${what}: clear of the corner keys`).toBeLessThan(f.corners[0]!.key[0]!);
+            await expect(name.getByRole('button', {name: 'Runtime', exact: true})).toBeVisible();
           }
         } else {
-          expect(f.corners, `${what}: only the permanent rail here`).toHaveLength(0);
+          expect([...f.placesKey, ...f.search], `${what}: only the permanent rail here`).toHaveLength(0);
           rail ??= now;
           expect(now, `${what}: the permanent rail as on the other places`).toBe(rail);
         }
@@ -156,10 +152,14 @@ test('the frame is ink only under the hand: the corner and the rail each answer 
   const search = app.main.getByRole('button', {name: 'Search', exact: true}), places = app.forge.placesKey;
   await app.page.mouse.move(800, 600);
   await expect(search).toHaveCSS('color', QUIET);
-  await expect(places).toHaveCSS('color', QUIET);
+  await expect(places).toHaveCSS('color', PAPER);
   await search.hover();
   await expect(search).toHaveCSS('color', PAPER);
-  await expect(places).toHaveCSS('color', QUIET);
+  await expect(places).toHaveCSS('color', PAPER);
+  await places.press('Enter');
+  await expect(places.locator('.places-label')).toHaveCSS('text-decoration-line', 'underline');
+  await app.page.keyboard.press('Escape');
+  await expect(places).toBeFocused();
 
   await app.rail.go('remote');
   const forge = app.rail.button('forge');

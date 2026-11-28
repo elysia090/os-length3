@@ -4,13 +4,15 @@ import {touch} from './touch.ts';
 
 test('a press is down at once and up at once, with less motion asked for too: being held is a state, not a move', (t) => {
   const document = new EventTarget(), window = new EventTarget();
-  const animations: {cancelled: boolean; frames: Keyframe[]; options: KeyframeAnimationOptions}[] = [];
+  const animations: {target: Button; cancelled: boolean; frames: Keyframe[]; options: KeyframeAnimationOptions}[] = [];
   class Button extends EventTarget {
+    face: Button | null = null;
     closest(selector: string) { return selector.startsWith('button') ? this : null; }
     matches() { return false; }
+    querySelector(selector: string) { return selector === ':scope > [data-press-face]' ? this.face : null; }
     getBoundingClientRect() { return {width: 40, height: 40}; }
     animate(frames: Keyframe[], options: KeyframeAnimationOptions) {
-      const animation = {cancelled: false, frames, options};
+      const animation = {target: this, cancelled: false, frames, options};
       animations.push(animation);
       return {cancel() { animation.cancelled = true; }};
     }
@@ -40,6 +42,14 @@ test('a press is down at once and up at once, with less motion asked for too: be
   window.dispatchEvent(new Event('pointerup'));
   assert.equal(animations[0]!.cancelled, true, 'up the moment it is let go');
   assert.equal(animations.length, 1, 'and nothing drawn coming home');
+  assert.equal(animations[0]!.target, button, 'the whole control gives if it has no separate face');
+
+  button.face = new Button();
+  press();
+  assert.equal(animations.length, 2);
+  assert.equal(animations[1]!.target, button.face, 'a separate face gives without shrinking the hit target');
+  window.dispatchEvent(new Event('pointerup'));
+  assert.equal(animations[1]!.cancelled, true, 'the face comes up immediately too');
 });
 
 test('a stroke typed is a key as any other, Enter and Backspace too, and Space the space bar; held, with a command key, or out of a text, it is not typing', async () => {
@@ -71,6 +81,7 @@ test('release cleanup from an earlier press cannot make the next press sound twi
   class Button {
     closest(selector: string) { return selector.startsWith('button') ? this : null; }
     matches(selector: string) { return selector.startsWith('button'); }
+    querySelector() { return null; }
     getBoundingClientRect() { return {width: 40, height: 40}; }
     animate() { return {cancel() {}}; }
   }

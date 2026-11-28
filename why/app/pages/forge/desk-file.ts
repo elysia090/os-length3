@@ -15,6 +15,7 @@ import {documentMenu, type BesideOption} from './document-menu.ts';
 import {Draft} from './draft.ts';
 import {openDrafts} from '../kit/open-drafts.ts';
 import {SPRING} from '../../ui/law.ts';
+import {searchMark, searchPreview} from './search-mark.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers
 // beside it, saved as Forge's editor saves (editor.ts). Its name is said over the box, its folder quiet before it.
@@ -22,8 +23,13 @@ import {SPRING} from '../../ui/law.ts';
 // writes comes in as it is played (bench/play.ts).
 
 export interface DeskFile extends Laid {
+  /** Whether this paper has an editor with its own selection and reading position. */
+  readonly hasEditor: boolean;
   /** The line `line` (1-based) chosen in it, the caret there (none: the caret at its top). */
   at(line: number): void;
+  /** A corner Search result: just its words marked, without changing the editing selection. */
+  found(line: number, query: string): void;
+  unfind(): void;
   /** The keyboard in it, at an existing character offset (Home's last edit, not a line highlighted by search). */
   toOffset(offset: number): void;
   /** The keyboard in it, the caret at its end (a file just named goes on being written). */
@@ -101,6 +107,26 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   let writer: string | null = null;
   let dropped = false;
   let wanted: {line: number} | {offset: number | 'end'} | null = null;
+  let preview: HTMLElement | null = null;
+  let picked: {line: number; query: string} | null = null;
+  let exact: ReturnType<typeof searchMark> = null;
+  function paintPick() {
+    if (!picked || !editor && !preview) return;
+    const {line, query} = picked;
+    picked = null;
+    exact = editor ? searchMark(editor.area, element, line, query) : searchPreview(preview!, element, line, query);
+  }
+  function unfind() {
+    exact?.clear();
+    exact = null;
+    picked = null;
+  }
+  function found(line: number, query: string) {
+    unfind();
+    unmark();
+    picked = {line, query};
+    paintPick();
+  }
   /** The keyboard asked for before the text was read: given once it is. */
   let focusing = false;
   /**
@@ -185,6 +211,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     const {area} = editor;
     // No line asked for: the caret at its top.
     if (line < 1) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
+    unfind();
     const from = lineStart(area.value.split('\n'), line - 1);
     let to = area.value.indexOf('\n', from);
     if (to < 0) to = area.value.length;
@@ -249,14 +276,17 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
           || e.area.selectionDirection !== selectionDirection)) lead(e.area);
       });
     });
-    const areaSize = new ResizeObserver(() => { stand(e.area); grew(); });
-    const bodySize = new ResizeObserver(() => stand(e.area));
+    const changePick = draft.watch(() => exact?.place());
+    const areaSize = new ResizeObserver(() => { stand(e.area); exact?.place(); grew(); });
+    const bodySize = new ResizeObserver(() => { stand(e.area); exact?.place(); });
     areaSize.observe(e.area);
     bodySize.observe(element);
     dropView = () => {
       renamedView = undefined;
       unregister?.();
       forget?.();
+      changePick();
+      unfind();
       areaSize.disconnect(); bodySize.disconnect();
       clearTimeout(handRest);
       e.drop();
@@ -268,6 +298,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     else if (request) toOffset(request.offset);
     else if (focusing && stillAsked()) e.area.focus({preventScroll: true});
     focusing = false;
+    if (picked) { e.fit(); paintPick(); }
     grew();
   };
 
@@ -300,6 +331,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       dropView?.(); dropView = undefined;
       editor = null;
     }
+    if (preview) { exact?.clear(); exact = null; preview = null; }
     // A read-only preview scrolls its actual content, without a writer's look-ahead room.
     element.classList.remove('long');
     if (c.text === null) {
@@ -310,7 +342,9 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     }
     if (c.truncated) {
       number(c.text);
-      sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
+      preview = h('pre', {class: 'code'}, c.text);
+      sheet.replaceChildren(gutter, preview);
+      paintPick();
       state.el.textContent = t('First {part} only (total {size}) · Read-only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
       grew();
       return;
@@ -423,12 +457,13 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
 
   return {
     element,
+    get hasEditor() { return !!editor; },
     toOffset,
     toEnd: () => toOffset('end'),
     name: cut < 0 ? shown : shown.slice(cut + 1),
     dir: cut < 0 ? '' : `${shown.slice(0, cut)}/`,
     focus: () => { if (editor) editor.area.focus({preventScroll: true}); else { focusing = true; later(); } },
-    at,
+    at, found, unfind,
     lineTop: (line) => (editor ? editor.area.offsetTop + (line - 1) * lineHeight(editor.area) : 0),
     renameRepo(to) {
       if (to === repo) return;
@@ -440,7 +475,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     },
     flush: () => editor?.draft.closeable() ?? Promise.resolve(true),
     beside: (laid) => !shared && editor && !dropped ? deskFile(repo, path, laid, undefined, {retry}, editor.draft) : null,
-    drop: () => { dropped = true; dropMenu(); off?.(); offEarly?.(); dropView?.(); },
+    drop: () => { dropped = true; unfind(); dropMenu(); off?.(); offEarly?.(); dropView?.(); },
     // Its name written over: the keyboard is the name's, not the text's when it is read.
     ...(rename ? {rename: (name: HTMLElement) => { focusing = false; wanted = null; rename(name); }} : {}),
   };

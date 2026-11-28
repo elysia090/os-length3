@@ -146,8 +146,10 @@ test('Git uses desk ink outside the issue and paper ink inside it, without recol
 
   await app.forge.placesKey.click();
   const menu = app.forge.places;
-  await expect(menu).toHaveCSS('background-color', 'rgb(239, 235, 227)');
-  await expect(menu).toHaveCSS('color', 'rgb(23, 22, 21)');
+  // Places stays in desk ink, not on a second cream issue surface.
+  await expect(menu).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(menu).toHaveCSS('color', 'rgb(239, 235, 227)');
+  await expect(menu.getByRole('menuitemradio', {name: 'Forge', exact: true})).toHaveCSS('color', 'rgb(239, 235, 227)');
   await app.forge.use('Forge');
   await expect(app.forge.editor('README.md')).toBeVisible();
   await expect(body).toHaveCSS('background-color', forge);

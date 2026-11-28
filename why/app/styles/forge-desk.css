@@ -83,6 +83,14 @@
 @media (prefers-reduced-motion: reduce) { .scroll-mark { transition: none; } }
 /* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
 .desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
+/* The words found through the corner lens, in the same marker as the result. The field beneath still owns input. */
+.desk-match-layer { position: absolute; overflow: clip; pointer-events: none; white-space: pre; tab-size: 4; }
+.desk-match-row { position: absolute; width: max-content; }
+.desk-match-prefix { visibility: hidden; }
+.desk-file .desk-match { margin-inline: 0; padding-inline: 0; color: var(--nighthawks-paper-ink); }
+@media (forced-colors: active) {
+  .desk-file .desk-match { background: Highlight; color: HighlightText; }
+}
 /* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit across the sheet in the raised grey, an ink bar
    at its left edge, going from line to line. */
 .desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: var(--raised);

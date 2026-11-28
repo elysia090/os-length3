@@ -137,10 +137,18 @@
 @media (max-width: 920px) {
   .git-desk .issue-box.git-paper { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; min-height: 0; }
   .git-desk .git-paper > :is(.issue-words, .issue-summary-wrap, .git-work, .git-totals, .git-paper-review, .issue-foot) { grid-area: auto; }
+  /* The number is already in the line here; the words can use the whole measure. */
+  .git-desk .git-paper .issue-big-head:not(.peek) { padding-inline-end: 0; }
+  .git-desk .git-paper > .issue-words h2 { max-inline-size: min(calc(15 * var(--u)), 100%); }
   .git-desk .git-paper > .issue-summary-wrap { margin: var(--u) 0; }
   .git-desk .git-paper > :is(.git-totals, .git-paper-review) { margin-block-start: var(--u); }
+  .git-desk .git-paper > .git-paper-review { flex-wrap: wrap; }
+}
+@media (max-width: 760px) {
+  /* Leave room for the browser's own letter measure; keep the key height and let genuinely longer labels wrap. */
+  .git-desk .git-paper .git-review-key { padding-inline: var(--s2); }
 }
 .git-ledger-status { margin: calc(var(--u) / 2) var(--u) 0; color: var(--sub); line-height: var(--u); }
 
-.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus))::before { display: none; }
-.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus)) > button { color: var(--quiet); font-weight: 400; }
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus-visible))::before { display: none; }
+.git-desk .git-switch .switch-line.next:has(> button[aria-disabled='true']):not(:has(> button:focus-visible)) > button { color: var(--quiet); font-weight: 400; }

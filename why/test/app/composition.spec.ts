@@ -7,7 +7,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //
 //   one lens        nothing in sight is drawn scaled, zoomed or in perspective
 //   one horizon     the subject's edges on the grid
-//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and Forge's paper
+//   one subject     one shadow cast in focus: 12 px right/down on ordinary sheets, 4 px on Home's note and the Forge and New repo papers
 //   the frame       under what is called up, the available frame controls stay in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
@@ -29,8 +29,8 @@ const NAME = 33.0124, PERSON = 66.0248;
 /** Each place, what is its subject (the one thing with the shadow at rest), and what may stand at the frame's corner. */
 const PLACES = {
   home: {subject: '.home-own > .section', corner: '.home-own', anchor: '.home-person h1'},
-  'new-repo': {subject: '.nr-box', corner: '.new-repo'},
-  // The shared Places key is on the right. The work desk's own name anchors the left-hand subject.
+  'new-repo': {subject: '.nr-box', corner: '.new-repo', anchor: '.nr-label'},
+  // Forge's named corner leads to the flat Files index and then the active paper at wide widths.
   forge: {subject: '.desk > .desk-plane > .desk-box.held', corner: '.desk-box', anchor: '.forge-title'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card', anchor: '.git-title'},
   server: {subject: '.server-paper', corner: '.server-sidebar, .server-paper', anchor: '.server-masthead > h1'},
@@ -102,11 +102,28 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     }
   })()];
   // Every size of type in sight, of words and of fields alike (DESIGN §3: three, one, two and four times).
-  const sizes = new Set<number>();
+  const sizes = new Set<number>(), indexSizes = new Set<number>();
+  type RecentRole = 'date' | 'time' | 'source' | 'more' | 'arrow';
+  const recentSizes: {role: RecentRole; size: number}[] = [];
+  // Keep Recent's compact captions local to the active Home's timeline. A row title is ordinary type.
+  const homeRecent = 'main#page[data-place="home"] > .home-portrait .home-waits > .lately > .home-recent-view';
+  const recentRole = (el: Element, text: string): RecentRole | undefined => {
+    if (!el.closest(homeRecent)) return;
+    if (el.matches('.home-recent-items > .home-recent-day > h3')) return 'date';
+    if (el.matches('button.home-recent-line > time.home-recent-time[datetime]')) return 'time';
+    if (el.matches('button.home-recent-line > .home-recent-words > span.home-recent-source')) return 'source';
+    if (el.matches('.home-recent-view > button.home-recent-more[aria-expanded][aria-controls]')) return 'more';
+    if (text === '→' && el.matches('button.home-recent-line > span.home-recent-arrow[aria-hidden="true"]')) return 'arrow';
+  };
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-    const el = n.parentElement!;
-    if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+    const el = n.parentElement!, text = n.textContent!.trim();
+    if (text && !el.closest('.sr-only, script, style') && inSight(el)) {
+      const size = Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100;
+      const role = recentRole(el, text);
+      if (role) recentSizes.push({role, size});
+      else (el.closest('.file-tree.on-forge-desk[data-forge-index]') ? indexSizes : sizes).add(size);
+    }
   }
   for (const el of document.querySelectorAll('input, textarea, [contenteditable]')) if (inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
   // Every line of words in the world, where its middle falls against the grid (DESIGN §3, whole cells: a line of type
@@ -161,8 +178,13 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       const top = runtimeLine.getBoundingClientRect().top + parseFloat(css.paddingTop) + parseFloat(css.borderTopWidth);
       return top + (runtimeLine.matches('.runtime-masthead > h1') ? parseFloat(css.lineHeight) : 24) / 2;
     })() : null;
-    const pitch = code ? 19 : 24;
+    // The wide Files list has a compact local cadence; its heading sits one small gap above that list.
+    const index = el.closest('.file-tree.on-forge-desk[data-forge-index]');
+    const indexRow = index?.querySelector(':scope > .tree-children > .file-shelf-row:not(.file-shelf-meta-last) > .tree-row');
+    const indexOrigin = el.closest('.file-shelf-heading') ?? indexRow;
+    const pitch = indexRow ? parseFloat(getComputedStyle(indexRow).lineHeight) : code ? 19 : 24;
     const first = code ? paper!.getBoundingClientRect().top + 12 + pitch / 2
+      : indexOrigin ? indexOrigin.getBoundingClientRect().top + pitch / 2
       : tag ? paper!.getBoundingClientRect().top - pitch / 2
       : diffHead ? diffHead.getBoundingClientRect().top + pitch / 2
       : diffLines ? diffLines.getBoundingClientRect().top + 8 + pitch / 2
@@ -183,18 +205,26 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   // What stands just past the frame's corner, where the eye is after a move.
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const utility = sheet?.matches('.runtime-paper') && s;
-  // Runtime's paper starts after an open desk. Probe just inside it, past both its radius and the tabs' focus padding.
-  const at = utility ? document.elementFromPoint(utility.left + 24, utility.top + 12) : document.elementFromPoint(84, 96);
+  const forge = W > 1000 && sheet?.matches('.forge-layout > .center .desk-box') && s;
+  const index = forge ? document.querySelector('.file-tree.on-forge-desk[data-forge-index]') : null;
+  const left = index && inSight(index) ? index.getBoundingClientRect() : null;
+  const named = document.elementFromPoint(84, 96);
+  // Runtime starts after an open desk; Forge starts after its fixed file index. Probe both real surfaces.
+  const paper = utility || forge;
+  const at = paper ? document.elementFromPoint(paper.left + 24, paper.top + 12) : named;
   const landed = !!at?.closest(corner);
+  const forgeIndex = left && forge && index ? {seen: !!named && index.contains(named),
+    sameTop: Math.abs(forge.top - left.top) < 1, edges: [left.left,left.width,forge.left].map(Math.round),
+    gap: Math.round(forge.left - left.right), cast: getComputedStyle(index).boxShadow} : null;
   // How far that is from the place's visible name, rail control, or door to a far side.
   const from = anchor ? all.find((el) => el.matches(anchor))
     : all.find((el) => el.matches('.door')) ?? all.find((el) => el.matches('.rail .rail-item[aria-current="page"]'));
-  const fr = utility && from ? (() => {
+  const fr = (utility || forge) && from ? (() => {
     const name = document.createRange();
     name.selectNodeContents(from);
     return name.getBoundingClientRect();
   })() : from?.getBoundingClientRect();
-  const lr = at?.closest(corner)?.getBoundingClientRect();
+  const lr = left ?? at?.closest(corner)?.getBoundingClientRect();
   const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
     Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;
   // The band's name of what is in hand: whole at its size, inside the window clear of its edge, or not there.
@@ -206,8 +236,10 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
     return {whole: held.scrollWidth <= held.clientWidth, size: parseFloat(getComputedStyle(held).fontSize), left: r.left, right: r.right};
   })() : null;
   // The frame over what is called up: the available controls, not a hidden band's old bounding box.
-  const frameControl = all.find((el) => el.matches('body > .rail, #page[data-place="home"] > .home-portrait > .forge-places-key'));
-  const frameOver = !!veil && !!frameControl && Number(getComputedStyle(frameControl).zIndex) > Number(getComputedStyle(veil).zIndex);
+  const frameControl = all.find((el) => el.matches('body > .rail .rail-item[aria-current="page"], #page[data-place="home"] > .home-portrait .forge-places-key'));
+  const frameRect = frameControl?.getBoundingClientRect();
+  const frameHit = frameRect && document.elementFromPoint(frameRect.x + frameRect.width / 2, frameRect.y + frameRect.height / 2);
+  const frameOver = !!veil && !!frameHit && !!frameControl?.contains(frameHit);
   const quietPaper = all.filter((el) => el.matches('.forge-layout .desk .desk-box:not(.held):not([data-kind])')).map((el) => {
     const {left, top, right, bottom} = el.getBoundingClientRect();
     const c = getComputedStyle(el);
@@ -217,7 +249,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid, quietPaper, home};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], indexSizes: [...indexSizes], recentSizes, forgeIndex, offGrid, quietPaper, home};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -228,7 +260,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     expect(f.scaled, `${what}: one lens, nothing drawn scaled`).toEqual([]);
     const focused = f.cast.filter((c) => c.focus);
     expect(focused.length, `${what}: one subject in focus (${JSON.stringify(f.cast)})`).toBe(1);
-    const shade = (place === 'home' || place === 'forge') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
+    const shade = (place === 'home' || place === 'forge' || place === 'new-repo') && !called ? 4 : place === 'inbox' ? 6 : U / 2;
     expect([focused[0]!.x, focused[0]!.y, focused[0]!.blur], `${what}: the one light's shadow`).toEqual(place === 'server' && !called ? [2, 4, 0] : [shade, shade, 0]);
     if (!called) {
       expect(f.subject, `${what}: its subject in sight`).not.toBeNull();
@@ -244,10 +276,19 @@ async function shot(app: App, place: Place, size: {width: number; height: number
           // On Home the note follows the portrait's last line, measured on the portrait grid below.
           if (place === 'home' && edge === 'top') continue;
           // Forge and Runtime on a phone leave room for the name and controls above the paper.
-          const origin = edge === 'top' ? place === 'forge' ? 90 : place === 'runtime' && size.width <= 600 ? U / 2 : 0 : 0;
+          const origin = edge === 'top'
+            ? place === 'forge' ? (size.width > 1000 ? 4 * U : 90)
+              : place === 'runtime' && size.width <= 600 ? U / 2 : 0
+            : 0;
           expect(Math.abs(v - origin - U * Math.round((v - origin) / U)), `${what}: the subject's ${edge} (${v}) on its grid`).toBeLessThan(1);
         }
         expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
+        if (place === 'forge' && size.width > 1000) {
+          expect(f.forgeIndex, `${what}: an unraised Files index precedes the real work paper on one horizon`).toEqual({
+            seen:true, sameTop:true, edges:[36,232,312], gap:44, cast:'none',
+          });
+          expect(f.indexSizes.sort(), `${what}: one text size for names and previews in the Files index`).toEqual([17]);
+        }
         // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
         expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
       }
@@ -285,6 +326,10 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     const displaySizes = place === 'inbox' ? [30, 38] : place === 'server' ? [34, 36]
       : place === 'home' ? [homeTitle, homeName] : [NAME, PERSON];
     for (const size of f.sizes) expect(sizes.some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the place's sizes`).toBe(true);
+    for (const {role, size} of f.recentSizes) {
+      expect(place, `${what}: only active Home has Recent type`).toBe('home');
+      expect(size, `${what}: Recent ${role} at its scoped measure`).toBe(role === 'arrow' ? 15 : 14);
+    }
     for (const d of f.display) expect(displaySizes.some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
     expect(texts.length, `${what}: no text said twice large (${texts.join(' | ')})`).toBe(new Set(texts).size);
@@ -307,7 +352,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   // a row's first sheet (Server's first board), or the place's index (Inbox's who wrote).
   const before = !called && f.subject && f.subject.x > 2 * U + .5 ? await app.page.evaluate(() => {
     const seen = (sel: string) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0);
-    return seen('.inbox-index') ? 'index' : seen('.git-side:not(.none)') ? 'side' : 'sheet';
+    return seen('.inbox-index, .file-tree.on-forge-desk[data-forge-index]') ? 'index'
+      : seen('.git-side:not(.none)') ? 'side' : 'sheet';
   }) : null;
   // Look room (Thompson and Bowen; Palmer, Gardner and Wickens 2008): ahead at least behind, wherever the subject
   // stands. (Where the place's index stands before it, what can be done next outranks the plane, §2, the order of

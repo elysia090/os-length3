@@ -178,9 +178,10 @@ test('Runtime lists each local repo once, keeps Remote below it, and restores th
   await expect(gear(here, 'field-notes')).toBeFocused();
   await expect(main).toHaveAttribute('data-place', 'runtime');
 
-  const key = main.getByRole('button', {name: 'Places', exact: true});
-  await key.press('Enter');
-  await main.getByRole('menuitem', {name: 'File', exact: true}).click();
+  const key = main.getByRole('button', {name: 'Runtime', exact: true});
+  await key.press('Shift+F10');
+  const tools = main.getByRole('menu', {name: 'Tools', exact: true});
+  await tools.getByRole('menuitem', {name: 'File', exact: true}).click();
   await expect(app.file.tree).toBeVisible();
   await expect(app.file.tree.locator('.tree-name:visible').first()).toBeFocused();
   await page.keyboard.press('Escape');
@@ -621,14 +622,15 @@ test('a repo renamed from its gear keeps its desk, what was half written for it,
   await expect(latelyG).toContainText('gamma');
 
   await app.rail.go('forge');
-  // Its desk is the one on screen, under its new name, as it was left.
-  await expect(app.main.getByRole('region', {name: 'Files in gamma', exact: true})).toBeVisible();
-  await expect(app.main.getByRole('region', {name: 'Files in alpha', exact: true})).toHaveCount(0);
-  await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
-  await app.forge.openPrompt();
+  // The repo's writing and its in-hand Prompt follow the rename, but are not painted on top of one another.
+  await expect(app.forge.promptBox).toBeVisible();
   await app.forge.promptBox.press('Alt+2');
   await expect(app.forge.promptBox).toHaveAttribute('placeholder', 'Create issue in gamma');
   await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');
+  await app.forge.backFromPrompt();
+  await expect(app.main.getByRole('region', {name: 'Files in gamma', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('region', {name: 'Files in alpha', exact: true})).toHaveCount(0);
+  await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
   await app.page.keyboard.press('Control+k');
   await expect(app.forge.search).toHaveValue('needle');
   await app.rail.go('git');

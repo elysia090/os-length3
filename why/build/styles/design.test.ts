@@ -57,12 +57,15 @@ const words = (v: string) => {
 
 /** Depth, the one thing allowed to be seen through (§1): the world going out of focus under what is called up. */
 const DEPTH = /\.page-veil/;
+// Places' near field: a transient depth layer behind the menu, never paper, ink, or a button.
+const placesDepth = (s: Said) => s.at === 'forge-places.css'
+  && s.selector === ".desk-caption:has(> .forge-places-key[aria-expanded='true'])::before";
 // Home's optical material: the index that leads back to work, never a writing surface.
 const recentGlass = (s: Said) => s.at === 'home.css' && /^\.home-waits > \.lately > \.home-recent-glass(?:::after)?$/.test(s.selector);
 
 test('nothing is see-through: what says less is said by value (§1, §3)', () => {
   const wrong = [
-    ...of('opacity').filter((s) => !/^(0|1|var\(.*\))$/.test(s.value)),
+    ...of('opacity').filter((s) => !/^(0|1|var\(.*\))$/.test(s.value) && !placesDepth(s)),
     ...of('fill-opacity', 'stroke-opacity'),
     ...ALL.filter((s) => /color-mix\([^;]*\btransparent\b/.test(s.value) && !DEPTH.test(s.selector) && !recentGlass(s)),
     ...ALL.filter((s) => /\b(rgba|hsla)\(|\brgb\([^)]*\//.test(s.value)),

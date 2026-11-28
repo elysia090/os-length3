@@ -23,8 +23,8 @@ import {getState, loadState, onState} from '../../home/state.ts';
 import {inEffect} from '../../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../../text/i18n.ts';
-import {depth, doorOf, isFar, isWorkPage, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
-import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
+import {depth, doorOf, isFar, isWorkPage, placeDistance, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {glide, morph, stage, stopStage, stopTravel, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
 import {menusOnGrid} from '../ui/on-grid.ts';
@@ -99,14 +99,15 @@ let readingPath: string | null = null;
 const searchTrail = new SearchTrail({
   surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
   files: repo => forgeOf?.searchPaths(repo) ?? [],
+  seat: repo => forgeOf?.searchSeat(repo) ?? null,
   restore(repo, place) {
     if (repo && place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
   },
-  open(repo, path, line) {
+  open(repo, path, line, words) {
     searchTrail.leave(false);
     // Even in Forge, opening a match is a new step. Back can read this same search again.
     if (current === 'forge') history.pushState({place: 'forge'}, '');
-    openRepoFrom(document.activeElement, repo, path, true, undefined, line, undefined, true);
+    openRepoFrom(document.activeElement, repo, path, line > 0 ? {match: words} : 'resume', undefined, line, undefined, true);
   },
   name: () => named(),
 });
@@ -135,11 +136,11 @@ const ctx: Context = {
   openRepo(name, path = '', write = false, grownFrom, line = 0, carried) { openRepoFrom(document.activeElement, name, path, write, grownFrom, line, carried); },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
-  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
-  forgeFiles(repo, focus) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus); },
+  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at, time: Date.now()})); },
+  forgeFiles(repo, focus, index) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus, index); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
-    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime'] as const).some((desk) => current === desk)) return;
+    if (!isWorkPage(current) && !(['home', 'inbox', 'server', 'runtime', 'new-repo'] as const).some((desk) => current === desk)) return;
     ++asked;
     searchTrail.start(repo, current, origin ?? document.activeElement, rejoin);
   },
@@ -153,15 +154,18 @@ const ctx: Context = {
           else void select(id);
         },
       })),
-      ...((current === 'home' || current === 'runtime') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
+      ...((current === 'home' || current === 'runtime' || current === 'new-repo') ? [{label: 'File', run: (anchor: HTMLElement) => fileTree.open(true, anchor)}] : []),
       {label: 'Account', run: (anchor: HTMLElement) => me.openFrom(anchor)},
     ];
   },
   get repo() { return openRepo; },
   get leftOff() {
     try {
-      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown} | null;
-      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null} : null;
+      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown; time?: unknown} | null;
+      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {
+        repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null,
+        time: typeof was.time === 'number' && Number.isFinite(was.time) ? was.time : undefined,
+      } : null;
     } catch { return null; }
   },
   rerender: () => { void render(); },
@@ -306,6 +310,7 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
   if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
   stopStage($('page'));
+  stopTravel($('page'));
   if (id === 'forge' && place) forgeOf?.placeNext(place);
   draw(id, quiet, stepped);
   return Promise.resolve();
@@ -314,7 +319,7 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
 /**
  * The places gone to are the window's history, as a link's are (a place in the rail is one): Back, however it is
  * asked (the browser's, the mouse's side button, a phone's edge, Alt+← or ⌘[), goes to the place before, and Forward
- * to the one after, with the world's move the way the rail lies, as any going there does (DESIGN §14, back). Each
+ * to the one after, with the world's move the way the places lie, as any going there does (DESIGN §14, back). Each
  * place gone to is one step; the place one is at, pressed, is none. Before, the places were not in the history: Back
  * left the OS altogether, from wherever it had been gone through. The address is not changed by it: a place is not a
  * page to send to another, and what the address carries is asked once (an invitation, a key) and taken out.
@@ -322,7 +327,8 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
 window.addEventListener('popstate', (event) => {
   const state = event.state as {place?: unknown; search?: unknown} | null;
   if (typeof state?.place !== 'string' || !opened) return;
-  const id = restorePurpose(state.place), search = searchTrail.step(state.search);
+  // New repo isn't the place for a fresh session, but it is a live history entry with a draft and selection.
+  const id = state.place === 'new-repo' ? state.place : restorePurpose(state.place), search = searchTrail.step(state.search);
   if (search === null) searchTrail.leave(id === current);
   if (id === current) {
     if (search !== null) searchTrail.enter(search);
@@ -338,6 +344,10 @@ window.addEventListener('popstate', (event) => {
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
 const readTo = new Map<PurposeId, number>();
+/** A step chosen from the frame leaves its keyboard there on return, not in a closed menu. */
+const keyAt = new Set<PurposeId>();
+const placeKey = (page: HTMLElement) => [...page.querySelectorAll<HTMLButtonElement>('.forge-places-key')]
+  .find(key => !key.closest('[hidden], [inert]'));
 
 /**
  * Come back to, a page is where it was read to. Still coming in (its lists drawn once they are read), it is put there
@@ -356,13 +366,18 @@ function readAgain(id: PurposeId) {
 }
 
 function draw(id: PurposeId, quiet: boolean, stepped = false) {
-  const from = current;
-  // To another place: the world goes up or down to it, the way it lies along the rail (the place left kept in sight
-  // as it was, from before anything of it changes).
-  // (To a place's far side, or back from it: along, not down. The two are one place.)
-  const along = placeOf(from) === placeOf(id);
-  const arrived = !opened || quiet || from === id ? null
-    : along ? travel($('page'), isFar(id) || id === 'git' ? 1 : -1, 'x') : travel($('page'), Math.sign(depth(id) - depth(from)) || 1);
+  const from = current, page = $('page');
+  const fromKey = document.activeElement;
+  const followed = from !== id && !!fromKey?.matches('.forge-places-key') && page.contains(fromKey);
+  if (opened && from !== id) {
+    if (followed) keyAt.add(from); else keyAt.delete(from);
+  }
+  // Adjacent main pages share a single sideways move. A jump across the row commits directly, without
+  // a false sense of adjacency or any intervening page. Contextual navigation keeps its own direction.
+  const distance = placeDistance(from, id);
+  const jump = distance !== null && Math.abs(distance) > 1;
+  const direction = distance === null ? Math.sign(depth(id) - depth(from)) || (isFar(id) || id === 'git' ? 1 : -1) : Math.sign(distance);
+  const arrived = !opened || quiet || jump || from === id ? null : travel(page, direction);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -391,20 +406,24 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
     tab.tabIndex = selected ? 0 : -1;
   }
   // (A place's far side has no icon to be named by: it is named in words.)
-  if (id === 'home' || id === 'runtime' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  if (id === 'home' || id === 'runtime' || id === 'new-repo' || isFar(id) || isWorkPage(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   const shown = render();
   hang();
-  if (from !== id) readAgain(id);
+  if (from !== id) {
+    readAgain(id);
+    if ((followed || stepped && keyAt.has(id)) && (document.activeElement === document.body || document.activeElement === fromKey))
+      placeKey(page)?.focus({preventScroll: true});
+  }
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
   // The first content surface arrives whole, once it is (render): without delaying the frame or staggering its data.
   if (first && !quiet) { void shown.then(() => stage($('page'), 1)); return; }
   if (from !== id) {
-    // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
+    // The rail's ink says where the window is. The page comes from its side of the world.
     const tab = tabs.get(placeOf(id));
-    glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
+    if (!jump) glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
     arrived?.();
   }
 }
@@ -635,7 +654,10 @@ if (asking.has('device')) {
     // Discard the derived cache used by older Why builds; userland owns the digest-keyed cache.
     void Promise.resolve().then(() => globalThis.caches?.delete('why-userland')).catch(() => {});
     // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
-    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) return render(); }).finally(() => {
+    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => {
+      // Runtime reads its inventory again on sync. Do not replace its live corner keys under the hand.
+      if (connection() && current !== 'runtime') return render();
+    }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
       // (And the key sounds, fetched and decoded before the first of them is asked for: keys.ts.)

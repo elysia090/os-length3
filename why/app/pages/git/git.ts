@@ -149,7 +149,6 @@ class GitPage {
   private readonly row: IssueRow;
   private readonly sections = new Sections();
   private readonly workbench: Bench;
-  private readonly places: ReturnType<typeof workPlaces>;
   private repos: string[] = [];
   /** The repo looked at: the reference and the Prompt point at it. */
   private at: string | null = null;
@@ -195,11 +194,15 @@ class GitPage {
     this.element = this.workbench.element;
     this.element.classList.add('git-layout');
     this.element.prepend(h('h1', {class: 'git-title'}, t('Git')));
-    this.places = workPlaces(this.element, (place) => {
-      if (place === 'Git') return;
+    const forge = (tool: 'Files' | 'Prompt') => {
       if (this.at) ctx.remember(this.at);
-      if (ctx.forgePlace) void ctx.forgePlace(place); else void ctx.go('forge');
-    }, () => ctx.placeCommands?.(['forge']) ?? [], (origin) => {
+      if (ctx.forgePlace) void ctx.forgePlace(tool); else void ctx.go('forge');
+    };
+    workPlaces(this.element, 'git', (page) => {
+      // A place keeps the frame's keyboard. Only its tools explicitly take the keyboard into the document or shell.
+      if (page === 'forge' && this.at) ctx.remember(this.at);
+      void ctx.go(page);
+    }, (origin) => {
       const before = bookmark(this.element, origin instanceof HTMLElement ? origin : null);
       ctx.searchRepo?.(this.at, origin, () => {
         // A result opens Forge. When Back rebuilds Git, use its existing focus bookmark, not a detached element.
@@ -207,8 +210,13 @@ class GitPage {
         const control = before && work?.querySelectorAll<HTMLElement>(before.selector)[before.ordinal];
         return control ?? work?.querySelector<HTMLElement>('.forge-search-key') ?? null;
       });
-    });
-    this.places.set('Git', false);
+    }, {commands: () => [
+      ...(this.at ? [
+        {label: 'Files', run: () => forge('Files')},
+        {label: 'Prompt', run: () => forge('Prompt')},
+      ] : []),
+      ...(ctx.placeCommands?.(['forge']) ?? []),
+    ]});
     this.drawKnown();
     this.load();
     this.watch();
@@ -238,7 +246,6 @@ class GitPage {
     if (this.at !== repo) this.workbench.setRepo(repo);
     this.at = repo;
     this.folders.show(this.repos, repo);
-    this.places.set('Git', !!repo);
     if (repo && remember) this.ctx.remember(repo);
   }
 

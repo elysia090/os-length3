@@ -21,6 +21,13 @@ test('a menu the window would cut, with its shadow, is laid along by whole cells
   assert.equal((552 + low.dy) % 24, 0);
 });
 
+test('a pinned menu stays off its key, flipping above at the foot of the visible window', () => {
+  assert.deepEqual(laid({left: 96, top: 570, width: 240, height: 120}, 320, 568, {top: 530, bottom: 566}),
+    {dx: -48, dy: -186, width: 240});
+  assert.deepEqual(laid({left: 96, top: 144, width: 240, height: 120}, 320, 568, {top: 115, bottom: 151}),
+    {dx: -48, dy: 24, width: 240});
+});
+
 test('never laid past the frame\'s corner to fit', () => {
   const at = laid({left: 60, top: 60, width: 600, height: 900}, 390, 844);
   assert.ok(60 + at.dx >= 48 && 60 + at.dy >= 48);

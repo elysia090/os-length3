@@ -183,7 +183,7 @@ class Rail extends Part {
 
   private async usesPlaces() {
     const here = await this.page.locator('#page').getAttribute('data-place');
-    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server') return false;
+    if (here !== 'home' && here !== 'forge' && here !== 'git' && here !== 'inbox' && here !== 'runtime' && here !== 'server' && here !== 'new-repo') return false;
     // A redraw (e.g. after changing language) can briefly show neither entrance. Do not fall back to a hidden rail.
     const corner = this.app.forge.placesKey;
     await expect(this.navigation.or(corner).filter({visible: true}).first()).toBeVisible();
@@ -193,6 +193,8 @@ class Rail extends Part {
   /** The actual destination is in the rail or the one Places menu, depending on the current desk. */
   async destination(place: Place) {
     if (!await this.usesPlaces()) return this.button(place);
+    if (place === 'remote' || place === 'file' || place === 'plugin' || place === 'new-repo')
+      return (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel(PLACES[place])});
     const menu = this.app.forge.places;
     if (!await menu.isVisible()) await this.app.forge.placesKey.click();
     const name = placeLabel(PLACES[place]);
@@ -204,7 +206,7 @@ class Rail extends Part {
     const now = await at.getAttribute('data-place');
     if (now === 'home' && await this.usesPlaces()) {
       if (place === 'home') return;
-      if (place === 'new-repo') await this.main.locator('.home-repos .card.new').click();
+      if (place === 'new-repo') await this.main.locator('.home-repos-create').click();
       else await (await this.destination(place)).click();
       if (place !== 'file' && place !== 'plugin') await expect(at).toHaveAttribute('data-place', place);
       return;
@@ -248,8 +250,7 @@ class MeMenu extends Part {
   async openMenu() {
     if (await this.button.isVisible()) await this.button.click();
     else {
-      if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
-      await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Account')}).click();
+      await (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel('Account')}).click();
     }
     await expect(this.menu).toBeVisible();
   }
@@ -327,12 +328,23 @@ class NewRepo extends Part {
 
 /** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
-  get placesKey() { return this.main.getByRole('button', {name: placeLabel('Places')}); }
+  get placesKey() { return this.main.locator('button.forge-places-key[aria-haspopup=menu]:visible'); }
   get places() { return this.main.getByRole('menu', {name: placeLabel('Places')}); }
 
+  async openTools() {
+    const tools = this.main.locator('.forge-places[role="menu"]:visible').filter({has: this.page.getByRole('menuitem')});
+    if (!await tools.isVisible()) await this.placesKey.press('Shift+F10');
+    await expect(tools).toBeVisible();
+    return tools;
+  }
+
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
-    if (!await this.places.isVisible()) await this.placesKey.click();
-    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: placeLabel(place)}).click();
+    if (place === 'Prompt' || place === 'Files') {
+      await (await this.openTools()).getByRole('menuitem', {name: placeLabel(place)}).click();
+    } else {
+      if (!await this.places.isVisible()) await this.placesKey.click();
+      await this.places.getByRole('menuitemradio', {name: placeLabel(place)}).click();
+    }
   }
 
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
@@ -351,11 +363,20 @@ class Forge extends Part {
   /** Issue, diff or Output, side by side under the box. */
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
+  /** Take the actual paper mark before trying to press a file that may be clipped out of sight. */
+  async takePaper(path: string) {
+    const paper = this.piece(path);
+    if (await paper.evaluate(el => el.classList.contains('held') && !el.closest('[inert]'))) return;
+    await this.main.locator('.desk-room > .row-map').getByRole('button', {name: path, exact: true}).click();
+    await expect(paper).toHaveClass(/\bheld\b/);
+  }
+
   /** A file's name in its head (its path in the repo), pressed to write it over. */
   fileName(path: string) { return this.main.locator(`.desk-box[data-key="${path}"] .desk-name`).locator('visible=true'); }
 
   /** A file renamed from its head: its name pressed, `written` (a name in its folder) written over it, Enter. */
   async rename(path: string, written: string) {
+    await this.takePaper(path);
     await this.fileName(path).click();
     const field = this.main.getByRole('textbox', {name: 'New name', exact: true});
     await expect(field).toBeFocused();
@@ -378,6 +399,7 @@ class Forge extends Part {
 
   /** Write `text` as the whole of `path` and leave it, which saves it; saved, its header says nothing. */
   async editFile(path: string, text: string) {
+    await this.takePaper(path);
     const editor = this.editor(path);
     await editor.fill(text);
     // Not waited for as "Unsaved": a pause of 0.7 s saves it, and a slow machine may take longer than
@@ -425,6 +447,13 @@ class Forge extends Part {
     const heading = this.main.getByRole('heading', {name: 'Prompt', exact: true});
     if (!await heading.isVisible()) await this.use('Prompt');
     await expect(heading).toBeVisible();
+  }
+
+  /** Return by the same work-bay key the person opened; neither shell is stopped. */
+  async backFromPrompt() {
+    const back = this.main.getByRole('button', {name: 'Back', exact: true}).and(this.main.locator('.forge-prompt-approach'));
+    if (await back.isVisible()) await back.click(); else await this.promptBox.press('Escape');
+    await expect(this.promptBox).toBeHidden();
   }
 
   /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
@@ -785,8 +814,7 @@ class Inbox extends Part {
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
   async names() {
-    if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
-    await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
+    await (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
   }
 
   /** The Inbox has its automatically claimed address and stands ready to write. */

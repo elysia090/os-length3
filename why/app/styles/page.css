@@ -5,6 +5,14 @@
    (the bench's, where the pane's switch ends): never the window's 5%, which moved the column as the window was sized,
    nor centred in what room there is, which moved it as the pane was put away. */
 .page { min-width: 0; padding: var(--top-line) var(--s5) var(--s6) var(--body-left); }
+/* A work place takes the full frame; its own desk lays out what is inside it. */
+.page.page-work { padding: 0; height: var(--inner-h); overflow: hidden; }
+.page.page-work > .work { max-width: none; }
+.work.no-strip { grid-template-rows: minmax(0, 1fr); }
+.work {
+  height: var(--inner-h); display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
+}
 /* A place that is one thing to read (Runtime, Remote, Inbox) is a sheet on the desk as any piece is, and the one in
    hand: paper, its shadow half a cell right and down; from the desk's corner (the band's row is the window's, left
    clear), as tall as what is on it, at most fifty cells wide. */

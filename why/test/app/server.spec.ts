@@ -137,7 +137,7 @@ test('new posts update an open Places menu without moving focus, until the board
   await expect(server).toHaveAccessibleDescription('New posts in server');
   await expect(server).toBeChecked();
   await expect(server).toBeFocused();
-  await expect(places.getByRole('menuitem', {name: 'Inbox', exact: true})).toHaveAccessibleDescription('');
+  await expect(places.getByRole('menuitemradio', {name: 'Inbox', exact: true})).toHaveAccessibleDescription('');
   await server.press('Escape');
   await expect(ada.server.room('Trip')).toHaveAccessibleName('Trip (new posts)');
 

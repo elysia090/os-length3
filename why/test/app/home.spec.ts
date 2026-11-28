@@ -202,40 +202,128 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test('Home gives the note one full measure, with paired repo names and New repo at the end', async ({app}) => {
-  for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
+test('Home keeps the note beside a three-line repo scrollport and a separate New repo key', async ({app}) => {
+  for (const name of ['notes', 'trip', 'site', 'walk', 'workbench', 'journal']) await app.newRepo.make(name);
   await app.rail.go('home');
   const {page, main} = app;
-  const entries = main.locator('.home-repos > :is(.card.repo, .card.new)');
-  await expect(entries).toHaveCount(4);
-  await expect(entries.last()).toHaveClass(/\bnew\b/);
+  const repos = main.getByRole('region', {name: 'Repos'});
+  const list = repos.locator('.home-repos');
+  const entries = list.locator('.card.repo');
+  const create = repos.getByRole('button', {name: 'New repo', exact: true});
+  await expect(entries).toHaveCount(6);
+  await expect(list.getByRole('button', {name: 'New repo', exact: true})).toHaveCount(0);
   const box = async (l: Locator) => (await l.boundingBox())!;
-  const sizes = [{width: 1440, height: 900}, {width: 768, height: 730}, {width: 390, height: 844}];
-  for (const size of sizes) {
+  for (const size of [{width: 1536, height: 864}, {width: 768, height: 730}, {width: 390, height: 844}]) {
     await page.setViewportSize(size);
     await expect(async () => {
       const note = await box(app.home.todo);
-      const repos = await box(main.getByRole('region', {name: 'Repos'}));
+      const panel = await box(repos);
       expect(note.x).toBe(size.width === 390 ? 24 : 48);
       expect(note.width).toBe(size.width === 390 ? 336 : 624);
       expect(note.height).toBeGreaterThanOrEqual(288);
-      if (size.width === 1440) expect(repos.x).toBeGreaterThan(note.x + note.width);
-      else expect(repos.y).toBeGreaterThanOrEqual(note.y + note.height);
-      const rows = new Map<number, number>();
-      for (const entry of await entries.all()) {
+      if (size.width === 1536) expect(panel.x).toBeGreaterThan(note.x + note.width);
+      else expect(panel.y).toBeGreaterThanOrEqual(note.y + note.height);
+      const bounds = await box(list);
+      expect(bounds.height).toBe(72);
+      expect(bounds.x - panel.x).toBe(72);
+      const first = await box(entries.first());
+      for (const [i, entry] of (await entries.all()).entries()) {
         const at = await box(entry);
-        const top = Math.round(at.y);
-        const row = [...rows.keys()].find((y) => Math.abs(y - top) <= 2) ?? top;
-        rows.set(row, (rows.get(row) ?? 0) + 1);
-        expect(at.x).toBeGreaterThan(repos.x);
+        expect(at.x).toBe(first.x);
+        expect(Math.round(at.y - first.y)).toBe(i * 24);
       }
-      expect(Math.max(...rows.values())).toBeLessThanOrEqual(2);
-      if (size.width === 1440) expect([...rows.values()]).toEqual([2, 2]);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(size.width);
-    }).toPass();
+      expect((await box(create)).y).toBeGreaterThanOrEqual(bounds.y + bounds.height + 7);
+      expect(await page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollWidth - doc.clientWidth;
+      })).toBe(0);
+    }).toPass({timeout: 8_000});
   }
   await expect(app.home.todo).toHaveCSS('background-color', 'rgb(215, 197, 90)');
   await expect(app.home.todo).toHaveCSS('box-shadow', /4px 4px 0px 0px$/);
+  await page.setViewportSize({width: 1536, height: 864});
+  const first = entries.first().locator('.card-open');
+  const last = entries.last();
+  const lastName = (await last.locator('.card-title').textContent())!;
+  const direct = last.getByRole('button', {name: lastName, exact: true});
+  const scrollTop = () => list.evaluate(el => el.scrollTop);
+  const before = await box(create);
+  await list.hover();
+  await page.mouse.wheel(0, 200);
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  await first.focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  await expect(direct).toBeFocused();
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  expect(await box(create)).toEqual(before);
+
+  // An action on the last row must be outside the scrollport's clip, including its confirmation fields.
+  const gear = last.getByRole('button', {name: `Actions for ${lastName}`, exact: true});
+  await gear.press('Enter');
+  const menu = last.getByRole('menu', {name: `Actions for ${lastName}`, exact: true});
+  const rename = menu.getByRole('menuitem', {name:'Rename', exact:true});
+  await expect(rename).toBeInViewport();
+  await rename.click();
+  const input = menu.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(input).toHaveValue(lastName);
+  // An inner ask's Escape cancels that ask first; the next Escape dismisses the menu.
+  await input.press('Escape');
+  await expect(rename).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(gear).toBeFocused();
+  await direct.click();
+  await expect(main.getByRole('region', {name: `Files in ${lastName}`, exact: true})).toBeVisible();
+
+  await app.rail.go('home');
+  await create.press('Enter');
+  await expect(main).toHaveAttribute('data-place', 'new-repo');
+});
+
+test('the narrow Home name wraps at words before splitting an unbroken name', async ({signedIn: app}) => {
+  await app.rail.go('home');
+  const name = app.main.locator('#profile-name');
+  const write = async (text: string) => {
+    await name.click();
+    await name.fill(text);
+    await name.press('Enter');
+    await expect(name).toHaveText(text);
+  };
+  const lines = () => name.evaluate((el) => {
+    const text = el.firstChild as Text;
+    let start = 0;
+    return text.data.split(' ').map((word) => {
+      const range = document.createRange();
+      range.setStart(text, start);
+      range.setEnd(text, start + word.length);
+      start += word.length + 1;
+      return [...range.getClientRects()].map((line) => ({top: line.top, right: line.right}));
+    });
+  });
+  await write('Alexandra Longwind');
+  for (const width of [320, 390]) {
+    await app.page.setViewportSize({width, height: 844});
+    const [first, last] = await lines();
+    expect(first).toHaveLength(1);
+    expect(last).toHaveLength(1);
+    expect(last![0]!.top).toBeGreaterThan(first![0]!.top);
+    expect(await app.page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(width);
+  }
+
+  await app.page.setViewportSize({width: 320, height: 640});
+  for (const text of ['Ada Gray', '田村 蓮']) {
+    await write(text);
+    const rows = (await lines()).flat();
+    expect(new Set(rows.map((row) => row.top)).size).toBe(1);
+    expect(rows.every((row) => row.right <= 320)).toBe(true);
+  }
+
+  // If a single word really exceeds the measure, a forced line still fits the paper.
+  await write('BartholomewThistlethwaiteTheSecond');
+  const word = (await lines())[0]!;
+  expect(word.length).toBeGreaterThan(1);
+  expect(word.every((row) => row.right <= 320)).toBe(true);
+  expect(await app.page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(320);
 });
 
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
@@ -304,41 +392,94 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-  test('Home opens the real repo Search and the matching line in Forge', async ({app}) => {
+  test('Home opens repo Search, marks only the matching word in Forge, and Back resumes the chosen result', async ({app}) => {
+    const {page, forge} = app;
     await app.rail.go('home');
     await expect(app.main.getByRole('searchbox')).toHaveCount(0);
-    await app.page.keyboard.press('Control+k');
-    const screen = app.page.getByRole('main', {name: 'Search', exact: true});
+    const lens = app.main.getByRole('button', {name: 'Search', exact: true});
+    await lens.focus();
+    await page.keyboard.press('Control+k');
+    const screen = page.getByRole('dialog', {name: 'Search', exact: true});
     const query = screen.getByRole('searchbox');
+    const scope = screen.getByRole('combobox', {name: 'Search in'});
     await expect(query).toBeFocused();
-    await expect(screen.getByRole('combobox', {name: 'Search in'})).toHaveValue('hello');
+    await expect(scope).toHaveValue('hello');
     await query.fill('puts');
-    await screen.getByRole('button', {name: /puts\("hello"\);/}).click();
-    await expect(app.forge.editor('src/main.c')).toBeFocused();
-    await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
+    const match = screen.getByRole('button', {name: /src\/main\.c.*puts\("hello"\);/});
+    await expect(match.locator('mark')).toHaveText('puts');
+    await match.click();
+
+    const path = 'src/main.c', editor = forge.editor(path), paper = forge.piece(path);
+    const word = paper.locator('mark.desk-match');
+    await expect(screen).toHaveCount(0);
+    await expect(paper).toHaveClass(/\bheld\b/);
+    await expect(editor).toBeFocused();
+    await expect(word).toHaveCount(1);
+    await expect(word).toBeInViewport({ratio: 1});
+    await expect(word).toHaveText('puts');
+    await expect(word).toHaveCSS('background-image', /rgb\(236, 202, 95\)/);
+    await expect(paper.locator('.desk-mark')).toHaveCount(0);
+    expect(await forge.selected(path)).toBe('');
+    const line = Number(await word.getAttribute('data-line'));
+    expect((await editor.inputValue()).split('\n')[line - 1]).toBe('    puts("hello");');
+
+    await page.goBack();
+    await expect(query).toHaveValue('puts');
+    await expect(scope).toHaveValue('hello');
+    await expect(match).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(screen).toHaveCount(0);
+    await expect(app.main).toHaveAttribute('data-place', 'home');
+    const parkedLens = app.main.locator('.forge-layout[hidden] .forge-search-key');
+    await expect(parkedLens).toHaveCount(1);
+    await expect(parkedLens).toBeHidden();
+    await expect(lens).toBeVisible();
+    await expect(lens).toBeFocused();
   });
 });
 
-test('Home has no band or rail; its single Places key opens File and goes to the Remote', async ({app}) => {
+test('Home has no band or rail; its single title key offers six Places and opens File and Remote from Tools', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const {page, main} = app;
-  const key = main.getByRole('button', {name: 'Places', exact: true});
+  const key = main.getByRole('button', {name: 'Home', exact: true});
   const menu = main.getByRole('menu', {name: 'Places', exact: true});
+  const tools = main.getByRole('menu', {name: 'Tools', exact: true});
   await expect(page.getByRole('navigation', {name: 'Purposes', includeHidden: true})).toBeHidden();
   await expect(page.locator('#door')).toBeHidden();
   await expect(main.locator('.home-band')).toHaveCount(0);
+  await expect(main.locator('.forge-places-key:visible')).toHaveCount(1);
+  const shared = await key.getAttribute('aria-controls');
   await key.press('Enter');
-  await expect(menu.getByRole('menuitemradio', {name: 'Home'})).toBeFocused();
-  await menu.getByRole('menuitem', {name: 'File', exact: true}).click();
+  await expect(menu).toHaveAttribute('id', shared!);
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Home', 'Forge', 'Git', 'Server', 'Inbox', 'Runtime']);
+  await expect(menu.getByRole('menuitemradio', {name: 'Home', exact: true})).toBeFocused();
+  await expect(menu.getByRole('menuitem')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const file = tools.getByRole('menuitem', {name: 'File', exact: true});
+  const remote = tools.getByRole('menuitem', {name: 'Remote', exact: true});
+  await key.press('Shift+F10');
+  await expect(tools).toHaveAttribute('id', shared!);
+  await expect(tools.getByRole('menuitemradio')).toHaveCount(0);
+  await expect(remote).toBeFocused();
+  await file.click();
+  await expect(tools).toBeHidden();
+  await expect(main).toHaveAttribute('data-place', 'home');
   await expect(app.file.tree).toBeVisible();
   await expect(app.file.name('notes')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(app.file.tree).toBeHidden();
   await expect(key).toBeFocused();
-  await key.press('Enter');
-  await menu.getByRole('menuitem', {name: 'Remote', exact: true}).click();
-  await expect(page.locator('#page')).toHaveAttribute('data-place', 'remote');
+
+  await key.click({button:'right'});
+  await expect(tools).toHaveAttribute('id', shared!);
+  await remote.click();
+  await expect(main).toHaveAttribute('data-place', 'remote');
+  await page.goBack();
+  await expect(main).toHaveAttribute('data-place', 'home');
+  await expect(menu).toBeHidden();
+  await expect(app.file.tree).toBeHidden();
 });
 
 test('what was written on Home and was not yet the core\'s when the page went is kept at the next start', async ({app}) => {

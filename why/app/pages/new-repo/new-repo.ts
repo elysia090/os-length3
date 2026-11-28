@@ -6,13 +6,14 @@ import {plan} from '../../../shipto/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
 import {remoteOnly} from '../../../shipto/lifecycle.ts';
 import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
-import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {menuItem} from '../kit/common.ts';
 import {deedsUnder} from '../kit/file-deeds.ts';
-import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
+import {deskSearch, placesMenu} from '../kit/places.ts';
+import {liftLine, nudge, putAway, textAt} from '../../ui/glide.ts';
+import {caretIn} from '../../ui/caret.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {cut as record} from '../../../repo/history.ts';
 
@@ -38,8 +39,10 @@ const SCAFFOLD: Template = 'standard';
 
 /** One thing to be made in the repo: a folder or a file, by its path; the README's words are what it is for. */
 interface Made { path: string; dir: boolean; readme?: true }
-/** What is written before Create, the files to be made among it: kept while the app runs, as a half-written issue is. */
-interface Draft { name: string; summary: string; made: Made[] }
+type WritingAt = {field: 'name' | 'summary' | 'file'; start: number; end: number; direction: 'forward' | 'backward' | 'none'; x: number};
+interface Naming { path: string; value: string; pending?: Made; scroll: number }
+/** The draft is private to this live window; Back can put the hand back where it left off. */
+interface Draft { name: string; summary: string; made: Made[]; naming?: Naming; at?: WritingAt }
 const scaffold = (): Made[] => [...templateFiles('{name}', SCAFFOLD)].map(([path, text]) => ({path, dir: text === null, ...(path === 'README.md' ? {readme: true as const} : {})}));
 const fresh = (): Draft => ({name: '', summary: '', made: scaffold()});
 let draft: Draft = fresh();
@@ -70,15 +73,12 @@ function nest(made: readonly Made[]): Item[] {
   return root.children;
 }
 
-function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; tail: Node}> = {}): HTMLElement {
-  // A folder is said as File's tree says one, its name and a slash after it (heard as its name), with nothing drawn
-  // before it: one tree, one way (DESIGN §1).
-  const lead = h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
-  const named = name instanceof HTMLElement ? name : h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name));
-  const slash = dir ? h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/') : null;
-  return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named, slash,
-      typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
+function row(item: Item, name: HTMLElement, depth: number, meta?: HTMLElement, tail?: HTMLElement): HTMLElement {
+  // The slash is part of the written folder name, not a column of its own.
+  if (item.dir && name instanceof HTMLButtonElement)
+    name.append(h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/'));
+  return h('li', {class: `${item.dir ? 'tree-dir' : 'tree-file'} tree-ours`, 'data-path': item.path},
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, name, meta ?? null, tail ?? null));
 }
 
 /**
@@ -118,7 +118,9 @@ export function newRepo(ctx: Context): Node[] {
     : h('mark', {class: 'bad-char'}, /\s/.test(c) ? '␣' : c)));
   /** What will be made, as written here (kept with the draft); the path being renamed, if one is. */
   let made: Made[] = draft.made.map((m) => ({...m}));
-  let renaming: string | null = null;
+  let naming = draft.naming && {...draft.naming};
+  let finishName: ((accept: boolean) => boolean) | undefined;
+  let finished = false;
   /** Why what was written over a name cannot be, under the card; '' while nothing is wrong. */
   const fileError = h('p', {class: 'error small', role: 'alert'});
   /** The repos here already: a name of theirs is taken (said under the name, as it is written). */
@@ -136,119 +138,156 @@ export function newRepo(ctx: Context): Node[] {
    * What will be made in the repo, folders first, each to be renamed or left out where it stands. The repo itself is
    * the sheet, its name its title, said once: its row is not drawn again under it (DESIGN §10).
    */
-  const showFiles = (came: string | null = null) => {
+  const showFiles = () => {
     const rows: HTMLElement[] = [];
+    finishName = undefined;
     const walk = (nodes: Item[], depth: number) => {
       for (const it of nodes) {
-        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name'}, it.name);
+        const edit = naming?.path === it.path ? naming : undefined;
+        const named = edit ? field(edit) : h('button', {type: 'button', class: 'tree-name'}, it.name);
         if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
-        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`,
-          meta: it.readme ? readmeSize : undefined,
-          tail: rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li))});
-        li.dataset.path = it.path;
+        const li = row(it, named, depth, it.readme ? readmeSize : undefined,
+          edit?.pending ? undefined : rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li)));
         rows.push(li);
         if (it.dir) walk(it.children, depth + 1);
       }
     };
-    walk(nest(made), 0);
+    walk(nest(naming?.pending ? [...made, naming.pending] : made), 0);
     preview.replaceChildren(...rows);
-    const come = came ? preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(came)}"]`) : null;
-    if (come) unfold(come, 200);
-    const editing = preview.querySelector<HTMLInputElement>('.tree-rename');
-    if (editing) {
-      editing.focus({preventScroll: true});
-      // A file's name without its ending is chosen, as Forge's New file and File's Rename choose it.
-      const dot = editing.value.lastIndexOf('.');
-      editing.setSelectionRange(0, dot > 0 ? dot : editing.value.length);
-    }
+    summaryBox.hidden = !made.some((m) => m.readme && !m.dir);
   };
-  /** The name of `path` as a field to write over: Enter or leaving it takes what is written, Escape what was. */
-  const field = (path: string): HTMLInputElement => {
-    const f = h('input', {class: 'tree-rename', 'aria-label': t('New name'), spellcheck: 'false', autocapitalize: 'off', value: baseOf(path)}) as HTMLInputElement;
-    f.style.width = `${Math.max(8, baseOf(path).length + 2)}ch`;
-    f.addEventListener('input', () => { f.style.width = `${Math.max(8, f.value.length + 2)}ch`; fileError.textContent = ''; });
-    let done = false;
+  const editing = () => preview.querySelector<HTMLInputElement>('.tree-rename');
+  const startName = () => {
+    showFiles();
+    const f = editing();
+    if (!f) return;
+    f.focus({preventScroll: true});
+    const dir = naming?.pending?.dir ?? made.find((item) => item.path === naming?.path)?.dir;
+    const dot = dir ? -1 : f.value.lastIndexOf('.');
+    f.setSelectionRange(0, dot > 0 ? dot : f.value.length);
+    f.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  };
+  // A new row is a proposal until there is a name. Escape takes it away; the prior order and names are unchanged.
+  const field = (edit: Naming): HTMLInputElement => {
+    const f = h('input', {class: 'tree-rename', 'aria-label': t('New name'), enterkeyhint: 'done', spellcheck: 'false', autocapitalize: 'off', value: edit.value}) as HTMLInputElement;
+    const width = () => { f.style.width = `${Math.max(8, f.value.length + 2)}ch`; };
+    width();
+    f.addEventListener('input', () => { edit.value = f.value; keep(); width(); f.removeAttribute('aria-invalid'); fileError.textContent = ''; });
+    remember(f, 'file');
     const end = (take: boolean) => {
-      if (done) return;
-      const said = take ? moved(path, f.value) : '';
-      if (said) { fileError.textContent = said; nudge(f); f.focus(); return; }
-      done = true;
-      renaming = null;
+      if (naming !== edit) return true;
+      const affirm = take && (!edit.pending || Boolean(f.value.trim()));
+      const result = affirm ? moved(edit, f.value) : {path: edit.path};
+      if ('error' in result) { f.setAttribute('aria-invalid', 'true'); fileError.textContent = result.error; f.focus(); nudge(f); return false; }
+      const keyboard = document.activeElement === f;
+      const back = edit.pending?.dir ? newFolder : newFile;
+      naming = undefined;
+      if (draft.at?.field === 'file') delete draft.at;
       keep();
       showFiles();
+      if (keyboard) {
+        const anchor = (edit.pending && !affirm) ? back : preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(result.path)}"] .tree-name`);
+        anchor?.focus({preventScroll: true});
+        if (!affirm) window.scrollTo({top: edit.scroll, behavior: 'instant'});
+      }
+      return true;
     };
+    finishName = end;
     f.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       if (e.key === 'Enter') { e.preventDefault(); end(true); }
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fileError.textContent = ''; end(false); }
     });
-    f.addEventListener('blur', () => { if (!done && !fileError.textContent) end(true); });
+    f.addEventListener('blur', (e) => {
+      // The next row's own click must run before rebuilding the row list. Search and Places borrow the hand only.
+      const to = e.relatedTarget;
+      if (to instanceof Node && form.contains(to) && !preview.contains(to) && !fileError.textContent)
+        end(!edit.pending || f.value !== baseOf(edit.path));
+    });
     return f;
   };
-  /**
-   * `path` given the name `written` (a path from its folder moves it there: notes/plan.md, its folders made with it),
-   * and all in it with it; '' when done, else why it cannot be.
-   */
-  const moved = (path: string, written: string): string => {
+  /** Move a finished name and its children together; a draft row never enters the plan on a failed check. */
+  const moved = (edit: Naming, written: string): {path: string} | {error: string} => {
+    const {path, pending} = edit;
     const to = written.trim().replace(/^\/+|\/+$/g, '');
-    if (!to || to === baseOf(path)) return '';
+    if (!pending && (!to || to === baseOf(path))) return {path};
     const dir = parentOf(path), full = dir ? `${dir}/${to}` : to;
-    if (!plainPath(full)) return t('Paths joined by "/", segments cannot start with "."');
-    if (isIssues(full)) return t('"{name}" is where the repo\'s issues are kept', {name: ISSUES});
-    if (made.some((m) => m.path === full || m.path.startsWith(`${full}/`))) return t('"{name}" already exists', {name: to});
-    made = made.map((m) => (m.path === path || m.path.startsWith(`${path}/`) ? {...m, path: full + m.path.slice(path.length)} : m));
-    // The folders a path written goes into are made with it.
+    if (!plainPath(full)) return {error: t('Paths joined by "/", segments cannot start with "."')};
+    if (isIssues(full)) return {error: t('"{name}" is where the repo\'s issues are kept', {name: ISSUES})};
+    const under = (p: string) => p === path || p.startsWith(`${path}/`);
+    if (full.startsWith(`${path}/`) || made.some((m) => !under(m.path)
+      && (m.path === full || m.path.startsWith(`${full}/`) || (!m.dir && full.startsWith(`${m.path}/`)))))
+      return {error: t('"{name}" already exists', {name: to})};
+    const planned = pending ? [...made, pending] : made;
+    made = planned.map((m) => under(m.path) ? {...m, path: full + m.path.slice(path.length)} : m);
     for (let up = parentOf(full); up && up !== dir; up = parentOf(up)) if (!made.some((m) => m.path === up)) made.push({path: up, dir: true});
-    return '';
+    return {path: full};
   };
-  const rename = (path: string) => { fileError.textContent = ''; renaming = path; showFiles(); };
+  const rename = (path: string) => {
+    if (naming && !finishName?.(true)) return;
+    fileError.textContent = '';
+    naming = {path, value: baseOf(path), scroll: window.scrollY};
+    keep();
+    startName();
+  };
   /** `path` and all in it not made: its row folds away and the rows under it close up. */
   const leaveOut = (path: string, li: HTMLElement) => {
     fileError.textContent = '';
+    if (naming && (naming.path === path || naming.path.startsWith(`${path}/`))) {
+      naming = undefined;
+      if (draft.at?.field === 'file') delete draft.at;
+    }
     made = made.filter((m) => m.path !== path && !m.path.startsWith(`${path}/`));
     keep();
     putAway(li, () => showFiles(), {fold: true, ms: 180});
   };
   /** A new file or folder at the repo's top, named as nothing there yet is, its name at once a field to write over. */
   const add = (dir: boolean) => {
+    if (naming && !finishName?.(true)) return;
     const path = free('', dir ? t('folder') : 'untitled.md');
-    made.push({path, dir});
+    naming = {path, value: baseOf(path), pending: {path, dir}, scroll: window.scrollY};
     keep();
-    renaming = path;
-    showFiles(path);
+    startName();
   };
-  const newFile = h('button', {type: 'button', class: 'tree-make'}, mark('new-file'), h('span', {}, t('New file')));
-  const newFolder = h('button', {type: 'button', class: 'tree-make'}, mark('new-folder'), h('span', {}, t('New folder')));
+  const newFile = h('button', {type: 'button', class: 'tree-make'}, t('New file'));
+  const newFolder = h('button', {type: 'button', class: 'tree-make'}, t('New folder'));
   newFile.addEventListener('click', () => add(false));
   newFolder.addEventListener('click', () => add(true));
-  void store.names().then((names) => { others = names.sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
+  void store.names().then((names) => { others = names; judge(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree, the repo's own.
   const caption = h('p', {class: 'sr-only'}, t('Preview in File'));
-  const card = h('div', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
+  const card = h('section', {class: 'tree tree-still', 'aria-label': t('Items to create')}, caption, preview,
     h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
   // Where it will stand, said over its box as a file's place is over a box on the desk: ~/ and the name as written.
   const place = h('span', {class: 'nr-where'});
   // A letter no name can have is marked there, where it is, as the name will stand.
-  const placed = () => {
-    place.replaceChildren(...marked(name.value.trim()));
-    kind.hidden = false;
-    if (label.isConnected && label.scrollWidth > (label.parentElement?.clientWidth ?? Infinity)) kind.hidden = true;
-  };
-  const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
+  const placed = () => place.replaceChildren(...marked(name.value.trim()));
+  const keep = () => { if (!finished) draft = {name: name.value, summary: summary.value, made, naming, at: draft.at}; };
+  function remember(field: HTMLInputElement | HTMLTextAreaElement, which: WritingAt['field']) {
+    const read = () => {
+      if (finished || (which === 'file' && !naming) || field.selectionStart == null || field.selectionEnd == null) return;
+      draft.at = {field: which, start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection ?? 'none', x: field.scrollLeft};
+    };
+    for (const event of ['focus', 'blur', 'input', 'select', 'selectionchange']) field.addEventListener(event, read);
+  }
   // What it is for, under the name in the box, the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000', rows: '1',
-    placeholder: t('Description / Purpose'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
+    placeholder: t('Write the README…'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
   /** The README as Create writes it: under the title what it is for, or the scaffold's own README. */
   const readme = (n: string) => {
-    const about = summary.value.trim();
-    return about ? `# ${n}\n\n${about}\n` : templateFiles(n, SCAFFOLD).get('README.md') ?? '';
+    const about = summary.value;
+    return about ? `# ${n}\n\n${about}${about.endsWith('\n') ? '' : '\n'}` : templateFiles(n, SCAFFOLD).get('README.md') ?? '';
   };
-  const sized = () => { readmeSize.textContent = bytes(new TextEncoder().encode(readme(name.value.trim())).length); };
+  const sized = () => {
+    const n = name.value.trim();
+    readmeSize.hidden = !validName(n);
+    if (!readmeSize.hidden) readmeSize.textContent = bytes(new TextEncoder().encode(readme(n)).length);
+  };
   // The whole box is the field, as the TODO's is.
   summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
-  // As tall as what is written in it, a line to begin with: the box grows with the words, never a field's empty room.
+  // Two lines to begin with; the paper grows with what is written there.
   const grow = () => { summary.style.height = 'auto'; summary.style.height = `${summary.scrollHeight}px`; };
   summary.addEventListener('input', () => { keep(); sized(); grow(); });
   // Narrowed or widened, the words fold again: as tall as they are at that width (not when it grows itself).
@@ -273,6 +312,7 @@ export function newRepo(ctx: Context): Node[] {
 
   /** Made, but what it is for could not be written: the page stays, says so, and where to go from here. */
   const madeIt = (n: string) => {
+    finished = true;
     draft = fresh();
     name.disabled = true;
     summary.disabled = true;
@@ -294,11 +334,8 @@ export function newRepo(ctx: Context): Node[] {
     // Why it cannot be, in the cell under the name, where it is put right: the sheet's top never moves for it.
     error,
     h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
-  // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
-  // One line: ~/ and the name as written, then New repo, which gives way (whole, or not there) where the line has no
-  // room for it.
-  const kind = h('span', {class: 'nr-kind'}, t('New repo'));
-  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), kind);
+  // The path alone sits above the paper; it has no second title to crowd it at narrow widths.
+  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place));
   // One piece, the hand's: its place over its corner, and in it the name, what it is for, what will be made (under a
   // rule) and Create at its foot. The name stands at the size of every name (a cell's capitals), never made smaller or
   // larger for its room: one that is longer than the line goes on past it, as a field's words do.
@@ -312,17 +349,21 @@ export function newRepo(ctx: Context): Node[] {
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
+  name.addEventListener('input', () => { keep(); sized(); judge(); placed(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (submit.disabled || (naming && !finishName?.(true))) return;
     const n = name.value.trim();
     // Nothing written yet is not a name broken: what is wanted is said, under the field it goes in.
     if (!validName(n)) { error.textContent = n ? t('Use letters, digits, and . _ - (cannot start with .)') : t('Please enter a name first'); name.focus(); nudge(name); return; }
-    // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
-    // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
-    if ((await store.names()).includes(n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return; }
     submit.disabled = true;
+    const planned = made, text = readme(n);
     try {
+      // A name on this device or on the Remote is taken; focus its field so it can be put right.
+      if ((await store.names()).includes(n) || remoteOnly().some((r) => r.name === n)) {
+        submit.disabled = false;
+        error.textContent = t('A repo named "{name}" already exists', {name: n}); name.focus(); nudge(name); return;
+      }
       await store.create(n, 'empty');
     } catch (e) {
       error.textContent = t('Failed to create: {message}', {message: errorText(e)});
@@ -332,16 +373,16 @@ export function newRepo(ctx: Context): Node[] {
     }
     // What was laid out here is what is made, as it is: its folders, then its files (the README's words what it is
     // for, wherever it was renamed to; a file made here, empty), and the minimal scaffold's README gone if it was left out.
-    const readmeAt = made.find((m) => m.readme && !m.dir)?.path ?? null;
+    const readmeAt = planned.find((m) => m.readme && !m.dir)?.path ?? null;
     let at = '';
     try {
-      for (const m of made.filter((x) => x.dir).sort((a, b) => a.path.split('/').length - b.path.split('/').length)) { at = m.path; await store.mkdir(n, m.path); }
-      for (const m of made.filter((x) => !x.dir)) {
+      for (const m of planned.filter((x) => x.dir).sort((a, b) => a.path.split('/').length - b.path.split('/').length)) { at = m.path; await store.mkdir(n, m.path); }
+      for (const m of planned.filter((x) => !x.dir)) {
         at = m.path;
-        const text = m.readme ? readme(n) : '';
-        if (m.path === 'README.md') await store.write(n, m.path, text); else await store.add(n, parentOf(m.path), baseOf(m.path), text);
+        const contents = m.readme ? text : '';
+        if (m.path === 'README.md') await store.write(n, m.path, contents); else await store.add(n, parentOf(m.path), baseOf(m.path), contents);
       }
-      if (!made.some((m) => m.path === 'README.md' && !m.dir)) { at = 'README.md'; await store.remove(n, 'README.md'); }
+      if (!planned.some((m) => m.path === 'README.md' && !m.dir)) { at = 'README.md'; await store.remove(n, 'README.md'); }
     } catch (e) {
       madeIt(n);
       error.textContent = t('Failed to write {what} ({why})', {what: `${n}/${at}`, why: errorText(e)});
@@ -353,8 +394,9 @@ export function newRepo(ctx: Context): Node[] {
     // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
     // in Forge, the caret in it, and its words going with it onto their line there (under the title and a line left
     // empty: readme), never a sheet gone empty on its way and the words come back after.
+    finished = true;
     draft = fresh();
-    const words = summary.value.trim() && readmeAt ? liftLine(summary) : null;
+    const words = summary.value && readmeAt ? liftLine(summary) : null;
     // The box it was written in grows into the README's box, standing where that is laid.
     ctx.openRepo(n, readmeAt ?? '', readmeAt ? 'end' : false, box, 0, words ? {lifted: words, to: (into) => {
       const area = into.querySelector<HTMLTextAreaElement>('textarea.code-edit');
@@ -364,7 +406,92 @@ export function newRepo(ctx: Context): Node[] {
   showFiles();
   sized();
   placed();
-  queueMicrotask(() => name.focus({preventScroll: true}));
-  // On the ground with Home's and Forge's band and pane: the rail goes between the three as a camera over one desk.
-  return [onTheGround(h('div', {class: 'home-main new-repo-main', 'aria-label': t('New repo')}, form), ctx, store.list().catch(() => null))];
+  remember(name, 'name');
+  remember(summary, 'summary');
+  keepWritingInView(form);
+  const at = draft.at;
+  queueMicrotask(() => {
+    if (!form.isConnected) return;
+    const f = (at?.field === 'file' ? editing() : at?.field === 'summary' && !summaryBox.hidden ? summary : null) ?? name;
+    f.focus({preventScroll: true});
+    if (at && (f !== name || at.field === 'name')) { f.setSelectionRange(at.start, at.end, at.direction); f.scrollLeft = at.x; }
+  });
+  return [writingDesk(form, ctx)];
+}
+
+/** When a phone's keyboard takes space, move the paper only enough to keep the line in the hand. */
+function keepWritingInView(form: HTMLElement) {
+  const view = window.visualViewport;
+  form.addEventListener('focusin', (event) => {
+    const field = event.target;
+    if (!(field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement)) return;
+    const reading = new AbortController(), {signal} = reading;
+    let frame = 0, height = view?.height ?? innerHeight;
+    const end = () => { reading.abort(); cancelAnimationFrame(frame); form.style.removeProperty('--nr-keyboard-inset'); };
+    // Removing a focused field does not dispatch blur in every browser. The observation is only while writing.
+    const page = form.closest('#page');
+    if (page) {
+      const left = new MutationObserver(() => { if (!field.isConnected) end(); });
+      left.observe(page, {childList: true, subtree: true});
+      signal.addEventListener('abort', () => left.disconnect(), {once: true});
+    }
+    const fit = () => {
+      frame = 0;
+      if (!form.isConnected || document.activeElement !== field) { end(); return; }
+      const room = view?.height ?? innerHeight, old = height;
+      height = room;
+      if (!matchMedia('(max-width: 600px)').matches || (view && Math.abs(view.scale - 1) > .01)) return;
+      const over = Math.max(0, document.documentElement.clientHeight - room);
+      if (over) form.style.setProperty('--nr-keyboard-inset', `${over}px`);
+      else form.style.removeProperty('--nr-keyboard-inset');
+      if (room >= old) return;
+      const top = view?.offsetTop ?? 0, r = field.getBoundingClientRect();
+      const at = field.selectionDirection === 'backward' ? field.selectionStart : field.selectionEnd;
+      const caret = field instanceof HTMLTextAreaElement ? caretIn(field, at ?? 0) : {y: 0, h: r.height};
+      const line = r.top + caret.y, gap = 12;
+      const dy = line < top + gap ? line - top - gap : Math.max(0, line + caret.h - top - room + gap);
+      if (dy) window.scrollBy({top: dy, behavior: 'instant'});
+    };
+    const changed = () => { if (!frame) frame = requestAnimationFrame(fit); };
+    field.addEventListener('blur', end, {once: true, signal});
+    window.addEventListener('resize', changed, {signal});
+    view?.addEventListener('resize', changed, {signal});
+  });
+}
+
+/** New repo's paper is the subject. Commands for a different repo only appear when there is one to act on. */
+function writingDesk(form: HTMLElement, ctx: Context) {
+  const desk = h('div', {class: 'home-layout new-repo-desk'}, form);
+  let repo = ctx.repo;
+  void store.list().then((all) => {
+    if (!all.some((r) => r.name === repo)) repo = all[0]?.name ?? null;
+  }, () => {});
+  const elsewhere = (at: string, ask: 'termNext' | 'deedsNext') => {
+    void import('../forge/forge.ts').then((forge) => {
+      if (desk.isConnected) { forge[ask](); ctx.openRepo(at); }
+    });
+  };
+  const find = deskSearch(ctx, () => repo);
+  const places = placesMenu(desk, 'new-repo', id => void ctx.go(id), {find, commands: () => {
+    const at = repo;
+    return [
+      ...(ctx.placeCommands?.(['new-repo']) ?? []),
+      ...(at ? [
+        {label: 'Prompt', run: () => elsewhere(at, 'termNext')},
+        {label: 'File actions', run: () => elsewhere(at, 'deedsNext')},
+      ] : []),
+    ];
+  }});
+  function keys(event: KeyboardEvent) {
+    if (!desk.isConnected) { document.removeEventListener('keydown', keys); return; }
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || desk.closest('[inert]')) return;
+    const key = event.key.toLowerCase();
+    if (((key === 'k' || key === 'p') && !event.shiftKey) || (key === 'f' && event.shiftKey)) {
+      event.preventDefault();
+      places.close();
+      find(document.activeElement);
+    }
+  }
+  document.addEventListener('keydown', keys);
+  return desk;
 }

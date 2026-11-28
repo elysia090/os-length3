@@ -18,7 +18,6 @@ import {letter, letterClock, type LetterView} from './letter.ts';
 import {InboxPapers, paperSwitch, recipientPaper} from './papers.ts';
 import {addressStub} from './usernames.ts';
 
-const PLACES = ['Server', 'Inbox'] as const;
 type OpenedLetter = Awaited<ReturnType<typeof inbox.thread>>;
 
 /** Don't carry the other account's drafts or opened names into a new Remote or sign-in. */
@@ -29,11 +28,10 @@ export function inboxPage(ctx: Context): Node[] {
   const desk = h('div', {class: 'inbox-page'});
   const holder = h('div', {class: 'inbox-shell'}, h('h1', {class: 'inbox-title'}, t('Inbox')), desk);
   let shown: ReturnType<typeof showDesk> | null = null;
-  const menus = placesMenu(holder, PLACES, 'Inbox', (place) => { if (place === 'Server') void ctx.go('server'); },
-    () => [
-      ...(shown ? [{label: 'Your usernames', run: shown.showNames}] : []),
-      ...(ctx.placeCommands?.(['server']) ?? []),
-    ], {find: deskSearch(ctx)});
+  const menus = placesMenu(holder, 'inbox', id => void ctx.go(id), {find: deskSearch(ctx), commands: () => [
+    ...(shown ? [{label: 'Your usernames', run: shown.showNames}] : []),
+    ...(ctx.placeCommands?.(['server']) ?? []),
+  ]});
   const gate = (...nodes: Node[]) => desk.replaceChildren(h('div', {class: 'inbox-gate'}, ...nodes));
   let reading = 0;
   const paint = async () => {

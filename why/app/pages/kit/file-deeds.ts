@@ -79,7 +79,8 @@ export interface Deeds {
   move(to: string): Promise<void>;
   /** Deleted from the store. */
   removed(): Promise<void> | void;
-  /** A named row can hold its own confirmation instead of borrowing the menu's space. */
+  /** Files can put the field or confirmation directly on the named row. */
+  askRename?(): void;
   askDelete?(): void;
   /** Put back as it was at the last commit (Revert): the menu's work is done. */
   reverted(): void;
@@ -191,7 +192,10 @@ export function fileDeeds(d: Deeds): HTMLElement {
   })));
   if (path !== '') {
     // Its path in the repo, its name to be written over: a path written moves it (notes/plan.md), its folders made.
-    rows.push(entry(t('Rename'), 'pen', (b) => field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true)));
+    rows.push(entry(t('Rename'), 'pen', (b) => {
+      if (d.askRename) d.askRename();
+      else field(b, t('New name'), path, t('Rename'), async (written) => d.move(await renaming(repo, path, written)), true);
+    }));
     rows.push(menuRule(), entry(t('Delete'), 'trash', (b) => {
       if (d.askDelete) { d.askDelete(); return; }
       const ask = fileDeleteAsk(d, () => { ask.element.replaceWith(b); b.focus(); d.back(); }, askFoot(b, pop));
@@ -203,9 +207,15 @@ export function fileDeeds(d: Deeds): HTMLElement {
   // A file changed since the repo's last commit can be put back as it was there: Revert, last, after the deeds that
   // cannot be undone (it takes what was written since), asked in its place as Delete is. Read as the menu comes out,
   // and laid at its end, so nothing above it moves under the pointer. (Before, it was the diff's, under the search.)
-  // (Busy while it is read: the menu is not whole until then.)
-  if (!d.dir && path) pop.setAttribute('aria-busy', 'true');
-  if (!d.dir && path) void changes(repo).finally(() => pop.removeAttribute('aria-busy')).then((c) => {
+  // The menu is not whole while reading, but unlike a write it can be put away.
+  if (!d.dir && path) {
+    pop.setAttribute('aria-busy', 'true');
+    pop.dataset.readingRevert = '';
+  }
+  if (!d.dir && path) void changes(repo).finally(() => {
+    pop.removeAttribute('aria-busy');
+    delete pop.dataset.readingRevert;
+  }).then((c) => {
     // (Signed out there is no last commit to go back to: commits are kept on the Remote.)
     const f = c.connected ? c.folders.flatMap((x) => x.files).find((x) => x.path === path) : undefined;
     if (!f || f.status === 'removed' || !pop.isConnected) return;
@@ -236,10 +246,11 @@ export function fileDeeds(d: Deeds): HTMLElement {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     const items = [...pop.querySelectorAll<HTMLElement>('.pop-item')];
     const i = items.indexOf(document.activeElement as HTMLElement);
-    if (i < 0) return;
+    if (!items.length || i < 0 && document.activeElement !== pop) return;
     event.preventDefault();
     event.stopPropagation();
-    items[(i + (event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
+    const down = event.key === 'ArrowDown' || event.key === 'ArrowRight';
+    items[i < 0 ? (down ? 0 : items.length - 1) : (i + (down ? 1 : items.length - 1)) % items.length]?.focus();
   });
   return pop;
 }

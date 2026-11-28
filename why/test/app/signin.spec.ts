@@ -163,10 +163,8 @@ test('Cancel at the provider\'s consent comes back to the card, which says so by
 
 test('signing in from the Inbox reached through Places comes back to the Inbox desk', async ({app}, info) => {
   await app.rail.go('home');
-  const key = app.main.getByRole('button', {name: 'Places', exact: true});
-  const menu = app.main.getByRole('menu', {name: 'Places', exact: true});
-  await key.click();
-  await menu.getByRole('menuitem', {name: 'Inbox', exact: true}).click();
+  const {placesKey: key, places: menu} = app.forge;
+  await (await app.rail.destination('inbox')).click();
   await app.main.getByRole('region', {name: 'Sign in'}).getByRole('button', {name: 'Continue with Development'}).click();
   await app.atProvider(personName(info));
   await app.settled();

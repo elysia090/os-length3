@@ -28,10 +28,21 @@ test('going along the rail, the next page stands whole at once, its cards each i
   await app.newRepo.make('notes');
   await app.rail.go('home');
   await still(app);
-  const cards = app.main.locator('.home-repos .card');
-  await expect(cards).toHaveCount(3);
-  // Staged, each came in from below and ended where it stands, wholly there.
-  for (const o of await cards.evaluateAll((els) => els.map((e) => [getComputedStyle(e).opacity, getComputedStyle(e).translate]))) expect(o).toEqual(['1', 'none']);
+  const repos = app.main.getByRole('region', {name: 'Repos', exact: true});
+  const list = repos.locator('.home-repos');
+  const rows = list.locator(':scope > .card.repo');
+  const footer = repos.locator(':scope > .home-repos-footer');
+  const create = footer.getByRole('button', {name: 'New repo', exact: true});
+  await expect(rows).toHaveCount(2);
+  await expect(list.getByRole('button', {name: 'New repo', exact: true})).toHaveCount(0);
+  await expect(create).toBeVisible();
+  // Both repo rows and their separate creation key have settled at their final positions.
+  for (const el of [...await rows.all(), create]) {
+    expect(await el.evaluate((e) => {
+      const style = getComputedStyle(e);
+      return [style.opacity, style.translate];
+    })).toEqual(['1', 'none']);
+  }
   await app.rail.go('git');
   await expect(app.main.getByRole('heading', {name: 'Git', level: 1})).toBeVisible();
   await still(app);
@@ -288,7 +299,7 @@ test('navigation is immediately interactive while its content arrives, without s
 test('reduced motion settles an in-flight navigation and restores motion when switched back', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  await app.page.evaluate(() => document.getElementById('purpose-runtime')!.click());
+  await app.page.evaluate(() => document.getElementById('purpose-forge')!.click());
   await app.page.emulateMedia({reducedMotion: 'reduce'});
   await still(app);
   expect(await app.page.locator('.glide-ink').count()).toBe(0);
@@ -298,7 +309,7 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
   await app.page.emulateMedia({reducedMotion: 'no-preference'});
   // Motion back: the world moves again to a place gone to (its pages, under the frame).
   expect(await app.page.evaluate(() => new Promise<number>((done) => {
-    document.getElementById('purpose-runtime')!.click();
+    document.getElementById('purpose-forge')!.click();
     let most = 0, n = 0;
     const step = () => { most = Math.max(most, document.getAnimations().filter((a) => a.playState === 'running').length); if (++n < 12) requestAnimationFrame(step); else done(most); };
     requestAnimationFrame(step);
@@ -309,18 +320,20 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
 test('a press is let go when the pointer is cancelled, and being held is shown with less motion asked for too (a state, not a move)', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.forge.placesKey;
+  const toggle = app.forge.placesKey, face = toggle.locator('[data-press-face]');
   await expect(toggle).toBeVisible();
+  const at = await toggle.boundingBox();
   await toggle.dispatchEvent('pointerdown', {button: 0});
-  await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
+  await expect.poll(() => face.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
+  expect(await toggle.boundingBox()).toEqual(at);
   await toggle.dispatchEvent('pointercancel');
   await still(app);
-  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  expect(await face.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await app.page.emulateMedia({reducedMotion: 'reduce'});
   await toggle.dispatchEvent('pointerdown', {button: 0});
-  expect(Number(await toggle.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
+  expect(Number(await face.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointerup', {button: 0});
-  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  expect(await face.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await expect(app.forge.places).toBeHidden();
 });
 
@@ -328,9 +341,9 @@ test('a press is let go when the pointer is cancelled, and being held is shown w
 test('less motion asked for during a held press keeps it held; let go, it is up at once and nothing is replayed', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.forge.placesKey;
+  const toggle = app.forge.placesKey, face = toggle.locator('[data-press-face]');
   await expect(toggle).toBeVisible();
-  const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
+  const scale = () => face.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);
   // Held is a state, not a move: less motion asked for keeps it held, and let go it is up at once.
@@ -348,25 +361,39 @@ test('less motion asked for during a held press keeps it held; let go, it is up 
   await expect(app.forge.places).toBeHidden();
 });
 
-test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
+interface TravelFrame {
+  t: number;
+  left: number | null;
+  come: number | null;
+  dots: number;
+  cross: number;
+  place: string;
+  corner: number[];
+  caption: number[];
+  extraWidth: number;
+}
+
+test('adjacent Places travel together against a fixed frame; a distant selection cuts directly to its desk', async ({app}) => {
   await app.newRepo.make('hello');
+  await app.rail.go('git');
+  await still(app);
   await app.rail.go('home');
   await still(app);
   const U = 24;
   const been = new Set<string>();
-  for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
+  for (const [to, dir] of [['forge', 1], ['git', 1], ['forge', -1], ['home', -1], ['runtime', 0], ['home', 0]] as const) {
     // Measure the actual destination's press, not the press that opens the Places menu.
     const destination = await app.rail.destination(to);
     await still(app);
     await expect(destination).toBeVisible();
     const from = await app.main.getAttribute('data-place');
-    const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);
+    const far = U * Math.round((await app.page.evaluate(() => innerWidth)) / U);
     // Every frame of the move: how far the place left has gone, the place come to, and the ground's dots.
-    const frames = app.page.evaluate(() => new Promise<{t: number; left: number | null; come: number | null; dots: number; place: string}[]>((done) => {
-      const out: {t: number; left: number | null; come: number | null; dots: number; place: string}[] = [], t0 = performance.now();
+    const frames = app.page.evaluate(() => new Promise<TravelFrame[]>((done) => {
+      const out: TravelFrame[] = [], t0 = performance.now();
       // When the press went down (on the page's clock, as the frames are).
-      addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, place: 'pressed'}); }, {capture: true, once: true});
-      const y = (el: Element | null) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
+      addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, cross: 0, place: 'pressed', corner: [], caption: [], extraWidth: 0}); }, {capture: true, once: true});
+      const at = (el: Element | null) => el ? new DOMMatrix(getComputedStyle(el).transform) : null;
       const page = document.getElementById('page')!;
       let coming: Element | null = null;
       const step = () => {
@@ -376,9 +403,17 @@ test('going to another place the world goes by: the place left, the place come t
         if (left && !coming?.isConnected) {
           const effects = document.getAnimations().map((a) => a.effect as KeyframeEffect | null);
           coming = effects.find((e) => e?.target && page.contains(e.target)
-            && e.getKeyframes().some((k) => /translateY/.test(String(k.transform ?? ''))))?.target ?? null;
+            && e.getKeyframes().some((k) => /translateX/.test(String(k.transform ?? ''))))?.target ?? null;
         }
-        out.push({t, left: y(left), come: left ? y(coming) : null, dots: parseFloat(getComputedStyle(document.body).backgroundPositionY) || 0, place: page.dataset.place ?? ''});
+        const outAt = at(left), inAt = left ? at(coming) : null, ground = getComputedStyle(document.body);
+        const corner = [...page.querySelectorAll('.forge-search-key, .forge-places-key')].filter((key) => key.getClientRects().length);
+        const caption = page.querySelector('.desk-caption .places-label');
+        const point = (el: Element) => { const r = el.getBoundingClientRect(); return [r.x, r.y]; };
+        out.push({t, left: outAt?.m41 ?? null, come: inAt?.m41 ?? null, dots: parseFloat(ground.backgroundPositionX) || 0,
+          cross: Math.max(Math.abs(outAt?.m42 ?? 0), Math.abs(inAt?.m42 ?? 0), Math.abs(parseFloat(ground.backgroundPositionY) || 0)),
+          corner: corner.flatMap(point), caption: caption ? point(caption) : [],
+          extraWidth: Math.max(0, document.scrollingElement!.scrollWidth - innerWidth),
+          place: page.dataset.place ?? ''});
         if (t < 800) requestAnimationFrame(step); else done(out);
       };
       requestAnimationFrame(step);
@@ -386,6 +421,12 @@ test('going to another place the world goes by: the place left, the place come t
     await destination.click();
     const got = await frames, pressed = got.find((f) => f.place === 'pressed')!.t, all = got.filter((f) => f.place !== 'pressed');
     const moving = all.filter((f) => f.left !== null);
+    if (!dir) {
+      expect(moving, `${from} to ${to}: no pages slide when the user skips the intervening places`).toHaveLength(0);
+      expect(all.at(-1)?.place).toBe(to);
+      expect(all.every(f => f.place === from || f.place === to)).toBe(true);
+      continue;
+    }
     const firstDrawn = moving.find((f) => Math.abs(f.left!) > .5);
     expect(firstDrawn, `${from} to ${to}: the world actually moves`).toBeDefined();
     // Caused by the press (Michotte: a motion is seen as caused by another that starts it within 50 ms): the world off
@@ -394,12 +435,18 @@ test('going to another place the world goes by: the place left, the place come t
     if (!(to === 'forge' && !been.has(to))) expect(firstDrawn!.t - pressed, `${from} to ${to}: off within 50 ms of the press`).toBeLessThanOrEqual(50 + 1000 / 60);
     been.add(to);
     // The place left stays in sight as the world moves, and the one come to follows it at one distance: no gap
-    // opens or closes between them, and the ground's dots go as they do.
+    // opens or closes between them, and neither the ground nor the frame follows them.
     expect(moving.length, `to ${to}`).toBeGreaterThan(5);
     expect(moving.some((f) => f.come !== null), `to ${to}: the incoming page moves as well`).toBe(true);
+    const end = all.at(-1)!;
+    expect(end.corner).toHaveLength(4);
     for (const f of moving) {
+      expect(f.corner, `to ${to}: the corner stays at the same coordinates`).toEqual(end.corner);
+      expect(f.caption, `to ${to}: the name stays at the same coordinates`).toEqual(end.caption);
+      expect(f.extraWidth, `to ${to}: the viewport cannot be scrolled sideways`).toBe(0);
+      expect(f.cross, `to ${to}: no vertical movement`).toBe(0);
       if (f.come !== null) expect(Math.abs(f.come - dir * far - f.left!), `to ${to}: the two places a window apart`).toBeLessThan(1.5);
-      expect(Math.abs(f.dots - f.left!), `to ${to}: the dots with the places`).toBeLessThan(1.5);
+      expect(f.dots, `to ${to}: the ground stays still`).toBe(0);
     }
     // One way, never back; most of the way in the first third of its time; at rest within 420 ms (and a frame).
     for (let i = 1; i < moving.length; i++) expect(dir * (moving[i - 1].left! - moving[i].left!), `to ${to}: one way`).toBeGreaterThanOrEqual(-.01);
@@ -407,7 +454,6 @@ test('going to another place the world goes by: the place left, the place come t
     expect(Math.abs(third.left!) / far, `to ${to}: off at once`).toBeGreaterThan(.6);
     expect(last.t - first.t, `to ${to}: its time`).toBeLessThanOrEqual(470);
     // At rest: the place left is gone, the dots stand where they stood, and the way was whole cells.
-    const end = all.at(-1)!;
     expect([end.left, end.dots, end.place], `to ${to}: at rest`).toEqual([null, 0, to]);
     expect(far % U).toBe(0);
     await still(app);

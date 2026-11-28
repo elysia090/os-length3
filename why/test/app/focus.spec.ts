@@ -28,11 +28,16 @@ async function ink(page: Page, rects: {x: number; y: number; r: number; b: numbe
       x = h(x), y = h(y), z = h(z);
       return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
     };
-    const ground = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number), G = lab(ground[0], ground[1], ground[2]);
+    const body = getComputedStyle(document.body);
+    const ground = body.backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number), G = lab(ground[0], ground[1], ground[2]);
+    // The stationary desk dots show through an unfilled paper. They are not part of that paper's ink.
+    const dot = /radial-gradient\(circle,\s*rgb\(([^)]*)\)/.exec(body.backgroundImage)?.[1]?.match(/\d+/g)?.slice(0, 3).map(Number);
+    const D = dot ? lab(dot[0], dot[1], dot[2]) : null;
     return (rects as {x: number; y: number; r: number; b: number}[]).map((r) => {
       let sum = 0;
       for (let y = Math.max(0, Math.floor(r.y)); y < Math.min(c.height, r.b); y++) for (let x = Math.max(0, Math.floor(r.x)); x < Math.min(W, r.r); x++) {
         const i = 4 * (y * W + x), L = lab(d[i], d[i + 1], d[i + 2]);
+        if (D && Math.hypot(L[0] - D[0], L[1] - D[1], L[2] - D[2]) < 6) continue;
         sum += Math.min(1, Math.hypot(L[0] - G[0], L[1] - G[1], L[2] - G[2]) / 50);
       }
       return sum;
@@ -40,54 +45,55 @@ async function ink(page: Page, rects: {x: number; y: number; r: number; b: numbe
   }, [`data:image/png;base64,${shot}`, rects] as const);
 }
 
-test('on Forge\'s desk, the one document in hand is at least eight times as heavy as the other; Prompt is separate', async ({app}) => {
+test('in Forge Beside, the document in hand is at least eight times as heavy; Prompt replaces both until Back', async ({app}) => {
   const {forge, page} = app;
-  await app.newRepo.openInForge();
-  // The template opened three papers; keep two whole ones in the photograph.
-  // Closing the third is an ordinary Forge action, not a test-only change to the layout.
-  await forge.editor('Makefile').focus();
-  await forge.piece('Makefile').getByRole('button', {name: 'Close Makefile', exact: true}).click();
+  // Use the actual two-paper mode; at ordinary work measure only one whole paper fits beside Files.
+  await app.newRepo.make('double-paper');
+  const first = forge.editor('README.md'), second = app.main.getByRole('textbox', {name: 'Edit README.md beside', exact: true});
+  await first.press('Shift+F10');
+  await page.getByRole('menuitemcheckbox', {name: 'Beside', exact: true}).click();
+  const papers = [forge.piece('README.md'), forge.desk.locator('.desk-box:has([data-view="beside"])')];
+  await expect(second).toBeFocused();
   await expect(forge.desk.locator('.desk-box')).toHaveCount(2);
-  const paths = ['README.md', 'src/main.c'];
-  const shade = 4;
-  const positions = async () => Promise.all(paths.map(async (path) => {
-    const {x, y, width, height} = (await forge.piece(path).boundingBox())!;
-    return {x, y, r: x + width + shade, b: y + height + shade};
-  }));
-  for (const [at, path] of paths.entries()) {
-    await forge.editor(path).focus();
+  const shade = 4, F = 312;
+  const positions = async () => Promise.all(papers.map(piece => piece.evaluate((el, shade) => {
+    const {x,y,right,bottom} = el.getBoundingClientRect();
+    return {x, y, r: right + shade, b: bottom + shade};
+  }, shade)));
+  for (const [at, field] of [first, second].entries()) {
+    await field.click();
     await page.mouse.move(1530, 726);
     await expect(forge.desk.locator('.desk-box.held')).toHaveCount(1);
-    const mine = forge.piece(path), other = forge.piece(paths[1 - at]!);
+    const mine = papers[at]!, other = papers[1 - at]!;
     await expect(mine).toHaveClass(/\bheld\b/);
     await expect(mine).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
     await expect(other).toHaveCSS('box-shadow', 'none');
     await expect(mine).toBeInViewport({ratio: 1});
     await expect(other).toBeInViewport({ratio: 1});
     const seen = await positions();
-    for (const box of seen) expect(box.x >= 48 && box.y >= 0 && box.r <= 1536 && box.b <= 730).toBe(true);
-    // Weigh only the fill, the shadow and the edge, while the paper stays where it is.
+    expect(seen[0]!.x).toBe(F);
+    for (const box of seen) expect(box.x >= F && box.y >= 0 && box.r <= 1536 && box.b <= 730).toBe(true);
+    // Weigh only the fill, the shadow and the edge, while the papers stay in their actual positions.
     const style = await page.addStyleTag({content: '.desk-box, .desk-box * { color: transparent !important; caret-color: transparent !important; } .vt-cursor, .os-caret { visibility: hidden !important; }'});
     let weight: number[];
     try { weight = await ink(page, seen); } finally { await style.evaluate((el) => (el as Element).remove()); }
-    expect(weight[at]! / weight[1 - at]!, `${path} in hand: ${Math.round(weight[at]!)} to ${Math.round(weight[1 - at]!)}`).toBeGreaterThanOrEqual(8);
+    expect(weight[at]! / weight[1 - at]!, `paper ${at + 1} in hand: ${Math.round(weight[at]!)} to ${Math.round(weight[1 - at]!)}`).toBeGreaterThanOrEqual(8);
   }
 
-  // The attached Prompt takes its bay rather than adding a third document to the row. With the second document
-  // held, the narrower writing viewport turns to it; closing the tool restores the exact two-paper frame.
   const before = await positions();
   await forge.use('Prompt');
   await expect(forge.promptBox).toBeFocused();
   await expect(forge.desk.locator('.desk-box')).toHaveCount(2);
-  for (const path of paths) await expect(forge.piece(path)).toHaveCSS('box-shadow', 'none');
-  await expect(forge.piece('src/main.c')).toBeInViewport({ratio: 1});
+  await expect(first).toBeHidden();
+  await expect(second).toBeHidden();
+  for (const paper of papers) await expect(paper).toHaveCSS('box-shadow', 'none');
   const terminal = app.main.locator('.forge-prompt-slot');
   await expect(terminal).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
   await terminal.locator('.desk-term:visible').click({button: 'right', position: {x: 160, y: 90}});
   await page.getByRole('menu', {name: 'Terminal', exact: true}).getByRole('menuitem', {name: 'Close', exact: true}).click();
   await expect(forge.promptBox).toBeHidden();
-  await expect(forge.editor('src/main.c')).toBeFocused();
-  await expect(forge.piece('src/main.c')).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
+  await expect(second).toBeFocused();
+  await expect(papers[1]!).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
   await expect.poll(positions).toEqual(before);
 });
 

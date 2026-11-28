@@ -16,10 +16,13 @@ test('the corner keys take presses at their edges; the rail, door and band still
     const what = `at ${size.width}×${size.height}`;
     await expect(page.getByRole('navigation', {name: 'Purposes', includeHidden: true})).toBeHidden();
     await expect(app.rail.door).toBeHidden();
-    // Home has adjacent 44 px keys instead of invisible targets for the old rail and band.
-    const seam = size.width - 56;
-    expect([await at(seam - 1, 34), await at(seam, 34)], `${what}: each side of the corner keys' seam`).toEqual(['forge-search-key', 'forge-places-key']);
-    await page.mouse.click(seam + 1, 34);
+    // The labelled Places and Search each take the edges of their 44 px targets, on opposite sides.
+    const key = (await app.forge.placesKey.boundingBox())!;
+    const search = (await app.main.getByRole('button', {name: 'Search', exact: true}).boundingBox())!;
+    expect([key.height, search.height]).toEqual([44, 44]);
+    expect([await at(key.x + 1, key.y + 1), await at(search.x + search.width - 1, search.y + 1)], what)
+      .toEqual(['forge-places-key', 'forge-search-key']);
+    await page.mouse.click(key.x + 1, key.y + 1);
     await expect(app.forge.places).toBeVisible();
 
     // Remote is still a framed sheet: exercise the same edge and slop targets where they are drawn.
@@ -32,9 +35,14 @@ test('the corner keys take presses at their edges; the rail, door and band still
     await app.rail.door.click();
     await expect(page.locator('#page')).toHaveAttribute('data-place', 'home');
 
-    // New repo keeps the tool band that Home no longer draws.
+    // New repo shares the named corners instead of using the old tool band.
     await app.rail.go('new-repo');
-    expect(await at(72, 0), `${what}: the window's top over the band's first key`).toBe('band-tool');
+    await expect(app.forge.placesKey).toHaveAccessibleName('New repo');
+    const creation = (await app.forge.placesKey.boundingBox())!;
+    const find = (await app.main.getByRole('button', {name: 'Search', exact: true}).boundingBox())!;
+    expect([creation.height, find.height]).toEqual([44, 44]);
+    expect([await at(creation.x + 1, creation.y + 1), await at(find.x + find.width - 1, find.y + 1)], what)
+      .toEqual(['forge-places-key', 'forge-search-key']);
   }
 });
 

@@ -8,7 +8,7 @@ import {wholeCells} from './row.ts';
 
 /** What is set on the ground and read: its words, not a sheet's. */
 export const GROUND_WORDS = [
-  '.identity > :is(.counts, .handle, .bio)', '.home-repos-sec > h2', '.home-repos .card.new', '.lately > h2',
+  '.identity > :is(.counts, .handle, .bio)', '.home-repos-sec > h2', '.lately > h2',
   '.desk-label', '.issue-name', '.git-side > .side-name', '.side-part h3', '.nr-label',
   // (Not a name: in the display face it is written large on the squared paper, the dots going on under it, as ink
   // over a ruled page. A dot reads as a stop nobody wrote beside small words, never inside capitals a cell tall.)

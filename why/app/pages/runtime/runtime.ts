@@ -130,7 +130,8 @@ export function runtime(ctx: Context): Node[] {
   // The Agent's key is local; dotfiles remain the person's on every device.
   const head = h('header', {class: 'runtime-masthead'}, h('h1', {}, t(purpose('runtime').label)));
   // The corner belongs to the desk. Only the current view is on the paper, as on its neighbouring desks.
-  placesMenu(head, ['Runtime'] as const, 'Runtime', () => {}, () => ctx.placeCommands?.(['runtime']) ?? [], {find: deskSearch(ctx)});
+  placesMenu(head, 'runtime', id => void ctx.go(id), {find: deskSearch(ctx),
+    commands: () => ctx.placeCommands?.(['runtime']) ?? []});
   return [head, h('div', {class: 'runtime-work'},
     h('div', {class: 'part-bar runtime-tabs'}, page.switch),
     h('div', {class: 'runtime-paper'},

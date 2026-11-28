@@ -58,7 +58,9 @@ test('the Home activity glass, side sheets and Inbox address track keep their ex
   };
   const cells = (n: number) => `calc(${n} * var(--u))`;
   // The 15-cell activity glass follows its beside column. The two smaller Home sheets keep their own measure.
-  assert.equal(style('home', '.home-waits > .lately', 'width'), cells(15));
+  assert.equal(style('home', '.home-beside', '--home-rail-measure'), cells(15));
+  assert.equal(style('home', '.home-waits > .lately', '--recent-measure'), cells(15));
+  assert.equal(style('home', '.home-waits > .lately', 'width'), 'var(--home-rail-measure, var(--recent-measure))');
   assert.equal(style('home', '.home-waits > .plugins', 'width'), cells(12));
   assert.equal(style('home', '.home-waits > .agent-cards', 'width'), cells(12));
   // The Server index used to stand in a row of sheets. It still caps at eight cells, with a cell clear of the

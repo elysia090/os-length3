@@ -32,8 +32,14 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 .home-row .clearing { --ground: var(--nighthawks-ground); }
 .home-own { width: var(--own-width); }
 .home-beside {
+  --home-rail-measure: calc(15 * var(--u));
+  --home-rail-overhang: calc(var(--s4) + var(--s1) / 2);
+  --home-rail-scroll-inset: 9px;
   width: var(--beside-width);
   display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start;
+}
+@container home-portrait (min-width: 1188px) {
+  .home-beside { --home-rail-measure: calc(18 * var(--u)); }
 }
 .home-row .profile { color: var(--nighthawks-paper); }
 .home-row .identity > h1 {
@@ -41,12 +47,16 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   margin-block-start: calc(var(--cap) * var(--u) - (var(--pitch) + var(--size)) / 2 + .1245 * var(--size));
   text-wrap: balance;
 }
+/* Below fourteen cells of writing measure, the larger crown breaks ordinary names within their words. */
+@container home-portrait (width < 348px) {
+  .home-row .identity > h1 { --cap: 1.75; }
+}
 @media (min-width: 1110px) { .home-beside { padding-block-start: calc(3 * var(--u) - var(--s1)); } }
 .home-row .identity > :is(.counts, .handle, .bio, .bio-ask) { color: var(--nighthawks-desk-quiet); }
 .home-row .identity [contenteditable] { caret-color: var(--nighthawks-paper); }
 .home-row .identity [contenteditable]:empty::before { color: var(--nighthawks-rule); }
 .home-row .identity .count-go:is(:hover, :focus-visible) { color: var(--nighthawks-paper); }
-.home-row .identity :focus-visible, .home-repos :is(.card-open, .repo-gear-button, .card.new):focus-visible { outline-color: var(--nighthawks-paper); }
+.home-row .identity :focus-visible, .home-repos :is(.card-open, .repo-gear-button):focus-visible { outline-color: var(--nighthawks-paper); }
 .home-row .identity > .error, .home-person > .error { color: var(--del-tint); }
 /* The TODO is the only lifted object. Muted yellow and a hard, short shadow keep its silhouette legible without
    letting a slab of saturated colour or its shadow eclipse the actual writing. */
@@ -102,74 +112,116 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
 .home-own > .section > .error:empty { display: none; }
 .home-own > .section > .error { margin: 0 var(--note-gutter); line-height: var(--u); }
 .home-person > .error { margin-top: var(--s2); }
-/* The names follow their label, on the same line. When the names need another line they stay in that measure;
-   the name and its key go together. What is new or fetched is said without laying words across another name. */
+/* Repos: beside the label, three lines in hand. The thumb shares the right rail of Recent's glass. */
 .home-repos-sec {
-  display: grid; grid-template-columns: minmax(calc(3 * var(--u)), max-content) minmax(0, 1fr);
-  align-items: baseline; width: 100%; margin: 0;
+  --repos-hit-width: 14px; --repos-thumb-side: 5px;
+  --repos-scrollport-width: calc(min(calc(100% + 3 * var(--u)), var(--home-rail-measure)) - 3 * var(--u)
+    + var(--home-rail-overhang) - var(--home-rail-scroll-inset) + var(--repos-thumb-side));
+  display: grid; grid-template-columns: calc(3 * var(--u)) minmax(0, 1fr); grid-template-rows: min-content var(--u);
+  align-items: baseline; width: 100%; margin: 0; row-gap: var(--s2);
 }
-.home-repos-sec > h2 { display: block; margin: 0; color: var(--nighthawks-desk-quiet); font: 400 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
-.grid.home-repos { display: block; min-width: 0; }
-.grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; }
-/* Even three short entries must turn the line. The create key is the last entry, never a third column. */
-.home-repos > :is(.card.repo.gear-card, .card.new) {
-  min-width: calc(100% / 3 + var(--s1)); max-width: 100%; padding-inline-end: var(--s3); vertical-align: baseline;
+.home-repos-sec > h2 {
+  display: block; margin: calc(var(--s1) / 2) 0 0; color: var(--nighthawks-desk-quiet);
+  font: 400 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap;
 }
-.home-repos > .card.repo.gear-card { position: relative; display: inline-flex; align-items: baseline; gap: var(--s1); }
+.grid.home-repos {
+  display: block; min-width: 0; inline-size: var(--repos-scrollport-width);
+  margin-block-start: calc(var(--s1) / 2); max-block-size: calc(3 * var(--u)); overflow: auto;
+  overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--nighthawks-rule) transparent;
+}
+.grid.repo-grid.home-repos > .card {
+  display: flex; align-items: center; gap: var(--s1); min-height: 0; height: var(--u); padding: 0;
+  width: fit-content; max-width: 100%; border: 0; border-radius: 0; background: none;
+}
 .home-repos > .gear-card > .card-open {
-  display: block; width: auto; flex: 0 1 auto; min-width: 0;
-  padding: calc((var(--h-control) - var(--u)) / 2) 0; border: 0; background: none;
+  display: flex; gap: var(--s2); align-items: center; width: auto; flex: 0 1 auto; min-width: 0; height: var(--u);
+  padding: 0; border: 0; background: none;
 }
 .home-repos > .gear-card > .card-open > .card-title {
-  display: block; padding: 0; margin-inline-start: var(--ink-left, 0px); overflow-wrap: anywhere;
+  display: block; min-width: 0; padding: 0; margin-inline-start: var(--ink-left, 0px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--nighthawks-desk-quiet); font: 900 var(--repo-name-size, calc(.7 * var(--t-head)))/var(--u) var(--display); letter-spacing: -.035em;
 }
 @media (max-width: 600px) { .home-repos { --repo-name-size: var(--t-word); } }
 .home-repos > .gear-card > .card-open > :is(.card-summary, .muted) { display: none; }
-.home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync {
-  display: block; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-rule); overflow-wrap: anywhere;
+/* Repos are only names at rest. The system still says when a remote-only repo is being fetched or could not be fetched. */
+.home-repos > .gear-card:is([aria-busy='true'], .repo-fetch-failed) > .card-open > .card-sync {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-rule);
 }
 .home-repos > .card.repo.away > .card-open > .card-title { color: var(--nighthawks-rule); }
-/* A name is a destination, not another piece of paper; a pointed-to name just comes up in ink. */
 .home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { color: var(--nighthawks-paper); }
+.home-repos > .gear-card > .card-open:focus-visible { outline-offset: -2px; }
 .home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); color: var(--ink); }
-/* The gear is always after the name, taking its own room even when the names wrap. */
+/* The key does not stand beside the name at rest on a pointer desk. It remains a keyboard stop and a touch key. */
 .home-repos > .gear-card > .repo-gear {
-  position: static; flex: none; align-self: flex-start; display: grid; place-items: center;
-  width: var(--u); height: var(--h-control);
+  position: static; flex: none; display: grid; place-items: center; width: var(--u); height: var(--u);
 }
-.home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--h-control); border: 0; border-radius: var(--r-key); background: none; color: var(--nighthawks-rule); }
+.home-repos > .gear-card > .repo-gear > button {
+  width: var(--u); height: var(--u); border: 0; border-radius: var(--r-key);
+  background: none; color: var(--nighthawks-rule);
+}
 .home-repos > .gear-card > .repo-gear > button:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--nighthawks-paper); }
-.home-repos > .gear-card > .repo-gear > button .mark { width: 18px; height: 18px; stroke-width: 2; }
+.home-repos > .gear-card > .repo-gear > button .mark { width: 14px; height: 14px; }
+@media (hover: hover) {
+  .home-repos > .gear-card:not(:hover, :focus-within) .repo-gear-button[aria-expanded='false'] { opacity: 0; }
+}
 .home-repos > .gear-card > .repo-gear-pop {
-  /* Leave the frame's two cells and the shadow to menusOnGrid, including at the narrowest setting. */
-  top: calc(var(--h-control) + var(--s1)); left: 0; right: auto;
+  position: fixed; inset: auto; margin: 0; z-index: 30;
   width: min(12 * var(--u), round(down, 100vw - 2.5 * var(--u), var(--u)));
+  max-height: calc(100dvh - 2 * var(--u) - var(--shade)); overflow: auto; overscroll-behavior: contain;
   overflow-wrap: anywhere; text-align: left;
 }
-.grid.repo-grid.home-repos > .card.new {
-  display: inline-block; width: max-content; height: var(--h-control); margin: 0;
-  padding-block: calc((var(--h-control) - var(--u)) / 2); padding-inline-end: var(--s3);
-  color: var(--nighthawks-desk-quiet); font: 700 var(--t-word)/var(--u) var(--mono);
-  text-align: start; text-transform: lowercase; white-space: nowrap;
+.home-repos .repo-gear-pop .pop-item { min-inline-size: 0; white-space: normal; }
+.home-repos > :is(p, .empty) { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); overflow-wrap: anywhere; }
+.home-repos-footer {
+  grid-column: 2; grid-row: 2; box-sizing: border-box; inline-size: var(--repos-scrollport-width);
+  block-size: var(--u); padding-inline-end: calc(var(--repos-thumb-side) + 4px);
+  display: flex; justify-content: flex-end;
 }
-.home-repos > .card.new > .icon { display: none; }
-.home-repos > .card.new::before { content: '+ '; white-space: pre; }
-.grid.repo-grid.home-repos > .card.new:hover { color: var(--nighthawks-paper); }
-.home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); overflow-wrap: anywhere; }
+.home-repos-create {
+  display: inline-flex; align-items: center; gap: var(--s1); block-size: var(--u); padding: 0;
+  border: 0; border-radius: var(--r-key); background: none; color: var(--nighthawks-desk-quiet);
+  font: 400 var(--t-word)/var(--u) var(--sans); text-transform: capitalize; cursor: var(--cursor-hand); white-space: nowrap;
+}
+.home-repos-create:is(:hover, :focus-visible) { color: var(--nighthawks-paper); outline-color: var(--nighthawks-paper); }
+@supports selector(::-webkit-scrollbar) {
+  .grid.home-repos { scrollbar-width: auto; scrollbar-color: auto; }
+  .grid.home-repos::-webkit-scrollbar { width: var(--repos-hit-width); background: transparent; }
+  .grid.home-repos::-webkit-scrollbar-track, .grid.home-repos::-webkit-scrollbar-track-piece { background: transparent; }
+  .grid.home-repos::-webkit-scrollbar-thumb {
+    border: 2px solid transparent; border-inline-width: var(--repos-thumb-side);
+    border-radius: var(--r-round); background-clip: padding-box;
+    background-color: color-mix(in srgb, var(--nighthawks-desk-quiet) 56%, var(--nighthawks-ground));
+  }
+  .home-repos:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--nighthawks-desk-quiet) 66%, var(--nighthawks-ground));
+  }
+  .home-repos::-webkit-scrollbar-thumb:hover {
+    border-inline-width: 4px; background-color: color-mix(in srgb, var(--nighthawks-desk-quiet) 78%, var(--nighthawks-ground));
+  }
+  .home-repos::-webkit-scrollbar-thumb:active {
+    border-inline-width: 4px; background-color: color-mix(in srgb, var(--nighthawks-desk-quiet) 92%, var(--nighthawks-ground));
+  }
+}
+@media (forced-colors: active) { .grid.home-repos { scrollbar-color: ButtonText Canvas; } }
 /* Recent activity is an index back to the work. A single quiet glass behind its controls, not the writing itself
    and not another raised sheet. Keep the words and their positions unchanged. */
-.home-waits { --glass-inset: var(--s2); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: calc(2 * var(--u)); }
+.home-waits { --glass-inset: var(--s2); --glass-inline-inset: var(--home-rail-overhang, calc(var(--s4) + var(--s1) / 2)); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: calc(2 * var(--u)); }
 /* The return names sit in stronger ink; brighten the commands, not the glass underneath them. */
 .home-waits > .lately {
   --recent-heading: color-mix(in srgb, var(--nighthawks-paper) 22%, var(--nighthawks-desk-quiet));
+  --recent-measure: calc(15 * var(--u));
+  --t-recent-meta: 14px; --t-recent-arrow: 15px;
+  --recent-ground: color-mix(in srgb, var(--nighthawks-ground), var(--nighthawks-shadow) 18%);
+  --recent-rule: color-mix(in srgb, var(--nighthawks-paper) 12%, var(--recent-ground));
   --recent-action: color-mix(in srgb, var(--nighthawks-paper) 64%, var(--nighthawks-desk-quiet));
-  position: relative; isolation: isolate; width: calc(15 * var(--u)); max-width: 100%; padding-bottom: var(--to-grid, 0px); color: var(--nighthawks-desk-quiet); }
+  position: relative; isolation: isolate; width: var(--home-rail-measure, var(--recent-measure)); max-width: 100%; padding-bottom: var(--to-grid, 0px); color: var(--nighthawks-desk-quiet); }
 /* The same readable control on an opaque surface if the reader asks for less transparency. No work moves. */
 .home-waits > .lately > .home-recent-glass {
   position: absolute; z-index: -1; pointer-events: none; border-radius: var(--r-sheet);
-  inset: calc(-1 * var(--glass-inset)) calc(-1 * (var(--s4) + var(--s1) / 2));
-  background: color-mix(in srgb, var(--nighthawks-ground), var(--nighthawks-shadow) 18%);
+  inset: calc(-1 * var(--glass-inset)) calc(-1 * var(--glass-inline-inset));
+  background: var(--recent-ground);
   border: 1px solid var(--nighthawks-ground);
 }
 .home-recent-glass > svg { position: absolute; inset: 0; }
@@ -208,21 +260,60 @@ body:has(> #page[data-place='home'] > .home-portrait) > :is(.rail, .door) { disp
   }
 }
 @media (forced-colors: active) { .home-waits > .lately > .home-recent-glass { display: none; } }
-.home-waits > .lately > h2 { width: fit-content; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--recent-heading); background-color: transparent; letter-spacing: 0; text-transform: lowercase; }
-.home-waits > .lately:is(:has(.lately-none), :has(> .lately-list:empty)) { display: none; }
-.home-waits .lately-list { display: flex; flex-direction: column; gap: 0; }
-.home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; color: inherit; text-align: left; }
-.home-waits .pane-row:hover { color: var(--nighthawks-paper); }
-.home-waits .pane-row:focus-visible { outline-color: var(--nighthawks-paper); }
-.home-waits .pane-row > .pane-bar { display: none; }
-.home-waits .pane-row > :is(.pane-line, .pane-at) { display: block; overflow-wrap: anywhere; }
-.home-waits .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--recent-action); letter-spacing: 0; }
-.home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { color: var(--nighthawks-paper); }
-.home-waits .pane-resume > .pane-line::after { content: ' →'; white-space: nowrap; font-weight: 400; color: inherit; }
-.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: inherit; }
-.home-waits .pane-row > .pane-at { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--nighthawks-desk-quiet); }
-.home-waits .pane-row + .pane-row { margin-top: var(--u); }
-.home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
+.home-waits > .lately > h2 { width: fit-content; margin: 0; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--recent-heading); letter-spacing: 0; text-transform: lowercase; }
+.home-waits > .lately[hidden], .home-recent-view [hidden] { display: none; }
+@container home-portrait (min-width: 1188px) {
+  .home-waits > .lately { --recent-measure: calc(18 * var(--u)); }
+}
+.home-recent-view { position: relative; display: grid; gap: var(--s2); min-inline-size: 0; }
+.home-recent-window, .home-recent-items { display: grid; gap: var(--s2); min-inline-size: 0; }
+.home-recent-day + .home-recent-day { border-block-start: 1px solid var(--recent-rule); padding-block-start: 7px; }
+.home-recent-day[data-orphan-rule] { border-block-start-color: transparent; }
+.home-recent-day > h3 { margin: 0 0 2px; color: var(--recent-heading); font: 700 var(--t-recent-meta)/18px var(--sans); }
+.home-recent-line {
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) 13px; column-gap: 10px;
+  align-items: start; inline-size: 100%; min-block-size: 42px; margin: 0; padding: 3px 0;
+  color: var(--recent-action); background: transparent; border: 0; border-radius: var(--r-key);
+  text-align: start; cursor: var(--cursor-hand);
+}
+.home-recent-line:hover { color: var(--nighthawks-paper); }
+.home-recent-line:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
+.home-recent-words { min-inline-size: 0; display: grid; }
+.home-recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--t-word)/20px var(--sans); }
+.home-recent-time, .home-recent-source { color: var(--nighthawks-desk-quiet); font: 400 var(--t-recent-meta)/20px var(--sans); }
+.home-recent-time { font-variant-numeric: tabular-nums; }
+.home-recent-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 17px; }
+.home-recent-arrow { font: 400 var(--t-recent-arrow)/20px var(--sans); }
+.home-recent-more {
+  justify-self: start; margin: 0; padding: 0; border: 0; background: transparent;
+  color: var(--nighthawks-desk-quiet); font: 400 var(--t-recent-meta)/var(--u) var(--sans); cursor: var(--cursor-hand);
+}
+.home-recent-more:is(:hover, :focus-visible) { color: var(--nighthawks-paper); text-decoration: underline; }
+.home-recent-thumb { display: none; }
+@media (min-width: 1060px) and (pointer: fine) {
+  .home-recent-view[data-expanded='true'] .home-recent-window {
+    max-block-size: calc(12 * var(--u)); overflow: hidden auto; grid-template-columns: minmax(0, 1fr); padding-inline-end: 16px;
+  }
+  .home-recent-window:focus-visible { outline: 1px solid var(--nighthawks-desk-quiet); outline-offset: 2px; }
+}
+@media (min-width: 1060px) and (pointer: fine) and (forced-colors: none) {
+  .home-recent-view[data-expanded='true'] .home-recent-window { scrollbar-width: none; }
+  .home-recent-view[data-expanded='true'] .home-recent-window::-webkit-scrollbar { display: none; }
+  /* The common rail is measured to the painted edge, not the wider hit area. */
+  .home-recent-thumb:not([hidden]) {
+    display: block; position: absolute;
+    inset-inline-end: calc(var(--home-rail-scroll-inset, 9px) - var(--glass-inline-inset) - 4px);
+    inset-block-start: var(--recent-thumb-top); inline-size: 12px; block-size: var(--recent-thumb-size);
+    cursor: var(--cursor-hand); touch-action: none;
+  }
+  .home-recent-thumb::before {
+    content: ''; position: absolute; inset: 0 4px; border-radius: var(--r-round);
+    background: color-mix(in srgb, var(--nighthawks-paper) 34%, var(--recent-ground));
+  }
+  .home-recent-view:is(:hover, :focus-within) .home-recent-thumb::before {
+    background: color-mix(in srgb, var(--nighthawks-paper) 58%, var(--recent-ground));
+  }
+}
 .home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
 .home-waits > .agent-cards { width: calc(12 * var(--u)); max-width: 100%; }
 
