@@ -181,13 +181,16 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
  * key at its end. In `sections` (the band's sheet), the files are a section, its name and how many at its left and
  * what was found at its right; no count above it. Search names this row count as matches, not distinct files.
  */
-export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean; matchCount?: boolean | 'with-query'} = {}): HTMLElement[] {
+export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean; matchCount?: boolean | 'with-query'; openCue?: boolean} = {}): HTMLElement[] {
   const {groups} = found;
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
   let stroke = 0;
   // Through the style object, not an attribute: the desktop app's policy allows no style written inline.
-  const beat = (b: HTMLElement) => b.style.setProperty('--i', String(Math.min(stroke++, 16)));
+  const beat = (b: HTMLElement) => {
+    b.style.setProperty('--i', String(Math.min(stroke++, 16)));
+    if (o.openCue) b.append(h('kbd', {class: 'search-screen-enter', 'aria-hidden': 'true'}, '↵'));
+  };
   /** Each kind found: its name, how many, and what of it there is. */
   const kinds: {name: string; n: number; rows: HTMLElement[]; files?: true}[] = [];
   if (groups.length) {

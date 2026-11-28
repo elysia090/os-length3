@@ -259,6 +259,32 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
 .search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .sheet-hit.first {
   --home-search-selection-share: 54%;
 }
+/* A passing pointer does not compete with the result Enter would open. */
+.search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .sheet-hit:hover:not(.first),
+.search-screen.search-on-home .search-screen-matches:has(.sheet-hit:focus-visible) .sheet-hit:hover:not(:focus-visible) {
+  --home-search-selection-share: 40%;
+}
+.search-screen .search-screen-enter { display: none; }
+.search-screen.search-on-home .sheet-hit:focus-visible {
+  position: relative;
+
+  & > .search-screen-enter {
+    position: absolute; inset-inline-end: var(--s2); inset-block-start: 0;
+    display: grid; place-items: center; inline-size: var(--u); block-size: var(--u);
+    padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+    color: var(--home-search-selected-line); pointer-events: none;
+    font: 400 var(--t-word)/var(--u) var(--sans);
+  }
+}
+@media (width > 760px) {
+  /* Only the line in hand needs room for the hint, and long excerpts already ellipsize. */
+  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-text { padding-inline-end: var(--u); }
+}
+@media (max-width: 760px) {
+  /* On two-line rows the hint lives with the file and line number, not the excerpt. */
+  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-file { padding-inline-end: var(--u); }
+  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-line { translate: calc(-1 * var(--u)) 0; }
+}
 .search-screen.search-on-home .found-secs .found-sec-head {
   /* Omit overflow visually, keeping the complete query in the heading's name. */
   translate: 0 calc(-1 * var(--s1) / 2);

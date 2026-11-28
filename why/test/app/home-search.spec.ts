@@ -92,6 +92,9 @@ test('Home Search keeps the centered input still while setting out its own resul
   await page.keyboard.press('Escape');
   await expect(scope).toBeFocused();
   await expectSplitPaper();
+  await rows.last().hover();
+  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '50%');
+  await page.mouse.move(32, 160);
   await input.focus();
 
   const snippet = rows.first().locator('.sheet-text');
@@ -103,8 +106,9 @@ test('Home Search keeps the centered input still while setting out its own resul
   expect((await count.boundingBox())!.y).toBe(candidateHeading.y - 2);
   await expect(rows.first()).toHaveCSS('--home-search-selection-share', '54%');
   await rows.last().hover();
-  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '50%');
+  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '40%');
   await expect(rows.last()).toHaveCSS('background-image', /^conic-gradient\(/);
+  await expect(result.locator('.search-screen-enter:visible')).toHaveCount(0);
   expect(await rows.first().evaluate(el => getComputedStyle(el).backgroundImage))
     .not.toBe(await rows.last().evaluate(el => getComputedStyle(el).backgroundImage));
   await page.mouse.move(32, 160);
@@ -116,7 +120,18 @@ test('Home Search keeps the centered input still while setting out its own resul
   await page.keyboard.press('ArrowDown');
   await expect(rows.last()).toBeFocused();
   await expect(rows.last()).toHaveCSS('outline-width', '2px');
+  const cue = rows.last().locator('.search-screen-enter');
+  await expect(cue).toHaveText('↵');
+  await expect(cue).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(cue).toHaveCSS('border-width', '0px');
+  await expect(cue).toHaveAttribute('aria-hidden', 'true');
+  await expect(cue).toBeVisible();
+  await expect(result.locator('.search-screen-enter:visible')).toHaveCount(1);
+  await rows.first().hover();
+  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '40%');
   await expect(rows.last()).toHaveCSS('--home-search-selection-share', '54%');
+  await expect(cue).toBeVisible();
+  await page.mouse.move(32, 160);
   await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(75, 72, 67)');
 
   // A file-name-only match uses the same face, even inside its highlighted match.
@@ -164,4 +179,5 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(rows).toHaveCount(2);
   await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', mono);
   await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', mono);
+  await expect(result.locator('.search-screen-enter')).toHaveCount(0);
 });

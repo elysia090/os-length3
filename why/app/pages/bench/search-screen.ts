@@ -90,7 +90,9 @@ export function searchScreen(repo: string | null, query: string, opened: string[
       const found = await search(words, ready, () => !fresh(run));
       if (!found || !fresh(run)) return;
       const open = (path: string, line: number) => { void go(repo, path, line, words, run); };
-      const matches = foundView(found, words, {file: path => open(path, 0), line: open}, {sections: true, matchCount: ways.matchQuery ? 'with-query' : true});
+      const matches = foundView(found, words, {file: path => open(path, 0), line: open}, {
+        sections: true, matchCount: ways.matchQuery ? 'with-query' : true, openCue: ways.matchQuery,
+      });
       const active = document.activeElement as HTMLButtonElement;
       const had = choices().indexOf(active), old = had >= 0 ? where(active) : null;
       sayRows(...matches);
