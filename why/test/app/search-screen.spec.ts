@@ -275,15 +275,31 @@ test('Forge Search keeps the Enter target distinct from a passing pointer on the
   await editor.focus();
   const screen = page.getByRole('dialog', {name:'Search', exact:true});
   const input = screen.getByRole('searchbox');
-  const paper = screen.locator('.search-screen-paper');
+  const paper = screen.locator('.search-screen-paper'), form = screen.getByRole('search');
+  const stock = screen.getByRole('region', {name:'Search results'});
   const lens = app.main.getByRole('button', {name:'Search', exact:true});
   await lens.click();
   await expect(screen).toHaveClass(/\bsearch-on-forge\b/);
   await expect(page.locator('.search-veil.out')).toBeVisible();
   await expect(input).toBeFocused();
-  await expect(paper).toHaveCSS('border-radius', '8px');
-  await expect(paper).toHaveCSS('overflow', 'clip');
-  const position = await input.boundingBox();
+  await expect(paper).toHaveCSS('overflow', 'visible');
+  await expect(paper).toHaveCSS('background-image', 'none');
+  await expect(form).toHaveCSS('border-radius', '8px');
+  await expect(form).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
+  await expect(stock).toHaveCount(0);
+  const position = await input.boundingBox(), formAt = (await form.boundingBox())!;
+  const stage = screen.getByRole('main', {name:'Search', exact:true});
+  await expectHeadingOffset(stage);
+  expect(formAt).toEqual({x:388, y:218, width:760, height:50});
+  const split = async () => {
+    await expect(stock).toHaveCSS('border-radius', '8px');
+    await expect(stock).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
+    await expect(form).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 1.5px 0px 0px');
+    expect((await stock.boundingBox())!.y - (formAt.y + formAt.height)).toBe(1.5);
+    expect(await form.boundingBox()).toEqual(formAt);
+    expect(await input.boundingBox()).toEqual(position);
+    await expectHeadingOffset(stage);
+  };
   const sans = await input.evaluate(el => getComputedStyle(el).fontFamily);
 
   await input.click();
@@ -292,7 +308,7 @@ test('Forge Search keeps the Enter target distinct from a passing pointer on the
   await expect(suggestions.getByRole('heading')).toHaveCSS('font-family', sans);
   await expect(suggested).toHaveCSS('font-family', sans);
   await expect(suggested.locator('kbd')).toHaveCount(0);
-  expect(await input.boundingBox()).toEqual(position);
+  await split();
 
   await input.fill('launch');
   await expect(screen.getByRole('heading', {name:'2 matches for "launch"', exact:true})).toHaveCSS('font-family', sans);
@@ -305,7 +321,7 @@ test('Forge Search keeps the Enter target distinct from a passing pointer on the
   await expect(number).toHaveCSS('scale', '0.86');
   await expect(first.locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(first).toHaveCSS('height', '24px');
-  expect(await input.boundingBox()).toEqual(position);
+  await split();
   await expect(first.locator('kbd')).toBeHidden();
 
   await last.hover();
@@ -461,12 +477,14 @@ phone('on a phone the Search veil keeps the field in reach and uses actual saved
   await expect(suggested).toHaveCount(0);
   const form = stage.getByRole('search'), lensInside = form.locator(':scope > svg.mark');
   const paper = stage.locator('.search-screen-paper'), region = stage.getByRole('region', {name: 'Search results'});
-  await expect(paper).toHaveCSS('border-radius', '8px');
-  await expect(paper).toHaveCSS('overflow', 'clip');
-  await expect(paper).toHaveCSS('background-image', /rgb\(26, 39, 45\).*rgb\(30, 43, 49\)/);
-  await expect(paper).toHaveCSS('background-size', '4px 4px');
-  await expect(form).toHaveCSS('background-image', 'none');
-  await expect(form).toHaveCSS('border-bottom-width', '0px');
+  await expect(page.getByRole('dialog', {name:'Search'})).toHaveClass(/search-on-forge/);
+  await expect(paper).toHaveCSS('overflow', 'visible');
+  await expect(paper).toHaveCSS('background-image', 'none');
+  await expect(form).toHaveCSS('border-radius', '8px');
+  await expect(form).toHaveCSS('background-image', /rgb\(26, 39, 45\).*rgb\(30, 43, 49\)/);
+  await expect(form).toHaveCSS('background-size', '4px 4px');
+  await expect(form).toHaveCSS('border-bottom-width', '1px');
+  await expect(form).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
   await expect(input).toHaveCSS('color', 'rgb(239, 235, 227)');
   await expect(input).toHaveCSS('caret-color', 'rgb(239, 235, 227)');
   await expect(lensInside).toHaveCSS('color', 'rgb(178, 164, 143)');
@@ -486,17 +504,17 @@ phone('on a phone the Search veil keeps the field in reach and uses actual saved
   await expect(hit).toBeInViewport({ratio:1});
   await expect(hit.locator('.sheet-file')).toHaveCSS('font-size', '17px');
   await expect(hit.locator('.sheet-text')).toHaveCSS('white-space', 'pre-wrap');
-  await expect(region).toHaveCSS('border-top-width', '0px');
-  const [ink, upperClip, grain, mask, lowerClip] = await paper.evaluate(el => {
-    const rim = getComputedStyle(el, '::before');
-    const lower = getComputedStyle(el, '::after');
-    return [rim.backgroundColor, rim.clipPath, lower.backgroundImage, lower.maskImage, lower.clipPath];
+  await expect(region).toHaveCSS('border-top-width', '1px');
+  await expect(region).toHaveCSS('background-image', /rgb\(209, 196, 166\).*rgb\(221, 209, 180\)/);
+  await expect(region).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
+  await expect(form).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 1.5px 0px 0px');
+  const field = (await form.boundingBox())!;
+  expect((await region.boundingBox())!.y - (field.y + field.height)).toBe(1.5);
+  const seam = await paper.evaluate(el => {
+    const cover = getComputedStyle(el, '::before');
+    return [cover.content, cover.backgroundColor, cover.top, cover.blockSize, getComputedStyle(el, '::after').content];
   });
-  expect(ink).toBe('rgb(23, 22, 21)');
-  expect(upperClip).toMatch(/^polygon\(.+44px.+6px 48px.+52px/);
-  expect(grain).toMatch(/rgb\(209, 196, 166\).*rgb\(221, 209, 180\)/);
-  expect(mask).toBe('none');
-  expect(lowerClip).toMatch(/^polygon\(.+52px.+6px 48px/);
+  expect(seam).toEqual(['""', 'rgb(26, 29, 23)', '50px', '2.5px', 'none']);
   await expect(region.locator('.found-sec')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await input.boundingBox()).toEqual(at);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
@@ -552,7 +570,21 @@ test('from Git, a Search match opens the repo in Forge and Back revisits Search 
   await query.fill('return 7');
   await scope.click();
   await stage.getByRole('option', {name:'atlas',exact:true}).click();
-  await stage.getByRole('button', {name: /src\/main\.c.*return 7/}).click();
+  const hit = stage.getByRole('button', {name: /src\/main\.c.*return 7/});
+  await expect(hit).toBeVisible();
+  // The joined edge and its clips still belong to this Search entry, not Home or Forge.
+  const paper = stage.locator('.search-screen-paper');
+  await expect(paper).toHaveCSS('overflow', 'clip');
+  const [ink, upperClip, grain, mask, lowerClip] = await paper.evaluate(el => {
+    const rim = getComputedStyle(el, '::before'), lower = getComputedStyle(el, '::after');
+    return [rim.backgroundColor, rim.clipPath, lower.backgroundImage, lower.maskImage, lower.clipPath];
+  });
+  expect(ink).toBe('rgb(23, 22, 21)');
+  expect(upperClip).toMatch(/^polygon\(.+44px.+6px 48px.+52px/);
+  expect(grain).toMatch(/rgb\(227, 222, 213\).*rgb\(239, 235, 227\)/);
+  expect(mask).toBe('none');
+  expect(lowerClip).toMatch(/^polygon\(.+52px.+6px 48px/);
+  await hit.click();
   await expect(forge.editor('src/main.c')).toBeFocused();
   await expect.poll(() => paintedLine(forge.editor('src/main.c'))).toBe('    return 7;');
   await page.evaluate(() => history.back());

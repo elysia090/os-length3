@@ -183,16 +183,18 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(home).toHaveCSS('visibility', 'visible');
   await expect(lens).toBeFocused();
 
-  // Forge uses the same pigments inside its own joined sheet and veil.
+  // Forge uses the same separate surfaces and pigments without losing its veil.
   await app.rail.go('forge');
   await app.main.getByRole('button', {name: 'Search', exact: true}).click();
   await expect(stage).toHaveClass(/search-on-forge/);
   await expect(page.locator('.search-veil.out')).toBeVisible();
   await input.fill('launch');
   await expect(rows).toHaveCount(2);
-  await expect(group).toHaveCSS('overflow', 'clip');
+  await expect(group).toHaveCSS('overflow', 'visible');
+  await expect(form).toHaveCSS('box-shadow', `${shadow} 4px 1.5px 0px 0px`);
+  await expect(result).toHaveCSS('box-shadow', fullCast);
   await rows.last().hover();
-  expect(await group.evaluate(el => getComputedStyle(el, '::after').backgroundImage)).toBe(homeStock);
+  await expect(result).toHaveCSS('background-image', homeStock);
   expect(await choicePaint(rows.first())).toEqual(homeActive);
   expect(await choicePaint(rows.last())).toEqual(homeHover);
   await expect(result.getByRole('heading', {name: '2 matches for "launch"', exact: true})).toHaveCSS('font-family', sans);

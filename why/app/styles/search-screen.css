@@ -207,15 +207,15 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
 }
 @keyframes home-search-appear { from { opacity: 0; } }
 
-/* The group is not a surface on Home. The form always paints the same face,
+/* On Home and Forge the group holds two surfaces, but is not a surface itself. The form keeps its face,
    so bringing out results neither moves the input nor repaints its rim. */
-.search-screen.search-on-home .search-screen-paper {
-  --home-search-seam: 1.5px;
-  --home-search-form-drop: var(--s1);
-  --home-search-frame-ink: var(--ink);
+.search-screen:is(.search-on-home, .search-on-forge) .search-screen-paper {
+  --search-paper-seam: 1.5px;
+  --search-form-drop: var(--s1);
+  --search-frame-ink: var(--ink);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--home-search-seam);
+  gap: var(--search-paper-seam);
   overflow: visible;
   background: none;
   border: 0;
@@ -223,12 +223,12 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
 
   & > :is(.search-screen-form, .search-screen-results) {
     min-width: 0;
-    border: 1px solid var(--home-search-frame-ink);
+    border: 1px solid var(--search-frame-ink);
     border-radius: var(--r-field);
     box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
   }
   & > .search-screen-form {
-    box-shadow: var(--s1) var(--home-search-form-drop) 0 var(--nighthawks-shadow);
+    box-shadow: var(--s1) var(--search-form-drop) 0 var(--nighthawks-shadow);
     background: conic-gradient(var(--forge-work-face) 25%, var(--forge-work-grain) 25% 50%,
       var(--forge-work-face) 50% 75%, var(--forge-work-grain) 75%) 0 0 / var(--s1) var(--s1);
   }
@@ -237,10 +237,17 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
       var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
   }
 }
-.search-screen.search-on-home .search-screen-paper:has(> .search-screen-results :is(.search-screen-matches, .search-screen-status):not(:empty)) {
-  --home-search-form-drop: var(--home-search-seam);
+.search-screen:is(.search-on-home, .search-on-forge) .search-screen-paper:has(> .search-screen-results :is(.search-screen-matches, .search-screen-status):not(:empty)) {
+  --search-form-drop: var(--search-paper-seam);
 
-  &::before, &::after { content: none; }
+  &::before {
+    content: var(--search-seam-underlay, none);
+    inset: calc(var(--field-end) + 2px) var(--r-field) auto;
+    block-size: calc(var(--search-paper-seam) + 1px);
+    background: var(--nighthawks-shadow);
+    clip-path: none;
+  }
+  &::after { content: none; }
 
   @media (min-resolution: 2dppx) {
     & > .search-screen-results {
@@ -251,8 +258,11 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
     }
   }
 }
+/* On Forge an opaque underlay covers any fractional pixel snapped out of the form shadow,
+   without letting the blurred desk show through behind the rounded papers. */
+.search-screen.search-on-forge .search-screen-paper { --search-seam-underlay: ''; }
 @supports (appearance: base-select) and selector(::picker(select)) {
-  .search-screen.search-on-home:has(.search-screen-repo:open) .search-screen-paper > :is(.search-screen-form, .search-screen-results) {
+  .search-screen:is(.search-on-home, .search-on-forge):has(.search-screen-repo:open) .search-screen-paper > :is(.search-screen-form, .search-screen-results) {
     box-shadow: none;
   }
 }
