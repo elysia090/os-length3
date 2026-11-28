@@ -158,8 +158,33 @@
 .page-veil > i { position: absolute; inset: 0; transition: backdrop-filter var(--move) var(--spring), background-color var(--move) var(--spring); }
 .page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
 .page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
-.page-veil.out > i:nth-child(1) { backdrop-filter: blur(calc(6px * var(--veil-blur-scale, 1))); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }
-.page-veil.out > i:nth-child(2) { backdrop-filter: blur(calc(11px * var(--veil-blur-scale, 1))); }
-.page-veil.out > i:nth-child(3) { backdrop-filter: blur(calc(16px * var(--veil-blur-scale, 1))); }
+.page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }
+.page-veil.out > i:nth-child(2) { backdrop-filter: blur(11px); }
+.page-veil.out > i:nth-child(3) { backdrop-filter: blur(16px); }
+/* Forge Search leaves the center clearer, with a gentle symmetric rolloff at the window edges. */
+.page-veil.search-veil.search-veil-on-forge { --forge-veil-edge: clamp(60px, 9dvh, 90px); }
+.page-veil.search-veil.search-veil-on-forge > i:nth-child(n + 2) {
+  mask-image: linear-gradient(to bottom,
+    var(--edge-full), var(--edge-middle) calc(var(--edge-ramp) * .45),
+    var(--edge-faint) calc(var(--edge-ramp) * .75), transparent var(--edge-ramp),
+    transparent calc(100% - var(--edge-ramp)),
+    var(--edge-faint) calc(100% - var(--edge-ramp) * .75),
+    var(--edge-middle) calc(100% - var(--edge-ramp) * .45), var(--edge-full));
+}
+.page-veil.search-veil.search-veil-on-forge > i:nth-child(2) {
+  --edge-ramp: var(--forge-veil-edge);
+  --edge-full: color-mix(in srgb, black 64%, transparent);
+  --edge-middle: color-mix(in srgb, black 29%, transparent);
+  --edge-faint: color-mix(in srgb, black 6%, transparent);
+}
+.page-veil.search-veil.search-veil-on-forge > i:nth-child(3) {
+  --edge-ramp: calc(var(--forge-veil-edge) * .45);
+  --edge-full: color-mix(in srgb, black 38%, transparent);
+  --edge-middle: color-mix(in srgb, black 16%, transparent);
+  --edge-faint: color-mix(in srgb, black 3%, transparent);
+}
+.page-veil.search-veil.search-veil-on-forge.out > i:nth-child(1) { backdrop-filter: blur(4.83px); }
+.page-veil.search-veil.search-veil-on-forge.out > i:nth-child(2) { backdrop-filter: blur(3.2px); }
+.page-veil.search-veil.search-veil-on-forge.out > i:nth-child(3) { backdrop-filter: blur(2px); }
 .file-tree { z-index: 9; }
 body:has(> .page-veil.out) .rail { z-index: 9; }

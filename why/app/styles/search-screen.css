@@ -1,31 +1,6 @@
 /* The old search's depth, washed in the current desks' shared colour, not the root's light default.
    The rail and door still belong to the window, over the work, not in its blur. */
 .page-veil.search-veil { --ground: var(--nighthawks-ground); z-index: 28; }
-/* Read through the center of Forge more clearly, with a soft focus falloff toward both edges. */
-.page-veil.search-veil.search-veil-on-forge {
-  --veil-blur-scale: .805;
-  --forge-veil-edge: clamp(60px, 9dvh, 90px);
-
-  & > i:nth-child(n + 2) {
-    mask-image: linear-gradient(to bottom,
-      var(--edge-full), var(--edge-middle) calc(var(--edge-ramp) * .45),
-      var(--edge-faint) calc(var(--edge-ramp) * .75), transparent var(--edge-ramp),
-      transparent calc(100% - var(--edge-ramp)),
-      var(--edge-faint) calc(100% - var(--edge-ramp) * .75),
-      var(--edge-middle) calc(100% - var(--edge-ramp) * .45), var(--edge-full));
-  }
-  & > i:nth-child(2) {
-    --edge-ramp: var(--forge-veil-edge);
-    --edge-full: rgb(0 0 0 / .64); --edge-middle: rgb(0 0 0 / .29); --edge-faint: rgb(0 0 0 / .06);
-    --edge-blur: 3.2px;
-  }
-  & > i:nth-child(3) {
-    --edge-ramp: calc(var(--forge-veil-edge) * .45);
-    --edge-full: rgb(0 0 0 / .38); --edge-middle: rgb(0 0 0 / .16); --edge-faint: rgb(0 0 0 / .03);
-    --edge-blur: 2px;
-  }
-  &.out > i:nth-child(n + 2) { backdrop-filter: blur(var(--edge-blur)); }
-}
 body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 
 /* One paper in front of the old desk, neither moved nor used. The screen itself is not a second sheet. */
