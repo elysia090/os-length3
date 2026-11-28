@@ -175,3 +175,88 @@ body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 @media (max-width: 760px) {
   .search-screen-content { max-width: calc(100% - 2 * var(--u)); }
 }
+
+/* Put only Search on the Home desk, keeping Home itself in place for Back. */
+body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibility: hidden; }
+.search-screen.search-on-home .search-screen-content {
+  margin-block-start: min(28dvh, calc(10 * var(--u)));
+}
+.search-screen.search-on-home .search-screen-head h1 { translate: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .search-screen.search-on-home .search-screen-content { animation-name: home-search-appear; }
+}
+@keyframes home-search-appear { from { opacity: 0; } }
+
+/* The group is not a surface on Home. The form always paints the same face,
+   so bringing out results neither moves the input nor repaints its rim. */
+.search-screen.search-on-home .search-screen-paper {
+  --paper: var(--home-search-paper);
+  --ground: var(--paper);
+  --grain: var(--home-search-grain);
+  --home-search-seam: 1.5px;
+  --home-search-form-drop: var(--s1);
+  --home-search-frame-ink: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--home-search-seam);
+  overflow: visible;
+  background: none;
+  border: 0;
+  box-shadow: none;
+
+  & > :is(.search-screen-form, .search-screen-results) {
+    min-width: 0;
+    border: 1px solid var(--home-search-frame-ink);
+    border-radius: var(--r-field);
+    box-shadow: var(--s1) var(--s1) 0 var(--nighthawks-shadow);
+  }
+  & > .search-screen-form {
+    box-shadow: var(--s1) var(--home-search-form-drop) 0 var(--nighthawks-shadow);
+    background: conic-gradient(var(--forge-work-face) 25%, var(--forge-work-grain) 25% 50%,
+      var(--forge-work-face) 50% 75%, var(--forge-work-grain) 75%) 0 0 / var(--s1) var(--s1);
+  }
+  & > .search-screen-results {
+    background: conic-gradient(var(--grain) 25%, var(--paper) 25% 50%,
+      var(--grain) 50% 75%, var(--paper) 75%) 0 0 / var(--s1) var(--s1);
+  }
+}
+.search-screen.search-on-home .search-screen-paper:has(> .search-screen-results :is(.search-screen-matches, .search-screen-status):not(:empty)) {
+  --home-search-form-drop: var(--home-search-seam);
+
+  &::before, &::after { content: none; }
+
+  @media (min-resolution: 2dppx) {
+    & > .search-screen-results {
+      /* Blink snaps the rounded border before rasterizing. Give it an integer
+         anchor, then paint at the intended half-pixel without changing the gap. */
+      margin-block: .5px -.5px;
+      translate: 0 -.5px;
+    }
+  }
+}
+@supports (appearance: base-select) and selector(::picker(select)) {
+  .search-screen.search-on-home:has(.search-screen-repo:open) .search-screen-paper > :is(.search-screen-form, .search-screen-results) {
+    box-shadow: none;
+  }
+}
+
+/* The row and the marked words each keep their own color on Home's paper. */
+.search-screen.search-on-home .search-screen-paper .choice:is(:hover, :focus, :focus-visible),
+.search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .choice.first {
+  /* Compose the selection with both values of the paper grain, not a see-through fill. */
+  --selected-paper: color-mix(in srgb, var(--home-search-selection) 50%, var(--paper));
+  --selected-grain: color-mix(in srgb, var(--home-search-selection) 50%, var(--grain));
+  background: conic-gradient(var(--selected-grain) 25%, var(--selected-paper) 25% 50%,
+    var(--selected-grain) 50% 75%, var(--selected-paper) 75%) 0 -1px / var(--s1) var(--s1);
+  mix-blend-mode: normal;
+
+  /* The selected line digits still have 4.5:1 contrast on the darker stock. */
+  & .sheet-line { color: var(--home-search-selected-line); }
+}
+.search-screen.search-on-home .sheet-hit mark {
+  --marker: var(--home-search-mark);
+  mix-blend-mode: normal;
+}
+.search-screen.search-on-home :is(.search-suggestion, .search-suggestions .found-sec-head) {
+  font-family: var(--sans);
+}

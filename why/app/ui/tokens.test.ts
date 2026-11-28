@@ -47,6 +47,7 @@ test('a hue says a kind and nothing else: each clearly a hue, each kind its own'
 const SERVER_MEASURES = ['control', 'meta', 'time', 'word', 'title'] as const;
 const SERVER_SIZE = new Set<string>(SERVER_MEASURES.map((role) => `var(--t-server-${role})`));
 const NOTE_WRITING = 'var(--note-writing)', REPO_NAME = 'var(--repo-name-size, calc(.7 * var(--t-head)))';
+const RECENT_META = 'var(--t-recent-meta)', RECENT_ARROW = 'var(--t-recent-arrow)';
 const SEARCH_FILE = 'var(--t-search-result-file)';
 test('a place uses the common type scale or its scoped writing measure, and every weight is one of three', async () => {
   const {readdirSync} = await import('node:fs');
@@ -55,7 +56,7 @@ test('a place uses the common type scale or its scoped writing measure, and ever
   const SIZES = /^(var\(--t-(word|head|voice)\)|var\(--size\)|inherit|0)$/;
   const INBOX = /^var\(--t-inbox-(time|meta|write|words|compact-title|title)\)$/;
   const allowed = (file: string, size: string) => SIZES.test(size)
-    || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME].includes(size)
+    || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME, RECENT_META, RECENT_ARROW].includes(size)
     || file === 'server-desk.css' && SERVER_SIZE.has(size) && size !== 'var(--t-server-time)'
     || file === 'talk.css' && size === 'var(--t-server-time)'
     || file === 'forge-index.css' && size === 'var(--t-file-index-detail)'
@@ -97,6 +98,22 @@ test('Home keeps its note and repo-name measures on their own surfaces', () => {
     ['', '.home-own .todo-detail', 'font', '400 var(--note-writing)/calc(var(--u) + var(--s1)) var(--sans)'],
     ['', '.home-repos > .gear-card > .card-open > .card-title', 'font', `900 ${REPO_NAME}/var(--u) var(--display)`],
     ['@media(max-width:600px)', '.home-repos', '--repo-name-size', 'var(--t-word)'],
+  ]);
+});
+
+test('Home Recent keeps its compact time and source measure in the timeline', () => {
+  const sheet = readFileSync(new URL('../styles/home.css', import.meta.url), 'utf8');
+  const roles = leavesOf(readSheet(sheet).nodes).flatMap(({node}) => node.kind === 'rule'
+    ? declarations(node.body).filter(({prop, value}) => prop.startsWith('--t-recent-')
+      || value.includes(RECENT_META) || value.includes(RECENT_ARROW))
+      .map(({prop, value}) => [node.selector.replace(/\s+/g, ' ').trim(), prop, value]) : []);
+  assert.deepEqual(roles, [
+    ['.home-waits > .lately', '--t-recent-meta', '14px'],
+    ['.home-waits > .lately', '--t-recent-arrow', '15px'],
+    ['.home-recent-day > h3', 'font', `700 ${RECENT_META}/18px var(--sans)`],
+    ['.home-recent-time, .home-recent-source', 'font', `400 ${RECENT_META}/20px var(--sans)`],
+    ['.home-recent-arrow', 'font', `400 ${RECENT_ARROW}/20px var(--sans)`],
+    ['.home-recent-more', 'font', `400 ${RECENT_META}/var(--u) var(--sans)`],
   ]);
 });
 

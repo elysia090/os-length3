@@ -43,9 +43,14 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
   body.addEventListener('click', async () => {
     if (!away) { ctx.openRepo(name); return; }
     if (card.getAttribute('aria-busy') === 'true') return;
+    card.classList.remove('repo-fetch-failed');
     card.setAttribute('aria-busy', 'true');
     sync().textContent = t('Fetching…');
-    try { await bring(name); ctx.openRepo(name); } catch (e) { sync().textContent = errorText(e); card.removeAttribute('aria-busy'); }
+    try { await bring(name); ctx.openRepo(name); } catch (e) {
+      sync().textContent = errorText(e);
+      card.removeAttribute('aria-busy');
+      card.classList.add('repo-fetch-failed');
+    }
   });
   const {gear, list} = repoGear(ctx, name, {
     pinned,
@@ -57,6 +62,7 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
     // Gone from here, or renamed: drawn again (freed, its card now the Remote's: Only on the Remote).
     freed: () => void again(),
   }, !away);
+  if (pinned && away) sync().setAttribute('aria-live', 'polite');
   const card = h('div', {class: `card repo gear-card${away ? ' away' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
     body, h('span', {class: 'repo-gear'}, gear), list);
   return card;
@@ -99,7 +105,18 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
   const pinned = !!options.brief, said = pinned ? whenOnly : sizeAndWhen;
   // (Nothing in it before the repos are read: a page is not seen before its lists are, ui/whole.ts.)
   const grid = h('div', {class: 'grid repo-grid'});
-  arrowKeys(grid, '.card-open, .card.new', {horizontalRowFirst: options.brief});
+  if (!pinned) arrowKeys(grid, '.card-open, .card.new');
+  else grid.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const names = [...grid.querySelectorAll<HTMLElement>('.card-open')];
+    const at = names.indexOf((event.target as Element).closest<HTMLElement>('.card-open')!);
+    if (at < 0) return;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? names.length - 1 : at + (event.key === 'ArrowDown' ? 1 : -1);
+    if (!names[next]) return;
+    event.preventDefault();
+    names[next].focus();
+  });
   /** The cards for `repos` drawn. */
   const draw = (repos: RepoSummary[]) => {
     options.counted?.(repos.length + remoteOnly().length);

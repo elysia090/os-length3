@@ -104,9 +104,10 @@ export class SearchTrail {
       },
     }, visit.result);
     const desks = this.way.surfaces().filter(el => !el.inert).map(element => ({element, hidden: element.getAttribute('aria-hidden')}));
-    // Leave the work where it was. The same wash as the band's search puts it out of focus, not out of sight.
+    // Leave the work where it was. Home clears the desk; other places keep it behind the veil.
     for (const {element} of desks) element.inert = true;
-    this.veil.out(true);
+    if (visit.place === 'home') screen.element.classList.add('search-on-home');
+    else this.veil.out(true);
     document.body.append(screen.element);
     this.live = {screen, desks, id};
     this.way.name();

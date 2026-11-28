@@ -202,40 +202,82 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test('Home gives the note one full measure, with paired repo names and New repo at the end', async ({app}) => {
-  for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
+test('Home keeps the note beside a three-line repo scrollport and a separate New repo key', async ({app}) => {
+  for (const name of ['notes', 'trip', 'site', 'walk', 'workbench', 'journal']) await app.newRepo.make(name);
   await app.rail.go('home');
   const {page, main} = app;
-  const entries = main.locator('.home-repos > :is(.card.repo, .card.new)');
-  await expect(entries).toHaveCount(4);
-  await expect(entries.last()).toHaveClass(/\bnew\b/);
+  const repos = main.getByRole('region', {name: 'Repos'});
+  const list = repos.locator('.home-repos');
+  const entries = list.locator('.card.repo');
+  const create = repos.getByRole('button', {name: 'New repo', exact: true});
+  await expect(entries).toHaveCount(6);
+  await expect(list.getByRole('button', {name: 'New repo', exact: true})).toHaveCount(0);
   const box = async (l: Locator) => (await l.boundingBox())!;
-  const sizes = [{width: 1440, height: 900}, {width: 768, height: 730}, {width: 390, height: 844}];
-  for (const size of sizes) {
+  for (const size of [{width: 1536, height: 864}, {width: 768, height: 730}, {width: 390, height: 844}]) {
     await page.setViewportSize(size);
     await expect(async () => {
       const note = await box(app.home.todo);
-      const repos = await box(main.getByRole('region', {name: 'Repos'}));
+      const panel = await box(repos);
       expect(note.x).toBe(size.width === 390 ? 24 : 48);
       expect(note.width).toBe(size.width === 390 ? 336 : 624);
       expect(note.height).toBeGreaterThanOrEqual(288);
-      if (size.width === 1440) expect(repos.x).toBeGreaterThan(note.x + note.width);
-      else expect(repos.y).toBeGreaterThanOrEqual(note.y + note.height);
-      const rows = new Map<number, number>();
-      for (const entry of await entries.all()) {
+      if (size.width === 1536) expect(panel.x).toBeGreaterThan(note.x + note.width);
+      else expect(panel.y).toBeGreaterThanOrEqual(note.y + note.height);
+      const bounds = await box(list);
+      expect(bounds.height).toBe(72);
+      expect(bounds.x - panel.x).toBe(72);
+      const first = await box(entries.first());
+      for (const [i, entry] of (await entries.all()).entries()) {
         const at = await box(entry);
-        const top = Math.round(at.y);
-        const row = [...rows.keys()].find((y) => Math.abs(y - top) <= 2) ?? top;
-        rows.set(row, (rows.get(row) ?? 0) + 1);
-        expect(at.x).toBeGreaterThan(repos.x);
+        expect(at.x).toBe(first.x);
+        expect(Math.round(at.y - first.y)).toBe(i * 24);
       }
-      expect(Math.max(...rows.values())).toBeLessThanOrEqual(2);
-      if (size.width === 1440) expect([...rows.values()]).toEqual([2, 2]);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(size.width);
-    }).toPass();
+      expect((await box(create)).y).toBeGreaterThanOrEqual(bounds.y + bounds.height + 7);
+      expect(await page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollWidth - doc.clientWidth;
+      })).toBe(0);
+    }).toPass({timeout: 8_000});
   }
   await expect(app.home.todo).toHaveCSS('background-color', 'rgb(215, 197, 90)');
   await expect(app.home.todo).toHaveCSS('box-shadow', /4px 4px 0px 0px$/);
+  await page.setViewportSize({width: 1536, height: 864});
+  const first = entries.first().locator('.card-open');
+  const last = entries.last();
+  const lastName = (await last.locator('.card-title').textContent())!;
+  const direct = last.getByRole('button', {name: lastName, exact: true});
+  const scrollTop = () => list.evaluate(el => el.scrollTop);
+  const before = await box(create);
+  await list.hover();
+  await page.mouse.wheel(0, 200);
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  await first.focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  await expect(direct).toBeFocused();
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  expect(await box(create)).toEqual(before);
+
+  // An action on the last row must be outside the scrollport's clip, including its confirmation fields.
+  const gear = last.getByRole('button', {name: `Actions for ${lastName}`, exact: true});
+  await gear.press('Enter');
+  const menu = last.getByRole('menu', {name: `Actions for ${lastName}`, exact: true});
+  const rename = menu.getByRole('menuitem', {name:'Rename', exact:true});
+  await expect(rename).toBeInViewport();
+  await rename.click();
+  const input = menu.getByRole('textbox', {name: 'New name', exact: true});
+  await expect(input).toHaveValue(lastName);
+  // An inner ask's Escape cancels that ask first; the next Escape dismisses the menu.
+  await input.press('Escape');
+  await expect(rename).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(gear).toBeFocused();
+  await direct.click();
+  await expect(main.getByRole('region', {name: `Files in ${lastName}`, exact: true})).toBeVisible();
+
+  await app.rail.go('home');
+  await create.press('Enter');
+  await expect(main).toHaveAttribute('data-place', 'new-repo');
 });
 
 test('the narrow Home name wraps at words before splitting an unbroken name', async ({signedIn: app}) => {

@@ -30,6 +30,6 @@ export interface Context extends SearchDesk {
   forgePlace?(place: ForgePlace): Promise<void>;
   /** The shell's existing places and tools not already offered on this desk. */
   /** The file last read in Forge, kept from one visit to the next: where the person left off. */
-  readonly leftOff: {repo: string; path: string; at: number | null} | null;
+  readonly leftOff: {repo: string; path: string; at: number | null; time?: number} | null;
   rerender(): void;
 }

@@ -206,7 +206,7 @@ class Rail extends Part {
     const now = await at.getAttribute('data-place');
     if (now === 'home' && await this.usesPlaces()) {
       if (place === 'home') return;
-      if (place === 'new-repo') await this.main.locator('.home-repos .card.new').click();
+      if (place === 'new-repo') await this.main.locator('.home-repos-create').click();
       else await (await this.destination(place)).click();
       if (place !== 'file' && place !== 'plugin') await expect(at).toHaveAttribute('data-place', place);
       return;

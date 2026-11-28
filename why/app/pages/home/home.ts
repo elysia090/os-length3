@@ -1,6 +1,6 @@
 import {openNext} from '../kit/next.ts';
 import {agentCards} from '../kit/agent-cards.ts';
-import {arrowKeys, h} from '../../ui/dom.ts';
+import {h} from '../../ui/dom.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {LIMITS, normalize, parse, type Profile} from '../../../home/profile.ts';
 import {connection, myName, onConnection, rename} from '../../../shipto/connection.ts';
@@ -14,10 +14,11 @@ import {shownName} from '../../../repo/issues.ts';
 import {repoList} from './repo-list.ts';
 import {recentGlass} from './recent-glass.ts';
 import {RecentSnapshot, recentScope} from './recent.ts';
+import {boardPostTime, recentList, type RecentLine} from './recent-list.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
 import type {Context} from '../kit/context.ts';
-import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
+import {pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {inkEdge} from '../../ui/optical.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -40,7 +41,7 @@ export function startEditing(ctx: Context) {
 export function home(ctx: Context): Node[] {
   const owner = true;
   const count = h('span', {});
-  const list = repoList(ctx, {newCard: true, brief: true, counted: (n) => counting(count, n, 'repo', 'repos')});
+  const list = repoList(ctx, {newCard: false, brief: true, counted: (n) => counting(count, n, 'repo', 'repos')});
   // (Home is not seen before its repos are drawn: ui/whole.ts.)
   const listed = whole(list.refresh());
   const grid = list.element;
@@ -51,7 +52,10 @@ export function home(ctx: Context): Node[] {
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('Could not read {what} ({why})', {what: settingName(k), why})));
   // Against the right edge, the repos by name; at its foot what waits (the plug's area and an agent's cards over it
   // while there are any). The servers are a count that goes to Server, where they are.
-  const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid);
+  const create = h('button', {class: 'home-repos-create', type: 'button'}, t('New repo'), h('span', {'aria-hidden': 'true'}, '→'));
+  create.addEventListener('click', () => void ctx.go('new-repo'));
+  const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'},
+    h('h2', {id: 'repos-title'}, t('Repos')), grid, h('div', {class: 'home-repos-footer'}, create));
   const waits = h('div', {class: 'home-waits'}, lately(ctx), pluginArea(), agentCards((repo, issue) => {
     void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); });
   }));
@@ -112,9 +116,9 @@ function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
  * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
  */
 type Recent =
-  | {kind: 'file'; left: NonNullable<Context['leftOff']>; quote: string | undefined}
+  | {kind: 'file'; left: NonNullable<Context['leftOff']>; quote?: string; line?: number}
   | {kind: 'letter'; thread: inbox.Thread}
-  | {kind: 'board'; board: string; name: string; room: string; server?: string};
+  | {kind: 'board'; board: string; name: string; room: string; server?: string; time?: number};
 
 // Keep data, not the previous desk's buttons, and invalidate it even while Home is not on screen.
 const recent = new RecentSnapshot<Recent[]>();
@@ -127,42 +131,46 @@ function recentIdentityChanged() {
 onConnection(recentIdentityChanged);
 onState((key) => { if (key === 'remote') recentIdentityChanged(); });
 
-function recentRow(row: Recent, ctx: Context) {
+function recentRow(row: Recent, ctx: Context): RecentLine {
   switch (row.kind) {
     case 'file': {
-      const {left, quote} = row;
-      const key = latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {
-        quote, heard: !quote, place: left.repo,
-        go: () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at}),
-      });
-      key.classList.add('pane-resume');
-      return key;
+      const {left, quote, line} = row;
+      const source = line
+        ? t('{repo} / {path} · line {n}', {repo: left.repo, path: left.path, n: line})
+        : left.repo + ' / ' + left.path;
+      return {key: JSON.stringify(['file', left.repo, left.path]), title: quote || shownName(left.path), source,
+        at: left.time, hint: t('{repo} · Continue where you left off', {repo: left.repo}),
+        go: () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at})};
     }
     case 'letter': {
       const {thread} = row;
-      return latelyRow(thread.name || inbox.shown(thread.address), wordLine(thread), {
-        fresh: true, go: () => { openNext(thread.address); void ctx.go('inbox'); },
-      });
+      const name = thread.name || inbox.shown(thread.address);
+      const notice = inbox.noticeWords(thread.last.target, thread.last.mine, name);
+      return {key: JSON.stringify(['letter', thread.address]), title: notice ?? [document.createTextNode(name + ' · '), ...wordLine(thread)],
+        source: t('Inbox'), at: thread.last.time,
+        go: () => { openNext(thread.address); void ctx.go('inbox'); }};
     }
     case 'board':
-      return latelyRow(row.name, row.server ? t('{server} · New posts', {server: row.room}) : t('{server} · Joined as guest', {server: row.room}), {
-        fresh: !!row.server, go: () => { remember({server: row.server, board: row.board}); void ctx.go('server'); },
-      });
+      return {key: JSON.stringify(['board', row.server, row.board]), title: row.name, at: row.time,
+        source: row.server ? t('{server} · New posts', {server: row.room}) : t('{server} · Joined as guest', {server: row.room}),
+        go: () => { remember({server: row.server, board: row.board}); void ctx.go('server'); }};
   }
 }
 
 function lately(ctx: Context): HTMLElement {
-  const list = h('div', {class: 'lately-list'});
-  arrowKeys(list, '.pane-row');
-  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, recentGlass(), h('h2', {id: 'lately-title'}, t('Recent activity')), list);
-  const show = (rows: Recent[] | undefined) => list.replaceChildren(...(rows?.length ? rows.map((row) => recentRow(row, ctx))
-    : rows ? [h('p', {class: 'muted small lately-none'}, t('Nothing new'))] : []));
+  const view = recentList();
+  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title', hidden: ''},
+    recentGlass(), h('h2', {id: 'lately-title'}, t('Recent activity')), view.element);
+  const show = (rows: Recent[] | undefined, reset = false) => {
+    box.hidden = !rows?.length;
+    view.show(rows?.map(row => recentRow(row, ctx)) ?? [], reset);
+  };
   let shown = recentScope(connection());
   show(recent.read(shown));
   const take = (scope: string | null) => {
     if (scope === shown) return false;
     shown = scope;
-    show(recent.read(scope));
+    show(recent.read(scope), true);
     return true;
   };
   const paint = async () => {
@@ -179,7 +187,8 @@ function lately(ctx: Context): HTMLElement {
       // A line that only says the names (a README's title is often its repo's) says nothing of where one was.
       const names = [left.repo, shownName(left.path), left.path.split('/').pop() ?? ''].map((n) => n.toLowerCase());
       const telling = !!quote && !names.includes(quote.replace(/^[\s#/*>;-]+|[\s*/;]+$/g, '').toLowerCase());
-      rows.push({kind: 'file', left, quote: telling ? quote : undefined});
+      const line = text === null || left.at === null ? undefined : text.slice(0, left.at).split('\n').length;
+      rows.push({kind: 'file', left, quote: telling ? quote : undefined, line});
     }
     if (!recent.current(now(), mine)) return;
     // Reply and board reads share one generation and never wait on one another.
@@ -189,18 +198,18 @@ function lately(ctx: Context): HTMLElement {
     // Even a synchronous signed-out read belongs to a mounted desk, not one removed during the read.
     await Promise.resolve();
     if (!box.isConnected || !recent.current(now(), mine)) return;
-    for (const thread of waiting(threads, 3)) {
+    for (const thread of waiting(threads, threads.length)) {
       // Only the first line is drawn. The rest of the message does not belong in this cache.
       rows.push({kind: 'letter', thread: {...thread, last: {...thread.last, body: thread.last.body.split('\n', 1)[0]}}});
     }
-    if (scope !== null) for (const b of news().boards.slice(0, 3)) {
+    if (scope !== null) for (const b of news().boards) {
       const s = all.find((x) => x.id === b.server);
       const board = s?.boards.find((x) => x.id === b.id);
-      if (s && board) rows.push({kind: 'board', server: s.id, board: board.id, name: board.name, room: s.name});
+      if (s && board) rows.push({kind: 'board', server: s.id, board: board.id, name: board.name, room: s.name, time: boardPostTime(b.post)});
     }
     // A board this device writes in as a guest is available whether or not the device is signed in.
     const ours = new Set(all.flatMap((s) => s.boards.map((x) => x.id)));
-    for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id)).slice(0, 3)) {
+    for (const {id, here} of servers.guestBoards().filter((g) => !ours.has(g.id))) {
       rows.push({kind: 'board', board: id, name: here.name, room: here.server});
     }
     if (recent.keep(now(), mine, rows)) show(rows);
@@ -211,7 +220,7 @@ function lately(ctx: Context): HTMLElement {
   };
   // (Home is not seen before what waits is read: ui/whole.ts.)
   void whole(paint());
-  list.addEventListener('look-closed', () => void paint());
+  view.list.addEventListener('look-closed', () => void paint());
   const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
   // A repo renamed: where one left off says it under its new name.
   const offRenamed = onRenamed(() => { if (!box.isConnected) { offRenamed(); return; } void paint(); });

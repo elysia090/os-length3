@@ -75,6 +75,14 @@ export function menusOnGrid(): void {
   // (Before the frame is drawn: never seen where it was first laid and then here.)
   new MutationObserver((changes) => {
     if (changes.some((c) => (c.type === 'attributes' ? about(c.target) : [...c.addedNodes].some(about)))) look();
+    // A pinned Home repo menu can grow into an ask. Keep the new controls in the window too.
+    const grew = new Set<HTMLElement>();
+    for (const change of changes) {
+      if (change.type !== 'childList' || !(change.target instanceof Element)) continue;
+      const menu = change.target.closest<HTMLElement>('.pop');
+      if (menu && keys.has(menu) && shown(menu)) grew.add(menu);
+    }
+    for (const menu of grew) place(menu);
   }).observe(document.body,
     {subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'aria-expanded']});
   addEventListener('resize', () => { for (const el of document.querySelectorAll<HTMLElement>('.pop')) if (shown(el)) place(el); });

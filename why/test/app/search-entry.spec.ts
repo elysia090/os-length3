@@ -37,8 +37,10 @@ test('the same corner Search works before a repo exists, without taking away any
     await page.keyboard.press('Enter');
     const input = stage.getByRole('searchbox');
     await expect(input).toBeFocused();
-    // The veil takes the shared desk's dark ground, including places whose body has the old light token.
-    await expect(page.locator('.search-veil.out')).toHaveCSS('--ground', '#3a3d36');
+    const veil = page.locator('.search-veil.out');
+    if (place === 'home') await expect(veil).toHaveCount(0);
+    // Other desks keep their veil in the shared dark ground, even when the body has the old light token.
+    else await expect(veil).toHaveCSS('--ground', '#3a3d36');
     await expect(stage.getByRole('search')).toHaveCSS('--paper', '#1a272d');
     await expect(input).toHaveAttribute('placeholder', 'No repo to search');
     await expect(stage.getByRole('combobox', {name: 'Search in'})).toHaveCount(0);

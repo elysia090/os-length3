@@ -136,7 +136,7 @@ const ctx: Context = {
   openRepo(name, path = '', write = false, grownFrom, line = 0, carried) { openRepoFrom(document.activeElement, name, path, write, grownFrom, line, carried); },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
-  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
+  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at, time: Date.now()})); },
   forgeFiles(repo, focus, index) { if (repo === null) fileTree.closeDesk(); else if (current === 'forge') fileTree.openDesk(repo, focus, index); },
   forgePlace(place) { return select('forge', false, false, place); },
   searchRepo(repo, origin, rejoin) {
@@ -161,8 +161,11 @@ const ctx: Context = {
   get repo() { return openRepo; },
   get leftOff() {
     try {
-      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown} | null;
-      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null} : null;
+      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown; time?: unknown} | null;
+      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {
+        repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null,
+        time: typeof was.time === 'number' && Number.isFinite(was.time) ? was.time : undefined,
+      } : null;
     } catch { return null; }
   },
   rerender: () => { void render(); },

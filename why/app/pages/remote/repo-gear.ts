@@ -66,7 +66,7 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  * copy of it is on this device (false: only on the Remote).
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
-  const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys);
+  const {gear, list, show} = rowActions(repo, () => fill(), w.arrowKeys ?? w.pinned, w.pinned);
   if (w.pinned) pinOnGrid(list, gear);
   let fetching = false;
   let fetchError = '';
