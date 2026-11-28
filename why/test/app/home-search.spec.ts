@@ -183,7 +183,7 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(home).toHaveCSS('visibility', 'visible');
   await expect(lens).toBeFocused();
 
-  // Forge uses the same separate surfaces and pigments without losing its veil.
+  // Forge keeps the split surfaces and shared pigments, with its own stock.
   await app.rail.go('forge');
   await app.main.getByRole('button', {name: 'Search', exact: true}).click();
   await expect(stage).toHaveClass(/search-on-forge/);
@@ -194,9 +194,16 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(form).toHaveCSS('box-shadow', `${shadow} 4px 1.5px 0px 0px`);
   await expect(result).toHaveCSS('box-shadow', fullCast);
   await rows.last().hover();
-  await expect(result).toHaveCSS('background-image', homeStock);
-  expect(await choicePaint(rows.first())).toEqual(homeActive);
-  expect(await choicePaint(rows.last())).toEqual(homeHover);
+  await expect(result).toHaveCSS('background-image', /rgb\(216, 213, 206\).*rgb\(228, 225, 218\)/);
+  expect(await result.evaluate(el => getComputedStyle(el).backgroundImage)).not.toBe(homeStock);
+  await expect(rows.first()).toHaveCSS('--search-selection-share', '57%');
+  await expect(rows.last()).toHaveCSS('--search-selection-share', '40%');
+  for (const [row, homePaint] of [[rows.first(), homeActive], [rows.last(), homeHover]] as const) {
+    await expect(row).toHaveCSS('--search-results-selection', '#afaba0');
+    const paint = await choicePaint(row);
+    expect(paint.fill).not.toBe(homePaint.fill); // The same mix takes on its new stock.
+    expect({...paint, fill:homePaint.fill}).toEqual(homePaint);
+  }
   await expect(result.getByRole('heading', {name: '2 matches for "launch"', exact: true})).toHaveCSS('font-family', sans);
   await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(result.locator('.search-screen-enter')).toHaveCount(2);
