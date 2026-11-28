@@ -218,17 +218,13 @@ body {
   --forge-work-quiet: #b2a48f;
 }
 
-/* Search papers share the selection and match pigments without recoloring either desk. */
+/* Home and Forge Search share their paper and pigments without recoloring either desk. */
 .search-screen:is(.search-on-home, .search-on-forge) {
-  --search-results-paper: #ddd1b4;
-  --search-results-grain: #d1c4a6;
+  --search-results-paper: #e8e6e3;
+  --search-results-grain: #dcdad7;
   --search-results-selection: #afaba0;
   --search-results-selected-line: #4a4742;
   --search-results-mark: #cea239;
-}
-.search-screen.search-on-forge {
-  --search-results-paper: #e8e6e3;
-  --search-results-grain: #dcdad7;
 }
 
 /* The portrait owns its note's stock, on screen as well as on the departing page. */
