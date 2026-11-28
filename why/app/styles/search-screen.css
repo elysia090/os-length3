@@ -1,6 +1,8 @@
 /* The old search's depth, washed in the current desks' shared colour, not the root's light default.
    The rail and door still belong to the window, over the work, not in its blur. */
 .page-veil.search-veil { --ground: var(--nighthawks-ground); z-index: 28; }
+/* Let Forge’s structure show a little through Search, without changing the wash. */
+.page-veil.search-veil.search-veil-on-forge { --veil-blur-scale: .92; }
 body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 
 /* One paper in front of the old desk, neither moved nor used. The screen itself is not a second sheet. */

@@ -75,10 +75,11 @@ test('Search is a separate history step, with the work kept and the matched line
   const veil = page.locator('.page-veil.deep.search-veil');
   const layers = veil.locator('i');
   await expect(veil).toHaveClass(/\bout\b/);
-  await expect(layers.nth(0)).toHaveCSS('backdrop-filter', 'blur(6px)');
-  await expect(layers.nth(0)).toHaveCSS('background-color', /color\(srgb .* \/ 0\.65\)/);
-  await expect(layers.nth(1)).toHaveCSS('backdrop-filter', 'blur(11px)');
-  await expect(layers.nth(2)).toHaveCSS('backdrop-filter', 'blur(16px)');
+  await expect(veil).toHaveClass(/search-veil-on-forge/);
+  await expect(layers.nth(0)).toHaveCSS('backdrop-filter', 'blur(5.52px)');
+  await expect(layers.nth(0)).toHaveCSS('background-color', /color\(srgb 0\.227451 0\.239216 0\.211765 \/ 0\.65\)/);
+  await expect(layers.nth(1)).toHaveCSS('backdrop-filter', 'blur(10.12px)');
+  await expect(layers.nth(2)).toHaveCSS('backdrop-filter', 'blur(14.72px)');
   const choices = screen.getByRole('button', {name: /Needle (first|last)\./});
   await expect(choices).toHaveCount(2);
   await input.press('Escape');
@@ -572,6 +573,12 @@ test('from Git, a Search match opens the repo in Forge and Back revisits Search 
   await stage.getByRole('option', {name:'atlas',exact:true}).click();
   const hit = stage.getByRole('button', {name: /src\/main\.c.*return 7/});
   await expect(hit).toBeVisible();
+  const gitVeil = page.locator('.page-veil.deep.search-veil.out');
+  await expect(gitVeil).not.toHaveClass(/search-veil-on-forge/);
+  const gitLayers = gitVeil.locator('i');
+  await expect(gitLayers.nth(0)).toHaveCSS('backdrop-filter', 'blur(6px)');
+  await expect(gitLayers.nth(1)).toHaveCSS('backdrop-filter', 'blur(11px)');
+  await expect(gitLayers.nth(2)).toHaveCSS('backdrop-filter', 'blur(16px)');
   // The joined edge and its clips still belong to this Search entry, not Home or Forge.
   const paper = stage.locator('.search-screen-paper');
   await expect(paper).toHaveCSS('overflow', 'clip');

@@ -108,7 +108,10 @@ export class SearchTrail {
     // Leave the work where it was. Home clears the desk; other places keep it behind the veil.
     for (const {element} of desks) element.inert = true;
     if (visit.place === 'home') screen.element.classList.add('search-on-home');
-    else this.veil.out(true);
+    else {
+      this.veil.element.classList.toggle('search-veil-on-forge', visit.place === 'forge');
+      this.veil.out(true);
+    }
     if (visit.place === 'forge') screen.element.classList.add('search-on-forge');
     document.body.append(screen.element);
     this.live = {screen, desks, id};
