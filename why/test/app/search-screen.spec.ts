@@ -76,10 +76,12 @@ test('Search is a separate history step, with the work kept and the matched line
   const layers = veil.locator('i');
   await expect(veil).toHaveClass(/\bout\b/);
   await expect(veil).toHaveClass(/search-veil-on-forge/);
-  await expect(layers.nth(0)).toHaveCSS('backdrop-filter', 'blur(5.52px)');
+  await expect(layers.nth(0)).toHaveCSS('backdrop-filter', 'blur(4.83px)');
   await expect(layers.nth(0)).toHaveCSS('background-color', /color\(srgb 0\.227451 0\.239216 0\.211765 \/ 0\.65\)/);
-  await expect(layers.nth(1)).toHaveCSS('backdrop-filter', 'blur(10.12px)');
-  await expect(layers.nth(2)).toHaveCSS('backdrop-filter', 'blur(14.72px)');
+  await expect(layers.nth(1)).toHaveCSS('backdrop-filter', 'blur(3.2px)');
+  await expect(layers.nth(1)).toHaveCSS('mask-image', /rgba\(0, 0, 0, 0\.64\).*rgba\(0, 0, 0, 0\.29\).*calc\(100% - .*px\).*rgba\(0, 0, 0, 0\.64\)/);
+  await expect(layers.nth(2)).toHaveCSS('backdrop-filter', 'blur(2px)');
+  await expect(layers.nth(2)).toHaveCSS('mask-image', /rgba\(0, 0, 0, 0\.38\).*rgba\(0, 0, 0, 0\.16\).*calc\(100% - .*px\).*rgba\(0, 0, 0, 0\.38\)/);
   const choices = screen.getByRole('button', {name: /Needle (first|last)\./});
   await expect(choices).toHaveCount(2);
   await input.press('Escape');
