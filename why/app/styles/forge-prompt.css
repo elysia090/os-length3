@@ -206,8 +206,32 @@ body.forge-place:has(.forge-prompt-slot .prompt-in:focus) .os-caret.on.block { b
   :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout { --prompt-paper-edge: var(--forge-work-origin, 0px); }
   :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
     inset-inline-start: var(--prompt-paper-edge); inset-inline-end: auto;
-    outline: 2px solid var(--prompt-face-edge); outline-offset: -2px;
     --terminal-switch-foot: var(--u);
+    border-radius: var(--r-prompt-frame);
+    outline: none;
+    overflow: clip;
+  }
+  /* Three flat paints: silver up to the heading's last row, one continuous rule,
+     and the quieter frame around the transcript. The overlay takes no room or input. */
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot::after {
+    --prompt-frame-seam: calc(var(--prompt-band-height) + 1px);
+    content: ''; position: absolute; inset: 0; z-index: 4;
+    border-radius: inherit; padding: 2px;
+    background: linear-gradient(to bottom,
+      var(--prompt-band) var(--prompt-band-height),
+      var(--prompt-band-edge) var(--prompt-band-height) var(--prompt-frame-seam),
+      var(--prompt-frame-body) var(--prompt-frame-seam));
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  @media (forced-colors: active) {
+    :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot {
+      outline: 2px solid CanvasText; outline-offset: -2px;
+    }
+    :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-box[data-kind='term'].forge-prompt-slot::after {
+      content: none;
+    }
   }
   :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .forge-prompt-slot .desk-term.stand {
     --term-bg: var(--forge-work-face);

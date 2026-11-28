@@ -31,6 +31,8 @@ test('wide Files keeps the document fixed and separates opening a name from its 
 
   const tree = page.getByRole('tree', {name: 'tidewatch', exact: true});
   await expect(tree).toBeVisible();
+  const index = page.locator('.file-tree.on-forge-desk[data-forge-index]');
+  await expect(index).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   const word = (name: string) => tree.getByRole('button', {name, exact: true});
   const mark = (name: string) => word(name).locator('xpath=..').locator(':scope > .tree-more');
   const sharp = (name: string) => word(name).locator('.file-shelf-primary');
@@ -68,6 +70,13 @@ test('wide Files keeps the document fixed and separates opening a name from its 
   };
 
   await closed();
+  await expect(mark('src')).toBeVisible();
+  await expect(mark('Makefile')).toBeHidden();
+  const preview = tree.getByRole('button', {name: 'Open src/main.c', exact: true});
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveCSS('font-size', await word('src').evaluate(el => getComputedStyle(el).fontSize));
+  const nextRowY = (await word('Makefile').boundingBox())!.y;
+  const closedMarkColor = await mark('src').evaluate(el => getComputedStyle(el).color);
   await clickWord('Makefile', 'right');
   await expect(menu('Makefile').getByRole('menuitem', {name: 'Rename', exact: true})).toBeVisible();
   await expect(forge.piece('Makefile')).toHaveCount(0);
@@ -95,6 +104,11 @@ test('wide Files keeps the document fixed and separates opening a name from its 
   await expect(menu('src')).toBeHidden();
   await expect(word('main.c')).toBeVisible();
   await expect(mark('src')).toHaveAttribute('aria-expanded', 'true');
+  await expect(mark('src')).toBeVisible();
+  await expect(mark('src')).not.toHaveCSS('color', closedMarkColor);
+  await expect(mark('main.c')).toBeHidden();
+  expect((await word('Makefile').boundingBox())!.y).toBe(nextRowY);
+  await expect(index).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(sharp('src')).not.toHaveCSS('background-image', 'none');
   await unchanged();
   await photo('03-real-disclosure');

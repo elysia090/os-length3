@@ -304,6 +304,8 @@ body.forge-place {
   --prompt-turn-hot: #d0cbc5;
   --prompt-turn-hot-ink: #151515;
   --prompt-face-edge: #a9a6a2;
+  --prompt-frame-body: color-mix(in srgb, #657473 70%, var(--prompt-band));
+  --r-prompt-frame: 3px;
   --prompt-face-shade: #b0ada8;
   --prompt-face-light: #f8f5f1;
   --prompt-scroll-track: #dad6d1;

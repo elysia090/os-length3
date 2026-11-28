@@ -602,9 +602,11 @@ the quiet desk puts only the list away and gives the name the keyboard back. A c
 place unless that place has its own first act. Back and Forward keep a keyboard left at the frame with the frame.
 Files is the current repo's tree, fixed beside the paper on a wide desk and its own face on a narrow one. A folder
 previews one real child; pressing its name or the existing right chevron reads and opens its children there, without
-moving the paper. Only an open branch has the ink behind its name. A file's name opens its paper where the caret
-and scroll were left. Right-click or Shift+F10 calls up a row's operations in its right lane; Escape returns to the
-name, not to another document. The whole filesystem is still File.
+moving the paper. On a wide pointer desk the index is printed on the desk's dots, with one left edge, one word
+size and one row rhythm. One preview and one real child occupy the same line. Only an open branch has ink behind
+its name; its chevron stays in place and goes quieter. A file's name opens its paper where the caret and scroll
+were left. File rows on the pointer desk need no chevron; right-click or Shift+F10 calls up operations in the row's
+right lane. Escape returns to the name, not to another document. The whole filesystem is still File.
 With no repo, Open Folder is the empty desk's own first move.
 
 The standards here are the [UIKit title menu](https://developer.apple.com/videos/play/wwdc2022/10068/?time=1052)

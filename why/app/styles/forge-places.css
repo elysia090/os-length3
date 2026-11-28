@@ -236,7 +236,9 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-search-key:is(:hover
 .tree-desk-close { position: absolute; bottom: 100%; right: 6px; }
 .file-tree.on-forge-desk .tree-more { visibility: hidden; }
 .file-tree.on-forge-desk .tree-more[aria-expanded='true'] { visibility: visible; }
-body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files'])) .file-tree.on-forge-desk { background: var(--ground); outline-color: var(--edge); }
+/* The wide index is printed straight on the desk. Only the separate Files layer owns a fill. */
+body.forge-place:has(.forge-layout .desk-room:not([data-hand='Files']))
+.file-tree.on-forge-desk:not([data-forge-index]) { background: var(--ground); outline-color: var(--edge); }
 /* A Files deed asks in the row whose file it will affect, not in a second place. */
 .file-tree.on-forge-desk .tree-row-asking > :not(.tree-file-ask) { display: none; }
 .file-tree.on-forge-desk .tree-file-ask { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;
