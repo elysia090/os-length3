@@ -194,7 +194,7 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(form).toHaveCSS('box-shadow', `${shadow} 4px 1.5px 0px 0px`);
   await expect(result).toHaveCSS('box-shadow', fullCast);
   await rows.last().hover();
-  await expect(result).toHaveCSS('background-image', /rgb\(219, 219, 211\).*rgb\(231, 231, 223\)/);
+  await expect(result).toHaveCSS('background-image', /rgb\(220, 218, 215\).*rgb\(232, 230, 227\)/);
   expect(await result.evaluate(el => getComputedStyle(el).backgroundImage)).not.toBe(homeStock);
   await expect(rows.first()).toHaveCSS('--search-selection-share', '57%');
   await expect(rows.last()).toHaveCSS('--search-selection-share', '40%');
