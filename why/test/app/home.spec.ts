@@ -350,41 +350,94 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   // Made once for the worker and kept (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
   test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 
-  test('Home opens the real repo Search and the matching line in Forge', async ({app}) => {
+  test('Home opens repo Search, marks only the matching word in Forge, and Back resumes the chosen result', async ({app}) => {
+    const {page, forge} = app;
     await app.rail.go('home');
     await expect(app.main.getByRole('searchbox')).toHaveCount(0);
-    await app.page.keyboard.press('Control+k');
-    const screen = app.page.getByRole('main', {name: 'Search', exact: true});
+    const lens = app.main.getByRole('button', {name: 'Search', exact: true});
+    await lens.focus();
+    await page.keyboard.press('Control+k');
+    const screen = page.getByRole('dialog', {name: 'Search', exact: true});
     const query = screen.getByRole('searchbox');
+    const scope = screen.getByRole('combobox', {name: 'Search in'});
     await expect(query).toBeFocused();
-    await expect(screen.getByRole('combobox', {name: 'Search in'})).toHaveValue('hello');
+    await expect(scope).toHaveValue('hello');
     await query.fill('puts');
-    await screen.getByRole('button', {name: /puts\("hello"\);/}).click();
-    await expect(app.forge.editor('src/main.c')).toBeFocused();
-    await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
+    const match = screen.getByRole('button', {name: /src\/main\.c.*puts\("hello"\);/});
+    await expect(match.locator('mark')).toHaveText('puts');
+    await match.click();
+
+    const path = 'src/main.c', editor = forge.editor(path), paper = forge.piece(path);
+    const word = paper.locator('mark.desk-match');
+    await expect(screen).toHaveCount(0);
+    await expect(paper).toHaveClass(/\bheld\b/);
+    await expect(editor).toBeFocused();
+    await expect(word).toHaveCount(1);
+    await expect(word).toBeInViewport({ratio: 1});
+    await expect(word).toHaveText('puts');
+    await expect(word).toHaveCSS('background-image', /rgb\(236, 202, 95\)/);
+    await expect(paper.locator('.desk-mark')).toHaveCount(0);
+    expect(await forge.selected(path)).toBe('');
+    const line = Number(await word.getAttribute('data-line'));
+    expect((await editor.inputValue()).split('\n')[line - 1]).toBe('    puts("hello");');
+
+    await page.goBack();
+    await expect(query).toHaveValue('puts');
+    await expect(scope).toHaveValue('hello');
+    await expect(match).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(screen).toHaveCount(0);
+    await expect(app.main).toHaveAttribute('data-place', 'home');
+    const parkedLens = app.main.locator('.forge-layout[hidden] .forge-search-key');
+    await expect(parkedLens).toHaveCount(1);
+    await expect(parkedLens).toBeHidden();
+    await expect(lens).toBeVisible();
+    await expect(lens).toBeFocused();
   });
 });
 
-test('Home has no band or rail; its single Places key opens File and goes to the Remote', async ({app}) => {
+test('Home has no band or rail; its single title key offers six Places and opens File and Remote from Tools', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const {page, main} = app;
   const key = main.getByRole('button', {name: 'Home', exact: true});
   const menu = main.getByRole('menu', {name: 'Places', exact: true});
+  const tools = main.getByRole('menu', {name: 'Tools', exact: true});
   await expect(page.getByRole('navigation', {name: 'Purposes', includeHidden: true})).toBeHidden();
   await expect(page.locator('#door')).toBeHidden();
   await expect(main.locator('.home-band')).toHaveCount(0);
+  await expect(main.locator('.forge-places-key:visible')).toHaveCount(1);
+  const shared = await key.getAttribute('aria-controls');
   await key.press('Enter');
-  await expect(menu.getByRole('menuitemradio', {name: 'Home'})).toBeFocused();
-  await menu.getByRole('menuitem', {name: 'File', exact: true}).click();
+  await expect(menu).toHaveAttribute('id', shared!);
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Home', 'Forge', 'Git', 'Server', 'Inbox', 'Runtime']);
+  await expect(menu.getByRole('menuitemradio', {name: 'Home', exact: true})).toBeFocused();
+  await expect(menu.getByRole('menuitem')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const file = tools.getByRole('menuitem', {name: 'File', exact: true});
+  const remote = tools.getByRole('menuitem', {name: 'Remote', exact: true});
+  await key.press('Shift+F10');
+  await expect(tools).toHaveAttribute('id', shared!);
+  await expect(tools.getByRole('menuitemradio')).toHaveCount(0);
+  await expect(remote).toBeFocused();
+  await file.click();
+  await expect(tools).toBeHidden();
+  await expect(main).toHaveAttribute('data-place', 'home');
   await expect(app.file.tree).toBeVisible();
   await expect(app.file.name('notes')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(app.file.tree).toBeHidden();
   await expect(key).toBeFocused();
-  await key.press('Enter');
-  await menu.getByRole('menuitem', {name: 'Remote', exact: true}).click();
-  await expect(page.locator('#page')).toHaveAttribute('data-place', 'remote');
+
+  await key.click({button:'right'});
+  await expect(tools).toHaveAttribute('id', shared!);
+  await remote.click();
+  await expect(main).toHaveAttribute('data-place', 'remote');
+  await page.goBack();
+  await expect(main).toHaveAttribute('data-place', 'home');
+  await expect(menu).toBeHidden();
+  await expect(app.file.tree).toBeHidden();
 });
 
 test('what was written on Home and was not yet the core\'s when the page went is kept at the next start', async ({app}) => {

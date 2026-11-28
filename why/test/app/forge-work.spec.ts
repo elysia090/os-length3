@@ -804,11 +804,14 @@ test('only the paper in hand is filled, casts a thin shadow and exposes Close; P
   await expect(term.locator('.desk-term:visible')).toHaveCSS('background-color', WORK_FACE);
   await expect(term).toHaveCSS('box-shadow', / 4px 4px 0px 0px$/);
   await expect(app.forge.promptBox).toHaveCSS('color', WORK_INK);
-  (await look()).forEach((paper) => quiet(paper));
+  // Prompt parks the retained sheet without repainting it. It still has no visible fill, shadow, or controls.
+  (await look()).forEach((paper) => quiet(paper, paper.key === 'src/main.c' ? WORK_FACE : FORGE_GROUND));
   await app.page.keyboard.press('Escape');
   await expect(term).toBeHidden();
   await expect(app.forge.editor('src/main.c')).toBeFocused();
-  await expect(app.forge.piece('src/main.c')).toHaveCSS('box-shadow', `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`);
+  const returned = app.forge.piece('src/main.c');
+  await expect(returned).toHaveCSS('background-color', WORK_FACE);
+  await expect(returned).toHaveCSS('box-shadow', `${CAST} ${SHADOW}px ${SHADOW}px 0px 0px`);
 });
 
 test('Shift+N makes a new file beside the one in hand where nothing is being written; written in a file, it is an N', async ({app}) => {

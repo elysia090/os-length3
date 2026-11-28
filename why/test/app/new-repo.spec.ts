@@ -69,9 +69,13 @@ test('what will be made is the new repo alone, as File will show it, its files m
 
 test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a piece wide, its name at a name\'s size on its first line, what will be made inside it under a rule', async ({app}) => {
   const U = 24, NAME = 24 / .727;
-  for (const size of [{width: 1400, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
+  const sizes = [{width: 1400, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}];
+  await app.page.setViewportSize(sizes[0]);
+  await app.rail.go('new-repo');
+  // Inspect the same draft as its window narrows; this contextual page isn't its own Tools destination.
+  for (const size of sizes) {
     await app.page.setViewportSize(size);
-    await app.rail.go('new-repo');
+    await expect(app.main).toHaveAttribute('data-place', 'new-repo');
     const box = app.main.locator('.nr-box'), label = app.main.locator('.nr-label');
     await app.newRepo.name.fill('count');
     // A piece wide (24 cells, or as many whole cells as the window has room for with its shadow), its place in the
@@ -149,6 +153,27 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
       }
     }
   }
+});
+
+test('File actions in New repo’s Tools returns to the working file and its real deeds', async ({app}) => {
+  await app.newRepo.make('deed-sample', {summary: 'Keep this draft.'});
+  const readme = app.forge.editor('README.md');
+  const words = '# deed-sample\n\nKeep this draft.\n';
+  await expect(readme).toHaveValue(words);
+
+  await app.rail.go('new-repo');
+  const tools = await app.forge.openTools();
+  await tools.getByRole('menuitem', {name: 'File actions', exact: true}).press('Enter');
+
+  await expect(app.main).toHaveAttribute('data-place', 'forge');
+  const deeds = app.page.getByRole('menu', {name: 'README.md', exact: true});
+  const make = deeds.getByRole('menuitem', {name: 'New file', exact: true});
+  await expect(deeds.getByRole('menuitem', {name: 'Rename', exact: true})).toBeVisible();
+  await expect(make).toBeFocused();
+  await make.press('Escape');
+  await expect(deeds).toBeHidden();
+  await expect(app.forge.placesKey).toBeFocused();
+  await expect(readme).toHaveValue(words);
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
@@ -294,7 +319,7 @@ test('Back restores the README selection, its own keyboard, and the place on the
   const scroll = await page.evaluate(() => window.scrollY);
   expect(scroll).toBeGreaterThan(320);
   await app.forge.placesKey.click();
-  await page.getByRole('menuitem', {name: 'Home', exact: true}).click();
+  await app.forge.places.getByRole('menuitemradio', {name: 'Home', exact: true}).click();
   await expect(page.getByRole('main', {name: 'Home', exact: true})).toBeVisible();
   await page.goBack();
   await expect(newRepo.summary).toHaveValue(fieldNotes);

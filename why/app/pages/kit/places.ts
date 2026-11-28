@@ -58,7 +58,10 @@ onNews((state: News) => {
 
 /** Route the corner key to the same Search, using the repo of the desk in hand, if any. */
 export function deskSearch(ctx: SearchDesk, repo: () => string | null = () => ctx.repo): Find {
-  return (origin) => ctx.searchRepo?.(repo(), origin, () => document.querySelector<HTMLElement>('#page .forge-search-key'));
+  // A redrawn desk can have the retained Forge's hidden key before its own.
+  const rejoin = () => [...document.querySelectorAll<HTMLElement>('#page .forge-search-key')]
+    .find(key => !key.closest('[hidden], [inert]') && key.getClientRects().length) ?? null;
+  return (origin) => ctx.searchRepo?.(repo(), origin, rejoin);
 }
 
 /** The place name opens its destinations. An existing masthead keeps its heading semantics. */

@@ -74,8 +74,11 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
   --paper-check: var(--forge-paper-grain);
   --file-thumb: var(--forge-paper-thumb);
   outline-color: var(--forge-paper-edge);
-  box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
   color: var(--ink);
+}
+/* The sheet keeps its material while parked; only a document in hand casts on the desk. */
+.forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] > .desk .desk-box.held:not([data-kind]) {
+  box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
 }
 .forge-layout .desk-room[data-place='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
 .forge-layout .desk-room[data-place='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }

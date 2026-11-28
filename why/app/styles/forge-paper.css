@@ -16,7 +16,6 @@
     background-image: conic-gradient(var(--paper-check) 25%,var(--paper-base) 25% 50%,var(--paper-check) 50% 75%,var(--paper-base) 75%);
     background-size: var(--s1) var(--s1);
     outline-color: var(--forge-paper-edge);
-    box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
   }
   .page[data-place='forge'] .forge-layout
     .desk-room[data-place='Forge'] > .desk .desk-box:is(.held,.leaving):not([data-kind]) > .desk-file {
