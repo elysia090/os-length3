@@ -4,7 +4,8 @@ test('Home Search keeps the centered input still while setting out its own resul
   const {page, forge} = app;
   await page.setViewportSize({width: 1536, height: 864});
   await app.newRepo.make('field-notes');
-  await forge.editFile('README.md', '# Field notes\n\nKeep the first launch path short.\nWrite down launch timing.\n');
+  const long = 'handoff <task> "draft" ' + 'wide route '.repeat(14).trim();
+  await forge.editFile('README.md', `# Field notes\n\nKeep the first launch path short.\nWrite down launch timing.\n${long}\n`);
   await app.rail.go('home');
   const home = page.locator('#page[data-place="home"]');
   const lens = home.getByRole('button', {name: 'Search', exact: true});
@@ -64,6 +65,7 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(suggested).toBeVisible();
   const sans = await input.evaluate(el => getComputedStyle(el).fontFamily);
   await expect(suggestions.getByRole('heading')).toHaveCSS('font-family', sans);
+  const candidateHeading = (await suggestions.getByRole('heading').boundingBox())!;
   await expect(suggested).toHaveCSS('font-family', sans);
   await expectSplitPaper();
   await suggested.hover();
@@ -96,7 +98,16 @@ test('Home Search keeps the centered input still while setting out its own resul
   const mono = await snippet.evaluate(el => getComputedStyle(el).fontFamily);
   expect(mono).not.toBe(sans);
   await expect(rows.first().locator('.sheet-line')).toHaveCSS('font-family', mono);
-  await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', sans);
+  const count = result.getByRole('heading', {name: '2 matches for "launch"', exact: true});
+  await expect(count).toHaveCSS('font-family', sans);
+  expect((await count.boundingBox())!.y).toBe(candidateHeading.y - 2);
+  await expect(rows.first()).toHaveCSS('--home-search-selection-share', '54%');
+  await rows.last().hover();
+  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '50%');
+  await expect(rows.last()).toHaveCSS('background-image', /^conic-gradient\(/);
+  expect(await rows.first().evaluate(el => getComputedStyle(el).backgroundImage))
+    .not.toBe(await rows.last().evaluate(el => getComputedStyle(el).backgroundImage));
+  await page.mouse.move(32, 160);
   await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', sans);
   await expect(rows.first().locator('mark')).toHaveCSS('--marker', '#cea239');
   await expect(rows.first()).toHaveCSS('mix-blend-mode', 'normal');
@@ -105,6 +116,7 @@ test('Home Search keeps the centered input still while setting out its own resul
   await page.keyboard.press('ArrowDown');
   await expect(rows.last()).toBeFocused();
   await expect(rows.last()).toHaveCSS('outline-width', '2px');
+  await expect(rows.last()).toHaveCSS('--home-search-selection-share', '54%');
   await expect(rows.last().locator('.sheet-line')).toHaveCSS('color', 'rgb(75, 72, 67)');
 
   // A file-name-only match uses the same face, even inside its highlighted match.
@@ -113,6 +125,17 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(named).toHaveText('README.md');
   await expect(named).toHaveCSS('font-family', sans);
   await expect(named.locator('mark')).toHaveCSS('font-family', sans);
+  await expect(result.getByRole('heading', {name: '1 match for "README.md"', exact: true})).toBeVisible();
+
+  // A long query is literal text, clipped visually only, with its full accessible name.
+  await input.fill(long);
+  const longCount = result.getByRole('heading', {name: `1 match for "${long}"`, exact: true});
+  await expect(longCount).toBeVisible();
+  await expect(longCount).toHaveCSS('white-space', 'nowrap');
+  await expect(longCount).toHaveCSS('text-overflow', 'ellipsis');
+  expect(await longCount.evaluate(el => el.scrollWidth)).toBeGreaterThan(await longCount.evaluate(el => el.clientWidth));
+  await expect(longCount.locator('task')).toHaveCount(0);
+
 
   // Typing and confirming a line with Enter still opens the same anchored source and Back keeps the matches.
   await input.fill('launch');

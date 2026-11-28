@@ -181,7 +181,7 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
  * key at its end. In `sections` (the band's sheet), the files are a section, its name and how many at its left and
  * what was found at its right; no count above it. Search names this row count as matches, not distinct files.
  */
-export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean; matchCount?: boolean} = {}): HTMLElement[] {
+export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean; matchCount?: boolean | 'with-query'} = {}): HTMLElement[] {
   const {groups} = found;
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
@@ -198,7 +198,9 @@ export function foundView(found: Found, query: string, ways: FoundWays, o: {sect
   const said: HTMLElement[] = [];
   if (o.sections) {
     if (kinds.length) said.push(h('div', {class: 'found-secs'}, ...kinds.map((k) => {
-      const heading = o.matchCount ? [tn('{n} match', '{n} matches', k.n)] : [k.name, h('i', {}, String(k.n))];
+      const heading = o.matchCount === 'with-query'
+        ? [tn('{n} match for "{query}"', '{n} matches for "{query}"', k.n, {query})]
+        : o.matchCount ? [tn('{n} match', '{n} matches', k.n)] : [k.name, h('i', {}, String(k.n))];
       return h('section', {class: 'found-sec', 'aria-label': k.name},
         h('h3', {class: 'found-sec-head'}, ...heading), h('div', {class: 'found-sec-rows'}, ...k.rows));
     })));

@@ -150,6 +150,8 @@ export default {
   'Search this repo': 'この repo を検索',
   '{n} match': '{n}件一致',
   '{n} matches': '{n}件一致',
+  '{n} match for "{query}"': '「{query}」に{n}件一致',
+  '{n} matches for "{query}"': '「{query}」に{n}件一致',
   'Search in': '検索範囲',
   'Open first result': '最初の結果を開く',
   Search: '検索',

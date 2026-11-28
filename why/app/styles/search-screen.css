@@ -195,6 +195,7 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
   --grain: var(--home-search-grain);
   --home-search-seam: 1.5px;
   --home-search-form-drop: var(--s1);
+  --home-search-selection-share: 50%;
   --home-search-frame-ink: var(--ink);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -244,14 +245,25 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
 .search-screen.search-on-home .search-screen-paper .choice:is(:hover, :focus, :focus-visible),
 .search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .choice.first {
   /* Compose the selection with both values of the paper grain, not a see-through fill. */
-  --selected-paper: color-mix(in srgb, var(--home-search-selection) 50%, var(--paper));
-  --selected-grain: color-mix(in srgb, var(--home-search-selection) 50%, var(--grain));
+  --selected-paper: color-mix(in srgb, var(--home-search-selection) var(--home-search-selection-share), var(--paper));
+  --selected-grain: color-mix(in srgb, var(--home-search-selection) var(--home-search-selection-share), var(--grain));
   background: conic-gradient(var(--selected-grain) 25%, var(--selected-paper) 25% 50%,
     var(--selected-grain) 50% 75%, var(--selected-paper) 75%) 0 -1px / var(--s1) var(--s1);
   mix-blend-mode: normal;
 
   /* The selected line digits still have 4.5:1 contrast on the darker stock. */
   & .sheet-line { color: var(--home-search-selected-line); }
+}
+/* The choice already in hand is a little stronger than a passing pointer. */
+.search-screen.search-on-home .search-screen-paper .sheet-hit:focus,
+.search-screen.search-on-home:has(.search-in:focus) .search-screen-paper .sheet-hit.first {
+  --home-search-selection-share: 54%;
+}
+.search-screen.search-on-home .found-secs .found-sec-head {
+  /* Omit overflow visually, keeping the complete query in the heading's name. */
+  translate: 0 calc(-1 * var(--s1) / 2);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .search-screen.search-on-home .sheet-hit mark {
   --marker: var(--home-search-mark);

@@ -89,6 +89,7 @@ export class SearchTrail {
     if (!visit) return;
     const files = (repo: string | null) => repo ? [...this.way.files(repo), ...(this.opened.get(repo) ?? [])] : [];
     const screen = searchScreen(visit.repo, visit.query, files(visit.repo), {
+      matchQuery: visit.place === 'home',
       scope: (repo) => { visit.repo = repo; visit.result = null; return files(repo); },
       back: () => {
         if (this.leaving) return;
