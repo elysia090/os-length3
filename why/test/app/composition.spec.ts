@@ -103,12 +103,26 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
   })()];
   // Every size of type in sight, of words and of fields alike (DESIGN §3: three, one, two and four times).
   const sizes = new Set<number>(), indexSizes = new Set<number>();
+  type RecentRole = 'date' | 'time' | 'source' | 'more' | 'arrow';
+  const recentSizes: {role: RecentRole; size: number}[] = [];
+  // Keep Recent's compact captions local to the active Home's timeline. A row title is ordinary type.
+  const homeRecent = 'main#page[data-place="home"] > .home-portrait .home-waits > .lately > .home-recent-view';
+  const recentRole = (el: Element, text: string): RecentRole | undefined => {
+    if (!el.closest(homeRecent)) return;
+    if (el.matches('.home-recent-items > .home-recent-day > h3')) return 'date';
+    if (el.matches('button.home-recent-line > time.home-recent-time[datetime]')) return 'time';
+    if (el.matches('button.home-recent-line > .home-recent-words > span.home-recent-source')) return 'source';
+    if (el.matches('.home-recent-view > button.home-recent-more[aria-expanded][aria-controls]')) return 'more';
+    if (text === '→' && el.matches('button.home-recent-line > span.home-recent-arrow[aria-hidden="true"]')) return 'arrow';
+  };
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-    const el = n.parentElement!;
-    if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) {
-      const type = el.closest('.file-tree.on-forge-desk[data-forge-index]') ? indexSizes : sizes;
-      type.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+    const el = n.parentElement!, text = n.textContent!.trim();
+    if (text && !el.closest('.sr-only, script, style') && inSight(el)) {
+      const size = Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100;
+      const role = recentRole(el, text);
+      if (role) recentSizes.push({role, size});
+      else (el.closest('.file-tree.on-forge-desk[data-forge-index]') ? indexSizes : sizes).add(size);
     }
   }
   for (const el of document.querySelectorAll('input, textarea, [contenteditable]')) if (inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
@@ -235,7 +249,7 @@ function frame({subject, corner, anchor}: {subject: string; corner: string; anch
       inset: Math.max(...[c.borderTopLeftRadius, c.borderTopRightRadius, c.borderBottomLeftRadius, c.borderBottomRightRadius].map(parseFloat)),
     };
   });
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], indexSizes: [...indexSizes], forgeIndex, offGrid, quietPaper, home};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], indexSizes: [...indexSizes], recentSizes, forgeIndex, offGrid, quietPaper, home};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -312,6 +326,10 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     const displaySizes = place === 'inbox' ? [30, 38] : place === 'server' ? [34, 36]
       : place === 'home' ? [homeTitle, homeName] : [NAME, PERSON];
     for (const size of f.sizes) expect(sizes.some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the place's sizes`).toBe(true);
+    for (const {role, size} of f.recentSizes) {
+      expect(place, `${what}: only active Home has Recent type`).toBe('home');
+      expect(size, `${what}: Recent ${role} at its scoped measure`).toBe(role === 'arrow' ? 15 : 14);
+    }
     for (const d of f.display) expect(displaySizes.some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
     expect(texts.length, `${what}: no text said twice large (${texts.join(' | ')})`).toBe(new Set(texts).size);

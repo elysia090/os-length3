@@ -28,10 +28,21 @@ test('going along the rail, the next page stands whole at once, its cards each i
   await app.newRepo.make('notes');
   await app.rail.go('home');
   await still(app);
-  const cards = app.main.locator('.home-repos .card');
-  await expect(cards).toHaveCount(3);
-  // Staged, each came in from below and ended where it stands, wholly there.
-  for (const o of await cards.evaluateAll((els) => els.map((e) => [getComputedStyle(e).opacity, getComputedStyle(e).translate]))) expect(o).toEqual(['1', 'none']);
+  const repos = app.main.getByRole('region', {name: 'Repos', exact: true});
+  const list = repos.locator('.home-repos');
+  const rows = list.locator(':scope > .card.repo');
+  const footer = repos.locator(':scope > .home-repos-footer');
+  const create = footer.getByRole('button', {name: 'New repo', exact: true});
+  await expect(rows).toHaveCount(2);
+  await expect(list.getByRole('button', {name: 'New repo', exact: true})).toHaveCount(0);
+  await expect(create).toBeVisible();
+  // Both repo rows and their separate creation key have settled at their final positions.
+  for (const el of [...await rows.all(), create]) {
+    expect(await el.evaluate((e) => {
+      const style = getComputedStyle(e);
+      return [style.opacity, style.translate];
+    })).toEqual(['1', 'none']);
+  }
   await app.rail.go('git');
   await expect(app.main.getByRole('heading', {name: 'Git', level: 1})).toBeVisible();
   await still(app);
