@@ -227,8 +227,8 @@ body {
   --search-results-mark: #cea239;
 }
 .search-screen.search-on-forge {
-  --search-results-paper: #e4e1da;
-  --search-results-grain: #d8d5ce;
+  --search-results-paper: #e2e2d9;
+  --search-results-grain: #d6d6cd;
 }
 
 /* The portrait owns its note's stock, on screen as well as on the departing page. */

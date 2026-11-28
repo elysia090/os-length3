@@ -505,7 +505,7 @@ phone('on a phone the Search veil keeps the field in reach and uses actual saved
   await expect(hit.locator('.sheet-file')).toHaveCSS('font-size', '17px');
   await expect(hit.locator('.sheet-text')).toHaveCSS('white-space', 'pre-wrap');
   await expect(region).toHaveCSS('border-top-width', '1px');
-  await expect(region).toHaveCSS('background-image', /rgb\(216, 213, 206\).*rgb\(228, 225, 218\)/);
+  await expect(region).toHaveCSS('background-image', /rgb\(214, 214, 205\).*rgb\(226, 226, 217\)/);
   await expect(region).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 4px 0px 0px');
   await expect(form).toHaveCSS('box-shadow', 'rgb(26, 29, 23) 4px 1.5px 0px 0px');
   const field = (await form.boundingBox())!;
