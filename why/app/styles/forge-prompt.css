@@ -166,6 +166,30 @@ body.forge-place:has(.forge-prompt-slot .prompt-in:focus) .os-caret.on.block { b
 
 /* The action stays at a paper's foot, even when the real paper is behind Prompt. */
 .forge-prompt-approach { display: none; }
+.forge-prompt-action-label { display: grid; justify-items: end; }
+.forge-prompt-action-label > span { grid-area: 1 / 1; }
+.forge-prompt-approach[data-back] .forge-prompt-action-label > :first-child,
+.forge-prompt-approach:not([data-back]) .forge-prompt-action-label > :last-child { visibility: hidden; }
+.forge-prompt-approach:is(:hover,:focus-visible) {
+  color: var(--nighthawks-paper); text-decoration: underline; text-underline-offset: var(--s1);
+}
+.forge-prompt-approach:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
+@media (max-width: 1000px) {
+  /* The same paper-local Prompt/Back key, beside the file title where there is no side bay. */
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge']:has(> .desk:not([hidden]) .desk-box.held:not([data-kind])) > .forge-prompt-approach {
+    display: inline-flex; position: absolute; z-index: 8; align-items: center;
+    inset-block-start: calc(-1 * var(--s3) - var(--s1)); inset-inline-end: calc(var(--forge-origin) + var(--u));
+    min-block-size: 44px; padding-inline: var(--s2); white-space: pre;
+    border: 0; border-radius: 0; background: transparent; color: var(--nighthawks-paper);
+    cursor: var(--cursor-hand); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    font: 400 var(--t-word)/var(--u) var(--sans);
+  }
+  :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout
+    .desk-room[data-place='Forge'] > .desk:not([hidden]) .desk-box.held:not([data-kind]) > .desk-label {
+    max-inline-size: calc(100% - 6 * var(--u));
+  }
+}
 @media (min-width: 1001px) {
   :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-place='Forge']:not([data-prompt-open])
     > .desk:not([hidden]) .desk-box.held:not([data-kind]) { anchor-name: --held-prompt-sheet; }
@@ -185,14 +209,6 @@ body.forge-place:has(.forge-prompt-slot .prompt-in:focus) .os-caret.on.block { b
   :is(body.forge-place, .place-left > .page[data-place='forge']) .forge-layout .desk-room[data-prompt-bay-open] > .forge-prompt-approach {
     inset-block-end: var(--forge-back-foot);
   }
-  .forge-prompt-action-label { display: grid; justify-items: end; }
-  .forge-prompt-action-label > span { grid-area: 1 / 1; }
-  .forge-prompt-approach[data-back] .forge-prompt-action-label > :first-child,
-  .forge-prompt-approach:not([data-back]) .forge-prompt-action-label > :last-child { visibility: hidden; }
-  .forge-prompt-approach:is(:hover,:focus-visible) {
-    color: var(--nighthawks-paper); text-decoration: underline; text-underline-offset: var(--s1);
-  }
-  .forge-prompt-approach:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
   body.forge-place:has(.forge-layout .desk-room[data-place='Forge'] > .desk:not([hidden]) .desk-box.held:not([data-kind]))
     .file-tree.on-forge-desk[data-forge-index] > .tree-children {
     max-height: calc(100dvh - var(--forge-top) - 5 * var(--u));

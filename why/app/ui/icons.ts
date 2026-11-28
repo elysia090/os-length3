@@ -56,6 +56,8 @@ const MARKS = {
   term: 'M5 7l5 5-5 5M12.5 17.5h7',
   // A lens: what is looked for.
   search: 'M10.5 16a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM15 15l5 5',
+  // Go to the chosen result, in the same stroke as the lens.
+  right: 'M4.5 12h15M14 6.5l5.5 5.5-5.5 5.5',
   close: 'M7 7l10 10M17 7L7 17',
   // A window and the next behind it; one title line is enough to read them as places, not copies.
   places: 'M3.5 8.5h13v11h-13zM3.5 12.5h13M7.5 8.5v-4h13v11h-4',

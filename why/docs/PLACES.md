@@ -591,15 +591,18 @@ it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
 **At the frame.** The name of the place is its Places button: its words start at (48, 24), or (24, 24) in a
 window up to 1000 px wide. The lens keeps the right corner. Each target is at least 44 px tall and wide. The
-name stays in place while the choices are out: one vertical list immediately to its right, its first word level
-with the name. The words stand on the same ground with no sheet, border, shadow or separator; the list stops short
-of the lens. The work holds its place but goes quiet as a whole, so no menu edge cuts a paper or its words. The work
-returns at once when the list is put away.
-Forge, Files, Git, Prompt, Home, Server, Runtime, Plugin, New repo and Account are on one scrolling list. Five
-whole rows fit in the ordinary menu, four in a window 360 px tall or less when there is room; a touch row is at
-least 44 px. Arrow keys, Home and End bring the focused line into view. Escape, pressing the name again, or pressing
-the quiet desk puts only the list away and gives the name the keyboard back. A choice takes the keyboard to its new
-place unless that place has its own first act. Back and Forward keep a keyboard left at the frame with the frame.
+name stays in place and a single vertical list opens just below it: Home, Forge, Git, Server, Inbox and Runtime.
+They sit on the desk without a sheet, border, shadow or separator. A shallow veil puts only the work behind the list
+out of focus. The keyboard moves within the list; Escape, the name or the quiet ground puts it away and gives
+the name the keyboard back. A place chosen from this list or by the title's horizontal swipe keeps that keyboard
+in the frame, not in an editor or shell. An adjacent place is one sideways step; a farther choice goes straight there.
+Back and Forward keep a keyboard left at the frame with the frame.
+
+The same title takes a secondary press, Shift+F10, or a stationary hold on touch for the desk's tools.
+The one list then holds contextual actions rather than destinations, including Files and Prompt where applicable,
+and the retained File, Account and other tools. It does not add rows to Places. Prompt also opens by its own key
+beside the work, including on a narrow desk.
+
 Files is the current repo's tree, fixed beside the paper on a wide desk and its own face on a narrow one. A folder
 previews one real child; pressing its name or the existing right chevron reads and opens its children there, without
 moving the paper. On a wide pointer desk the index is printed on the desk's dots, with one left edge, one word
@@ -618,8 +621,9 @@ The standards here are the [UIKit title menu](https://developer.apple.com/videos
 The visible target works by a press, without requiring a gesture or an extra button, using the
 [44-point target](https://developer.apple.com/design/human-interface-guidelines/buttons) as its reference.
 
-The lens opens a dedicated Search screen. The query has the keyboard as
-it comes in. The editor shortcuts still open the quick in-place search;
+The lens opens one Search paper over the current desk. Its query has the keyboard as
+it comes in. The same ground wash and three planes of blur as the old band's search
+leave the work visible, quiet, and out of reach until the paper is put away. The editor shortcuts still open the quick in-place search;
 neither puts a permanent search strip on the working desk. The centered
 paper starts as the field alone. A press on the empty field or Down asks
 for real file suggestions, the desk's first. Typed words instead find
@@ -627,8 +631,12 @@ paths, lines and excerpts. Back is on the upper left; the repo name
 on the upper right chooses another repo kept here, without moving or
 clearing the field. Escape puts away open choices first; Escape again,
 or Back, gives the work its keyboard
-and selection back. Enter or a press on a match goes to the saved line
-in Forge; browser Back revisits the search, with its scope and query.
+and selection back. A press on the veil also gives the work back, without pressing through to it.
+Enter or a press on a match takes its regular Forge paper in hand, opening it only
+if it was not open. The words found stay in yellow on that paper, not in the
+editing selection. A line already in view does not move; another comes into view
+with lines around it. Browser Back revisits the search with scope, query, row and
+scroll; closing Search gives the original paper, reading position and selection back.
 The entry moves only its own contents a small step in 140 ms, or no
 motion when the system asks for less.
 

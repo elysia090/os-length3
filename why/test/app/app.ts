@@ -193,6 +193,8 @@ class Rail extends Part {
   /** The actual destination is in the rail or the one Places menu, depending on the current desk. */
   async destination(place: Place) {
     if (!await this.usesPlaces()) return this.button(place);
+    if (place === 'remote' || place === 'file' || place === 'plugin' || place === 'new-repo')
+      return (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel(PLACES[place])});
     const menu = this.app.forge.places;
     if (!await menu.isVisible()) await this.app.forge.placesKey.click();
     const name = placeLabel(PLACES[place]);
@@ -248,8 +250,7 @@ class MeMenu extends Part {
   async openMenu() {
     if (await this.button.isVisible()) await this.button.click();
     else {
-      if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
-      await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Account')}).click();
+      await (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel('Account')}).click();
     }
     await expect(this.menu).toBeVisible();
   }
@@ -330,9 +331,20 @@ class Forge extends Part {
   get placesKey() { return this.main.locator('button.forge-places-key[aria-haspopup=menu]:visible'); }
   get places() { return this.main.getByRole('menu', {name: placeLabel('Places')}); }
 
+  async openTools() {
+    const tools = this.main.locator('.forge-places[role="menu"]:visible').filter({has: this.page.getByRole('menuitem')});
+    if (!await tools.isVisible()) await this.placesKey.press('Shift+F10');
+    await expect(tools).toBeVisible();
+    return tools;
+  }
+
   async use(place: 'Prompt' | 'Forge' | 'Files' | 'Git') {
-    if (!await this.places.isVisible()) await this.placesKey.click();
-    await this.places.getByRole(place === 'Prompt' ? 'menuitem' : 'menuitemradio', {name: placeLabel(place)}).click();
+    if (place === 'Prompt' || place === 'Files') {
+      await (await this.openTools()).getByRole('menuitem', {name: placeLabel(place)}).click();
+    } else {
+      if (!await this.places.isVisible()) await this.placesKey.click();
+      await this.places.getByRole('menuitemradio', {name: placeLabel(place)}).click();
+    }
   }
 
   /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
@@ -802,8 +814,7 @@ class Inbox extends Part {
   thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
   async names() {
-    if (!await this.app.forge.places.isVisible()) await this.app.forge.placesKey.click();
-    await this.app.forge.places.getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
+    await (await this.app.forge.openTools()).getByRole('menuitem', {name: placeLabel('Your usernames')}).click();
   }
 
   /** The Inbox has its automatically claimed address and stands ready to write. */

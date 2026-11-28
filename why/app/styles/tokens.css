@@ -211,6 +211,11 @@ body {
   --nighthawks-paper-selected: #ded3bb;
   --nighthawks-paper-off: var(--off);
   --nighthawks-shadow: #1a1d17;
+  /* Forge's active writing material also belongs to the Search field. */
+  --forge-work-face: #1a272d;
+  --forge-work-grain: #1e2b31;
+  --forge-work-ink: var(--nighthawks-paper);
+  --forge-work-quiet: #b2a48f;
 }
 
 /* The portrait owns its note's stock, on screen as well as on the departing page. */
@@ -267,8 +272,8 @@ body {
   --t-file-index-detail: 14px;
 }
 
-/* The Forge Prompt is a warm neutral, quieter in colour than the paper beside it. */
-body.forge-place {
+/* The Forge Prompt's frame keeps its material when its departing page is copied. */
+:is(body.forge-place, .place-left > .page[data-place='forge']) {
   --prompt-edge: #242424;
   --prompt-face: #edeae5;
   --prompt-grain: #e9e6e1;
@@ -318,12 +323,8 @@ body.forge-place {
 }
 
 
-/* The one active work face on Forge's desktop: a quiet blue slate, lit words, and one native scroll ink. */
+/* The ruling and selection of Forge's active work face. */
 :is(body.forge-place, .place-left > .page[data-place='forge']) {
-  --forge-work-face: #1a272d;
-  --forge-work-grain: #1e2b31;
-  --forge-work-ink: var(--nighthawks-paper);
-  --forge-work-quiet: #b2a48f;
   --forge-work-rule: #73817f;
   --forge-work-mark: #36413d;
 }

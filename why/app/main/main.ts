@@ -23,8 +23,8 @@ import {getState, loadState, onState} from '../../home/state.ts';
 import {inEffect} from '../../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../../text/i18n.ts';
-import {depth, doorOf, isFar, isWorkPage, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
-import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
+import {depth, doorOf, isFar, isWorkPage, placeDistance, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {glide, morph, stage, stopStage, stopTravel, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
 import {menusOnGrid} from '../ui/on-grid.ts';
@@ -99,14 +99,15 @@ let readingPath: string | null = null;
 const searchTrail = new SearchTrail({
   surfaces: () => [$('page'), $('door'), fileTree.element, document.querySelector<HTMLElement>('body > .rail')!],
   files: repo => forgeOf?.searchPaths(repo) ?? [],
+  seat: repo => forgeOf?.searchSeat(repo) ?? null,
   restore(repo, place) {
     if (repo && place === 'forge' && current === 'forge' && openRepo !== repo) forgeOf?.showInForge(repo, '');
   },
-  open(repo, path, line) {
+  open(repo, path, line, words) {
     searchTrail.leave(false);
     // Even in Forge, opening a match is a new step. Back can read this same search again.
     if (current === 'forge') history.pushState({place: 'forge'}, '');
-    openRepoFrom(document.activeElement, repo, path, true, undefined, line, undefined, true);
+    openRepoFrom(document.activeElement, repo, path, line > 0 ? {match: words} : 'resume', undefined, line, undefined, true);
   },
   name: () => named(),
 });
@@ -306,6 +307,7 @@ function select(id: PurposeId, quiet = false, stepped = false, place?: ForgePlac
   if (current === 'forge' && id !== 'forge') { fileTree.closeDesk(); forgeOf?.leaveForge(); }
   letGo($('page'));
   stopStage($('page'));
+  stopTravel($('page'));
   if (id === 'forge' && place) forgeOf?.placeNext(place);
   draw(id, quiet, stepped);
   return Promise.resolve();
@@ -367,10 +369,12 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   if (opened && from !== id) {
     if (followed) keyAt.add(from); else keyAt.delete(from);
   }
-  // Every other screen is a step sideways. The rail still gives their order, with a place's far side
-  // (and Git beside Forge) to the right of it. The place left is kept as it was before anything changes.
-  const direction = Math.sign(depth(id) - depth(from)) || (isFar(id) || id === 'git' ? 1 : -1);
-  const arrived = !opened || quiet || from === id ? null : travel(page, direction);
+  // Adjacent main pages share a single sideways move. A jump across the row commits directly, without
+  // a false sense of adjacency or any intervening page. Contextual navigation keeps its own direction.
+  const distance = placeDistance(from, id);
+  const jump = distance !== null && Math.abs(distance) > 1;
+  const direction = distance === null ? Math.sign(depth(id) - depth(from)) || (isFar(id) || id === 'git' ? 1 : -1) : Math.sign(distance);
+  const arrived = !opened || quiet || jump || from === id ? null : travel(page, direction);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -416,7 +420,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   if (from !== id) {
     // The rail's ink says where the window is. The page comes from its side of the world.
     const tab = tabs.get(placeOf(id));
-    glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
+    if (!jump) glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
     arrived?.();
   }
 }

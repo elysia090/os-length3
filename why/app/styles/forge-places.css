@@ -69,7 +69,7 @@ body.work-places > #page[data-place='git'] { grid-column: 2; }
   background-size: var(--s1) var(--s1);
 }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) :is(.desk-label, .gutter) { color: var(--forge-desk-text); }
-body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] > .desk .desk-box.held:not([data-kind]) {
+.forge-layout .desk-room[data-place='Forge'] > .desk .desk-box.held:not([data-kind]) {
   --paper-base: var(--paper);
   --paper-check: var(--forge-paper-grain);
   --file-thumb: var(--forge-paper-thumb);
@@ -77,8 +77,8 @@ body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .des
   box-shadow: var(--s1) var(--s1) 0 var(--forge-paper-shade);
   color: var(--ink);
 }
-body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
-body:not(:has(.forge-document-menu[data-context='document'])) .forge-layout .desk-room[data-place='Forge'][data-hand='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }
+.forge-layout .desk-room[data-place='Forge'] .desk-box.held:not([data-kind]) > .desk-label { color: var(--paper); }
+.forge-layout .desk-room[data-place='Forge'] .desk-box.held:not([data-kind]) .gutter { color: var(--quiet); }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) .desk-dir { color: var(--forge-desk-text); }
 .forge-layout .desk-room[data-place='Forge'] > .desk .desk-box:not([data-kind]) > .scroll-mark.down { display: none; }
 body:has(.forge-document-menu[data-context='document']) .forge-layout .desk .desk-box > .desk-label { font-weight: 400; }
@@ -105,25 +105,42 @@ body.forge-place:has(.desk-room[data-place='Forge']) :is(.forge-open-folder, .fo
 }
 @media (max-width: 1000px) { :root { --places-start: var(--u); } }
 /* The navigation's hit area is a floor, not a customizable appearance setting. */
-:is(.desk-caption, .forge-places) { --places-hit: 44px; }
+:is(.desk-caption, .forge-places) {
+  --places-hit: 44px;
+  --places-rows: 6;
+  --places-row: calc(var(--u) + var(--s1));
+  --places-options-top: calc(var(--u) + (var(--places-hit) + var(--u)) / 2 + var(--s1));
+}
+@media (pointer: coarse) { :is(.desk-caption, .forge-places) { --places-row: var(--places-hit); } }
 :is(.home-portrait, .new-repo-desk, .git-layout, .server-masthead, .inbox-shell, #page[data-place='runtime']),
 body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
   --places-ground: var(--nighthawks-ground);
-  --places-grid: var(--nighthawks-dots);
   --places-ink: var(--nighthawks-paper);
   --places-chosen: var(--nighthawks-shadow);
 }
-.inbox-shell { --places-grid: var(--inbox-dots); }
 .desk-caption:has(> .forge-places-key) {
   position: fixed; z-index: 19; display: inline-flex; margin: 0; padding: 0; background: none; pointer-events: auto;
   inset: calc(var(--u) - (var(--places-hit) - var(--u)) / 2) auto auto calc(var(--places-start) - var(--s2));
 }
-/* Places borrows the focus, not a piece of paper. Repaint the one light over the whole work surface, at the
-   desk's original dot phase: neither the work nor the desk has a seam at the list's edge. */
-.desk-caption:has(> .forge-places-key[aria-expanded='true']) { touch-action: none; }
-.desk-caption:has(> .forge-places-key[aria-expanded='true'])::before {
-  content: ''; position: fixed; z-index: -1; inset: 0; pointer-events: auto; opacity: .97;
-  background: var(--places-ground, var(--ground)) var(--places-grid, var(--dots)) 0 0 / var(--u) var(--u);
+/* The same soft lens as a tool laid over the desk, just one light layer for a short chooser. The
+   existing heading and rows stand in front of it; no change to the desk's palette or layout when closed. */
+.desk-caption > .page-veil.places-veil { display: none; }
+.desk-caption:has(> .forge-places-key[aria-expanded='true']) > .page-veil.places-veil {
+  display: block; z-index: -1; pointer-events: auto; touch-action: none;
+  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--places-ground, var(--ground)) 42%, transparent);
+}
+@media (max-width: 1000px) {
+  /* On a narrow desk the light paper may sit directly behind the rows. Shade just that corner of
+     the veil for contrast, with no new menu surface, second blur, or tint along the whole page. */
+  .desk-caption > .page-veil.places-veil::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    --places-stop: calc(var(--places-options-top) + var(--places-rows) * var(--places-row));
+    background: linear-gradient(to right,
+      color-mix(in srgb, var(--places-ground, var(--ground)) 62%, transparent) calc(var(--places-start) + 5 * var(--u)),
+      transparent calc(var(--places-start) + 8 * var(--u)));
+    mask-image: linear-gradient(to bottom, black var(--places-stop), transparent calc(var(--places-stop) + 3 * var(--u)));
+  }
 }
 .desk-caption > .forge-places-key[aria-haspopup='menu'] {
   display: inline-flex; position: relative; align-items: center; justify-content: flex-start;
@@ -131,6 +148,7 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
   border: 0; border-radius: 0; background: none; color: var(--places-ink, var(--ink)); cursor: var(--cursor-hand);
   font: 700 var(--t-word)/var(--u) var(--sans); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
+.desk-caption > .forge-places-key.places-step { touch-action: pan-y pinch-zoom; }
 .desk-caption .forge-places-key:is(:hover, :focus-visible, [aria-expanded='true']) .places-label {
   text-decoration: underline; text-underline-offset: var(--s1);
 }
@@ -138,6 +156,7 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-layout {
 .forge-search-key {
   position: fixed; top: 12px; right: 12px; z-index: 19; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-key); padding: 0; background: transparent; color: var(--ink); cursor: var(--cursor-hand);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .forge-search-key > .mark { width: 18px; height: 18px; }
 .forge-search-key:focus-visible { outline: 1px solid currentColor; outline-offset: -7px; }
@@ -150,17 +169,14 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-search-key:is(:hover
   max-height: calc(100dvh - 12px); overflow: auto; border: 1px solid var(--ink); border-radius: var(--r-field); color: var(--ink); background: var(--paper);
   font: 400 var(--t-word)/19px var(--mono); }
 .forge-places {
-  /* One vertical list alongside the name; lift the mono's ink by a pixel to meet the name's baseline. */
-  position: fixed; z-index: 24; inset: var(--places-options-top) auto auto var(--places-key-right);
-  --places-options-top: calc(var(--u) - (var(--places-row) - var(--u)) / 2 - 1px);
-  --places-space: max(0px, calc(100vw - var(--places-key-right) - var(--places-hit) - var(--s3) - var(--s1)));
+  /* One reading column directly under the label; all six rows fit on an ordinary screen. */
+  position: fixed; z-index: 24; inset: var(--places-options-top) auto auto var(--places-start);
+  --places-space: max(0px, calc(100vw - var(--places-start) - var(--s3)));
   display: grid; min-inline-size: min(calc(5 * var(--u)), var(--places-space)); max-inline-size: var(--places-space);
   overflow: hidden auto;
   color: var(--places-ink, var(--ink));
   font: 400 var(--t-word)/var(--u) var(--mono);
   overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent;
-  --places-rows: 5;
-  --places-row: calc(var(--u) + var(--s1));
   --places-room: calc(100dvh - var(--places-options-top) - var(--s3));
   max-height: min(var(--places-room), calc(var(--places-rows) * var(--places-row)));
   max-height: min(calc(var(--places-rows) * var(--places-row)), round(down, max(0px, var(--places-room)), var(--places-row)));
@@ -168,15 +184,13 @@ body.forge-place:has(.desk-room[data-place='Forge']) .forge-search-key:is(:hover
 }
 .forge-places.scrolling { scrollbar-color: currentColor transparent; }
 .forge-places[data-keys] { scroll-snap-type: none; }
-@media (max-height: 360px) { .forge-places { --places-rows: 4; } }
-@media (pointer: coarse) { .forge-places { --places-row: var(--places-hit); } }
 .forge-menu hr { margin: 3px 5px; border: 0; border-top: 1px solid var(--rule); }
 .forge-menu-item { width: 100%; min-height: 28px; padding: 3px 8px; border: 0; border-radius: var(--r-key); text-align: left; background: transparent;
   font: inherit; color: inherit; cursor: var(--cursor-hand); }
 .forge-menu-item:is(:hover, :focus-visible):not(:disabled) { background: var(--slot); outline-offset: -2px; }
 .forge-menu-item:disabled { color: var(--sub); cursor: var(--cursor-arrow); }
 .forge-places > .forge-menu-item {
-  padding-block: 0; padding-inline-start: var(--s3); position: relative; min-height: var(--places-row); border-radius: 0; scroll-snap-align: start;
+  padding-block: 0; padding-inline-start: var(--s4); position: relative; min-height: var(--places-row); border-radius: 0; scroll-snap-align: start;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .forge-places > .forge-menu-item > span { display: inline-block; }

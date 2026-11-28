@@ -83,21 +83,14 @@ function portrait(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[]
     if (repos && !repos.some((r) => r.name === repo)) repo = repos[0]?.name ?? null;
   });
   const find = deskSearch(ctx, () => repo);
-  const places = placesMenu(layout, ['Home'], 'Home', () => {}, () => {
+  const places = placesMenu(layout, 'home', id => void ctx.go(id), {find, commands: () => {
     const at = repo;
     return [
-      {label: 'Forge', run: () => void ctx.go('forge')},
-      {label: 'Git', run: () => void ctx.go('git')},
-      {label: 'Server', run: () => void ctx.go('server')},
-      {label: 'Inbox', run: () => void ctx.go('inbox')},
       {label: 'Remote', run: () => void ctx.go('remote')},
-      {label: 'Runtime', run: () => void ctx.go('runtime')},
-      ...(at ? [
-        {label: 'Prompt', run: () => { void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); }},
-      ] : []),
+      ...(at ? [{label: 'Prompt', run: () => { void import('../forge/forge.ts').then((f) => { f.termNext(); ctx.openRepo(at); }); }}] : []),
       ...(ctx.placeCommands?.(['home', 'forge', 'server', 'runtime', 'new-repo']) ?? []),
     ];
-  }, {find});
+  }});
   function keys(event: KeyboardEvent) {
     if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || layout.closest('[inert]')) return;

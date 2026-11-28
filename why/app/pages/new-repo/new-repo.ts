@@ -472,7 +472,7 @@ function writingDesk(form: HTMLElement, ctx: Context) {
     });
   };
   const find = deskSearch(ctx, () => repo);
-  const places = placesMenu(desk, ['New repo'], 'New repo', () => {}, () => {
+  const places = placesMenu(desk, 'new-repo', id => void ctx.go(id), {find, commands: () => {
     const at = repo;
     return [
       ...(ctx.placeCommands?.(['new-repo']) ?? []),
@@ -481,7 +481,7 @@ function writingDesk(form: HTMLElement, ctx: Context) {
         {label: 'File actions', run: () => elsewhere(at, 'deedsNext')},
       ] : []),
     ];
-  }, {find});
+  }});
   function keys(event: KeyboardEvent) {
     if (!desk.isConnected) { document.removeEventListener('keydown', keys); return; }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || desk.closest('[inert]')) return;

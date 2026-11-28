@@ -63,11 +63,11 @@ test('what one person writes arrives live on the Places key and Inbox, and readi
   expect(await hasNewsDot(key)).toBe(true);
   await expect(places).toBeHidden();
   await key.press('Enter');
-  const inbox = places.getByRole('menuitem', {name: 'Inbox', exact: true});
+  const inbox = places.getByRole('menuitemradio', {name: 'Inbox', exact: true});
   await expect(inbox).toHaveAccessibleDescription(unreadMail);
   expect(await hasNewsDot(inbox)).toBe(true);
   // Here Inbox has its own row: don't mark its parent as if it contained this letter, too.
-  await expect(places.getByRole('menuitem', {name: 'Server', exact: true})).toHaveAccessibleDescription('');
+  await expect(places.getByRole('menuitemradio', {name: 'Server', exact: true})).toHaveAccessibleDescription('');
   await inbox.press('Enter');
   await expect(bo.main).toHaveAttribute('data-place', 'inbox');
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeVisible();
@@ -115,8 +115,9 @@ test('word that comes while one works in Git comes up at the page\'s foot, and p
   const {placesKey: key, places} = ada.forge;
   await expect(key).toHaveAccessibleDescription(unreadMail);
   await key.press('Enter');
-  // Work goes by way of Server when there is no direct Inbox entry.
-  await expect(places.getByRole('menuitem', {name: 'Server', exact: true})).toHaveAccessibleDescription(unreadMail);
+  // Inbox is one of the same six destinations here; the letter marks it, not Server.
+  await expect(places.getByRole('menuitemradio', {name: 'Inbox', exact: true})).toHaveAccessibleDescription(unreadMail);
+  await expect(places.getByRole('menuitemradio', {name: 'Server', exact: true})).toHaveAccessibleDescription('');
   await ada.page.keyboard.press('Escape');
   const word = ada.main.getByRole('region', {name: 'New messages'}).getByRole('button');
   await expect(word).toContainText('Bo');
@@ -257,7 +258,7 @@ test('the conversation index, opened-paper marks and Places are independent', as
   const {places, placesKey} = ada.forge;
   await placesKey.click();
   await expect(places.getByRole('menuitemradio', {name: 'Inbox', exact: true})).toBeChecked();
-  await expect(places.getByRole('menuitemradio')).toHaveText(['Server', 'Inbox']);
+  await expect(places.getByRole('menuitemradio')).toHaveText(['Home', 'Forge', 'Git', 'Server', 'Inbox', 'Runtime']);
   await page.keyboard.press('Escape');
   await expect(places).toBeHidden();
   await expect(placesKey).toBeFocused();

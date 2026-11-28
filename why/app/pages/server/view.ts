@@ -84,10 +84,8 @@ export class ServerView {
       },
     });
     const masthead = h('header', {class: 'server-masthead'}, h('h1', {}, 'Server'));
-    placesMenu(masthead, ['Server'] as const, 'Server', () => {}, () => [
-      {label: 'Inbox', run: () => { void ways.ctx.go('inbox'); }, onPress: true},
-      ...(ways.ctx.placeCommands?.(['server']) ?? []),
-    ], {find: deskSearch(ways.ctx)});
+    placesMenu(masthead, 'server', id => void ways.ctx.go(id), {find: deskSearch(ways.ctx),
+      commands: () => ways.ctx.placeCommands?.(['server']) ?? []});
     this.sidebar = h('aside', {class: 'server-sidebar'}, this.band.element, this.index.element);
     this.desk = new TopicDesk({box: (j) => this.box(j), landed: (k, pressed) => this.landed(k, pressed)}, this.dock);
     this.desk.paper.addEventListener('topic-posts', (event) => {

@@ -288,7 +288,7 @@ test('navigation is immediately interactive while its content arrives, without s
 test('reduced motion settles an in-flight navigation and restores motion when switched back', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  await app.page.evaluate(() => document.getElementById('purpose-runtime')!.click());
+  await app.page.evaluate(() => document.getElementById('purpose-forge')!.click());
   await app.page.emulateMedia({reducedMotion: 'reduce'});
   await still(app);
   expect(await app.page.locator('.glide-ink').count()).toBe(0);
@@ -298,7 +298,7 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
   await app.page.emulateMedia({reducedMotion: 'no-preference'});
   // Motion back: the world moves again to a place gone to (its pages, under the frame).
   expect(await app.page.evaluate(() => new Promise<number>((done) => {
-    document.getElementById('purpose-runtime')!.click();
+    document.getElementById('purpose-forge')!.click();
     let most = 0, n = 0;
     const step = () => { most = Math.max(most, document.getAnimations().filter((a) => a.playState === 'running').length); if (++n < 12) requestAnimationFrame(step); else done(most); };
     requestAnimationFrame(step);
@@ -362,13 +362,15 @@ interface TravelFrame {
   extraWidth: number;
 }
 
-test('going to another place the world goes sideways: the two places move together over a still ground, a window\'s width in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
+test('adjacent Places travel together against a fixed frame; a distant selection cuts directly to its desk', async ({app}) => {
   await app.newRepo.make('hello');
+  await app.rail.go('git');
+  await still(app);
   await app.rail.go('home');
   await still(app);
   const U = 24;
   const been = new Set<string>();
-  for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
+  for (const [to, dir] of [['forge', 1], ['git', 1], ['forge', -1], ['home', -1], ['runtime', 0], ['home', 0]] as const) {
     // Measure the actual destination's press, not the press that opens the Places menu.
     const destination = await app.rail.destination(to);
     await still(app);
@@ -408,6 +410,12 @@ test('going to another place the world goes sideways: the two places move togeth
     await destination.click();
     const got = await frames, pressed = got.find((f) => f.place === 'pressed')!.t, all = got.filter((f) => f.place !== 'pressed');
     const moving = all.filter((f) => f.left !== null);
+    if (!dir) {
+      expect(moving, `${from} to ${to}: no pages slide when the user skips the intervening places`).toHaveLength(0);
+      expect(all.at(-1)?.place).toBe(to);
+      expect(all.every(f => f.place === from || f.place === to)).toBe(true);
+      continue;
+    }
     const firstDrawn = moving.find((f) => Math.abs(f.left!) > .5);
     expect(firstDrawn, `${from} to ${to}: the world actually moves`).toBeDefined();
     // Caused by the press (Michotte: a motion is seen as caused by another that starts it within 50 ms): the world off

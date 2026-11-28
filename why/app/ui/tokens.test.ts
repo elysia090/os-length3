@@ -47,6 +47,7 @@ test('a hue says a kind and nothing else: each clearly a hue, each kind its own'
 const SERVER_MEASURES = ['control', 'meta', 'time', 'word', 'title'] as const;
 const SERVER_SIZE = new Set<string>(SERVER_MEASURES.map((role) => `var(--t-server-${role})`));
 const NOTE_WRITING = 'var(--note-writing)', REPO_NAME = 'var(--repo-name-size, calc(.7 * var(--t-head)))';
+const SEARCH_FILE = 'var(--t-search-result-file)';
 test('a place uses the common type scale or its scoped writing measure, and every weight is one of three', async () => {
   const {readdirSync} = await import('node:fs');
   const dir = new URL('../styles/', import.meta.url);
@@ -57,7 +58,8 @@ test('a place uses the common type scale or its scoped writing measure, and ever
     || file === 'inbox.css' && INBOX.test(size) || file === 'home.css' && [NOTE_WRITING, REPO_NAME].includes(size)
     || file === 'server-desk.css' && SERVER_SIZE.has(size) && size !== 'var(--t-server-time)'
     || file === 'talk.css' && size === 'var(--t-server-time)'
-    || file === 'forge-index.css' && size === 'var(--t-file-index-detail)';
+    || file === 'forge-index.css' && size === 'var(--t-file-index-detail)'
+    || file === 'search-screen.css' && size === SEARCH_FILE;
   for (const [f, s] of sheets) {
     for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.ok(allowed(f, m[1]!.trim()), `${f}: font-size ${m[1]}`);
     for (const m of s.matchAll(/(?<![-\w])font:\s*([^;}]+)/g)) {
@@ -114,5 +116,19 @@ test('Server keeps its already chosen letter measure on its own desk', () => {
     [false, work, '--t-server-title', '36px'],
     [true, work, '--t-server-word', 'var(--t-word)'],
     [true, work, '--t-server-title', 'min(34px, 9vw)'],
+  ]);
+});
+
+test('only the desktop Search result filename uses its compact measure', () => {
+  const sheet = readFileSync(new URL('../styles/search-screen.css', import.meta.url), 'utf8');
+  const measure = leavesOf(readSheet(sheet).nodes).flatMap(({node, parents}) => {
+    if (node.kind !== 'rule') return [];
+    const scope = parents.map(({name, prelude}) => `@${name}${prelude.replace(/\s+/g, '')}`).join(' ');
+    return declarations(node.body).filter(({prop, value}) => prop === '--t-search-result-file' || value.includes(SEARCH_FILE))
+      .map(({prop, value}) => [scope, node.selector.trim(), prop, value]);
+  });
+  assert.deepEqual(measure, [
+    ['@media(width>760px)', '.search-screen .sheet-file', '--t-search-result-file', 'calc(var(--t-word) - 2px)'],
+    ['@media(width>760px)', '.search-screen .sheet-file', 'font-size', SEARCH_FILE],
   ]);
 });

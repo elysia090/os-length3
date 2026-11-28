@@ -152,7 +152,7 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
   return nameFirst(groups, query).flatMap((g) => {
     const shown = shownPath(g.path), rows: HTMLElement[] = [];
     if (nameMatches(g.path, query)) {
-      const b = h('button', {type: 'button', class: 'choice sheet-hit sheet-name'}, h('span', {class: 'sheet-file'}, ...marked(shown, query)));
+      const b = h('button', {type: 'button', class: 'choice sheet-hit sheet-name', 'data-hit-path': g.path, 'data-hit-line': '0'}, h('span', {class: 'sheet-file'}, ...marked(shown, query)));
       b.addEventListener('click', () => ways.file(g.path));
       beat(b);
       rows.push(b);
@@ -162,7 +162,8 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
       // from a little before what was found (an ellipsis for what is left out), so what was found is always in sight.
       const indent = hit.text.length - hit.text.trimStart().length, from = hit.from > indent + 2 * LEAD ? hit.from - LEAD : indent;
       // (Its file's name is drawn on the first of its rows only; it is on each, to be heard and found.)
-      const b = h('button', {type: 'button', class: rows.length ? 'choice sheet-hit again' : 'choice sheet-hit'},
+      const b = h('button', {type: 'button', class: rows.length ? 'choice sheet-hit again' : 'choice sheet-hit',
+        'data-hit-path': g.path, 'data-hit-line': String(hit.line), 'data-hit-text': hit.text},
         h('span', {class: 'sheet-file'}, shown),
         h('span', {class: 'sheet-line'}, String(hit.line)),
         h('span', {class: 'sheet-text'}, from > indent ? '…' : null, ...tucked(hit.text.slice(from, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
@@ -178,9 +179,9 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
  * What was found for `query`, drawn: how many files and lines, then each file with its lines. Nothing, when nothing
  * was found. The first choice, which Enter takes from the box, says so while the box has the keyboard: lit, with its
  * key at its end. In `sections` (the band's sheet), the files are a section, its name and how many at its left and
- * what was found at its right; no count above it.
+ * what was found at its right; no count above it. Search names this row count as matches, not distinct files.
  */
-export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean} = {}): HTMLElement[] {
+export function foundView(found: Found, query: string, ways: FoundWays, o: {sections?: boolean; matchCount?: boolean} = {}): HTMLElement[] {
   const {groups} = found;
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
@@ -196,8 +197,11 @@ export function foundView(found: Found, query: string, ways: FoundWays, o: {sect
   }
   const said: HTMLElement[] = [];
   if (o.sections) {
-    if (kinds.length) said.push(h('div', {class: 'found-secs'}, ...kinds.map((k) => h('section', {class: 'found-sec', 'aria-label': k.name},
-      h('h3', {class: 'found-sec-head'}, k.name, h('i', {}, String(k.n))), h('div', {class: 'found-sec-rows'}, ...k.rows)))));
+    if (kinds.length) said.push(h('div', {class: 'found-secs'}, ...kinds.map((k) => {
+      const heading = o.matchCount ? [tn('{n} match', '{n} matches', k.n)] : [k.name, h('i', {}, String(k.n))];
+      return h('section', {class: 'found-sec', 'aria-label': k.name},
+        h('h3', {class: 'found-sec-head'}, ...heading), h('div', {class: 'found-sec-rows'}, ...k.rows));
+    })));
   } else {
     if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (first preview)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
     for (const k of kinds) {

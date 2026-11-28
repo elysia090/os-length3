@@ -458,8 +458,12 @@ export function travel(root: HTMLElement, dir: number): () => void {
   document.body.append(left);
   for (const settle of settles) settle();
   for (const part of left.querySelectorAll(FRAME)) (part as HTMLElement).style.visibility = 'hidden';
-  const gone = () => left.remove();
+  const gone = () => {
+    if (travelling.get(root)?.animation === going) travelling.delete(root);
+    left.remove();
+  };
   const going = left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'});
+  travelling.set(root, {animation: going, layer: left});
   going.finished.then(gone, gone);
   // The two places set off in the same frame with one clock. The desk behind both is not copied or animated.
   const all: Animation[] = [going];
@@ -486,6 +490,16 @@ export function travel(root: HTMLElement, dir: number): () => void {
     }
     requestAnimationFrame(setOff);
   };
+}
+
+const travelling = new WeakMap<HTMLElement, {animation: Animation; layer: HTMLElement}>();
+/** A new route must never show the outgoing copy of a previous, interrupted move. */
+export function stopTravel(root: HTMLElement) {
+  const outgoing = travelling.get(root);
+  if (!outgoing) return;
+  travelling.delete(root);
+  outgoing.layer.remove();
+  outgoing.animation.cancel();
 }
 
 /** The parts of `root` that are the page's own (its frame left where it is). */

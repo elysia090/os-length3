@@ -2,8 +2,8 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import {App} from './app.ts';
 
-/** The actual heading ink and the outer search paper keep one center, regardless of the query or suggestions. */
-async function expectCenteredHeading(screen: Locator) {
+/** The title's offset is independent of the centered field, candidate depth and screen size. */
+async function expectHeadingOffset(screen: Locator) {
   const offset = await screen.evaluate((el) => {
     const title = el.querySelector('h1')!, paper = el.querySelector('.search-screen-paper')!;
     const words = document.createRange();
@@ -11,7 +11,15 @@ async function expectCenteredHeading(screen: Locator) {
     const ink = words.getBoundingClientRect(), box = paper.getBoundingClientRect();
     return (ink.x + ink.width / 2) - (box.x + box.width / 2);
   });
-  expect(offset, 'Search heading centered over its paper').toBeCloseTo(0, 1);
+  expect(offset, 'Search heading sits 14.4 px left of the centered field').toBeCloseTo(-14.4, 1);
+}
+
+const paintedWord = (editor: Locator) => editor.locator('..').locator('.desk-match');
+async function paintedLine(editor: Locator) {
+  return editor.evaluate((area: HTMLTextAreaElement) => {
+    const word = area.parentElement?.querySelector<HTMLElement>('.desk-match');
+    return word ? area.value.split('\n')[Number(word.dataset.line) - 1] ?? null : null;
+  });
 }
 
 test('Search is a separate history step, with the work kept and the matched line opened in Forge', async ({app}) => {
@@ -58,14 +66,24 @@ test('Search is a separate history step, with the work kept and the matched line
   await expect(input).toBeFocused();
   await expect(screen.locator('.search-screen-content')).toHaveAttribute('data-entry', '{"focus":true,"animation":1}');
   await expect(previous).toHaveAttribute('inert', '');
+  await expect(previous).toHaveCSS('visibility', 'visible');
   await expect(editor).toHaveCount(0);
   expect(await port.boundingBox()).toEqual(geometry);
   await expect(page).toHaveTitle(/^Search/);
-  await input.fill('Needle');
+  await page.keyboard.type('Needle');
+  await expect(input).toHaveValue('Needle');
+  const veil = page.locator('.page-veil.deep.search-veil');
+  const layers = veil.locator('i');
+  await expect(veil).toHaveClass(/\bout\b/);
+  await expect(layers.nth(0)).toHaveCSS('backdrop-filter', 'blur(6px)');
+  await expect(layers.nth(0)).toHaveCSS('background-color', /color\(srgb .* \/ 0\.65\)/);
+  await expect(layers.nth(1)).toHaveCSS('backdrop-filter', 'blur(11px)');
+  await expect(layers.nth(2)).toHaveCSS('backdrop-filter', 'blur(16px)');
   const choices = screen.getByRole('button', {name: /Needle (first|last)\./});
   await expect(choices).toHaveCount(2);
   await input.press('Escape');
   await expect(screen).toHaveCount(0);
+  await expect(veil).not.toHaveClass(/\bout\b/);
   await expect(editor).toBeFocused();
   expect(await backAt()).toEqual(where);
   await expect(editor).toHaveValue(working);
@@ -82,15 +100,187 @@ test('Search is a separate history step, with the work kept and the matched line
   await expect(choices.last()).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(editor).toBeFocused();
-  await expect.poll(() => forge.lineChosen('README.md')).toBe('Needle last.');
+  await expect.poll(() => paintedLine(editor)).toBe('Needle last.');
+  await expect(paintedWord(editor)).toHaveText('Needle');
+  await expect(paintedWord(editor)).toBeInViewport({ratio: 1});
+  await expect(port.locator('.desk-mark')).toHaveCount(0);
+  expect((await backAt()).slice(0, 3)).toEqual(where.slice(0, 3));
   await expect.poll(() => port.evaluate(el => el.scrollTop)).toBeGreaterThan(684);
   await page.evaluate(() => history.back());
   await expect(input).toHaveValue('Needle');
   await expect(choices).toHaveCount(2);
+  await expect(choices.last()).toBeFocused();
   await screen.getByRole('button', {name: 'Back', exact: true}).click();
   await expect(editor).toBeFocused();
   expect(await backAt()).toEqual(where);
   await expect(editor).toHaveValue(working);
+});
+
+test('a corner Search opens a new regular paper once, then switches and restores the picked row and original live draft', async ({app}) => {
+  const {page, forge} = app;
+  await page.setViewportSize({width:1536,height:864});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const repo = 'landing', originPath = 'README.md', targetPath = 'interpreter.c';
+  const originText = Array.from({length:125}, (_, n) => n < 55 ? `Note ${n+1} on the needle.` : `Other work, line ${n+1}.`).join('\n');
+  const targetLine = '    int result = needle * 2; /* absolute location */';
+  const targetText = [...Array.from({length:70}, (_, n) => `/* line ${n+1} */`), targetLine,
+    ...Array.from({length:40}, (_, n) => `/* more detail ${n+1} */`)].join('\n');
+  await app.newRepo.make(repo);
+  await forge.editFile(originPath, originText);
+  await app.file.named(repo, '', 'New file', targetPath);
+  await forge.editFile(targetPath, targetText);
+  await forge.piece(targetPath).getByRole('button', {name:'Close interpreter.c',exact:true}).click();
+  await expect(forge.piece(targetPath)).toHaveCount(0);
+
+  const origin = forge.editor(originPath), destination = forge.editor(targetPath);
+  await forge.takePaper(originPath);
+  await origin.focus();
+  await origin.press('End');
+  await page.keyboard.insertText(' Keep this draft.');
+  const original = await origin.evaluate((area: HTMLTextAreaElement) => {
+    const at = area.value.indexOf('Other work, line 66.');
+    area.dataset.originalPaper = 'true';
+    area.setSelectionRange(at, at + 10, 'backward');
+    area.closest('.desk-file')!.scrollTop = 876;
+    return [area.value, area.selectionStart, area.selectionEnd, area.selectionDirection, area.closest('.desk-file')!.scrollTop];
+  });
+  const lens = app.main.getByRole('button', {name:'Search',exact:true});
+  const screen = page.getByRole('dialog', {name:'Search',exact:true}), input = screen.getByRole('searchbox');
+  const result = screen.getByRole('button', {name:/interpreter\.c.*absolute location/});
+  const lists = () => screen.evaluate(el => el.scrollTop);
+  const deck = () => forge.piece(targetPath).locator('.desk-file').evaluate(el => el.scrollTop);
+  const enterSearch = async () => {
+    await lens.click();
+    await expect(input).toBeFocused();
+    await input.fill('needle');
+    await result.scrollIntoViewIfNeeded();
+  };
+  await enterSearch();
+  const listAt = await lists();
+  expect(listAt).toBeGreaterThan(0);
+  await result.click();
+  await expect(screen).toHaveCount(0);
+  await expect(destination).toBeFocused();
+  await expect(forge.piece(targetPath)).toHaveClass(/\bheld\b/);
+  await expect(forge.piece(targetPath)).toHaveCount(1);
+  await expect(forge.piece(originPath)).toHaveCount(1);
+  const mark = paintedWord(destination);
+  await expect(mark).toHaveText('needle');
+  await expect(mark).toHaveAttribute('data-line', '71');
+  await expect(mark).toBeInViewport({ratio:1});
+  await expect(mark).toHaveCSS('background-image', /rgb\(236, 202, 95\)/);
+  await expect(mark).toHaveCSS('color', 'rgb(23, 22, 21)');
+  await expect(mark.locator('..').locator('..')).toHaveAttribute('aria-hidden', 'true');
+  expect(await forge.selected(targetPath)).toBe('');
+  const targetScroll = await deck();
+  expect(targetScroll).toBeGreaterThan(0);
+
+  await forge.takePaper(originPath);
+  await forge.takePaper(targetPath);
+  await expect(mark).toHaveText('needle');
+  expect(await deck()).toBe(targetScroll);
+  await page.evaluate(() => history.back());
+  await expect(input).toHaveValue('needle');
+  await expect(result).toBeFocused();
+  expect(await lists()).toBe(listAt);
+  await page.keyboard.press('Escape');
+  await expect(screen).toHaveCount(0);
+  await expect(forge.piece(originPath)).toHaveClass(/\bheld\b/);
+  await expect(origin).toBeFocused();
+  await expect(origin).toHaveAttribute('data-original-paper', 'true');
+  expect(await origin.evaluate((area: HTMLTextAreaElement) => [
+    area.value, area.selectionStart, area.selectionEnd, area.selectionDirection, area.closest('.desk-file')!.scrollTop,
+  ])).toEqual(original);
+
+  // This time the file already exists in the deck and the matched line is already visible. Keep its node and scroll.
+  await destination.evaluate(el => { el.dataset.actualPaper = 'true'; });
+  await enterSearch();
+  await result.click();
+  await expect(destination).toBeFocused();
+  await expect(destination).toHaveAttribute('data-actual-paper', 'true');
+  await expect(forge.piece(targetPath)).toHaveCount(1);
+  await expect(paintedWord(destination)).toBeInViewport({ratio:1});
+  expect(await deck()).toBe(targetScroll);
+  // A saved line inserted above the match moves the result. Back finds the same text, not the old row position.
+  await destination.press('Control+Home');
+  await page.keyboard.insertText('/* inserted later */\n');
+  await destination.press('Control+s');
+  await page.evaluate(() => history.back());
+  await expect(input).toHaveValue('needle');
+  await expect(result).toBeFocused();
+  await expect(result).toHaveAttribute('data-hit-line', '72');
+});
+
+test('the right arrow and Return open the same first live result', async ({app}) => {
+  const {page, forge} = app;
+  await app.newRepo.make('go', {template:'C'});
+  await app.main.getByRole('button', {name:'Search',exact:true}).click();
+  const stage = page.getByRole('dialog', {name:'Search',exact:true});
+  const input = stage.getByRole('searchbox'), arrow = stage.getByRole('button', {name:'Open first result',exact:true});
+  await expect(input).toBeFocused();
+  await expect(arrow).toBeDisabled();
+  const position = await arrow.boundingBox();
+  await page.keyboard.type('return');
+  await expect(arrow).toBeEnabled();
+  expect(await arrow.boundingBox()).toEqual(position);
+  await input.press('Enter');
+  await expect(forge.editor('src/main.c')).toBeFocused();
+  await expect.poll(() => paintedLine(forge.editor('src/main.c'))).toBe('    return 0;');
+  await page.evaluate(() => history.back());
+  await expect(input).toHaveValue('return');
+  await arrow.click();
+  await expect(forge.editor('src/main.c')).toBeFocused();
+  await expect.poll(() => paintedLine(forge.editor('src/main.c'))).toBe('    return 0;');
+});
+
+test('the Search heading counts selectable filename and line matches, not distinct files', async ({app}) => {
+  const {page, forge} = app;
+  const repo = 'matches', name = 'named-anchor.txt';
+  await app.newRepo.make(repo);
+  await forge.editFile('README.md', [
+    '# matches', 'interpreter interpreter', 'The interpreter runs.',
+    'Use the interpreter here.', 'The interpreter reads from stdin.', 'One solitary line.',
+  ].join('\n'));
+  await app.file.named(repo, '', 'New file', name);
+  await forge.editFile(name, 'The named-anchor opens the file.\n');
+  await app.main.getByRole('button', {name:'Search',exact:true}).click();
+  const screen = page.getByRole('dialog', {name:'Search',exact:true});
+  const query = screen.getByRole('searchbox');
+  await query.click();
+  await expect(screen.getByRole('heading', {name:'Suggested files',exact:true})).toBeVisible();
+  await expect(screen.locator('.found-sec')).toHaveCount(0);
+
+  const files = screen.getByRole('region', {name:'files',exact:true});
+  await query.fill('interpreter');
+  await expect(files.getByRole('heading', {name:'4 matches',exact:true})).toBeVisible();
+  await expect(files.getByRole('button')).toHaveCount(4);
+  await expect(files.getByRole('button', {name:/README\.md/})).toHaveCount(4);
+  await query.fill('solitary');
+  await expect(files.getByRole('heading', {name:'1 match',exact:true})).toBeVisible();
+  await expect(files.getByRole('button')).toHaveCount(1);
+
+  await query.fill('named-anchor');
+  await expect(files.getByRole('heading', {name:'2 matches',exact:true})).toBeVisible();
+  await expect(files.getByRole('button')).toHaveCount(2);
+  await expect(files.getByRole('button', {name,exact:true})).toBeVisible();
+  await expect(files.getByRole('button', {name:/opens the file/})).toBeVisible();
+});
+
+test('the modal keeps its keyboard until a press on the mist gives it back to the Search key', async ({app}) => {
+  const {page} = app;
+  const key = app.main.getByRole('button', {name:'Search', exact:true});
+  await key.focus();
+  await page.keyboard.press('Enter');
+  const modal = page.getByRole('dialog', {name:'Search', exact:true});
+  const input = modal.getByRole('searchbox'), back = modal.getByRole('button', {name:'Back', exact:true});
+  await expect(input).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(back).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(input).toBeFocused();
+  await page.mouse.click(112, 140);
+  await expect(modal).toHaveCount(0);
+  await expect(key).toBeFocused();
 });
 
 test('an empty Search suggests real files only when asked by the hand', async ({app}) => {
@@ -107,7 +297,7 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await expect(suggested).toHaveCount(0);
   await expect(paper).toHaveCSS('height', '50px');
   const emptyAt = await input.boundingBox();
-  await expectCenteredHeading(stage);
+  await expectHeadingOffset(stage);
 
   // Focus alone (including moving away and tabbing back) is not a request to suggest.
   await input.press('Shift+Tab');
@@ -118,9 +308,11 @@ test('an empty Search suggests real files only when asked by the hand', async ({
   await input.click();
   await expect(first).toBeVisible();
   expect(await input.boundingBox()).toEqual(emptyAt);
-  await expectCenteredHeading(stage);
+  await expectHeadingOffset(stage);
 
   await input.press('Tab');
+  await expect(stage.getByRole('button', {name:'Open first result',exact:true})).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(first).toBeFocused();
   await expect(suggested).toBeVisible();
   await first.press('Escape');
@@ -144,12 +336,44 @@ test('an empty Search suggests real files only when asked by the hand', async ({
 });
 
 const phone = test.extend({hasTouch: true});
-phone('on a phone Search has its own full screen and uses actual saved files, with no horizontal overflow', async ({app}) => {
+test('desktop Search keeps the full accessible filename and excerpt in a visually shortened result row', async ({app}) => {
+  const {page, forge} = app;
+  await page.setViewportSize({width:1536,height:864});
+  const repo = 'long-result', name = 'notes-about-the-parser-and-the-runtime-compatibility-matrix-for-the-next-release.md';
+  const excerpt = 'interpreter exits with an input parse error, stops reading stdin, and prints a diagnostic explaining which expression it rejected.';
+  await app.newRepo.make(repo);
+  await app.file.named(repo, '', 'New file', name);
+  await forge.editFile(name, '\n'.repeat(6) + excerpt + '\n');
+  await app.main.getByRole('button', {name:'Search',exact:true}).click();
+  const modal = page.getByRole('dialog', {name:'Search',exact:true});
+  const field = modal.getByRole('searchbox');
+  await expect(field).toBeFocused();
+  await page.keyboard.type('interpreter');
+  const row = modal.getByRole('button', {name});
+  await expect(row).toHaveAccessibleName(`${name} 7 ${excerpt}`);
+  const filename = row.locator('.sheet-file'), words = row.locator('.sheet-text');
+  await expect(filename).toHaveCSS('font-size', '15px');
+  await expect(words).toHaveCSS('font-size', '17px');
+  for (const part of [filename, words]) {
+    await expect(part).toHaveCSS('text-overflow', 'ellipsis');
+    expect(await part.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+  }
+  await expect(row).toHaveCSS('height', '24px');
+  await expect(row.locator('.sheet-line')).toHaveText('7');
+  await expect(row.locator('mark')).toHaveText('interpreter');
+  await field.press('ArrowDown');
+  await expect(row).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(forge.editor(name)).toBeFocused();
+  await expect.poll(() => paintedLine(forge.editor(name))).toBe(excerpt);
+});
+
+phone('on a phone the Search veil keeps the field in reach and uses actual saved files, with no horizontal overflow', async ({app}) => {
   const {page, forge} = app;
   await page.setViewportSize({width:390,height:844});
   await app.newRepo.make('hello', {template:'C'});
   const lens = app.main.getByRole('button',{name:'Search',exact:true});
-  await lens.click();
+  await lens.tap();
   const stage = page.getByRole('main', {name:'Search',exact:true}), input = stage.getByRole('searchbox');
   await expect(input).toBeFocused();
   await expect(input).toBeInViewport({ratio:1});
@@ -166,11 +390,18 @@ phone('on a phone Search has its own full screen and uses actual saved files, wi
   await page.evaluate(() => history.back());
   await expect(input).toBeFocused();
   await expect(suggested).toHaveCount(0);
-  const form = stage.getByRole('search'), lensInside = form.locator('svg.mark');
+  const form = stage.getByRole('search'), lensInside = form.locator(':scope > svg.mark');
   const paper = stage.locator('.search-screen-paper'), region = stage.getByRole('region', {name: 'Search results'});
   await expect(paper).toHaveCSS('border-radius', '8px');
   await expect(paper).toHaveCSS('overflow', 'clip');
-  await expect(paper).toHaveCSS('background-image', /^conic-gradient\(/);
+  await expect(paper).toHaveCSS('background-image', /rgb\(26, 39, 45\).*rgb\(30, 43, 49\)/);
+  await expect(paper).toHaveCSS('background-size', '4px 4px');
+  await expect(form).toHaveCSS('background-image', 'none');
+  await expect(form).toHaveCSS('border-bottom-width', '0px');
+  await expect(input).toHaveCSS('color', 'rgb(239, 235, 227)');
+  await expect(input).toHaveCSS('caret-color', 'rgb(239, 235, 227)');
+  await expect(lensInside).toHaveCSS('color', 'rgb(178, 164, 143)');
+  expect(await input.evaluate(el => getComputedStyle(el, '::placeholder').color)).toBe('rgb(178, 164, 143)');
   await expect(input).toHaveCSS('background-image', 'none');
   await expect(input).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(region).toHaveCount(0);
@@ -184,12 +415,25 @@ phone('on a phone Search has its own full screen and uses actual saved files, wi
   await expect(suggested).toHaveCount(0);
   const hit = stage.getByRole('button', {name: /src\/main\.c.*return 0/});
   await expect(hit).toBeInViewport({ratio:1});
+  await expect(hit.locator('.sheet-file')).toHaveCSS('font-size', '17px');
+  await expect(hit.locator('.sheet-text')).toHaveCSS('white-space', 'pre-wrap');
   await expect(region).toHaveCSS('border-top-width', '0px');
+  const [ink, upperClip, grain, mask, lowerClip] = await paper.evaluate(el => {
+    const rim = getComputedStyle(el, '::before');
+    const lower = getComputedStyle(el, '::after');
+    return [rim.backgroundColor, rim.clipPath, lower.backgroundImage, lower.maskImage, lower.clipPath];
+  });
+  expect(ink).toBe('rgb(23, 22, 21)');
+  expect(upperClip).toMatch(/^polygon\(.+44px.+6px 48px.+52px/);
+  expect(grain).toMatch(/rgb\(227, 222, 213\).*rgb\(239, 235, 227\)/);
+  expect(mask).toBe('none');
+  expect(lowerClip).toMatch(/^polygon\(.+52px.+6px 48px/);
   await expect(region.locator('.found-sec')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await input.boundingBox()).toEqual(at);
   expect(await stage.evaluate(el => el.scrollWidth)).toBe(await stage.evaluate(el => el.clientWidth));
-  // Chrome's native clear button is inside the writing field, 27 px from the right edge.
-  await input.click({position: {x: at.width - 27, y: at.height / 2}});
+  // The end mark is not a separate query-clear control; the input clears from the keyboard.
+  await input.selectText();
+  await input.press('Backspace');
   await expect(input).toHaveValue('');
   await expect(input).toBeFocused();
   await expect(suggested).toHaveCount(0);
@@ -199,7 +443,7 @@ phone('on a phone Search has its own full screen and uses actual saved files, wi
   await input.fill('return');
   await hit.click();
   await expect(forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 0;');
+  await expect.poll(() => paintedLine(forge.editor('src/main.c'))).toBe('    return 0;');
   await expect(stage).toHaveCount(0);
 });
 
@@ -241,7 +485,7 @@ test('from Git, a Search match opens the repo in Forge and Back revisits Search 
   await stage.getByRole('option', {name:'atlas',exact:true}).click();
   await stage.getByRole('button', {name: /src\/main\.c.*return 7/}).click();
   await expect(forge.editor('src/main.c')).toBeFocused();
-  await expect.poll(() => forge.lineChosen('src/main.c')).toBe('    return 7;');
+  await expect.poll(() => paintedLine(forge.editor('src/main.c'))).toBe('    return 7;');
   await page.evaluate(() => history.back());
   await expect(query).toHaveValue('return 7');
   await expect(scope).toHaveValue('atlas');
@@ -275,7 +519,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   const title = stage.getByRole('heading', {name:'Search',exact:true});
   const at = (await query.boundingBox())!, head = (await title.boundingBox())!;
   const corner = (await scope.boundingBox())!;
-  await expectCenteredHeading(stage);
+  await expectHeadingOffset(stage);
   expect(corner.x).toBeGreaterThan(head.x + head.width);
   expect(corner.y + corner.height).toBeLessThan(head.y);
 
@@ -307,7 +551,7 @@ test('the repo named in Search changes scope without moving the query or losing 
   const read = forge.editor('README.md');
   await expect(read).toBeFocused();
   await expect(read).toHaveValue('# Atlas\nUse local launch target.\nKeep this detail.');
-  await expect.poll(() => forge.lineChosen('README.md')).toBe('Use local launch target.');
+  await expect.poll(() => paintedLine(forge.editor('README.md'))).toBe('Use local launch target.');
 
   await page.evaluate(() => history.back());
   await expect(scope).toHaveValue(other);
@@ -409,7 +653,7 @@ test('a delayed read from the old scope cannot replace or open a matching path i
   await waiting();
   await switchTo('atlas');
   await atlas.click();
-  await expect.poll(() => forge.lineChosen('README.md')).toBe('Launch target in Atlas.');
+  await expect.poll(() => paintedLine(forge.editor('README.md'))).toBe('Launch target in Atlas.');
   // It may also answer after a match has already taken us away.
   await release();
   await expect(forge.editor('README.md')).toHaveValue('# Atlas\nThree before it.\nOne more.\nLaunch target in Atlas.');

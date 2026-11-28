@@ -1,12 +1,14 @@
+import type {PlaceCommand} from './places.ts';
 import type {PurposeId} from '../../host/purposes.ts';
-import type {ForgePlace, PlaceCommand, SearchDesk} from './places.ts';
+import type {ForgePlace, SearchDesk} from './places.ts';
 import type {Carry} from '../../ui/glide.ts';
 
 /**
  * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
- * was left), its saved selection (resume), its name (a file just made), or not in it (false).
+ * was left), its saved selection (resume), its name (a file just made), or not in it (false). A Search match keeps
+ * the editor's own selection and marks those words at the given line.
  */
-export type Writing = boolean | 'end' | 'name' | 'resume' | {at: number};
+export type Writing = boolean | 'end' | 'name' | 'resume' | {at: number} | {match: string};
 
 /** What a page may ask of the shell. */
 export interface Context extends SearchDesk {
@@ -24,9 +26,9 @@ export interface Context extends SearchDesk {
   /** Present the existing File tree inside Forge without a modal veil; null puts that pane away. */
   forgeFiles?(repo: string | null, focus?: boolean, index?: boolean): void;
   /** Go through the shell's Forge route, with the named place in hand when its repo is ready. */
+  placeCommands?(omit: readonly PurposeId[]): readonly PlaceCommand[];
   forgePlace?(place: ForgePlace): Promise<void>;
   /** The shell's existing places and tools not already offered on this desk. */
-  placeCommands?(omit: readonly PurposeId[]): readonly PlaceCommand[];
   /** The file last read in Forge, kept from one visit to the next: where the person left off. */
   readonly leftOff: {repo: string; path: string; at: number | null} | null;
   rerender(): void;

@@ -89,6 +89,8 @@ export function takeFilesPane() { made?.filesTaken(); }
 export function leaveForge() { made?.away(); }
 /** Files already opened in this workspace, with the one in hand first. */
 export function searchPaths(repo: string): string[] { return made?.searchPaths(repo) ?? []; }
+/** The live paper behind the lens, before any result puts another one in the hand. */
+export function searchSeat(repo: string): ((name: string) => void) | null { return made?.searchSeat(repo) ?? null; }
 
 /** What a repo's desk is kept as, while the app is away: its files along the row (each a column of one: kept so since
  * the desk had columns), and the one in hand. */
@@ -145,6 +147,7 @@ class Forge {
   private get prompt() { return this.promptPaper.element; }
   private get promptOpen() { return this.center.hasAttribute('data-prompt-open'); }
   private lastEditor: HTMLTextAreaElement | null = null;
+  private lastFound: DeskFile | null = null;
   private paperReturn: PaperReturn | null = null;
   private paperMoved = false;
   private placeInHand: ForgePlace = 'Forge';
@@ -205,17 +208,21 @@ class Forge {
       else this.ctx.forgeFiles?.(null);
     }, {signal: this.listening.signal});
     this.element.prepend(h('h1', {class: 'forge-title'}));
-    this.switcher = workPlaces(this.element, (place) => {
-      if (place === 'Git') void ctx.go('git');
-      else if (place === 'Prompt') this.promptWindow(!this.promptOpen, true);
-      else {
-        // Forge in its own menu deliberately returns to writing. From another place, arriving at Forge
-        // instead restores whichever paper (or Prompt) was there.
-        if (place === 'Forge' && this.promptOpen) this.promptWindow(false, true);
-        this.selectPlace(place);
-      }
-    }, () => ctx.placeCommands?.(['forge']) ?? [], deskSearch(ctx, () => this.now.repo));
-    this.switcher.set('Forge', false);
+    this.switcher = workPlaces(this.element, 'forge', (page) => { void ctx.go(page); },
+      deskSearch(ctx, () => this.now.repo), {
+        onCurrent: () => {
+          // Choosing active Forge from a contextual view returns to writing on the same page.
+          if (this.promptOpen) this.promptWindow(false, true);
+          if (this.placeInHand !== 'Forge') this.selectPlace('Forge');
+        },
+        commands: () => [
+          ...(this.now.repo ? [
+            {label: 'Files', run: () => this.selectPlace('Files')},
+            {label: 'Prompt', run: () => this.promptWindow(!this.promptOpen, true)},
+          ] : []),
+          ...(ctx.placeCommands?.(['forge']) ?? []),
+        ],
+      });
     this.promptPaper = new PromptPaper(this.center, this.work, () => this.promptWindow(false, true), () => this.filesBeside.matches);
     this.promptKey = h('button', {class:'forge-prompt-approach', type:'button', 'aria-controls':this.prompt.id},
       h('span', {class:'forge-prompt-action-label'}, h('span', {}, t('Prompt')), h('span', {}, t('Back'))),
@@ -409,7 +416,9 @@ class Forge {
     if (!d.files.has(from)) return null;
     if (d.beside?.path === from) this.forgetBeside(d);
     const f = this.layFile(repo, d, to, {instead: from});
-    d.files.get(from)?.drop();
+    const old = d.files.get(from);
+    if (this.lastFound === old) this.lastFound = null;
+    old?.drop();
     d.files.delete(from);
     return f;
   }
@@ -420,6 +429,18 @@ class Forge {
     const {desk, beside, files} = laid;
     const held = desk.held === BESIDE ? beside?.path : desk.held;
     return [...new Set([...(held ? [held] : []), ...desk.row])].filter(path => files.has(path));
+  }
+
+  searchSeat(repo: string) {
+    const laid = this.desks.get(repo);
+    if (!laid || this.now.repo !== repo) return null;
+    const {desk} = laid, held = desk.held, place = this.placeInHand;
+    return (name: string) => {
+      if (!this.visible() || this.desks.get(name) !== laid) return;
+      if (this.now.repo !== name) this.show(name);
+      if (place !== this.placeInHand) this.selectPlace(place, false);
+      if (held && desk.has(held) && desk.held !== held) desk.take(held, false, false);
+    };
   }
 
   private visible() { return this.element.isConnected && !this.element.closest('[hidden]'); }
@@ -554,7 +575,7 @@ class Forge {
     const face = beside ? 'Forge' : place;
     this.placeInHand = face;
     this.center.dataset.place = face;
-    this.switcher.set(face, true);
+    this.switcher.set(face);
     this.hand(this.promptOpen ? 'Prompt' : face);
     this.ctx.forgeFiles?.(beside || place === 'Files' ? repo : null, focus && place === 'Files', beside);
     if (focus && place === 'Forge') {
@@ -720,7 +741,9 @@ class Forge {
     const d = this.desks.get(repo);
     if (!d) return;
     if (d.beside?.path === key) this.forgetBeside(d);
-    d.files.get(key)?.drop();
+    const file = d.files.get(key);
+    if (this.lastFound === file) this.lastFound = null;
+    file?.drop();
     d.files.delete(key);
     d.desk.lift(key, focus);
   }
@@ -747,6 +770,12 @@ class Forge {
     // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
     if (write === 'name') { d.desk.take(path, false, !unseen); return; }
     d.desk.take(path, keyboard, !unseen);
+    if (typeof write === 'object' && 'match' in write) {
+      if (this.lastFound !== f) this.lastFound?.unfind();
+      this.lastFound = f;
+      f.found(line, write.match);
+      return;
+    }
     if (!keyboard || resume) return;
     if (typeof write === 'object') {
       f.toOffset(write.at);
@@ -824,7 +853,7 @@ class Forge {
     this.promptPaper.hide();
     this.center.dataset.place = 'Forge';
     this.hand('Forge');
-    this.switcher.set('Forge', false);
+    this.switcher.set('Forge');
     this.ctx.forgeFiles?.(null);
     for (const o of this.desks.values()) o.desk.show(false);
     if (this.center.querySelector('.desk-none')) return;
@@ -862,7 +891,10 @@ class Forge {
     for (const name of [...this.desks.keys()]) if (!all.includes(name)) {
       const gone = this.desks.get(name)!;
       gone.beside?.file.drop();
-      for (const f of gone.files.values()) f.drop();
+      for (const f of gone.files.values()) {
+        if (this.lastFound === f) this.lastFound = null;
+        f.drop();
+      }
       gone.desk.drop();
       this.desks.delete(name);
       if (this.now.repo === name) this.now.repo = null;
