@@ -5,7 +5,8 @@ test.use({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
 
 test('wide Files keeps the document fixed and separates opening a name from its actions', async ({app}) => {
   const {page, forge, file} = app;
-  await page.route('**/webroot/**', route => route.abort());
+  // Global File reads the real distribution metadata to assemble /. These journeys do not start a shell.
+  await page.route('**/webroot/{packs,blobs}/**', route => route.abort());
   await app.newRepo.make('tidewatch', {template: 'C'});
   const content = Array.from({length: 80}, (_, i) => `Observation ${i + 1}: the tide rises.`).join('\n');
   await forge.editFile('README.md', content);
@@ -149,7 +150,8 @@ test('wide Files keeps the document fixed and separates opening a name from its 
 
 test('a preview links to the actual file, even when two long paths end in the same name', async ({app}) => {
   const {page, file, forge} = app;
-  await page.route('**/webroot/**', route => route.abort());
+  // Global File reads the real distribution metadata to assemble /. These journeys do not start a shell.
+  await page.route('**/webroot/{packs,blobs}/**', route => route.abort());
   await app.newRepo.make('soundings');
   const dirs = ['samples-observation-series-morning', 'samples-observation-series-evening'];
   for (const dir of dirs) {
@@ -171,7 +173,8 @@ test('a preview links to the actual file, even when two long paths end in the sa
 
 test('a remembered paper cannot lose a real selection to a deferred File open', async ({app}) => {
   const {page, forge, file} = app;
-  await page.route('**/webroot/**', route => route.abort());
+  // Global File reads the real distribution metadata to assemble /. These journeys do not start a shell.
+  await page.route('**/webroot/{packs,blobs}/**', route => route.abort());
   await page.setViewportSize({width: 1440, height: 900});
   await app.newRepo.make('tidegate');
   const writing = Array.from({length: 80}, (_, i) => 'Tide observation '+i).join('\n');
@@ -210,10 +213,25 @@ test('a remembered paper cannot lose a real selection to a deferred File open', 
     }));
     const selection = [writing.length-1,writing.length,'backward'];
     await expect.poll(async () => (await state()).selection).toEqual(selection);
+    // A keyboard move's own caret-follow runs on the next frame. Finish that move, then scroll by hand;
+    // what must stay is the real selection and the scroll left by the hand, not a pre-caret-follow value.
+    const afterPaint = () => page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await afterPaint();
+    const caretScroll = (await state()).scroll;
+    expect(caretScroll).toBeGreaterThan(80);
+    const paper = (await forge.piece('README.md').locator('.desk-file').boundingBox())!;
+    await page.mouse.move(paper.x + 40, paper.y + 44);
+    await page.mouse.wheel(0, -76);
+    await expect.poll(async () => (await state()).scroll).toBeLessThan(caretScroll);
+    await afterPaint();
     const before = await state();
+    expect(before.selection).toEqual(selection);
     expect(before.scroll).toBeGreaterThan(0);
+    expect(await page.evaluate(() => (window as Window & {folderGate?: G}).folderGate?.waiting)).toBe(true);
     await page.evaluate(() => (window as Window & {folderGate?: G}).folderGate?.release());
-    await expect(page.getByRole('navigation',{name:'Files in tidegate',exact:true})).toBeVisible();
+    const index = page.getByRole('navigation',{name:'Files in tidegate',exact:true});
+    await expect(index.getByRole('button',{name:'README.md',exact:true})).toBeVisible();
+    await afterPaint();
     await expect(editor).toBeFocused();
     expect(await state()).toEqual(before);
   } finally { await page.evaluate(() => (window as Window & {folderGate?:G}).folderGate?.release()); }
