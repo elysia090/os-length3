@@ -177,7 +177,8 @@ test('Home Search keeps the centered input still while setting out its own resul
   await expect(stage).not.toHaveClass(/search-on-home/);
   await input.fill('launch');
   await expect(rows).toHaveCount(2);
-  await expect(result.getByRole('heading', {name: '2 matches', exact: true})).toHaveCSS('font-family', mono);
-  await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', mono);
-  await expect(result.locator('.search-screen-enter')).toHaveCount(0);
+  await expect(result.getByRole('heading', {name: '2 matches for "launch"', exact: true})).toHaveCSS('font-family', sans);
+  await expect(rows.first().locator('.sheet-file')).toHaveCSS('font-family', sans);
+  await expect(result.locator('.search-screen-enter')).toHaveCount(2);
+  await expect(result.locator('.search-screen-enter').first()).toBeHidden();
 });

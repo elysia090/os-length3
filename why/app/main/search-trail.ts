@@ -89,7 +89,7 @@ export class SearchTrail {
     if (!visit) return;
     const files = (repo: string | null) => repo ? [...this.way.files(repo), ...(this.opened.get(repo) ?? [])] : [];
     const screen = searchScreen(visit.repo, visit.query, files(visit.repo), {
-      matchQuery: visit.place === 'home',
+      matchQuery: visit.place === 'home' || visit.place === 'forge',
       scope: (repo) => { visit.repo = repo; visit.result = null; return files(repo); },
       back: () => {
         if (this.leaving) return;
@@ -109,6 +109,7 @@ export class SearchTrail {
     for (const {element} of desks) element.inert = true;
     if (visit.place === 'home') screen.element.classList.add('search-on-home');
     else this.veil.out(true);
+    if (visit.place === 'forge') screen.element.classList.add('search-on-forge');
     document.body.append(screen.element);
     this.live = {screen, desks, id};
     this.way.name();

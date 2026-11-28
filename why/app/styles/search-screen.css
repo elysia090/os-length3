@@ -156,7 +156,7 @@ body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 /* The highlighted row is ink in the same paper, not a second solid surface that hides its grid. */
 .search-screen .choice:is(:hover, :focus),
 .search-screen:has(.search-in:focus) .choice.first {
-  background: color-mix(in srgb, var(--slot) 28%, var(--paper)); color: var(--ink); mix-blend-mode: multiply;
+  background: color-mix(in srgb, var(--slot) var(--search-row-strength, 28%), var(--paper)); color: var(--ink); mix-blend-mode: multiply;
 }
 .search-screen .search-suggestion {
   display: block; min-height: var(--u); width: 100%; border: 0; border-radius: var(--r-key);
@@ -174,6 +174,18 @@ body:has(> .page-veil.search-veil.out) > :is(.rail, .door) { z-index: 29; }
 }
 @media (max-width: 760px) {
   .search-screen-content { max-width: calc(100% - 2 * var(--u)); }
+}
+
+/* Forge keeps the joined sheet and its ink. Labels read as labels; numbers and snippets stay in the code face. */
+.search-screen.search-on-forge :is(.found-sec-head, .search-suggestion, .sheet-file) { font-family: var(--sans); }
+.search-screen.search-on-forge .found-secs .found-sec-head { overflow: hidden; text-overflow: ellipsis; }
+.search-screen.search-on-forge .sheet-hit:focus-visible,
+.search-screen.search-on-forge:has(.search-in:focus) .sheet-hit.first {
+  --search-row-strength: 36%;
+}
+.search-screen.search-on-forge:has(.search-in:focus) .sheet-hit:hover:not(.first),
+.search-screen.search-on-forge .search-screen-matches:has(.sheet-hit:focus-visible) .sheet-hit:hover:not(:focus-visible) {
+  --search-row-strength: 18%;
 }
 
 /* Put only Search on the Home desk, keeping Home itself in place for Back. */
@@ -265,25 +277,25 @@ body:has(> .search-screen.search-on-home) > #page[data-place='home'] { visibilit
   --home-search-selection-share: 40%;
 }
 .search-screen .search-screen-enter { display: none; }
-.search-screen.search-on-home .sheet-hit:focus-visible {
+.search-screen:is(.search-on-home, .search-on-forge) .sheet-hit:focus-visible {
   position: relative;
 
   & > .search-screen-enter {
     position: absolute; inset-inline-end: var(--s2); inset-block-start: 0;
     display: grid; place-items: center; inline-size: var(--u); block-size: var(--u);
     padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-    color: var(--home-search-selected-line); pointer-events: none;
+    color: var(--home-search-selected-line, var(--sub)); pointer-events: none;
     font: 400 var(--t-word)/var(--u) var(--sans);
   }
 }
 @media (width > 760px) {
   /* Only the line in hand needs room for the hint, and long excerpts already ellipsize. */
-  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-text { padding-inline-end: var(--u); }
+  .search-screen:is(.search-on-home, .search-on-forge) .sheet-hit:focus-visible > .sheet-text { padding-inline-end: var(--u); }
 }
 @media (max-width: 760px) {
   /* On two-line rows the hint lives with the file and line number, not the excerpt. */
-  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-file { padding-inline-end: var(--u); }
-  .search-screen.search-on-home .sheet-hit:focus-visible > .sheet-line { translate: calc(-1 * var(--u)) 0; }
+  .search-screen:is(.search-on-home, .search-on-forge) .sheet-hit:focus-visible > .sheet-file { padding-inline-end: var(--u); }
+  .search-screen:is(.search-on-home, .search-on-forge) .sheet-hit:focus-visible > .sheet-line { translate: calc(-1 * var(--u)) 0; }
 }
 .search-screen.search-on-home .found-secs .found-sec-head {
   /* Omit overflow visually, keeping the complete query in the heading's name. */

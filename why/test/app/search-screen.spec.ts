@@ -252,18 +252,86 @@ test('the Search heading counts selectable filename and line matches, not distin
 
   const files = screen.getByRole('region', {name:'files',exact:true});
   await query.fill('interpreter');
-  await expect(files.getByRole('heading', {name:'4 matches',exact:true})).toBeVisible();
+  await expect(files.getByRole('heading', {name:'4 matches for "interpreter"',exact:true})).toBeVisible();
   await expect(files.getByRole('button')).toHaveCount(4);
   await expect(files.getByRole('button', {name:/README\.md/})).toHaveCount(4);
   await query.fill('solitary');
-  await expect(files.getByRole('heading', {name:'1 match',exact:true})).toBeVisible();
+  await expect(files.getByRole('heading', {name:'1 match for "solitary"',exact:true})).toBeVisible();
   await expect(files.getByRole('button')).toHaveCount(1);
 
   await query.fill('named-anchor');
-  await expect(files.getByRole('heading', {name:'2 matches',exact:true})).toBeVisible();
+  await expect(files.getByRole('heading', {name:'2 matches for "named-anchor"',exact:true})).toBeVisible();
   await expect(files.getByRole('button')).toHaveCount(2);
   await expect(files.getByRole('button', {name,exact:true})).toBeVisible();
   await expect(files.getByRole('button', {name:/opens the file/})).toBeVisible();
+});
+
+test('Forge Search keeps the Enter target distinct from a passing pointer on the existing sheet', async ({app}) => {
+  const {page, forge} = app;
+  await page.setViewportSize({width:1536, height:864});
+  await app.newRepo.make('field-notes');
+  await forge.editFile('README.md', '# Field notes\n\nCheck the first launch gate.\nClose the last launch gate.\n');
+  const editor = forge.editor('README.md');
+  await editor.focus();
+  const screen = page.getByRole('dialog', {name:'Search', exact:true});
+  const input = screen.getByRole('searchbox');
+  const paper = screen.locator('.search-screen-paper');
+  const lens = app.main.getByRole('button', {name:'Search', exact:true});
+  await lens.click();
+  await expect(screen).toHaveClass(/\bsearch-on-forge\b/);
+  await expect(page.locator('.search-veil.out')).toBeVisible();
+  await expect(input).toBeFocused();
+  await expect(paper).toHaveCSS('border-radius', '8px');
+  await expect(paper).toHaveCSS('overflow', 'clip');
+  const position = await input.boundingBox();
+  const sans = await input.evaluate(el => getComputedStyle(el).fontFamily);
+
+  await input.click();
+  const suggestions = screen.getByRole('region', {name:'Suggested files', exact:true});
+  const suggested = suggestions.getByRole('button', {name:'README.md', exact:true});
+  await expect(suggestions.getByRole('heading')).toHaveCSS('font-family', sans);
+  await expect(suggested).toHaveCSS('font-family', sans);
+  await expect(suggested.locator('kbd')).toHaveCount(0);
+  expect(await input.boundingBox()).toEqual(position);
+
+  await input.fill('launch');
+  await expect(screen.getByRole('heading', {name:'2 matches for "launch"', exact:true})).toHaveCSS('font-family', sans);
+  const first = screen.getByRole('button', {name:/Check the first launch gate/});
+  const last = screen.getByRole('button', {name:/Close the last launch gate/});
+  const excerpt = first.locator('.sheet-text'), number = first.locator('.sheet-line');
+  const mono = await excerpt.evaluate(el => getComputedStyle(el).fontFamily);
+  expect(mono).not.toBe(sans);
+  await expect(number).toHaveCSS('font-family', mono);
+  await expect(first.locator('.sheet-file')).toHaveCSS('font-family', sans);
+  await expect(first).toHaveCSS('height', '24px');
+  expect(await input.boundingBox()).toEqual(position);
+  await expect(first.locator('kbd')).toBeHidden();
+
+  await last.hover();
+  await expect(first).toHaveCSS('--search-row-strength', '36%');
+  await expect(last).toHaveCSS('--search-row-strength', '18%');
+  await expect(last.locator('kbd')).toBeHidden();
+  await expect(last).toHaveCSS('outline-style', 'none');
+
+  await input.press('ArrowDown');
+  await expect(first).toBeFocused();
+  await expect(first.locator('kbd')).toBeVisible();
+  await expect(last.locator('kbd')).toBeHidden();
+  await page.keyboard.press('ArrowDown');
+  await expect(last).toBeFocused();
+  await expect(last.locator('kbd')).toBeVisible();
+  await expect(first.locator('kbd')).toBeHidden();
+  await expect(last).toHaveAccessibleName('README.md 4 Close the last launch gate.');
+  await page.keyboard.press('Enter');
+  await expect(editor).toBeFocused();
+  await expect.poll(() => paintedLine(editor)).toBe('Close the last launch gate.');
+
+  await page.evaluate(() => history.back());
+  await expect(input).toHaveValue('launch');
+  await expect(last).toBeFocused();
+  await screen.getByRole('button', {name:'Back', exact:true}).click();
+  await expect(screen).toHaveCount(0);
+  await expect(editor).toBeFocused();
 });
 
 test('the modal keeps its keyboard until a press on the mist gives it back to the Search key', async ({app}) => {
